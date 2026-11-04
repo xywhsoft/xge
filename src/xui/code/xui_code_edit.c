@@ -6715,7 +6715,9 @@ XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCodeEditRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_code_edit_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiCodeEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_code_edit_desc_t* pDesc)
@@ -6952,7 +6954,9 @@ XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)
 
 	pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->pFont = pFont;
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
 	pData->iMaxLineLengthVersion = 0;
 	pData->iMaxLineLengthTabColumns = 0;
 	pData->iCachedMaxLineLength = 0;
@@ -6978,7 +6982,7 @@ XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)
 		if ( pData->pFindStatus != NULL ) (void)xuiLabelSetFont(pData->pFindStatus, pFont);
 	}
 	(void)__xuiCodeEditUpdateScrollModel(pWidget, pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiCodeEditGetFont(xui_widget pWidget)

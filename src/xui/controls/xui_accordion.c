@@ -1618,7 +1618,9 @@ XUI_API xui_widget_type xuiAccordionGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiAccordionRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_accordion_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiAccordionCreate(xui_context pContext, xui_widget* ppWidget, const xui_accordion_desc_t* pDesc)
@@ -2082,12 +2084,17 @@ XUI_API int xuiAccordionSetFont(xui_widget pWidget, xui_font pFont)
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = __xuiAccordionInvalidateHeaders(pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pFont;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	__xuiAccordionChange(pData);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiAccordionGetFont(xui_widget pWidget)

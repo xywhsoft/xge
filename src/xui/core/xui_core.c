@@ -1750,23 +1750,32 @@ XUI_API int xuiCreate(xui_context* ppContext)
 
 static void __xuiContextDestroyFonts(xui_context pContext)
 {
-	int i;
-
-	if ( !__xuiContextValid(pContext) ) {
-		return;
-	}
-	for ( i = 0; i < pContext->iFontCount; i++ ) {
-		if ( pContext->pFonts[i].sName != NULL ) {
-			xrtFree(pContext->pFonts[i].sName);
-		}
-	}
-	if ( pContext->pFonts != pContext->arrInlineFonts ) {
-		xrtFree(pContext->pFonts);
-	}
-	pContext->pFonts = pContext->arrInlineFonts;
-	pContext->iFontCount = 0;
-	pContext->iFontCapacity = XUI_CONTEXT_FONT_INLINE;
-	pContext->pDefaultFont = NULL;
+    if(!__xuiContextValid(pContext))return;
+    /* Empty every public slot before a consuming backend hook can reenter. */
+    xui_font_entry_t inlineFonts[XUI_CONTEXT_FONT_INLINE];
+    xui_font_entry_t* fonts=pContext->pFonts;int count=pContext->iFontCount;
+    bool dynamic=fonts!=pContext->arrInlineFonts;
+    if(!dynamic){memcpy(inlineFonts,fonts,sizeof(inlineFonts));fonts=inlineFonts;}
+    xui_font defaultFont=pContext->pDefaultFont;bool owned=pContext->pOwnedProxy!=NULL;
+    pContext->pFonts=pContext->arrInlineFonts;pContext->iFontCount=0;
+    pContext->iFontCapacity=XUI_CONTEXT_FONT_INLINE;pContext->pDefaultFont=NULL;pContext->tTheme.pFont=NULL;
+    memset(pContext->arrInlineFonts,0,sizeof(pContext->arrInlineFonts));
+    xerror* first=xrtTakeError();int result=first ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+    for(int i=0;i<count;++i){
+        xrtFree(fonts[i].sName);
+        if(owned && fonts[i].pFont){
+            int status=xuiFontReleaseChecked(fonts[i].pFont);xerror* error=xrtTakeError();
+            if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
+            else xrtErrorFree(error);
+        }
+    }
+    if(dynamic)xrtFree(fonts);
+    if(owned && defaultFont){
+        int status=xuiFontReleaseChecked(defaultFont);xerror* error=xrtTakeError();
+        if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
+        else xrtErrorFree(error);
+    }
+    xuiInternalContextRecordFailure(pContext,result);xrtSetErrorTake(first);
 }
 
 static void __xuiContextDestroyNow(xui_context pContext)
@@ -1821,6 +1830,8 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	}
 	xLayoutContextDestroy(pContext->pLayoutContext);
 	pContext->pLayoutContext = NULL;
+    xui_proxy ownedProxy=pContext->pOwnedProxy;pContext->pOwnedProxy=NULL;
+    if(ownedProxy)xuiInternalContextRecordFailure(pContext,xuiProxyReleaseChecked(ownedProxy));
 	pContext->iMagic = 0;
 	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
 		pScope->pContext = NULL;
@@ -1865,6 +1876,37 @@ XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy)
 	pContext->bHasProxy = 1;
 	__xuiContextBumpGeneration(pContext);
 	return XUI_OK;
+}
+
+XUI_API int xuiSetProxyOwned(xui_context pContext,xui_proxy pProxy)
+{
+    if(!__xuiContextValid(pContext) || !xuiProxyIsOwned(pProxy))return XUI_ERROR_INVALID_ARGUMENT;
+    if(pContext->bHasProxy)return XUI_ERROR_ALREADY_INITIALIZED;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(pContext,&scope);if(result!=XUI_OK)return result;
+    result=xuiProxyAddRef(pProxy);bool retained=result==XUI_OK;
+    xui_proxy_caps_t caps={0};
+    if(result==XUI_OK)result=__xuiContextValidateProxy(pProxy,&caps);
+    if(result==XUI_OK && (pContext->bDestroyPending || pContext->bDestroying || pContext->bHasProxy))result=XUI_ERROR_INVALID_STATE;
+    if(result==XUI_OK){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation))result=XUI_ERROR_INVALID_STATE;
+        else{
+            pContext->tProxy=*pProxy;pContext->tProxyCaps=caps;pContext->pOwnedProxy=pProxy;
+            pContext->bHasProxy=1;retained=false;__xuiContextBumpGeneration(pContext);
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+    }
+    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    xuiInternalContextRecordFailure(pContext,result);
+    if(retained){
+        int next=xuiProxyReleaseChecked(pProxy);xerror* error=xrtTakeError();
+        if(result==XUI_OK && (next!=XUI_OK || error)){result=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;first=error;}
+        else xrtErrorFree(error);
+    }
+    int next=xuiCallScopeEnd(&scope);xerror* error=xrtTakeError();
+    if(result==XUI_OK && (next!=XUI_OK || error)){result=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;first=error;}
+    else xrtErrorFree(error);
+    xrtSetErrorTake(first);return result;
 }
 
 XUI_API int xuiGetProxy(xui_context pContext, xui_proxy_t* pProxy)
@@ -2018,13 +2060,16 @@ XUI_API int xuiSetTheme(xui_context pContext, const xui_theme_t* pTheme)
 	     ((pTheme->iSize != 0) && (pTheme->iSize < sizeof(*pTheme))) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    xui_font_slot_update_t fontUpdate={0};
+    iRet=xuiInternalFontSlotBegin(pContext,&pContext->pDefaultFont,pTheme->pFont,true,&fontUpdate);
+    if(iRet!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	tTheme = *pTheme;
 	tTheme.iSize = sizeof(tTheme);
 	pContext->tTheme = tTheme;
-	pContext->pDefaultFont = tTheme.pFont;
+
 	iRet = xuiStyleBeginUpdate(pContext);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
 	iRet = __xuiCoreSetColorToken(pContext, "theme.text", tTheme.iTextColor);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.background", tTheme.iBackgroundColor);
@@ -2042,9 +2087,9 @@ XUI_API int xuiSetTheme(xui_context pContext, const xui_theme_t* pTheme)
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.border_width", tTheme.fBorderWidth);
 	if ( iRet != XUI_OK ) {
 		(void)xuiStyleEndUpdate(pContext);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	return xuiStyleEndUpdate(pContext);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiStyleEndUpdate(pContext));
 }
 
 XUI_API int xuiGetTheme(xui_context pContext, xui_theme_t* pTheme)
@@ -2107,10 +2152,12 @@ XUI_API int xuiSetDefaultFont(xui_context pContext, xui_font pFont)
 	if ( !__xuiContextValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pContext->pDefaultFont = pFont;
+    xui_font_slot_update_t update={0};
+    int result=xuiInternalFontSlotBegin(pContext,&pContext->pDefaultFont,pFont,true,&update);
+    if(result!=XUI_OK)return result;
 	pContext->tTheme.pFont = pFont;
 	xuiInternalContextBumpGeneration(pContext);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&update,true,XUI_OK);
 }
 
 XUI_API xui_font xuiGetDefaultFont(xui_context pContext)
@@ -2156,9 +2203,11 @@ XUI_API int xuiRegisterFont(xui_context pContext, const char* sName, xui_font pF
 	}
 	for ( i = 0; i < pContext->iFontCount; i++ ) {
 		if ( strcmp(pContext->pFonts[i].sName, sName) == 0 ) {
-			pContext->pFonts[i].pFont = pFont;
+            xui_font_slot_update_t update={0};
+            iRet=xuiInternalFontSlotBegin(pContext,&pContext->pFonts[i].pFont,pFont,true,&update);
+            if(iRet!=XUI_OK)return iRet;
 			xuiInternalContextBumpGeneration(pContext);
-			return XUI_OK;
+			return xuiInternalFontSlotEnd(&update,true,XUI_OK);
 		}
 	}
 	iRet = __xuiCoreReserveFonts(pContext, pContext->iFontCount + 1);
@@ -2169,11 +2218,15 @@ XUI_API int xuiRegisterFont(xui_context pContext, const char* sName, xui_font pF
 	if ( sCopy == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
+    xui_font_entry_t* entry=&pContext->pFonts[pContext->iFontCount];
+    entry->pFont=NULL;xui_font_slot_update_t update={0};
+    iRet=xuiInternalFontSlotBegin(pContext,&entry->pFont,pFont,true,&update);
+    if(iRet!=XUI_OK){xrtFree(sCopy);return iRet;}
 	pContext->pFonts[pContext->iFontCount].sName = sCopy;
-	pContext->pFonts[pContext->iFontCount].pFont = pFont;
+
 	pContext->iFontCount++;
 	xuiInternalContextBumpGeneration(pContext);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&update,true,XUI_OK);
 }
 
 XUI_API xui_font xuiFindFont(xui_context pContext, const char* sName)
@@ -2196,8 +2249,11 @@ XUI_API void xuiClearFonts(xui_context pContext)
 	if ( !__xuiContextValid(pContext) ) {
 		return;
 	}
+    xui_call_scope_t scope={0};
+    if(pContext->pOwnedProxy && xuiCallScopeBegin(pContext,&scope)!=XUI_OK)return;
 	__xuiContextDestroyFonts(pContext);
 	xuiInternalContextBumpGeneration(pContext);
+    (void)xuiCallScopeEnd(&scope);
 }
 
 XUI_API int xuiInvalidateRect(xui_context pContext, xui_rect_i_t tRect)

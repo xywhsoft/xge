@@ -540,7 +540,9 @@ XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 	}
 	__xuiLabelRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiLabelAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_label_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiLabelCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc,xui_widget pNativeOwner)
@@ -617,8 +619,10 @@ XUI_API int xuiLabelSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData->pFont == pFont ) {
 		return XUI_OK;
 	}
-	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiLabelGetFont(xui_widget pWidget)

@@ -1384,13 +1384,65 @@ static float __xuiTextVerticalOffset(xui_text_layout pLayout, xui_rect_t tRect, 
 	return 0.0f;
 }
 
+static bool __xuiTextPaintProtocol(const xui_text_paint_ownership_v1_t* protocol)
+{
+    return protocol && protocol->size==sizeof(*protocol) &&
+        protocol->AbiTag==XUI_TEXT_PAINT_OWNERSHIP_V1_TAG &&
+        protocol->DropReady && protocol->TraceRaw && protocol->DropChecked;
+}
+bool xuiInternalTextShapeTraceOwnership(const xui_text_shape_t* shape,xrtownershipvisitor visit,void* user)
+{
+    if(!visit)return false;
+    if(!shape || !shape->pPaint)return true;
+    return __xuiTextPaintProtocol(shape->pPaintOwnership) &&
+        shape->pPaintOwnership->TraceRaw(shape->pPaint,visit,user);
+}
+int xuiInternalTextShapeReady(const xui_text_shape_t* shape,bool managed)
+{
+    if(!shape || !shape->pPaint)return XUI_OK;
+    if(!shape->pPaintOwnership)return managed ? XUI_ERROR_UNSUPPORTED:XUI_OK;
+    if(!__xuiTextPaintProtocol(shape->pPaintOwnership))return XUI_ERROR_INVALID_ARGUMENT;
+    return shape->pPaintOwnership->DropReady(shape->pPaint) ? XUI_OK:XUI_ERROR_BUSY;
+}
+XUI_API int xuiTextShapeFreeChecked(xui_text_shape_t* pShape)
+{
+    if(!pShape)return XUI_ERROR_INVALID_ARGUMENT;
+    int ready=xuiInternalTextShapeReady(pShape,false);
+    if(ready!=XUI_OK)return ready; /* no owner, arrays or fields consumed */
+    /* Detach before arbitrary cleanup: recursive observation never sees the
+     * same owning paint/arrays twice. The caller exclusively owns the output
+     * record; a cleanup hook must not replace that record while it is active. */
+    xui_text_shape_t retired=*pShape;memset(pShape,0,sizeof(*pShape));
+    xerror* prior=xrtTakeError();int result=XUI_OK;bool consumed=retired.pPaint==NULL;
+    if(retired.pPaint){
+        if(retired.pPaintOwnership){
+            result=retired.pPaintOwnership->DropChecked(retired.pPaint);consumed=true;
+        }else if(retired.paintFreeChecked){
+            result=retired.paintFreeChecked(retired.pPaint,&consumed);
+            if(!consumed && result==XUI_OK)result=XUI_ERROR_INVALID_STATE;
+        }else if(retired.paintFree){retired.paintFree(retired.pPaint);consumed=true;}
+        else result=XUI_ERROR_INVALID_STATE;
+    }
+    xerror* failure=xrtTakeError();
+    if(result==XUI_OK && failure)result=XUI_ERROR_CALLBACK_FAILED;
+    xrtFree(retired.pClusters);xrtFree(retired.pCarets);
+    xerror* secondary=xrtTakeError();
+    if(result==XUI_OK && secondary){result=XUI_ERROR_CALLBACK_FAILED;failure=secondary;}
+    else xrtErrorFree(secondary);
+    if(!consumed){
+        pShape->iSize=retired.iSize;pShape->pPaint=retired.pPaint;
+        pShape->iPaintBytes=retired.iPaintBytes;pShape->paintFree=retired.paintFree;
+        pShape->paintFreeChecked=retired.paintFreeChecked;
+        pShape->pPaintOwnership=retired.pPaintOwnership;
+    }
+    /* A pre-existing primary diagnostic has priority, independently of the
+     * explicit cleanup result, including a false result with NULL text. */
+    if(prior){xrtErrorFree(failure);failure=prior;}
+    xrtSetErrorTake(failure);return result;
+}
 XUI_API void xuiTextShapeFree(xui_text_shape_t* pShape)
 {
-	if ( pShape == NULL ) return;
-	if ( pShape->pPaint != NULL && pShape->paintFree != NULL ) pShape->paintFree(pShape->pPaint);
-	if ( pShape->pClusters != NULL ) xrtFree(pShape->pClusters);
-	if ( pShape->pCarets != NULL ) xrtFree(pShape->pCarets);
-	memset(pShape, 0, sizeof(*pShape));
+    if(pShape)(void)xuiTextShapeFreeChecked(pShape);
 }
 
 XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape)

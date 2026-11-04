@@ -176,11 +176,18 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	if ( (pTarget == NULL) || (pPixels == NULL) || (pTarget->iWidth <= 0) || (pTarget->iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( iStride <= 0 ) {
-		iStride = pTarget->iWidth * 4;
+	if ( pTarget->iWidth > INT32_MAX / 4 || pTarget->iHeight > INT32_MAX / (pTarget->iWidth * 4) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( iStride < (pTarget->iWidth * 4) ) {
+	iCopyStride = pTarget->iWidth * 4;
+	if ( iStride <= 0 ) {
+		iStride = iCopyStride;
+	}
+	if ( iStride < iCopyStride ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (size_t)(pTarget->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	if ( g_xge.bSokolRunning == 0 ) {
 		if ( (pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) != 0 ) {
@@ -200,9 +207,6 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	if ( __xgeRenderTargetEnsureFramebuffer(pTarget) != XGE_OK ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
-	if ( pTarget->iWidth > (INT32_MAX / 4) || pTarget->iHeight > (INT32_MAX / (pTarget->iWidth * 4)) ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
 	iSize = pTarget->iWidth * pTarget->iHeight * 4;
 	pTemp = (unsigned char*)xrtMalloc((size_t)iSize);
 	if ( pTemp == NULL ) {
@@ -213,10 +217,9 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	xge_glReadPixels(0, 0, pTarget->iWidth, pTarget->iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
 	xge_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
 	pDst = (unsigned char*)pPixels;
-	iCopyStride = pTarget->iWidth * 4;
 	for ( iRow = 0; iRow < pTarget->iHeight; iRow++ ) {
-		pSrc = pTemp + ((pTarget->iHeight - 1 - iRow) * iCopyStride);
-		memcpy(pDst + (iRow * iStride), pSrc, (size_t)iCopyStride);
+		pSrc = pTemp + ((size_t)(pTarget->iHeight - 1 - iRow) * (size_t)iCopyStride);
+		memcpy(pDst + ((size_t)iRow * (size_t)iStride), pSrc, (size_t)iCopyStride);
 	}
 	xrtFree(pTemp);
 	__xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);

@@ -1600,7 +1600,9 @@ XUI_API xui_widget_type xuiProgressGetType(xui_context pContext)
 	}
 	__xuiProgressRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiProgressAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_progress_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiProgressCreate(xui_context pContext, xui_widget* ppWidget, const xui_progress_desc_t* pDesc)
@@ -1832,18 +1834,24 @@ XUI_API int xuiProgressSetText(xui_widget pWidget, xui_font pFont, const char* s
 	if ( bTextSame ) {
 		return xuiProgressSetFont(pWidget, pFont);
 	}
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = __xuiProgressPrepareText(pData, sText, &tPrepared);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	iRet = xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		__xuiProgressPreparedTextClear(&tPrepared);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
+    fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK){__xuiProgressPreparedTextClear(&tPrepared);return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);}
 	__xuiProgressCommitPreparedText(pData, &tPrepared);
-	pData->pFont = pFont;
+
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API int xuiProgressSetTextTemplate(xui_widget pWidget, const char* sTextTemplate)
@@ -1898,14 +1906,19 @@ XUI_API int xuiProgressSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	if ( pData->pFont == pFont ) {
-		return XUI_OK;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 	}
 	iRet = xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pFont;
-	return XUI_OK;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiProgressGetFont(xui_widget pWidget)

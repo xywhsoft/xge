@@ -806,7 +806,9 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 	}
 	__xuiHyperlinkRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiHyperlinkAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_hyperlink_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiHyperlinkCreate(xui_context pContext, xui_widget* ppWidget, const xui_hyperlink_desc_t* pDesc)
@@ -895,8 +897,10 @@ XUI_API int xuiHyperlinkSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData->pFont == pFont ) {
 		return XUI_OK;
 	}
-	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiHyperlinkGetFont(xui_widget pWidget)

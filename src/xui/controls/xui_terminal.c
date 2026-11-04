@@ -5652,7 +5652,12 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	fOldCursorHeight = pData->fCursorHeight;
 	fOldPadding = pData->fPadding;
 
-	pData->pFont = __xuiTerminalStyleFont(pWidget, (pData->pBaseFont != NULL) ? pData->pBaseFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget)));
+    xui_font selectedFont=__xuiTerminalStyleFont(pWidget,(pData->pBaseFont!=NULL) ? pData->pBaseFont:xuiGetDefaultFont(pWidget->pContext));
+    xui_font_slot_update_t fontUpdate={0};
+    if(selectedFont!=pData->pFont){
+        int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,selectedFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+        if(fontStatus!=XUI_OK){xuiInternalContextRecordFailure(pWidget->pContext,fontStatus);return;}
+    }
 	pData->iBackgroundColor = pData->iBaseBackgroundColor;
 	pData->iForegroundColor = pData->iBaseForegroundColor;
 	pData->iCursorColor = pData->iBaseCursorColor;
@@ -5738,6 +5743,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	     (memcmp(arrOldPalette, pData->arrPalette, sizeof(arrOldPalette)) != 0) ) {
 		__xuiTerminalMarkFullCacheDirty(pData);
 	}
+    (void)xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 static int __xuiTerminalContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -6576,7 +6582,9 @@ XUI_API xui_widget_type xuiTerminalGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiTerminalRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_terminal_data_t,pBaseFont),offsetof(xui_terminal_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiTerminalCreate(xui_context pContext, xui_widget* ppWidget, const xui_terminal_desc_t* pDesc)
@@ -6752,11 +6760,16 @@ XUI_API int xuiTerminalSetFont(xui_widget pWidget, xui_font pFont)
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pBaseFont == pFont ) return XUI_OK;
-	pData->pBaseFont = pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pBaseFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	__xuiTerminalResolveStyle(pWidget, pData);
 	__xuiTerminalSyncScrollModel(pWidget, pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiTerminalGetFont(xui_widget pWidget)

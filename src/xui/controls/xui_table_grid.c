@@ -2116,7 +2116,9 @@ XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext)
 		return NULL;
 	}
 	pType->pAccessibleAdapter = &g_xuiTableGridAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_table_grid_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiTableGridCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc,xui_widget pNativeOwner)
@@ -2466,14 +2468,19 @@ XUI_API int xuiTableGridSetFont(xui_widget pWidget, xui_font pFont)
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	pOldFont = pData->pFont;
 	iRet = __xuiTableGridSetFontChildren(pData, pFont);
 	if ( iRet != XUI_OK ) {
 		(void)__xuiTableGridSetFontChildren(pData, pOldFont);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	pData->pFont = pFont;
-	return XUI_OK;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiTableGridGetFont(xui_widget pWidget)

@@ -182,11 +182,85 @@ static void preparation_and_use_cycle(void)
     assert(aa->Finish(a,&token) && ba->Finish(b,&token) && owner.refs==0);
     aa->Drop(a);ba->Drop(b);
 }
+static void completion_v2(void)
+{
+    for(int failing=0;failing<3;++failing){
+        xui_table_view_cell_output_t* cell=NULL;assert(xuiTableViewCellOutputCreate(&cell)==XUI_OK);
+        CellOwner owner={.refs=1};xui_callback_owner_t binding=cell_ref(&owner);
+        assert(xuiTableViewCellOutputSetFormatterOwned(cell,cell_text,&owner,&binding)==XUI_OK && cell_drop(&owner));
+        xrtownershipref ref=xuiTableViewCellOutputOwnership(cell);
+        const xrtownershipadapterv1* adapter=xuiTableViewCellOutputOwnershipAdapterV1(ref);
+        const xrtownershipfinishv2* finish=xuiTableViewCellOutputOwnershipCompletionV2(ref);
+        assert(finish && finish->V1.size==sizeof(*finish) && finish->V1.Adapter==adapter &&
+            finish->AbiTag==XRT_OWNERSHIP_FINISH_V2_TAG && finish->V1.Step && finish->DropChecked && finish->DropReady && finish->DropReady(cell));
+        assert(!xuiTableViewCellOutputOwnershipCompletionV2((xrtownershipref){ref.Data,&cell_ops}));
+        assert(adapter->Hold(cell));int token=0;xrtownershipscope freeze={0};
+        assert(xrtOwnershipFreezeTryBegin(&freeze) && adapter->Claim(cell,&token));
+        assert(xrtOwnershipScopeEnd(&freeze));
+        assert(xuiTableViewCellOutputReleaseChecked(cell)==XUI_OK);
+        assert(xrtOwnershipFreezeTryBegin(&freeze));adapter->Restore(cell,&token);assert(xrtOwnershipScopeEnd(&freeze));
+        owner.failDrop=failing!=0;
+        if(failing==2)assert(xrtMemDebugFailAfter(0));
+        assert(finish->DropChecked(cell)==!failing); /* Last real snapshot is consumed exactly once. */
+        if(failing==2)assert(xrtMemDebugFailAfter(-1));
+        assert(owner.refs==0 && owner.drops==2 && !xrtGetError());
+    }
+}
+typedef struct CellThreadProbe {xui_table_view_cell_output_t* cell;bool finished;} CellThreadProbe;
+static int32 cell_other_thread(void* raw)
+{
+    CellThreadProbe* probe=raw;xui_table_view_cell_output_t* cell=probe->cell;
+    xrtownershipref ref=xuiTableViewCellOutputOwnership(cell);
+    const xrtownershipfinishv2* finish=xuiTableViewCellOutputOwnershipCompletionV2(ref);
+    assert(finish && !finish->DropReady(cell));
+    bool consumed=true;assert(xuiTableViewCellOutputReleaseOwnerChecked(cell,&consumed)==XUI_ERROR_BUSY && !consumed);
+    assert(xuiTableViewCellOutputAddRef(cell)==XUI_ERROR_BUSY);
+    xrtownershipscope freeze={0};size_t count=0;assert(xrtOwnershipFreezeTryBegin(&freeze));
+    assert(ref.Ops->Count(cell,&count) && count==1);assert(xrtOwnershipScopeEnd(&freeze));
+    xui_table_view_cell_output_t output;xuiTableViewCellOutputInit(&output);
+    assert(xuiTableViewCellOutputUse(&output,cell)==XUI_ERROR_INVALID_STATE);
+    assert(xuiTableViewCellOutputDisposeChecked(&output)==XUI_OK);
+    probe->finished=true;return 0;
+}
+static void creator_affinity(void)
+{
+    xui_table_view_cell_output_t* cell=NULL;assert(xuiTableViewCellOutputCreate(&cell)==XUI_OK);
+    CellThreadProbe probe={cell,false};xthread* worker=xrtThreadCreate(cell_other_thread,&probe,0);assert(worker);
+    assert(xrtThreadWait(worker)==XWAIT_OK && probe.finished);xrtThreadDestroy(worker);
+    const xrtownershipfinishv2* finish=xuiTableViewCellOutputOwnershipCompletionV2(xuiTableViewCellOutputOwnership(cell));
+    assert(finish && finish->DropReady(cell) && xuiTableViewCellOutputReleaseChecked(cell)==XUI_OK);
+}
+typedef struct CommittedProbe {
+    xui_table_view_cell_output_t* cell;const xrtownershipfinishv2* finish;const void* token;
+} CommittedProbe;
+static int32 committed_other_thread(void* raw)
+{
+    CommittedProbe* probe=raw;xrtSetErrorKind(XERR_RANGE);const xerror* first=xrtGetError();assert(first);
+    assert(xrtMemDebugFailAfter(0));
+    assert(probe->finish->V1.Step(probe->cell,probe->token)==XRT_OWNERSHIP_FINISH_BUSY);
+    assert(xrtGetError()==first && !xrtMemDebugFailTriggered());
+    assert(xrtMemDebugFailAfter(-1));xrtClearError();return 0;
+}
+static void committed_affinity(void)
+{
+    xui_table_view_cell_output_t* cell=NULL;assert(xuiTableViewCellOutputCreate(&cell)==XUI_OK);
+    CellOwner owner={.refs=1};xui_callback_owner_t binding=cell_ref(&owner);
+    assert(xuiTableViewCellOutputSetFormatterOwned(cell,cell_text,&owner,&binding)==XUI_OK);
+    xrtownershipref ref=xuiTableViewCellOutputOwnership(cell);const xrtownershipadapterv1* adapter=xuiTableViewCellOutputOwnershipAdapterV1(ref);
+    const xrtownershipfinishv2* finish=xuiTableViewCellOutputOwnershipCompletionV2(ref);assert(adapter && finish && adapter->Hold(cell));
+    int token=0;xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
+    assert(adapter->Claim(cell,&token));adapter->Clear(cell,&token);assert(xrtOwnershipScopeEnd(&freeze));
+    assert(xuiTableViewCellOutputReleaseChecked(cell)==XUI_OK && owner.refs==2);
+    CommittedProbe probe={cell,finish,&token};xthread* worker=xrtThreadCreate(committed_other_thread,&probe,0);assert(worker);
+    assert(xrtThreadWait(worker)==XWAIT_OK && owner.refs==2 && !cell->_bOwnershipFinished);xrtThreadDestroy(worker);
+    assert(finish->V1.Step(cell,&token)==XRT_OWNERSHIP_FINISH_READY && owner.refs==1);
+    assert(finish->DropChecked(cell) && cell_drop(&owner) && !xrtGetError());
+}
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    simple_values();cache_pin();callbacks_and_trace();native_adapter();consumed_release();preparation_and_use_cycle();xrtClearError();xrtMemDebugSnapshot(&after);
+    simple_values();cache_pin();callbacks_and_trace();native_adapter();consumed_release();preparation_and_use_cycle();completion_v2();creator_affinity();committed_affinity();xrtClearError();xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes && before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     puts("owned Cell: actual native RC/trace/adapter, safe text/value, callback reentry, Use read pins and zero-allocation cache reuse passed");return 0;
 }

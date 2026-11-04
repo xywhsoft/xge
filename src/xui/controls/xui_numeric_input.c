@@ -1613,7 +1613,9 @@ XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext)
 	pType->onPreparePaint = __xuiNumericInputPreparePaint;
 	pType->pAccessibleAdapter = &g_xuiNumericInputAccessible;
 	__xuiNumericInputRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_numeric_input_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiNumericInputCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc,xui_widget pNativeOwner)
@@ -1820,23 +1822,26 @@ XUI_API int xuiNumericInputGetPrecision(xui_widget pWidget)
 XUI_API int xuiNumericInputSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
-	xui_font pOldFont;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pOldFont = pData->pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pFont;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		pData->pFont = pOldFont;
+		if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiNumericInputGetFont(xui_widget pWidget)

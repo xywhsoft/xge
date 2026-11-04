@@ -3263,7 +3263,9 @@ XUI_API xui_widget_type xuiChartGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiChartRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_chart_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiChartCreate(xui_context pContext, xui_widget* ppWidget, const xui_chart_desc_t* pDesc)
@@ -3313,8 +3315,10 @@ XUI_API int xuiChartSetFont(xui_widget pWidget, xui_font pFont)
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pData->pFont = pFont;
-	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,__xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_STATIC | XUI_CHART_DIRTY_PLOT | XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiChartGetFont(xui_widget pWidget)

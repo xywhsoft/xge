@@ -3962,7 +3962,9 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiInventoryRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_inventory_grid_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiInventoryGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_inventory_grid_desc_t* pDesc)
@@ -4281,9 +4283,13 @@ XUI_API int xuiInventoryGridSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pResolvedFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pResolvedFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pResolvedFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	pOldFont = pData->pFont;
 	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	iRet = (pData->pSplitTitle != NULL) ? xuiLabelSetFont(pData->pSplitTitle, pResolvedFont) : XUI_OK;
 	if ( iRet == XUI_OK && pData->pSplitInput != NULL ) iRet = xuiNumericInputSetFont(pData->pSplitInput, pResolvedFont);
 	if ( iRet == XUI_OK && pData->pSplitOk != NULL ) iRet = xuiButtonSetFont(pData->pSplitOk, pResolvedFont);
@@ -4293,10 +4299,11 @@ XUI_API int xuiInventoryGridSetFont(xui_widget pWidget, xui_font pFont)
 		if ( pData->pSplitInput != NULL ) (void)xuiNumericInputSetFont(pData->pSplitInput, pOldFont);
 		if ( pData->pSplitOk != NULL ) (void)xuiButtonSetFont(pData->pSplitOk, pOldFont);
 		if ( pData->pSplitCancel != NULL ) (void)xuiButtonSetFont(pData->pSplitCancel, pOldFont);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	pData->pFont = pResolvedFont;
-	return XUI_OK;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiInventoryGridGetFont(xui_widget pWidget)

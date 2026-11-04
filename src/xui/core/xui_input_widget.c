@@ -3427,7 +3427,9 @@ XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
 	}
 	__xuiInputRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiInputAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_input_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiInputCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc,xui_widget pNativeOwner)
@@ -3522,12 +3524,17 @@ XUI_API int xuiInputSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pNewFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pNewFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	if ( pData->pMenu != NULL ) {
 		iRet = xuiMenuSetFont(pData->pMenu, pNewFont);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	pData->pFont = pNewFont;
-	return __xuiInputInvalidateText(pWidget);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,__xuiInputInvalidateText(pWidget));
 }
 
 XUI_API xui_font xuiInputGetFont(xui_widget pWidget)

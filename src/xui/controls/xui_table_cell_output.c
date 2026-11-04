@@ -115,6 +115,7 @@ XUI_API void xuiTableViewCellOutputInit(xui_table_view_cell_output_t* cell)
 {
     if(!cell)return;
     memset(cell,0,sizeof(*cell));cell->_iMagic=XUI_TABLE_CELL_MAGIC;
+    cell->_iCreatorThread=xrtThreadCurrentId();
     cell->_iReferences=cell->_iExternalReferences=1;__xuiCellDefaultScalars(cell);
 }
 XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** output)
@@ -126,6 +127,7 @@ XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** output)
 }
 XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* cell)
 {
+    if(cell && cell->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(!__xuiCellValid(cell) || !cell->_bHeap || cell->_pOwnershipClaim)return XUI_ERROR_INVALID_ARGUMENT;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     if(cell->_iReferences==SIZE_MAX || cell->_iExternalReferences==SIZE_MAX){
@@ -139,6 +141,7 @@ XUI_API int xuiTableViewCellOutputReleaseOwnerChecked(xui_table_view_cell_output
 {
     if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
     *consumed=false;
+    if(cell && cell->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(!__xuiCellValid(cell) || !cell->_bHeap || !cell->_iExternalReferences)return XUI_ERROR_INVALID_ARGUMENT;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     --cell->_iExternalReferences;bool destroy=--cell->_iReferences==0;if(destroy)cell->_bRetiring=1;
@@ -154,6 +157,7 @@ XUI_API int xuiTableViewCellOutputDisposeChecked(xui_table_view_cell_output_t* c
 {
     if(!cell || !cell->_iMagic)return XUI_OK;
     if(!__xuiCellValid(cell) || cell->_bHeap)return XUI_ERROR_INVALID_ARGUMENT;
+    if(cell->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(cell->_iReferences!=1 || cell->_iCalls || cell->_iReadPins)return XUI_ERROR_BUSY;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     cell->_iExternalReferences=cell->_iReferences=0;cell->_bRetiring=1;
@@ -204,6 +208,7 @@ XUI_API int xuiTableViewCellOutputUse(xui_table_view_cell_output_t* cell,xui_tab
 {
     int result=__xuiCellMutable(cell,false);if(result!=XUI_OK)return result;
     if(!__xuiCellValid(cached) || cached->_pOwnershipClaim)return XUI_ERROR_INVALID_ARGUMENT;
+    if(cell->_iCreatorThread!=cached->_iCreatorThread)return XUI_ERROR_INVALID_STATE;
     if(cell==cached)return XUI_OK;
     xui_table_view_cell_output_t* source=(xui_table_view_cell_output_t*)__xuiCellSource(cached);
     /* Delegation is always a single edge to independently retainable storage.
@@ -316,6 +321,14 @@ static bool __xuiCellTrace(const void* data,xrtownershipvisitor visit,void* user
     return true;
 }
 static const xrtownershipops __xuiCellOps={__xuiCellCount,__xuiCellTrace};
+/* Metadata discovery reads only identity fields, immutable while a caller's
+ * real reference/snapshot protects storage. Busy/claim/clear stay separate. */
+static bool __xuiCellIdentity(xrtownershipref ref)
+{
+    const xui_table_view_cell_output_t* cell=ref.Data;
+    return ref.Ops==&__xuiCellOps && cell && cell->_iMagic==XUI_TABLE_CELL_MAGIC && cell->_bHeap;
+}
+
 XUI_API xrtownershipref xuiTableViewCellOutputOwnership(const xui_table_view_cell_output_t* cell)
 {return __xuiCellValid(cell) && cell->_bHeap ? (xrtownershipref){cell,&__xuiCellOps}:(xrtownershipref){0};}
 XUI_API bool xuiTableViewCellOutputBusy(const xui_table_view_cell_output_t* cell)
@@ -337,6 +350,7 @@ int xuiInternalTableCellMove(xui_table_view_cell_output_t* target,xui_table_view
 {
     int result=__xuiCellMutable(target,false);if(result!=XUI_OK)return result;
     result=__xuiCellMutable(source,false);if(result!=XUI_OK)return result;
+    if(target->_iCreatorThread!=source->_iCreatorThread)return XUI_ERROR_INVALID_STATE;
     if(target==source)return XUI_OK;
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(target,&scope);if(result!=XUI_OK)return result;
     xui_cell_payload_t old={0};xrtownershipscope mutation={0};
@@ -395,6 +409,28 @@ static const xrtownershipadapterv1 __xuiCellAdapter={
     sizeof(xrtownershipadapterv1),__xuiCellAdapterHold,__xuiCellAdapterDrop,
     __xuiCellAdapterClaim,__xuiCellAdapterRestore,NULL,__xuiCellAdapterClear,__xuiCellAdapterFinish
 };
+/* The optional typed completion preserves a failed final snapshot release,
+ * including false with no allocated diagnostic. One call consumes one Hold;
+ * the caller must never also invoke the legacy void Adapter.Drop. */
+/* Only immutable metadata is read here; a physical snapshot hold protects
+ * storage. In particular, do not read mutable pin/call/reference counters. */
+static bool __xuiCellAdapterDropReady(const void* data)
+{return data && ((const xui_table_view_cell_output_t*)data)->_iCreatorThread==xrtThreadCurrentId();}
+static xrtownershipfinishresult __xuiCellCompletionStep(const void* data,const void* token)
+{
+    if(!__xuiCellAdapterDropReady(data))return XRT_OWNERSHIP_FINISH_BUSY;
+    return __xuiCellAdapterFinish(data,token) ? XRT_OWNERSHIP_FINISH_READY:XRT_OWNERSHIP_FINISH_FAILED;
+}
+static bool __xuiCellAdapterDropChecked(const void* data)
+{return xuiTableViewCellOutputReleaseChecked((xui_table_view_cell_output_t*)data)==XUI_OK;}
+static const xrtownershipfinishv2 __xuiCellCompletionV2={
+    {sizeof(xrtownershipfinishv2),&__xuiCellAdapter,__xuiCellCompletionStep},
+    XRT_OWNERSHIP_FINISH_V2_TAG,__xuiCellAdapterDropChecked,__xuiCellAdapterDropReady
+};
+XUI_API const xrtownershipfinishv2* xuiTableViewCellOutputOwnershipCompletionV2(xrtownershipref ref)
+{
+    return __xuiCellIdentity(ref) ? &__xuiCellCompletionV2:NULL;
+}
 static bool __xuiCellPreparationReady(const void* data)
 {return !xuiTableViewCellOutputBusy(data);}
 static xrtownershipprepareresult __xuiCellPreparationPrepare(const void* data,const void* token)
@@ -407,18 +443,16 @@ static const xrtownershippreparationv1 __xuiCellPreparation={
     sizeof(xrtownershippreparationv1),&__xuiCellAdapter,__xuiCellPreparationReady,__xuiCellPreparationPrepare
 };
 XUI_API const xrtownershippreparationv1* xuiTableViewCellOutputOwnershipPreparationV1(xrtownershipref ref)
-{return ref.Ops==&__xuiCellOps && __xuiCellValid(ref.Data) ? &__xuiCellPreparation:NULL;}
+{return __xuiCellIdentity(ref) ? &__xuiCellPreparation:NULL;}
 static bool __xuiCellQuiescenceBusy(const void* data)
 {return xuiTableViewCellOutputBusy(data);}
 static const xrtownershipquiescencev1 __xuiCellQuiescence={sizeof(xrtownershipquiescencev1),&__xuiCellOps,__xuiCellQuiescenceBusy};
 XUI_API const xrtownershipadapterv1* xuiTableViewCellOutputOwnershipAdapterV1(xrtownershipref ref)
 {
-    if(ref.Ops!=&__xuiCellOps || !__xuiCellValid(ref.Data))return NULL;
-    const xui_table_view_cell_output_t* cell=ref.Data;
-    return cell->_bHeap && !cell->_bOwnershipCleared ? &__xuiCellAdapter:NULL;
+    return __xuiCellIdentity(ref) ? &__xuiCellAdapter:NULL;
 }
 XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenceV1(xrtownershipref ref)
-{return ref.Ops==&__xuiCellOps && __xuiCellValid(ref.Data) ? &__xuiCellQuiescence:NULL;}
+{return __xuiCellIdentity(ref) ? &__xuiCellQuiescence:NULL;}
 
 int xuiInternalTableCellFormatBegin(xui_widget widget,int row,int column,
     const xui_table_view_cell_output_t* cell,xui_table_cell_format_t* format)

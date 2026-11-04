@@ -2590,6 +2590,41 @@ static int __xuiStyleCommitChange(xui_context pContext)
 	return xuiStyleRefresh(pContext);
 }
 
+static xui_font __xuiTypeFont(xui_widget widget,xui_widget_type type,size_t index)
+{return *(xui_font*)((char*)widget->pTypeData+type->pFontOffsets[index]);}
+static void __xuiTypeFontRollback(xui_widget widget,xui_widget_type type)
+{
+    if(!__xuiWidgetTypeValid(type))return;
+    for(size_t i=type->iFontSlotCount;i>0;--i){
+        xui_font font=__xuiTypeFont(widget,type,i-1);
+        if(font)(void)xuiInternalFontRelease(widget->pContext,font);
+    }
+    __xuiTypeFontRollback(widget,type->pParent);
+}
+static int __xuiTypeFontAdmit(xui_widget widget,xui_widget_type type)
+{
+    if(!__xuiWidgetTypeValid(type) || !widget->pContext->pOwnedProxy)return XUI_OK;
+    int status=__xuiTypeFontAdmit(widget,type->pParent);if(status!=XUI_OK)return status;
+    for(size_t i=0;i<type->iFontSlotCount;++i){
+        status=xuiInternalFontAdmit(widget->pContext,__xuiTypeFont(widget,type,i));
+        if(status!=XUI_OK){
+            xerror* first=xrtTakeError();xuiInternalContextRecordFailure(widget->pContext,status);
+            for(size_t j=i;j>0;--j){xui_font font=__xuiTypeFont(widget,type,j-1);if(font)(void)xuiFontReleaseChecked(font);}
+            __xuiTypeFontRollback(widget,type->pParent);xrtSetErrorTake(first);return status;
+        }
+    }
+    return XUI_OK;
+}
+/* Recursion captures each owning slot before onDestroy can clear TypeData.
+ * All owner releases occur after onDestroy and in reverse slot order. */
+static void __xuiTypeDestroyWithFonts(xui_widget widget,xui_widget_type type,size_t index)
+{
+    if(widget->bTypeInitialized && widget->pContext->pOwnedProxy && index<type->iFontSlotCount){
+        xui_font font=__xuiTypeFont(widget,type,index);
+        __xuiTypeDestroyWithFonts(widget,type,index+1);
+        if(font)(void)xuiInternalFontRelease(widget->pContext,font);
+    }else if(type->onDestroy)type->onDestroy(widget,widget->pTypeData,type->pUser);
+}
 static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pType);
 
 static int __xuiWidgetTypeInitChain(xui_widget pWidget, xui_widget_type pType, const void* pCreateData)
@@ -2618,9 +2653,7 @@ static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pTyp
 	if ( !__xuiWidgetTypeValid(pType) ) {
 		return;
 	}
-	if ( pType->onDestroy != NULL ) {
-		pType->onDestroy(pWidget, pWidget->pTypeData, pType->pUser);
-	}
+    __xuiTypeDestroyWithFonts(pWidget,pType,0);
 	__xuiWidgetTypeDestroyChain(pWidget, pType->pParent);
 }
 
@@ -3615,6 +3648,14 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 		(void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);
 		return iRet;
 	}
+    /* Init setters only borrow. Admit the final fields exactly once after the
+     * full inheritance chain succeeds; partial failure rolls back held slots. */
+    iRet=pContext->pOwnedProxy && !xuiInternalWidgetIsValid(pWidget) ? XUI_ERROR_INVALID_STATE:__xuiTypeFontAdmit(pWidget,pType);
+    if(iRet!=XUI_OK){
+        xerror* first=xrtTakeError();xuiInternalContextRecordFailure(pContext,iRet);
+        __xuiWidgetTypeDestroyChain(pWidget,pType);
+        (void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);xrtSetErrorTake(first);return iRet;
+    }
 	pWidget->bTypeInitialized = 1;
 	*ppWidget = pWidget;
 	return XUI_OK;
@@ -5774,10 +5815,19 @@ XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisito
 XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor onVisit, void* pUser)
 {
 	if ( !xuiContextTraceEventOwners(pContext, onVisit, pUser) ) return false;
+    if(!xuiInternalContextTraceResources(pContext,onVisit,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {
         if(pWidget->pEventOwners) {
             for(const xui_callback_binding_t* binding=pWidget->pEventOwners->pBindings;binding;binding=binding->pNext) {
                 if(!onVisit(binding->tOwner.tReference,pUser))return false;
+            }
+        }
+        if(pContext->pOwnedProxy && pWidget->bTypeInitialized){
+            for(xui_widget_type type=pWidget->pType;type;type=type->pParent){
+                for(size_t i=0;i<type->iFontSlotCount;++i){
+                    xui_font font=__xuiTypeFont(pWidget,type,i);
+                    if(font && !onVisit(xuiFontOwnership(font),pUser))return false;
+                }
             }
         }
 		for ( xui_widget_type pType = pWidget->pType; pType != NULL; pType = pType->pParent )

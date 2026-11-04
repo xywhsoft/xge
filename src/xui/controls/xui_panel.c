@@ -747,7 +747,9 @@ XUI_API xui_widget_type xuiPanelGetType(xui_context pContext)
 	}
 	__xuiPanelRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiPanelAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_panel_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_panel_desc_t* pDesc)
@@ -860,22 +862,25 @@ XUI_API int xuiPanelSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_panel_data_t* pData;
 	xui_context pContext;
-	xui_font pOldFont;
 	int iRet;
 
 	pData = __xuiPanelGetData(pWidget);
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pOldFont = pData->pFont;
-	pData->pFont = pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
 	iRet = __xuiPanelSyncResolvedMask(pWidget, pData, XUI_PANEL_SYNC_TITLE_FONT,
 		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) pData->pFont = pOldFont;
+	if ( iRet != XUI_OK ) if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	xuiInternalOperationLeave(pContext);
-	return iRet;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 }
 
 XUI_API xui_font xuiPanelGetFont(xui_widget pWidget)

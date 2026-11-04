@@ -6506,7 +6506,9 @@ XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 	if ( xuiWidgetRegisterType(pContext, &pType, &desc) != XUI_OK ) return NULL;
 	pType->onPreparePaint = __xuiDockPreparePaint;
 	__xuiDockRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_dock_panel_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiDockPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_dock_panel_desc_t* pDesc)
@@ -6547,6 +6549,10 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	int iWindowChangeCount;
 	int i;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pData->pFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	(void)__xuiDockCancelPointerInteraction(pWidget, pData);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	pLayoutContext = pData->pLayoutContext;
@@ -6587,6 +6593,8 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	if ( xLayoutNodeIsValid(pData->pLayoutContext, pData->iRegionLayoutRoot) ) {
 		xLayoutNodeDestroy(pData->pLayoutContext, pData->iRegionLayoutRoot);
 	}
+    fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	__xuiDockDefaults(pData);
 	pData->pWidget = pWidget;
 	pData->pLayoutContext = pLayoutContext;
@@ -6614,7 +6622,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	(void)__xuiDockSetDragPreview(pWidget, pData, NULL);
 	__xuiDockInvalidate(pWidget, 1);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_widget pClient, int* pWindow)
@@ -7000,18 +7008,23 @@ XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pNewFont == pOldFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pNewFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	ret = (pData->pOptionMenu != NULL) ? xuiMenuSetFont(pData->pOptionMenu, pNewFont) : XUI_OK;
 	if ( ret == XUI_OK && pData->pOverflowMenu != NULL ) {
 		ret = xuiMenuSetFont(pData->pOverflowMenu, pNewFont);
 		if ( ret != XUI_OK && pData->pOptionMenu != NULL ) (void)xuiMenuSetFont(pData->pOptionMenu, pOldFont);
 	}
-	if ( ret != XUI_OK ) return ret;
-	pData->pFont = pNewFont;
+	if ( ret != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,ret);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
 		if ( pData->arrWindows[i].bUsed ) pData->arrWindows[i].bAutoHideLabelDirty = 1;
 	}
 	__xuiDockInvalidate(pWidget, 1);
-	return XUI_OK;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiDockPanelGetFont(xui_widget pWidget)

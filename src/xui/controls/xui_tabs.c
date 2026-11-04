@@ -2400,7 +2400,9 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiTabsRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_tabs_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_tabs_desc_t* pDesc)
@@ -2816,10 +2818,15 @@ XUI_API int xuiTabsSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pNewFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pNewFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = (pData->pOverflowMenu != NULL) ? xuiMenuSetFont(pData->pOverflowMenu, pNewFont) : XUI_OK;
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pNewFont;
-	return __xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,__xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiTabsGetFont(xui_widget pWidget)

@@ -1618,7 +1618,9 @@ XUI_API xui_widget_type xuiTagInputGetType(xui_context pContext)
 		return NULL;
 	}
 	__xuiTagInputRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_tag_input_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiTagInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_tag_input_desc_t* pDesc)
@@ -1893,22 +1895,25 @@ XUI_API const char* xuiTagInputGetPlaceholder(xui_widget pWidget)
 XUI_API int xuiTagInputSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_tag_input_data_t* pData;
-	xui_font pOldFont;
 	int iRet;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pOldFont = pData->pFont;
-	pData->pFont = pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	iRet = __xuiTagInputSyncInputStyle(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		pData->pFont = pOldFont;
+		if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 		(void)__xuiTagInputSyncInputStyle(pWidget, pData);
-		return iRet;
+		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiTagInputGetFont(xui_widget pWidget)

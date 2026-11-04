@@ -3254,7 +3254,9 @@ XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext)
 	__xuiDatePickerRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiDatePickerSyncStyle;
 	pType->pAccessibleAdapter = &g_xuiDatePickerAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_date_picker_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiDatePickerCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc,xui_widget pNativeOwner)
@@ -4022,8 +4024,10 @@ XUI_API int xuiDatePickerSetFont(xui_widget pWidget, xui_font pFont)
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pData->pFont = pFont;
-	return __xuiDatePickerInvalidateAll(pWidget, pData);
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,__xuiDatePickerInvalidateAll(pWidget, pData));
 }
 
 XUI_API xui_font xuiDatePickerGetFont(xui_widget pWidget)

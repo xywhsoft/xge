@@ -1317,6 +1317,8 @@ static int __xuiButtonInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
+static void __xuiButtonDestroy(xui_widget pWidget,void* pTypeData,void* pUser);
+
 static int __xuiButtonInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_button_data_t* pData;
@@ -1349,9 +1351,7 @@ static int __xuiButtonInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	pData->fBadgeSize = 12.0f;
 	pData->bTextMeasureDirty = 1;
 	iRet = __xuiButtonTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	if ( iRet != XUI_OK ) goto fail;
 	tPadding.fLeft = 10.0f;
 	tPadding.fTop = 6.0f;
 	tPadding.fRight = 10.0f;
@@ -1360,14 +1360,14 @@ static int __xuiButtonInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	(void)xuiWidgetSetFocusable(pWidget, 1);
 	(void)xuiWidgetSetTabStop(pWidget, 1);
 	iRet = __xuiButtonInitCacheStates(pWidget);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	if ( iRet != XUI_OK ) goto fail;
 	iRet = __xuiButtonInitEvents(pWidget);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	return __xuiButtonSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) goto fail;
+    iRet=__xuiButtonSyncState(pWidget,pData);
+    if(iRet==XUI_OK)return XUI_OK;
+fail:
+    __xuiButtonDestroy(pWidget,pData,NULL);
+    return iRet;
 }
 
 static void __xuiButtonDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1516,7 +1516,9 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 	__xuiButtonRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiButtonPreparePaint;
 	pType->pAccessibleAdapter = &g_xuiButtonAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_button_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiButtonCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_button_desc_t* pDesc,xui_widget pNativeOwner)
@@ -1626,9 +1628,11 @@ XUI_API int xuiButtonSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData->pFont == pFont ) {
 		return XUI_OK;
 	}
-	pData->pFont = pFont;
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
 	pData->bTextMeasureDirty = 1;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiButtonGetFont(xui_widget pWidget)

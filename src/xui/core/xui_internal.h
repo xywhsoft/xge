@@ -38,6 +38,28 @@ int xuiInternalCheckBoxCreatePart(xui_widget pOwner,xui_widget* ppWidget,const x
 
 int xuiInternalListViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_list_view_desc_t* pDesc);
 
+bool xuiInternalTextShapeTraceOwnership(const xui_text_shape_t* pShape,xrtownershipvisitor onVisit,void* pUser);
+int xuiInternalTextShapeReady(const xui_text_shape_t* pShape,bool bManaged);
+/* Stack-only native slot transaction. No language bridge or per-widget map. */
+typedef struct xui_font_slot_update_t {
+    xui_call_scope_t scope;
+    xui_context context;
+    xui_widget widget;
+    xui_font* slot;
+    xui_font previous,current,guarded;
+    struct xui_font_slot_update_t* next;
+    bool prepared,published,restored,preserveOld,ownsSlots,newHeld,guardHeld;
+} xui_font_slot_update_t;
+int xuiInternalFontSlotPrepare(xui_context context,xui_font* slot,xui_font font,bool admitted,bool preserveOld,xui_font_slot_update_t* update);
+int xuiInternalFontSlotPublish(xui_font_slot_update_t* update);
+int xuiInternalFontSlotBegin(xui_context context,xui_font* slot,xui_font font,bool admitted,xui_font_slot_update_t* update);
+int xuiInternalFontSlotRestore(xui_font_slot_update_t* update);
+int xuiInternalFontSlotEnd(xui_font_slot_update_t* update,bool commit,int status);
+int xuiInternalFontAdmit(xui_context context,xui_font font);
+int xuiInternalFontRelease(xui_context context,xui_font font);
+void xuiInternalContextRecordFailure(xui_context context,int status);
+bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user);
+
 void xuiInternalTableGridConfigProject(const xui_table_grid_editor_config_output_t* pOutput,xui_table_grid_editor_config_t* pConfig);
 
 /* Native Cell output read protection; last consumer ends it. */
@@ -426,6 +448,8 @@ struct xui_context_t {
 	xui_theme_t tTheme;
 	xui_chrome_style_t tChromeStyle;
 	xui_font pDefaultFont;
+    xui_proxy pOwnedProxy; /* one real capability owner; tProxy is a borrowed table copy */
+    xui_font_slot_update_t* pActiveFontUpdates; /* stack nodes, no allocation */
 	xui_font_entry_t arrInlineFonts[XUI_CONTEXT_FONT_INLINE];
 	xui_font_entry_t* pFonts;
 	int iFontCount;
@@ -461,6 +485,8 @@ struct xui_widget_type_t {
 	char* sName;
 	uint32_t iFlags;
 	size_t iTypeDataSize;
+    const size_t* pFontOffsets;
+    size_t iFontSlotCount;
 	void* pUser;
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;

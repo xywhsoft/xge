@@ -1399,7 +1399,9 @@ XUI_API xui_widget_type xuiCarouselGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCarouselRegisterStyleProperties(pContext, pType);
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_carousel_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const xui_carousel_desc_t* pDesc)
@@ -1641,18 +1643,21 @@ XUI_API int xuiCarouselSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	xui_font pNewFont;
-	xui_font pOldFont;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pData->pFont == pNewFont ) return XUI_OK;
-	pOldFont = pData->pFont;
-	pData->pFont = pNewFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pNewFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	iRet = __xuiCarouselInvalidate(pWidget, pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) pData->pFont = pOldFont;
-	return iRet;
+	if ( iRet != XUI_OK ) if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 }
 
 XUI_API xui_font xuiCarouselGetFont(xui_widget pWidget)

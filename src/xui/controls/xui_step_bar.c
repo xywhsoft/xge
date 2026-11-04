@@ -1008,7 +1008,9 @@ XUI_API xui_widget_type xuiStepBarGetType(xui_context pContext)
 	}
 	__xuiStepBarRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiStepBarAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_step_bar_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiStepBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_step_bar_desc_t* pDesc)
@@ -1165,11 +1167,16 @@ XUI_API int xuiStepBarSetFont(xui_widget pWidget, xui_font pFont)
 	pData = __xuiStepBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pFont;
-	return XUI_OK;
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
 }
 
 XUI_API xui_font xuiStepBarGetFont(xui_widget pWidget)

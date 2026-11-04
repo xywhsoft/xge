@@ -1954,6 +1954,10 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 		pType->onPreparePaint = __xuiIconPickerSyncStyle;
 		pType->pAccessibleAdapter = &g_xuiIconPickerAccessible;
 	}
+    if(iRet==XUI_OK){
+        static const size_t fontOffsets[]={offsetof(xui_icon_picker_data_t,pFont)};
+        pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    }
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 
@@ -2623,8 +2627,10 @@ XUI_API int xuiIconPickerSetFont(xui_widget pWidget, xui_font pFont)
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pData->pFont = pFont;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiIconPickerGetFont(xui_widget pWidget)

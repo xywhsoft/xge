@@ -1239,11 +1239,18 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 	if ( (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( iStride <= 0 ) {
-		iStride = pTexture->iWidth * 4;
+	if ( pTexture->iWidth > INT32_MAX / 4 || pTexture->iHeight > INT32_MAX / (pTexture->iWidth * 4) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( iStride < (pTexture->iWidth * 4) ) {
+	iCopyStride = pTexture->iWidth * 4;
+	if ( iStride <= 0 ) {
+		iStride = iCopyStride;
+	}
+	if ( iStride < iCopyStride ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (size_t)(pTexture->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pTexture->pBackend == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;
@@ -1252,11 +1259,14 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 	if ( (pShadow->pPixels == NULL) || (pShadow->iWidth != pTexture->iWidth) || (pShadow->iHeight != pTexture->iHeight) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
+	if ( pShadow->iStride < iCopyStride ||
+	     (size_t)(pTexture->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)pShadow->iStride ) {
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
 	pDst = (unsigned char*)pPixels;
 	pSrc = pShadow->pPixels;
-	iCopyStride = pTexture->iWidth * 4;
 	for ( i = 0; i < pTexture->iHeight; i++ ) {
-		memcpy(pDst + (i * iStride), pSrc + (i * pShadow->iStride), (size_t)iCopyStride);
+		memcpy(pDst + ((size_t)i * (size_t)iStride), pSrc + ((size_t)i * (size_t)pShadow->iStride), (size_t)iCopyStride);
 	}
 	return XGE_OK;
 }

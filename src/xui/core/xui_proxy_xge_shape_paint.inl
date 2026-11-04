@@ -4,15 +4,63 @@
 typedef struct xui_xge_shape_paint {
     xge_glyph_run_t run;
     xui_font font;
+    uint64_t iCreatorThread;
 } xui_xge_shape_paint;
+static bool __xuiProxyXgeShapePaintDropReady(const void* raw)
+{return raw && ((const xui_xge_shape_paint*)raw)->iCreatorThread==xrtThreadCurrentId();}
+static int __xuiProxyXgeShapePaintFreeChecked(void* owned,bool* consumed)
+{
+    if(consumed)*consumed=false;
+    if(!owned || !consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_xge_shape_paint* paint=owned;
+    if(!__xuiProxyXgeShapePaintDropReady(paint))return XUI_ERROR_BUSY;
+    xui_font font=paint->font;
+    xerror* previous=xrtTakeError();int status=XUI_OK;xerror* first=NULL;
+    xgeGlyphRunFree(&paint->run);
+    first=xrtTakeError();if(first)status=XUI_ERROR_BACKEND_FAILED;
+    bool fontConsumed=true;
+    if(xuiInternalProxyResourceManaged(font,XUI_OWNED_FONT)){
+        int next=xuiFontReleaseOwnerChecked(font,&fontConsumed);xerror* error=xrtTakeError();
+        if(status==XUI_OK && (next!=XUI_OK || error)){status=next==XUI_OK ? XUI_ERROR_CALLBACK_FAILED:next;first=error;}
+        else xrtErrorFree(error);
+    }else if(--font->iPaintRefs==0 && font->bDestroyPending){
+        __xuiProxyXgeFontRelease(font);xerror* error=xrtTakeError();
+        if(status==XUI_OK && error){status=XUI_ERROR_BACKEND_FAILED;first=error;}else xrtErrorFree(error);
+    }
+    if(!fontConsumed){
+        if(status==XUI_OK)status=XUI_ERROR_INVALID_STATE;
+        xrtErrorFree(previous);xrtSetErrorTake(first);return status;
+    }
+    xrtFree(paint);
+    *consumed=true;
+    if(status!=XUI_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}else xrtSetErrorTake(previous);
+    return status;
+}
 static void __xuiProxyXgeShapePaintFree(void* owned)
 {
-    xui_xge_shape_paint* paint=owned;
-    xui_font font=paint->font;
-    xgeGlyphRunFree(&paint->run);
-    if(--font->iPaintRefs==0 && font->bDestroyPending)__xuiProxyXgeFontRelease(font);
-    xrtFree(paint);
+    bool consumed=false;int status=__xuiProxyXgeShapePaintFreeChecked(owned,&consumed);
+    if(status!=XUI_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
 }
+static bool __xuiProxyXgeShapePaintTrace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    if(!raw || !visit)return false;
+    const xui_xge_shape_paint* paint=raw;
+    if(!xuiInternalProxyResourceManaged(paint->font,XUI_OWNED_FONT))return true;
+    return visit(xuiFontOwnership(paint->font),user);
+}
+static int __xuiProxyXgeShapePaintDrop(void* raw)
+{
+    bool consumed=false;int status=__xuiProxyXgeShapePaintFreeChecked(raw,&consumed);
+    /* The caller admitted this unique owner on its creator thread and calls
+     * outside Freeze. It owns one real Font reference, whose release consumes
+     * on every semantic result. A diagnostic failure never changes that bit. */
+    if(!consumed)abort();
+    return status;
+}
+static const xui_text_paint_ownership_v1_t __xuiProxyXgeShapePaintOwnership={
+    sizeof(xui_text_paint_ownership_v1_t),XUI_TEXT_PAINT_OWNERSHIP_V1_TAG,
+    __xuiProxyXgeShapePaintDropReady,__xuiProxyXgeShapePaintTrace,__xuiProxyXgeShapePaintDrop
+};
 static int __xuiProxyXgeShapeGlyphAt(const xge_glyph_run_t* run,int offset)
 {
     int lo=0,hi=run->iGlyphCount;
@@ -30,6 +78,8 @@ static int __xuiProxyXgeShapeRange(const xui_text_shape_t* shape,int start,int e
         return XUI_ERROR_INVALID_ARGUMENT;
     if(!shape->pPaint || shape->paintFree!=__xuiProxyXgeShapePaintFree)return XUI_ERROR_UNSUPPORTED;
     paint=shape->pPaint;
+    if(xuiInternalProxyResourceManaged(paint->font,XUI_OWNED_FONT) &&
+       !xuiInternalProxyResourceReady(paint->font,XUI_OWNED_FONT))return XUI_ERROR_INVALID_STATE;
     if(end>paint->run.iTextSize)return XUI_ERROR_INVALID_ARGUMENT;
     first=__xuiProxyXgeShapeGlyphAt(&paint->run,start);
     last=__xuiProxyXgeShapeGlyphAt(&paint->run,end);

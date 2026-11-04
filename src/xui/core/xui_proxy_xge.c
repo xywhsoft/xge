@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_proxy_resource.h"
 #include "xui_native_accessibility_internal.h"
 #include "xge.h"
 #include "xge_ime_owner_internal.h"
@@ -25,6 +26,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_PROXY_XGE_SURFACE_MAGIC	0x58554953u
@@ -189,6 +191,7 @@ static void __xuiProxyXgeRequestFrame(xui_proxy pProxy, float fDelaySeconds)
 }
 
 struct xui_surface_t {
+	xui_owned_resource_t tOwned;
 	uint32_t iMagic;
 	int iKind;
 	int iFormat;
@@ -199,6 +202,7 @@ struct xui_surface_t {
 };
 
 struct xui_font_t {
+	xui_owned_resource_t tOwned;
 	uint32_t iMagic;
 	uint32_t iFlags;
 	unsigned iPaintRefs;
@@ -207,6 +211,47 @@ struct xui_font_t {
 	xge_font_t tFallbackFont;
 	int bHasFallback;
 };
+_Static_assert(offsetof(struct xui_font_t,iMagic)==sizeof(xui_owned_resource_t),"owned font payload offset");
+_Static_assert(offsetof(struct xui_surface_t,iMagic)==sizeof(xui_owned_resource_t),"owned surface payload offset");
+
+static int __xuiProxyXgeFontPayloadFinalize(xui_proxy proxy,void* payload)
+{
+	(void)proxy;xui_font font=(xui_font)((xui_owned_resource_t*)payload-1);
+	xgeFontFree(&font->tFont);
+	if(font->bHasFallback)xgeFontFree(&font->tFallbackFont);
+	font->bHasFallback=0;font->iMagic=0;return XUI_OK;
+}
+static int __xuiProxyXgeSurfacePayloadFinalize(xui_proxy proxy,void* payload)
+{
+	(void)proxy;xui_surface surface=(xui_surface)((xui_owned_resource_t*)payload-1);
+	if(surface->iFlags & XUI_SURFACE_USAGE_TARGET)xgeRenderTargetFree(&surface->tTarget);
+	else xgeTextureFree(&surface->tTexture);
+	surface->iMagic=0;return XUI_OK;
+}
+static xui_font __xuiProxyXgeFontAlloc(xui_proxy proxy,int* status)
+{
+	xui_font font=NULL;
+	if(xuiProxyIsOwned(proxy)){
+		void* payload=NULL;*status=xuiFontCreateOwned(proxy,sizeof(*font)-sizeof(font->tOwned),__xuiProxyXgeFontPayloadFinalize,&font,&payload);
+	}else{font=xrtCalloc(1,sizeof(*font));*status=font ? XUI_OK:XGE_ERROR_OUT_OF_MEMORY;}
+	return font;
+}
+/* Failure rollback keeps the operation's original diagnostic, even if a
+ * provider owner's cleanup reports another failure. */
+static void __xuiProxyXgeFontDiscard(xui_font font)
+{
+	xerror* primary=xrtTakeError();
+	if(xuiInternalProxyResourceManaged(font,XUI_OWNED_FONT)){bool consumed=false;(void)xuiFontReleaseOwnerChecked(font,&consumed);}
+	else{(void)__xuiProxyXgeFontPayloadFinalize(NULL,xuiInternalProxyResourcePayload(font));xrtFree(font);}
+	xrtClearError();xrtSetErrorTake(primary);
+}
+static void __xuiProxyXgeSurfaceDiscard(xui_surface surface)
+{
+	xerror* primary=xrtTakeError();
+	if(xuiInternalProxyResourceManaged(surface,XUI_OWNED_SURFACE)){bool consumed=false;(void)xuiSurfaceReleaseOwnerChecked(surface,&consumed);}
+	else{(void)__xuiProxyXgeSurfacePayloadFinalize(NULL,xuiInternalProxyResourcePayload(surface));xrtFree(surface);}
+	xrtClearError();xrtSetErrorTake(primary);
+}
 
 struct xui_draw_context_t {
 	uint32_t iMagic;
@@ -354,6 +399,8 @@ static uint32_t __xuiProxyXgeTextFlags(uint32_t iFlags)
 
 static int __xuiProxyXgeFontValid(xui_font pFont)
 {
+	if(xuiInternalProxyResourceManaged(pFont,XUI_OWNED_FONT) &&
+	   (pFont->tOwned.onFinalize!=__xuiProxyXgeFontPayloadFinalize || !xuiInternalProxyResourceReady(pFont,XUI_OWNED_FONT)))return 0;
 	return (pFont != NULL) &&
 	       (pFont->iMagic == XUI_PROXY_XGE_FONT_MAGIC) &&
 	       !pFont->bDestroyPending &&
@@ -363,6 +410,8 @@ static int __xuiProxyXgeFontValid(xui_font pFont)
 static int __xuiProxyXgeSurfaceValid(xui_surface pSurface)
 {
 	xge_texture pTexture;
+	if(xuiInternalProxyResourceManaged(pSurface,XUI_OWNED_SURFACE) &&
+	   (pSurface->tOwned.onFinalize!=__xuiProxyXgeSurfacePayloadFinalize || !xuiInternalProxyResourceReady(pSurface,XUI_OWNED_SURFACE)))return 0;
 
 	if ( (pSurface == NULL) ||
 	     (pSurface->iMagic != XUI_PROXY_XGE_SURFACE_MAGIC) ||
@@ -416,10 +465,10 @@ static int __xuiProxyXgeSurfaceSize(xui_surface pSurface, int* pWidth, int* pHei
 	return XGE_OK;
 }
 
-static void __xuiProxyXgePremultiplyRGBA(unsigned char* pDst, const unsigned char* pSrc, int iCount)
+static void __xuiProxyXgePremultiplyRGBA(unsigned char* pDst, const unsigned char* pSrc, size_t iCount)
 {
 	unsigned int iA;
-	int i;
+	size_t i;
 
 	for ( i = 0; i < iCount; i++ ) {
 		iA = (unsigned int)pSrc[(i * 4) + 3];
@@ -443,11 +492,16 @@ static int __xuiProxyXgeSurfacePackRGBA(const void* pPixels, int iWidth, int iHe
 	}
 	*ppPacked = NULL;
 	*ppOutPixels = NULL;
-	if ( pPixels == NULL ) {
-		return XGE_OK;
-	}
 	if ( (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	/* The texture's packed CPU storage uses an int byte count. Validate
+	 * before multiplication, input reads, allocation, or the borrowed fast path. */
+	if ( iWidth > INT32_MAX / 4 || iHeight > INT32_MAX / (iWidth * 4) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( pPixels == NULL ) {
+		return XGE_OK;
 	}
 	iRowBytes = iWidth * 4;
 	if ( iStride <= 0 ) {
@@ -455,6 +509,9 @@ static int __xuiProxyXgeSurfacePackRGBA(const void* pPixels, int iWidth, int iHe
 	}
 	if ( iStride < iRowBytes ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (size_t)(iHeight - 1) > (SIZE_MAX - (size_t)iRowBytes) / (size_t)iStride ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	bPremultiply = ((iFlags & XUI_SURFACE_ALPHA_STRAIGHT) != 0);
 	if ( (iStride == iRowBytes) && !bPremultiply ) {
@@ -470,18 +527,21 @@ static int __xuiProxyXgeSurfacePackRGBA(const void* pPixels, int iWidth, int iHe
 		memcpy(pPacked + ((size_t)i * (size_t)iRowBytes), pSrc + ((size_t)i * (size_t)iStride), (size_t)iRowBytes);
 	}
 	if ( bPremultiply ) {
-		__xuiProxyXgePremultiplyRGBA(pPacked, pPacked, iWidth * iHeight);
+		__xuiProxyXgePremultiplyRGBA(pPacked, pPacked, (size_t)iWidth * (size_t)iHeight);
 	}
 	*ppPacked = pPacked;
 	*ppOutPixels = pPacked;
 	return XGE_OK;
 }
 
-static xui_surface __xuiProxyXgeSurfaceAlloc(uint32_t iFlags)
+static xui_surface __xuiProxyXgeSurfaceAlloc(xui_proxy pProxy,uint32_t iFlags,int* status)
 {
 	xui_surface pSurface;
 
-	pSurface = (xui_surface)xrtCalloc(1, sizeof(*pSurface));
+	if(xuiProxyIsOwned(pProxy)){
+		void* payload=NULL;pSurface=NULL;
+		*status=xuiSurfaceCreateOwned(pProxy,sizeof(*pSurface)-sizeof(pSurface->tOwned),__xuiProxyXgeSurfacePayloadFinalize,&pSurface,&payload);
+	}else{pSurface=(xui_surface)xrtCalloc(1,sizeof(*pSurface));*status=pSurface ? XUI_OK:XGE_ERROR_OUT_OF_MEMORY;}
 	if ( pSurface == NULL ) {
 		return NULL;
 	}
@@ -866,9 +926,9 @@ static int __xuiProxyXgeSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, 
 	     ((pDesc->iFlags & XUI_SURFACE_COMPRESS_MASK) == XUI_SURFACE_COMPRESS_MASK) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pSurface = __xuiProxyXgeSurfaceAlloc(pDesc->iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,pDesc->iFlags,&iRet);
 	if ( pSurface == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	if ( (pSurface->iFlags & XUI_SURFACE_USAGE_TARGET) != 0 ) {
 		iRet = xgeRenderTargetCreate(&pSurface->tTarget, pDesc->iWidth, pDesc->iHeight);
@@ -876,7 +936,7 @@ static int __xuiProxyXgeSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, 
 		iRet = xgeTextureCreateRGBAEx(&pSurface->tTexture, pDesc->iWidth, pDesc->iHeight, NULL, pDesc->iFlags & XUI_SURFACE_COMPRESS_MASK);
 	}
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -901,12 +961,12 @@ static int __xuiProxyXgeSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurfa
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,iFlags,&iRet);
 	if ( pSurface == NULL ) {
 		if ( pPacked != NULL ) {
 			xrtFree(pPacked);
 		}
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	if ( (pSurface->iFlags & XUI_SURFACE_USAGE_TARGET) != 0 ) {
 		iRet = xgeRenderTargetCreate(&pSurface->tTarget, iWidth, iHeight);
@@ -924,7 +984,7 @@ static int __xuiProxyXgeSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurfa
 		xrtFree(pPacked);
 	}
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -944,13 +1004,13 @@ static int __xuiProxyXgeSurfaceLoadFile(xui_proxy pProxy, xui_surface* ppSurface
 	}
 	(void)pProxy;
 	*ppSurface = NULL;
-	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,iFlags,&iRet);
 	if ( pSurface == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	iRet = xgeTextureLoadEx(&pSurface->tTexture, sPath, __xuiProxyXgeImageFlags(iFlags) | (iFlags & XUI_SURFACE_COMPRESS_MASK));
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -970,13 +1030,13 @@ static int __xuiProxyXgeSurfaceLoadMemory(xui_proxy pProxy, xui_surface* ppSurfa
 	}
 	(void)pProxy;
 	*ppSurface = NULL;
-	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,iFlags,&iRet);
 	if ( pSurface == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	iRet = xgeTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, __xuiProxyXgeImageFlags(iFlags) | (iFlags & XUI_SURFACE_COMPRESS_MASK));
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -996,13 +1056,13 @@ static int __xuiProxyXgeSurfaceLoadSvgFile(xui_proxy pProxy, xui_surface* ppSurf
 	}
 	(void)pProxy;
 	*ppSurface = NULL;
-	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,iFlags,&iRet);
 	if ( pSurface == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	iRet = xgeSvgTextureLoadEx(&pSurface->tTexture, sPath, iWidth, iHeight, iFlags & XUI_SURFACE_COMPRESS_MASK);
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -1021,13 +1081,13 @@ static int __xuiProxyXgeSurfaceLoadSvgMemory(xui_proxy pProxy, xui_surface* ppSu
 	}
 	(void)pProxy;
 	*ppSurface = NULL;
-	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	pSurface = __xuiProxyXgeSurfaceAlloc(pProxy,iFlags,&iRet);
 	if ( pSurface == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	iRet = xgeSvgTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, iWidth, iHeight, iFlags & XUI_SURFACE_COMPRESS_MASK);
 	if ( iRet != XGE_OK ) {
-		xrtFree(pSurface);
+		__xuiProxyXgeSurfaceDiscard(pSurface);
 		return iRet;
 	}
 	*ppSurface = pSurface;
@@ -1495,22 +1555,22 @@ static int __xuiProxyXgeFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const c
 	}
 	(void)pProxy;
 	*ppFont = NULL;
-	pFont = (xui_font)xrtCalloc(1, sizeof(*pFont));
+	pFont = __xuiProxyXgeFontAlloc(pProxy,&iRet);
 	if ( pFont == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	bUseXrf = __xuiProxyXgeFontUseXrf(sPath, iFlags);
 	if ( bUseXrf ) {
 		iRet = xgeFontLoadXRF(&pFont->tFont, sPath);
 	} else {
 		if ( fSize <= 0.0f ) {
-			xrtFree(pFont);
+			__xuiProxyXgeFontDiscard(pFont);
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 		iRet = xgeFontLoad(&pFont->tFont, sPath, fSize);
 	}
 	if ( iRet != XGE_OK ) {
-		xrtFree(pFont);
+		__xuiProxyXgeFontDiscard(pFont);
 		return iRet;
 	}
 	if ( !bUseXrf && xgeFontFallbackGet(&pFont->tFallbackFont, fSize) == XGE_OK ) {
@@ -1533,21 +1593,21 @@ static int __xuiProxyXgeFontLoadMemory(xui_proxy pProxy, xui_font* ppFont, const
 	}
 	(void)pProxy;
 	*ppFont = NULL;
-	pFont = (xui_font)xrtCalloc(1, sizeof(*pFont));
+	pFont = __xuiProxyXgeFontAlloc(pProxy,&iRet);
 	if ( pFont == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
+		return iRet;
 	}
 	if ( (iFlags & XUI_FONT_FORMAT_XRF) != 0 ) {
 		iRet = xgeFontLoadXRFMemory(&pFont->tFont, pData, iSize);
 	} else {
 		if ( fSize <= 0.0f ) {
-			xrtFree(pFont);
+			__xuiProxyXgeFontDiscard(pFont);
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 		iRet = xgeFontLoadMemory(&pFont->tFont, pData, iSize, fSize);
 	}
 	if ( iRet != XGE_OK ) {
-		xrtFree(pFont);
+		__xuiProxyXgeFontDiscard(pFont);
 		return iRet;
 	}
 	if ( (iFlags & XUI_FONT_FORMAT_XRF) == 0 && xgeFontFallbackGet(&pFont->tFallbackFont, fSize) == XGE_OK ) {
@@ -1597,6 +1657,11 @@ static void __xuiProxyXgeFontDestroy(xui_proxy pProxy, xui_font pFont)
 		return;
 	}
 	(void)pProxy;
+	if(xuiInternalProxyResourceManaged(pFont,XUI_OWNED_FONT)){
+		bool consumed=false;int status=xuiFontReleaseOwnerChecked(pFont,&consumed);
+		if(status!=XUI_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+		return;
+	}
 	if ( !__xuiProxyXgeFontValid(pFont) ) {
 		return;
 	}
@@ -1617,15 +1682,14 @@ static int __xuiProxyXgeFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_
 	if ( pProxy == NULL || ppFont == NULL || !__xuiProxyXgeFontValid(pSource) || fSize <= 0.0f )
 		return XGE_ERROR_INVALID_ARGUMENT;
 	*ppFont = NULL;
-	pFont = (xui_font)xrtCalloc(1, sizeof(*pFont));
-	if ( pFont == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	pFont = __xuiProxyXgeFontAlloc(pProxy,&iRet);
+	if ( pFont == NULL ) return iRet;
 	iRet = xgeFontCreateSized(&pFont->tFont, &pSource->tFont, fSize);
-	if ( iRet != XGE_OK ) { xrtFree(pFont); return iRet; }
+	if ( iRet != XGE_OK ) { __xuiProxyXgeFontDiscard(pFont); return iRet; }
 	if ( pSource->bHasFallback ) {
 		iRet = xgeFontCreateSized(&pFont->tFallbackFont, &pSource->tFallbackFont, fSize);
 		if ( iRet != XGE_OK ) {
-			xgeFontFree(&pFont->tFont);
-			xrtFree(pFont);
+			__xuiProxyXgeFontDiscard(pFont);
 			return iRet;
 		}
 		xgeFontSetFallback(&pFont->tFont, &pFont->tFallbackFont);
@@ -2219,19 +2283,14 @@ static int __xuiProxyXgeDrawClipClear(xui_proxy pProxy, xui_draw_context pDraw)
 
 static void __xuiProxyXgeSurfaceDestroy(xui_proxy pProxy, xui_surface pSurface)
 {
-	if ( pProxy == NULL ) {
+	if(!pProxy)return;
+	if(xuiInternalProxyResourceManaged(pSurface,XUI_OWNED_SURFACE)){
+		bool consumed=false;int status=xuiSurfaceReleaseOwnerChecked(pSurface,&consumed);
+		if(status!=XUI_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
 		return;
 	}
-	(void)pProxy;
-	if ( !__xuiProxyXgeSurfaceValid(pSurface) ) {
-		return;
-	}
-	if ( (pSurface->iFlags & XUI_SURFACE_USAGE_TARGET) != 0 ) {
-		xgeRenderTargetFree(&pSurface->tTarget);
-	} else {
-		xgeTextureFree(&pSurface->tTexture);
-	}
-	pSurface->iMagic = 0;
+	if(!__xuiProxyXgeSurfaceValid(pSurface))return;
+	(void)__xuiProxyXgeSurfacePayloadFinalize(pProxy,xuiInternalProxyResourcePayload(pSurface));
 	xrtFree(pSurface);
 }
 
@@ -2899,12 +2958,17 @@ static int __xuiProxyXgeTextShape(xui_proxy pProxy, const xui_text_item_t* pText
 	}
 	if((pTextItem->iFlags & XUI_TEXT_SHAPE_RETAIN_PAINT) && tRun.iGlyphCount){
 		xui_xge_shape_paint* paint=xrtCalloc(1,sizeof(*paint));
-		if(!paint || pTextItem->pFont->iPaintRefs==UINT_MAX){
+		bool managed=xuiInternalProxyResourceManaged(pTextItem->pFont,XUI_OWNED_FONT);
+		int retain=paint && managed ? xuiFontAddRef(pTextItem->pFont):XUI_OK;
+		if(!paint || retain!=XUI_OK || (!managed && pTextItem->pFont->iPaintRefs==UINT_MAX)){
 			xrtFree(paint);xgeGlyphRunFree(&tRun);xuiTextShapeFree(pShape);
-			return XUI_ERROR_OUT_OF_MEMORY;
+			return retain!=XUI_OK ? retain:XUI_ERROR_OUT_OF_MEMORY;
 		}
-		paint->run=tRun;paint->font=pTextItem->pFont;paint->font->iPaintRefs++;
+		paint->run=tRun;paint->font=pTextItem->pFont;paint->iCreatorThread=xrtThreadCurrentId();
+		if(!managed)paint->font->iPaintRefs++;
 		pShape->pPaint=paint;pShape->paintFree=__xuiProxyXgeShapePaintFree;
+		pShape->paintFreeChecked=__xuiProxyXgeShapePaintFreeChecked;
+		pShape->pPaintOwnership=&__xuiProxyXgeShapePaintOwnership;
 		pShape->iPaintBytes=sizeof(*paint)+xgeGlyphRunRetainedBytes(&tRun);
 	}else xgeGlyphRunFree(&tRun);
 	return XUI_OK;
@@ -3285,6 +3349,12 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.clockSeconds = __xuiProxyXgeClockSeconds;
 	tProxy.requestFrame = __xuiProxyXgeRequestFrame;
 	return tProxy;
+}
+
+int xuiProxyXgeCreate(xui_proxy* output)
+{
+	xui_proxy_t source=xuiProxyXge();
+	return xuiInternalProxyCreateOwned(&source,NULL,true,0,output);
 }
 
 #endif

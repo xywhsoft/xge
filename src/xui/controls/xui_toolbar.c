@@ -1834,7 +1834,9 @@ XUI_API xui_widget_type xuiToolbarGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiToolbarRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiToolbarPreparePaint;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_toolbar_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiToolbarCreate(xui_context pContext, xui_widget* ppWidget, const xui_toolbar_desc_t* pDesc)
@@ -2400,21 +2402,24 @@ XUI_API xui_rect_t xuiToolbarGetOverflowRect(xui_widget pWidget)
 XUI_API int xuiToolbarSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
-	xui_font pOldFont;
 	int iOldChangeCount;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pOldFont = pData->pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iOldChangeCount = pData->iChangeCount;
-	pData->pFont = pFont;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		pData->pFont = pOldFont;
+		if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 		pData->iChangeCount = iOldChangeCount;
 	}
-	return iRet;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 }
 
 XUI_API xui_font xuiToolbarGetFont(xui_widget pWidget)

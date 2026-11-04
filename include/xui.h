@@ -22,7 +22,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	16
+#define XUI_PROXY_VERSION	17
 
 typedef enum xui_result_t {
 /* 成功。 */
@@ -1820,6 +1820,20 @@ typedef struct xui_text_caret_t {
 	float fAdvance;
 } xui_text_caret_t;
 
+/* Retained paint is a unique native owner. Metadata is immutable and kept
+ * resident by the paint's actual backend/capability owners, not by a borrowed
+ * function-table pointer. TraceRaw lists real owned references once. DropReady
+ * is pure/nonallocating under freeze; after successful admission, DropChecked
+ * runs outside freeze and consumes exactly one owner on EVERY return status.
+ * A record copy is an ownership move only; it does not create a second owner. */
+#define XUI_TEXT_PAINT_OWNERSHIP_V1_TAG UINT64_C(0x58554954504f5731)
+typedef struct xui_text_paint_ownership_v1_t {
+    size_t size;
+    uint64_t AbiTag;
+    bool (*DropReady)(const void* pPaint);
+    bool (*TraceRaw)(const void* pPaint,xrtownershipvisitor onVisit,void* pUser);
+    int (*DropChecked)(void* pPaint);
+} xui_text_paint_ownership_v1_t;
 typedef struct xui_text_shape_t {
 	uint32_t iSize;
 	uint32_t iFlags;
@@ -1842,6 +1856,9 @@ typedef struct xui_text_shape_t {
 	void* pPaint;
 	size_t iPaintBytes;
 	void (*paintFree)(void* pPaint);
+    /* Checked consuming release; status and semantic consumption are independent. */
+    int (*paintFreeChecked)(void* pPaint,bool* pConsumed);
+    const xui_text_paint_ownership_v1_t* pPaintOwnership;
 } xui_text_shape_t;
 
 typedef struct xui_text_paint_span_t {
@@ -2129,6 +2146,7 @@ typedef struct xui_code_command_context_t xui_code_command_context_t;
 typedef struct xui_code_theme_t xui_code_theme_t;
 typedef struct xui_code_command_map_t xui_code_command_map_t;
 typedef struct xui_code_find_scope_t xui_code_find_scope_t;
+struct xui_proxy_capability_t;
 typedef struct xui_proxy_t xui_proxy_t;
 typedef struct xui_code_annotation_store_t xui_code_annotation_store_t;
 typedef struct xui_code_language_registry_t xui_code_language_registry_t;
@@ -4610,6 +4628,7 @@ struct xui_table_view_cell_output_t {
     uint32_t iBackgroundColor, iTextColor, iGridColor;
     int bReadOnly;
     uint32_t _iMagic;
+    uint64_t _iCreatorThread; /* immutable cleanup affinity; not a UI mutex */
     int _bHeap, _bRetiring;
     const void* _pOwnershipClaim;
     int _bOwnershipCleared, _bOwnershipFinished;
@@ -6169,6 +6188,7 @@ struct xui_proxy_t {
 	xui_zstd_decompress_proc zstdDecompress;
 	xui_clock_seconds_proc clockSeconds;
 	xui_request_frame_proc requestFrame;
+    struct xui_proxy_capability_t* _pCapability; /* Private immutable owned backend capability. */
 };
 
 /* 创建 XUI 上下文（根与覆盖根就绪；渲染前需 xuiSetProxy 绑定后端）。 */
@@ -6234,6 +6254,51 @@ XUI_API const char* xuiGetLanguageName(xui_language pLanguage);
 XUI_API const char* xuiTranslate(xui_context pContext, int iTextId);
 /* 绑定渲染代理（xuiCreate 后、渲染前调用；引擎适配见 xuiProxyXge）。 */
 XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy);
+/* Safe shared capability/resource protocol; legacy by-value proxies stay caller-managed. */
+/* Owned custom proxy providers borrow memory/text/descriptor inputs only for
+ * the physical call, including nested borrowed pointers. They must not store
+ * or silently own those pointers. Persistent use requires a native copy or an
+ * explicit retain of an owned Font/Surface/Proxy resource. Default-backend
+ * synchronous copying does not imply that arbitrary custom providers copy. */
+/* Called at most once. Every return semantically consumes the backend payload;
+ * a nonzero status reports failure and must never request a second finalization. */
+typedef int (*xui_proxy_payload_finalize_proc)(xui_proxy pProxy, void* pPayload);
+/* Explicit provider promise: every resource/payload/backend-owner finalizer
+ * can run on any thread. This does not make ordinary UI calls thread-safe. */
+#define XUI_PROXY_OWNED_ANYTHREAD_FINALIZE UINT32_C(1)
+XUI_API int xuiProxyCreateOwnedEx(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, uint32_t iFlags, xui_proxy* ppProxy);
+XUI_API int xuiProxyCreateOwned(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, xui_proxy* ppProxy);
+XUI_API int xuiProxyXgeCreate(xui_proxy* ppProxy);
+XUI_API int xuiProxyAddRef(xui_proxy pProxy);
+XUI_API int xuiProxyReleaseOwnerChecked(xui_proxy pProxy, bool* pConsumed);
+XUI_API xrtownershipref xuiProxyOwnership(xui_proxy pProxy);
+XUI_API bool xuiProxyIsOwned(const xui_proxy_t* pProxy);
+/* Existing xuiSetProxy/by-value xuiProxyXge remain explicit caller-managed C. */
+XUI_API int xuiSetProxyOwned(xui_context pContext, xui_proxy pProxy);
+/* One allocation: common header + zeroed backend payload. Finalize runs
+ * outside graph freeze, never frees the common header, never repeats on failure. */
+XUI_API int xuiFontCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_proxy_payload_finalize_proc onFinalize, xui_font* ppFont, void** ppPayload);
+XUI_API int xuiSurfaceCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_proxy_payload_finalize_proc onFinalize, xui_surface* ppSurface, void** ppPayload);
+XUI_API int xuiFontAddRef(xui_font pFont);
+XUI_API int xuiFontReleaseOwnerChecked(xui_font pFont, bool* pConsumed);
+XUI_API xui_proxy xuiFontGetProxy(xui_font pFont); /* borrowed, exact capability */
+XUI_API xrtownershipref xuiFontOwnership(xui_font pFont);
+XUI_API int xuiSurfaceAddRef(xui_surface pSurface);
+XUI_API int xuiSurfaceReleaseOwnerChecked(xui_surface pSurface, bool* pConsumed);
+XUI_API xui_proxy xuiSurfaceGetProxy(xui_surface pSurface);
+XUI_API xrtownershipref xuiSurfaceOwnership(xui_surface pSurface);
+/* Exact no-hook/no-allocation NativeOps admission, including busy participants. */
+XUI_API const xrtownershipadapterv1* xuiProxyResourceOwnershipAdapterV1(xrtownershipref ref);
+XUI_API const xrtownershippreparationv1* xuiProxyResourceOwnershipPreparationV1(xrtownershipref ref);
+XUI_API const xrtownershipfinishv1* xuiProxyResourceOwnershipCompletionV1(xrtownershipref ref);
+XUI_API const xrtownershipfinishv2* xuiProxyResourceOwnershipCompletionV2(xrtownershipref ref);
+XUI_API const xrtownershipquiescencev1* xuiProxyResourceOwnershipQuiescenceV1(xrtownershipref ref);
+XUI_API bool xuiProxyResourceOwnershipBusy(xrtownershipref ref);
+
+XUI_API int xuiProxyReleaseChecked(xui_proxy pProxy);
+XUI_API int xuiFontReleaseChecked(xui_font pFont);
+XUI_API int xuiSurfaceReleaseChecked(xui_surface pSurface);
+
 /* 输出当前渲染代理函数表。 */
 XUI_API int xuiGetProxy(xui_context pContext, xui_proxy_t* pProxy);
 /* 输出代理能力位。 */
@@ -6717,6 +6782,12 @@ XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_des
 /* 经引擎代理整形文本（字形序列，供自绘）。 */
 XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape);
 /* 释放整形输出的字形序列。 */
+/* Checked cleanup always frees clusters/carets. A consumed paint is cleared
+ * even on failure; an unconsumed paint and its hooks remain for explicit retry.
+ * The caller exclusively owns the record: hooks must not replace it during
+ * cleanup. A pre-existing diagnostic is preserved; status reports cleanup
+ * failure independently, including failure with a NULL diagnostic. */
+XUI_API int xuiTextShapeFreeChecked(xui_text_shape_t* pShape);
 XUI_API void xuiTextShapeFree(xui_text_shape_t* pShape);
 #endif
 
@@ -10974,7 +11045,10 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
  * heap reference; ReleaseChecked consumes one even when final cleanup fails.
  * AddRef cannot retain automatic storage. A Use read pin keeps cached payloads
  * alive and setters/Reset on that source return BUSY until the last consumer.
- * Returned text/value views are borrowed until the next successful mutation. */
+ * Returned text/value views are borrowed until the next successful mutation.
+ * Mutations and owning cleanup belong to the creator thread; Use/Copy never
+ * transfer callback owners to another creator. Frozen ownership Count/Trace
+ * remains readable from other threads. Init queries the native thread ID once. */
 XUI_API void xuiTableViewCellOutputInit(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** ppCell);
 XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* pCell);
@@ -10996,6 +11070,7 @@ XUI_API int xuiTableViewCellOutputSetRendererOwned(xui_table_view_cell_output_t*
 XUI_API xrtownershipref xuiTableViewCellOutputOwnership(const xui_table_view_cell_output_t* pCell);
 XUI_API const xrtownershipadapterv1* xuiTableViewCellOutputOwnershipAdapterV1(xrtownershipref tReference);
 XUI_API const xrtownershippreparationv1* xuiTableViewCellOutputOwnershipPreparationV1(xrtownershipref tReference);
+XUI_API const xrtownershipfinishv2* xuiTableViewCellOutputOwnershipCompletionV2(xrtownershipref tReference);
 XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenceV1(xrtownershipref tReference);
 XUI_API bool xuiTableViewCellOutputBusy(const xui_table_view_cell_output_t* pCell);
 XUI_API bool xuiTableViewCellOutputCanRetire(const xui_table_view_cell_output_t* pCell);

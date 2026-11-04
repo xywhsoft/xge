@@ -2683,7 +2683,9 @@ XUI_API xui_widget_type xuiTimeLineViewGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiTimeLineRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiTimeLinePreparePaint;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_timeline_view_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiTimeLineViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_timeline_view_desc_t* pDesc)
@@ -2762,14 +2764,19 @@ XUI_API int xuiTimeLineViewSetFont(xui_widget pWidget, xui_font pFont)
 	pOldFont = pData->pFont;
 	pNewFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	if ( pNewFont == pOldFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pNewFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	iRet = (pData->pLayerMenu != NULL) ? xuiMenuSetFont(pData->pLayerMenu, pNewFont) : XUI_OK;
 	if ( iRet == XUI_OK && pData->pFrameMenu != NULL ) {
 		iRet = xuiMenuSetFont(pData->pFrameMenu, pNewFont);
 		if ( iRet != XUI_OK && pData->pLayerMenu != NULL ) (void)xuiMenuSetFont(pData->pLayerMenu, pOldFont);
 	}
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pFont = pNewFont;
-	return __xuiTimeLineChanged(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,__xuiTimeLineChanged(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_font xuiTimeLineViewGetFont(xui_widget pWidget)

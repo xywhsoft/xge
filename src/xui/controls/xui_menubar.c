@@ -1901,7 +1901,9 @@ XUI_API xui_widget_type xuiMenuBarGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiMenuBarRegisterStyleProperties(pContext, pType);
 	pContext->onMenuUnavailable = __xuiMenuBarMenuUnavailable;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_menubar_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 XUI_API int xuiMenuBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_menubar_desc_t* pDesc)
@@ -2256,23 +2258,26 @@ XUI_API int xuiMenuBarSetSelect(xui_widget pWidget, xui_menu_select_proc onSelec
 XUI_API int xuiMenuBarSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
-	xui_font pOldFont;
 	int bOldLayoutDirty;
 	int iRet;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
-	pOldFont = pData->pFont;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	bOldLayoutDirty = pData->bLayoutDirty;
-	pData->pFont = pFont;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	pData->bLayoutDirty = 1;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		pData->pFont = pOldFont;
+		if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 		pData->bLayoutDirty = bOldLayoutDirty;
 	}
 	else xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	return iRet;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 }
 
 XUI_API xui_font xuiMenuBarGetFont(xui_widget pWidget)

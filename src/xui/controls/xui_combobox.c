@@ -1820,7 +1820,9 @@ XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext)
 	__xuiComboBoxRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiComboBoxSyncStyle;
 	pType->pAccessibleAdapter = &g_xuiComboBoxAccessible;
-	return pType;
+	    static const size_t fontOffsets[]={offsetof(xui_combobox_data_t,pFont)};
+    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    return pType;
 }
 
 static int __xuiComboBoxCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc,xui_widget pNativeOwner)
@@ -2573,28 +2575,31 @@ XUI_API int xuiComboBoxSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	xui_context pContext;
-	xui_font pOldFont;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pFont == pFont ) return XUI_OK;
+    xui_font_slot_update_t fontUpdate={0};
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
+    if(fontStatus!=XUI_OK)return fontStatus;
+    fontUpdate.widget=pWidget;
 	pContext = xuiWidgetGetContext(pWidget);
-	pOldFont = pData->pFont;
-	pData->pFont = pFont;
+	fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	if ( pData->pMenu != NULL ) {
 		iRet = __xuiComboBoxApplyMenuStyle(pWidget, pData);
 		if ( iRet != XUI_OK ) goto rollback_font;
 	}
 	iRet = __xuiComboBoxSyncInputStyle(pWidget, pData);
-	if ( !__xuiComboBoxAlive(pContext, pWidget, pData) ) return iRet;
+	if ( !__xuiComboBoxAlive(pContext, pWidget, pData) ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	if ( iRet != XUI_OK ) goto rollback_font;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 
 rollback_font:
-	if ( !__xuiComboBoxAlive(pContext, pWidget, pData) ) return iRet;
-	pData->pFont = pOldFont;
+	if ( !__xuiComboBoxAlive(pContext, pWidget, pData) ) return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
+	if(xuiInternalFontSlotRestore(&fontUpdate)!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 	if ( pData->pMenu != NULL ) (void)__xuiComboBoxApplyMenuStyle(pWidget, pData);
 	(void)__xuiComboBoxSyncInputStyle(pWidget, pData);
-	return iRet;
+	return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
 }
 
 XUI_API xui_font xuiComboBoxGetFont(xui_widget pWidget)
