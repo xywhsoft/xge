@@ -926,17 +926,15 @@ static void __xuiWindowCancelButtonPress(xui_widget pWindow, xui_window_data_t* 
 static int __xuiWindowRequestClose(xui_widget pWidget, xui_window_data_t* pData)
 {
 	xui_window_close_proc onClose;
-	void* pCloseUser;
 	int iRet;
 
 	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !pData->bOpen ) return XUI_OK;
 	onClose = pData->onClose;
-	pCloseUser = pData->pCloseUser;
 	iRet = xuiWindowSetOpen(pWidget, 0);
 	if ( iRet != XUI_OK || !__xuiWindowDataAlive(pWidget, pData) ) return iRet;
 	__xuiWindowIncrementCounter(&pData->iCloseCount);
-	if ( onClose != NULL ) onClose(pWidget, pCloseUser);
+	if ( onClose != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onClose, xui_window_close_proc, pData->pCloseUser, pWidget);
 	return XUI_OK;
 }
 
@@ -1926,10 +1924,25 @@ XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xu
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiWindowSetCloseOwned(xui_widget pWidget, xui_window_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onClose, onClose != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onClose = onClose;
+	pData->pCloseUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiWindowSetClose(xui_widget pWidget, xui_window_close_proc onClose, void* pUser)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onClose) )
+		return xuiWindowSetCloseOwned(pWidget, onClose, pUser, NULL);
 	pData->onClose = onClose;
 	pData->pCloseUser = pUser;
 	return XUI_OK;

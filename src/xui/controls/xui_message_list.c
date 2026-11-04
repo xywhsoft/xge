@@ -2495,14 +2495,10 @@ static int __xuiMessageAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData, int iEvent, int iIndex, const xui_event_t* pInput)
 {
 	xui_context pContext;
-	xui_message_list_event_proc onEvent;
-	void* pEventUser;
 	xui_message_list_event_t tEvent;
 	xui_message_node_t tNode;
 	if ( pData == NULL || pData->onEvent == NULL ) return 1;
 	pContext = xuiWidgetGetContext(pWidget);
-	onEvent = pData->onEvent;
-	pEventUser = pData->pEventUser;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iEvent = iEvent;
@@ -2519,7 +2515,7 @@ static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData
 		tEvent.iButton = pInput->iButton;
 		tEvent.iModifiers = pInput->iModifiers;
 	}
-	onEvent(pWidget, &tEvent, pEventUser);
+	XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onEvent, xui_message_list_event_proc, pData->pEventUser, pWidget, &tEvent);
 	return __xuiMessageListAlive(pContext, pWidget, pData);
 }
 
@@ -4156,10 +4152,25 @@ XUI_API int xuiMessageListCreate(xui_context pContext, xui_widget* ppWidget, con
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiMessageListSetEventOwned(xui_widget pWidget, xui_message_list_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onEvent, onEvent != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onEvent = onEvent;
+	pData->pEventUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiMessageListSetEvent(xui_widget pWidget, xui_message_list_event_proc onEvent, void* pUser)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onEvent) )
+		return xuiMessageListSetEventOwned(pWidget, onEvent, pUser, NULL);
 	pData->onEvent = onEvent;
 	pData->pEventUser = pUser;
 	return XUI_OK;

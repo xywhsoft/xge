@@ -809,20 +809,16 @@ static int __xuiCascaderCancelPanelPress(xui_widget pOwner, xui_cascader_data_t*
 static int __xuiCascaderNotifyChange(xui_widget pWidget, xui_cascader_data_t* pData)
 {
 	xui_cascader_change_proc onChange;
-	void* pUser;
 	int arrValues[XUI_CASCADER_PATH_CAPACITY];
 	int i;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	onChange = pData->onChange;
-	pUser = pData->pChangeUser;
 	if ( onChange == NULL ) return XUI_OK;
 	for ( i = 0; i < pData->iSelectedDepth; i++ ) {
 		arrValues[i] = pData->arrItems[pData->arrSelected[i]].iValue;
 	}
-	onChange(pWidget, pData->iSelectedLeaf,
-		(pData->iSelectedDepth > 0) ? arrValues : NULL,
-		pData->iSelectedDepth, pUser);
+	XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_cascader_change_proc, pData->pChangeUser, pWidget, pData->iSelectedLeaf, (pData->iSelectedDepth > 0) ? arrValues : NULL, pData->iSelectedDepth);
 	return XUI_OK;
 }
 
@@ -2429,10 +2425,25 @@ XUI_API int xuiCascaderCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiCascaderSetChangeOwned(xui_widget pWidget, xui_cascader_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiCascaderSetChange(xui_widget pWidget, xui_cascader_change_proc onChange, void* pUser)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiCascaderSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

@@ -1028,7 +1028,7 @@ static int __xuiSplitLayoutCommitAxis(xui_widget pSplit, xui_split_layout_data_t
 			XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	}
 	if ( pData->onChange != NULL ) {
-		pData->onChange(pSplit, iDivider, pData->pChangeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pSplit, pData->onChange, xui_split_layout_change_proc, pData->pChangeUser, pSplit, iDivider);
 		if ( !__xuiSplitLayoutWidgetAlive(pSplit) ) return XUI_OK;
 	}
 	return XUI_OK;
@@ -1714,13 +1714,29 @@ XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, con
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiSplitLayoutSetChangeOwned(xui_widget pWidget, xui_split_layout_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_split_layout_data_t* pData;
+
+	pData = __xuiSplitLayoutGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiSplitLayoutSetChange(xui_widget pWidget, xui_split_layout_change_proc onChange, void* pUser)
 {
 	xui_split_layout_data_t* pData;
 
 	pData = __xuiSplitLayoutGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->onChange == onChange && pData->pChangeUser == pUser ) return XUI_OK;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiSplitLayoutSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

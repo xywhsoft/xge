@@ -443,7 +443,6 @@ static int __xuiScrollFrameLayoutChildren(xui_widget pWidget, xui_rect_t tConten
 static void __xuiScrollFrameNotify(xui_widget pWidget, xui_scroll_frame_data_t* pData)
 {
 	xui_scroll_frame_change_proc onChange;
-	void* pChangeUser;
 	float fOffsetX;
 	float fOffsetY;
 
@@ -452,10 +451,9 @@ static void __xuiScrollFrameNotify(xui_widget pWidget, xui_scroll_frame_data_t* 
 	}
 	pData->iChangeCount++;
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	fOffsetX = pData->tModel.fScrollX;
 	fOffsetY = pData->tModel.fScrollY;
-	if ( onChange != NULL ) onChange(pWidget, fOffsetX, fOffsetY, pChangeUser);
+	if ( onChange != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_scroll_frame_change_proc, pData->pChangeUser, pWidget, fOffsetX, fOffsetY);
 }
 
 static int __xuiScrollFrameSetOffsetInternal(xui_widget pWidget, xui_scroll_frame_data_t* pData, float fOffsetX, float fOffsetY, int bNotify)
@@ -1033,11 +1031,25 @@ XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, con
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiScrollFrameSetChangeOwned(xui_widget pWidget, xui_scroll_frame_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiScrollFrameSetChange(xui_widget pWidget, xui_scroll_frame_change_proc onChange, void* pUser)
 {
 	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->onChange == onChange && pData->pChangeUser == pUser ) return XUI_OK;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiScrollFrameSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

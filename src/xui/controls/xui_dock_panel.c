@@ -1315,7 +1315,6 @@ static void __xuiDockModelChanged(xui_dock_panel_data_t* pData)
 static int __xuiDockNotifyState(xui_widget pWidget, xui_dock_panel_data_t* pData, xui_dock_window_slot_t* pWin, int iOldState, int iNewState)
 {
 	xui_dock_window_state_proc onStateChanged;
-	void* pStateUser;
 	uint64_t iGeneration;
 	int iWindow;
 	if ( iOldState == iNewState ) return 1;
@@ -1325,10 +1324,9 @@ static int __xuiDockNotifyState(xui_widget pWidget, xui_dock_panel_data_t* pData
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	onStateChanged = pData->onStateChanged;
-	pStateUser = pData->pStateUser;
 	iGeneration = pData->iModelGeneration;
 	if ( onStateChanged != NULL ) {
-		onStateChanged(pWidget, iWindow, iOldState, iNewState, pStateUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onStateChanged, xui_dock_window_state_proc, pData->pStateUser, pWidget, iWindow, iOldState, iNewState);
 	}
 	return __xuiDockPanelWidgetAlive(pWidget, pData) &&
 		pData->iModelGeneration == iGeneration &&
@@ -1535,7 +1533,6 @@ static int __xuiDockRequestFocusWindow(xui_widget pWidget, xui_dock_panel_data_t
 static int __xuiDockPaneNotifyActiveChanged(xui_widget pWidget, xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, int oldWindow)
 {
 	xui_dock_active_proc onActiveChanged;
-	void* pActiveUser;
 	uint64_t iGeneration;
 	int iPane;
 	int newWindow;
@@ -1546,10 +1543,9 @@ static int __xuiDockPaneNotifyActiveChanged(xui_widget pWidget, xui_dock_panel_d
 	(void)__xuiDockRequestFocusWindow(pWidget, pData, newWindow);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onActiveChanged = pData->onActiveChanged;
-	pActiveUser = pData->pActiveUser;
 	iGeneration = pData->iModelGeneration;
 	if ( onActiveChanged != NULL ) {
-		onActiveChanged(pWidget, iPane, oldWindow, newWindow, pActiveUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onActiveChanged, xui_dock_active_proc, pData->pActiveUser, pWidget, iPane, oldWindow, newWindow);
 	}
 	return __xuiDockPanelWidgetAlive(pWidget, pData) &&
 		pData->iModelGeneration == iGeneration &&
@@ -4228,15 +4224,13 @@ static int __xuiDockCloseWindow(xui_widget pWidget, xui_dock_panel_data_t* pData
 {
 	xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, iWindow);
 	xui_dock_window_close_proc onClose;
-	void* pCloseUser;
 	uint64_t iGeneration;
 	if ( w == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !w->bClosable ) return XUI_OK;
 	onClose = pData->onClose;
-	pCloseUser = pData->pCloseUser;
 	iGeneration = pData->iModelGeneration;
 	if ( onClose != NULL ) {
-		onClose(pWidget, iWindow, pCloseUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onClose, xui_dock_window_close_proc, pData->pCloseUser, pWidget, iWindow);
 		if ( !__xuiDockPanelWidgetAlive(pWidget, pData) ||
 		     pData->iModelGeneration != iGeneration ||
 		     __xuiDockWindowAt(pData, iWindow) != w ) {
@@ -7376,28 +7370,73 @@ XUI_API int xuiDockPanelGetColors(xui_widget pWidget, xui_dock_panel_colors_t* p
 	return XUI_OK;
 }
 
+XUI_API int xuiDockPanelSetWindowStateChangedOwned(xui_widget pWidget, xui_dock_window_state_proc onState, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onStateChanged, onState != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onStateChanged = onState;
+	pData->pStateUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiDockPanelSetWindowStateChanged(xui_widget pWidget, xui_dock_window_state_proc onState, void* pUser)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onStateChanged) )
+		return xuiDockPanelSetWindowStateChangedOwned(pWidget, onState, pUser, NULL);
 	pData->onStateChanged = onState;
 	pData->pStateUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDockPanelSetActiveChangedOwned(xui_widget pWidget, xui_dock_active_proc onActive, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onActiveChanged, onActive != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onActiveChanged = onActive;
+	pData->pActiveUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDockPanelSetActiveChanged(xui_widget pWidget, xui_dock_active_proc onActive, void* pUser)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onActiveChanged) )
+		return xuiDockPanelSetActiveChangedOwned(pWidget, onActive, pUser, NULL);
 	pData->onActiveChanged = onActive;
 	pData->pActiveUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDockPanelSetWindowCloseOwned(xui_widget pWidget, xui_dock_window_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onClose, onClose != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onClose = onClose;
+	pData->pCloseUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDockPanelSetWindowClose(xui_widget pWidget, xui_dock_window_close_proc onClose, void* pUser)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onClose) )
+		return xuiDockPanelSetWindowCloseOwned(pWidget, onClose, pUser, NULL);
 	pData->onClose = onClose;
 	pData->pCloseUser = pUser;
 	return XUI_OK;

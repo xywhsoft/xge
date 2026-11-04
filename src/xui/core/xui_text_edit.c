@@ -1271,7 +1271,6 @@ static void __xuiTextEditNotifyChangeEx(xui_widget pWidget,
 {
 	xui_context pContext;
 	xui_text_edit_change_proc onChange;
-	void* pChangeUser;
 
 	if ( pData == NULL ) return;
 	pContext = xuiWidgetGetContext(pWidget);
@@ -1280,9 +1279,7 @@ static void __xuiTextEditNotifyChangeEx(xui_widget pWidget,
 	if ( pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 	if ( bClearFindResults ) __xuiTextEditInvalidateFindState(pData);
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
-	if ( onChange != NULL ) onChange(pWidget,
-		(pData->sText != NULL) ? pData->sText : "", pChangeUser);
+	if ( onChange != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_text_edit_change_proc, pData->pChangeUser, pWidget, (pData->sText != NULL) ? pData->sText : "");
 	if ( !__xuiTextEditAlive(pContext, pWidget, pData) ) return;
 	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED,
 		(pData->sText != NULL) ? pData->sText : "", pData->iSelectStart,
@@ -4305,10 +4302,25 @@ XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiTextEditSetChangeOwned(xui_widget pWidget, xui_text_edit_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTextEditSetChange(xui_widget pWidget, xui_text_edit_change_proc onChange, void* pUser)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiTextEditSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

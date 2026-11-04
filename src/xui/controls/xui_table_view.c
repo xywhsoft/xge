@@ -1588,7 +1588,6 @@ static int __xuiTableViewSetHover(xui_widget pWidget, xui_table_view_data_t* pDa
 	int iOldColumn;
 	int iRet;
 	xui_table_view_hover_proc onHover;
-	void* pHoverUser;
 
 	if ( pData == NULL ) {
 		return XUI_OK;
@@ -1609,8 +1608,7 @@ static int __xuiTableViewSetHover(xui_widget pWidget, xui_table_view_data_t* pDa
 		return iRet;
 	}
 	onHover = pData->onHover;
-	pHoverUser = pData->pHoverUser;
-	if ( onHover != NULL ) onHover(pWidget, iRow, iColumn, pData->iSelectionMode, pHoverUser);
+	if ( onHover != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onHover, xui_table_view_hover_proc, pData->pHoverUser, pWidget, iRow, iColumn, pData->iSelectionMode);
 	return XUI_OK;
 }
 
@@ -1643,7 +1641,7 @@ static void __xuiTableViewNotifySelect(xui_widget pWidget, xui_table_view_data_t
 	}
 	pData->iSelectCount++;
 	if ( pData->onSelect != NULL ) {
-		pData->onSelect(pWidget, pData->iSelectedRow, pData->iSelectedColumn, pData->iSelectionMode, pData->pSelectUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_table_view_select_proc, pData->pSelectUser, pWidget, pData->iSelectedRow, pData->iSelectedColumn, pData->iSelectionMode);
 	}
 }
 
@@ -1885,7 +1883,6 @@ static int __xuiTableViewActivateSort(xui_widget pWidget,
 	xui_table_view_data_t* pData, int iColumn)
 {
 	xui_table_view_sort_proc onSort;
-	void* pSortUser;
 	int iRet;
 
 	if ( iColumn < 0 || iColumn >= pData->iColumnCount ) return XUI_OK;
@@ -1901,8 +1898,7 @@ static int __xuiTableViewActivateSort(xui_widget pWidget,
 	iRet = __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	onSort = pData->onSort;
-	pSortUser = pData->pSortUser;
-	if ( onSort != NULL ) onSort(pWidget, iColumn, pData->bSortDescending, pSortUser);
+	if ( onSort != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSort, xui_table_view_sort_proc, pData->pSortUser, pWidget, iColumn, pData->bSortDescending);
 	return XUI_OK;
 }
 
@@ -1925,7 +1921,6 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 	      pEvent->iPointerType) == pWidget) ) {
 		float fOldWidth;
 		xui_table_view_column_resize_proc onColumnResize;
-		void* pColumnResizeUser;
 		int iResizeColumn;
 		if ( pData->iResizeColumn >= pData->iColumnCount ) {
 			__xuiTableViewCancelPointer(pWidget, pData, 1);
@@ -1959,9 +1954,8 @@ static int __xuiTableViewPointerMove(xui_widget pWidget, xui_table_view_data_t* 
 			if ( iRet != XUI_OK ) return iRet;
 			iResizeColumn = pData->iResizeColumn;
 			onColumnResize = pData->onColumnResize;
-			pColumnResizeUser = pData->pColumnResizeUser;
 			if ( onColumnResize != NULL ) {
-				onColumnResize(pWidget, iResizeColumn, fWidth, pColumnResizeUser);
+				XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onColumnResize, xui_table_view_column_resize_proc, pData->pColumnResizeUser, pWidget, iResizeColumn, fWidth);
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -3570,37 +3564,97 @@ XUI_API int xuiTableViewRefreshAdapter(xui_widget pWidget)
 	return xuiTableViewRefresh(pWidget);
 }
 
+XUI_API int xuiTableViewSetSortOwned(xui_widget pWidget, xui_table_view_sort_proc onSort, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSort, onSort != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSort = onSort;
+	pData->pSortUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTableViewSetSort(xui_widget pWidget, xui_table_view_sort_proc onSort, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSort) )
+		return xuiTableViewSetSortOwned(pWidget, onSort, pUser, NULL);
 	pData->onSort = onSort;
 	pData->pSortUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetSelectOwned(xui_widget pWidget, xui_table_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTableViewSetSelect(xui_widget pWidget, xui_table_view_select_proc onSelect, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiTableViewSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetColumnResizeOwned(xui_widget pWidget, xui_table_view_column_resize_proc onResize, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onColumnResize, onResize != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onColumnResize = onResize;
+	pData->pColumnResizeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTableViewSetColumnResize(xui_widget pWidget, xui_table_view_column_resize_proc onResize, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onColumnResize) )
+		return xuiTableViewSetColumnResizeOwned(pWidget, onResize, pUser, NULL);
 	pData->onColumnResize = onResize;
 	pData->pColumnResizeUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetHoverOwned(xui_widget pWidget, xui_table_view_hover_proc onHover, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onHover, onHover != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onHover = onHover;
+	pData->pHoverUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTableViewSetHover(xui_widget pWidget, xui_table_view_hover_proc onHover, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onHover) )
+		return xuiTableViewSetHoverOwned(pWidget, onHover, pUser, NULL);
 	pData->onHover = onHover;
 	pData->pHoverUser = pUser;
 	return XUI_OK;

@@ -631,7 +631,6 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 	xui_timeline_layer_changed_proc onChanged;
 	xui_timeline_layer_selected_proc onSelected;
 	void* pLayerUser;
-	void* pSelectedUser;
 	int iGeneration;
 	int iLayerId;
 	int iOld;
@@ -675,9 +674,8 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 		}
 	}
 	onSelected = pData->onLayerSelected;
-	pSelectedUser = pData->pLayerSelectedUser;
 	if ( iLayer >= 0 && onSelected != NULL ) {
-		onSelected(pWidget, iLayer, pSelectedUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLayerSelected, xui_timeline_layer_selected_proc, pData->pLayerSelectedUser, pWidget, iLayer);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -687,15 +685,13 @@ static int __xuiTimeLineSelectionNotify(xui_widget pWidget, xui_timeline_view_da
 {
 	xui_context pContext;
 	xui_timeline_selection_proc onSelection;
-	void* pSelectionUser;
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext = xuiWidgetGetContext(pWidget);
 	pData->iSelectionChangeCount++;
 	pData->iChangeCount++;
 	onSelection = pData->onSelection;
-	pSelectionUser = pData->pSelectionUser;
 	if ( onSelection != NULL ) {
-		onSelection(pWidget, pSelectionUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelection, xui_timeline_selection_proc, pData->pSelectionUser, pWidget);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3836,10 +3832,25 @@ XUI_API int xuiTimeLineViewSetSpanCallbacks(xui_widget pWidget, xui_timeline_spa
 	return XUI_OK;
 }
 
+XUI_API int xuiTimeLineViewSetLayerSelectedOwned(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onLayerSelected, onSelected != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onLayerSelected = onSelected;
+	pData->pLayerSelectedUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTimeLineViewSetLayerSelected(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser)
 {
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onLayerSelected) )
+		return xuiTimeLineViewSetLayerSelectedOwned(pWidget, onSelected, pUser, NULL);
 	pData->onLayerSelected = onSelected;
 	pData->pLayerSelectedUser = pUser;
 	return XUI_OK;
@@ -3911,10 +3922,25 @@ XUI_API int xuiTimeLineViewSetFrameClick(xui_widget pWidget, xui_timeline_frame_
 	return XUI_OK;
 }
 
+XUI_API int xuiTimeLineViewSetSelectionChangeOwned(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelection, onSelection != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelection = onSelection;
+	pData->pSelectionUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTimeLineViewSetSelectionChange(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser)
 {
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelection) )
+		return xuiTimeLineViewSetSelectionChangeOwned(pWidget, onSelection, pUser, NULL);
 	pData->onSelection = onSelection;
 	pData->pSelectionUser = pUser;
 	return XUI_OK;

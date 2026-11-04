@@ -17,6 +17,10 @@
 /* Private bridge between these two overlay implementations, not a public API. */
 int xuiInternalPopupSetPanelColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow);
 
+#if XUI_ENABLE_MENUBAR
+void xuiInternalMenuBarReleaseMenuSelect(xui_context pContext, xui_widget pMenu);
+#endif
+
 typedef struct xui_menu_data_t {
 	struct xui_menu_data_t* pNext;
 	xui_widget pWidget;
@@ -1082,7 +1086,7 @@ static int __xuiMenuLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, 
 	return (pData != NULL) ? __xuiMenuSyncOpenSubmenuPlacement(pWidget, pData) : XUI_OK;
 }
 
-static void __xuiMenuResolveSelect(xui_widget pWidget, xui_menu_select_proc* pOnSelect, void** ppUser)
+static xui_widget __xuiMenuResolveSelect(xui_widget pWidget, xui_menu_select_proc* pOnSelect, void** ppUser, const void** ppSlot)
 {
 	xui_menu_data_t* pData;
 	xui_widget pScan;
@@ -1090,18 +1094,25 @@ static void __xuiMenuResolveSelect(xui_widget pWidget, xui_menu_select_proc* pOn
 
 	*pOnSelect = NULL;
 	*ppUser = NULL;
+	*ppSlot = NULL;
 	for ( pScan = pWidget, iDepth = 0;
 	      pScan != NULL && iDepth < XUI_MENU_ITEM_CAPACITY;
 	      iDepth++ ) {
 		pData = __xuiMenuGetData(pScan);
-		if ( pData == NULL ) return;
+		if ( pData == NULL ) return NULL;
+#if XUI_ENABLE_MENUBAR
+        xui_widget pForward=xuiInternalMenuBarResolveSelect(xuiWidgetGetContext(pScan), pScan, pOnSelect, ppUser, ppSlot);
+        if ( pForward != NULL ) return pForward;
+#endif
 		if ( pData->onSelect != NULL ) {
 			*pOnSelect = pData->onSelect;
 			*ppUser = pData->pSelectUser;
-			return;
+			*ppSlot = &pData->onSelect;
+			return pScan;
 		}
 		pScan = pData->pParentMenu;
 	}
+	return NULL;
 }
 
 static int __xuiMenuOpenSubmenu(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
@@ -1245,6 +1256,9 @@ static int __xuiMenuUpdate(xui_widget pWidget, float fDelta, void* pUser)
 static int __xuiMenuCommit(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
 {
 	xui_widget pRoot;
+	xui_widget pSelectOwner;
+	const void* pSelectSlot;
+	xui_callback_snapshot_t tSnapshot = {0};
 	xui_menu_select_proc onSelect;
 	void* pUser;
 	uint32_t arrOldState[XUI_MENU_ITEM_CAPACITY];
@@ -1276,15 +1290,20 @@ static int __xuiMenuCommit(xui_widget pWidget, xui_menu_data_t* pData, int iInde
 	}
 	if ( bStateChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	if ( pData->iSelectCount < INT_MAX ) pData->iSelectCount++;
-	__xuiMenuResolveSelect(pWidget, &onSelect, &pUser);
 	iValue = pData->arrItems[iIndex].iValue;
-	pRoot = __xuiMenuRoot(pWidget);
-	iRet = xuiMenuClose(pRoot);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( onSelect != NULL && xuiInternalWidgetIsValid(pWidget) &&
-	     !xuiInternalContextDestroyPending(xuiWidgetGetContext(pWidget)) ) {
-		onSelect(pWidget, iIndex, iValue, pUser);
-	}
+    pSelectOwner = __xuiMenuResolveSelect(pWidget, &onSelect, &pUser, &pSelectSlot);
+    if ( pSelectOwner != NULL ) {
+        iRet = xuiInternalCallbackSnapshotBegin(pSelectOwner, pSelectSlot, &pUser, &tSnapshot);
+        if ( iRet != XUI_OK ) return iRet;
+    }
+    if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(xuiWidgetGetContext(pWidget)) )
+        return xuiInternalCallbackSnapshotEnd(&tSnapshot, XUI_OK);
+    pRoot = __xuiMenuRoot(pWidget);
+    iRet = xuiMenuClose(pRoot);
+    if ( iRet == XUI_OK && onSelect != NULL && xuiInternalWidgetIsValid(pWidget) &&
+         !xuiInternalContextDestroyPending(xuiWidgetGetContext(pWidget)) ) onSelect(pWidget, iIndex, iValue, pUser);
+    iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iRet);
+    if ( iRet != XUI_OK ) return iRet;
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
@@ -2366,12 +2385,33 @@ XUI_API int xuiMenuCommitHover(xui_widget pWidget)
 	return __xuiMenuCommit(pWidget, pData, pData->iHover);
 }
 
+XUI_API int xuiMenuSetSelectOwned(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+#if XUI_ENABLE_MENUBAR
+    xuiInternalMenuBarReleaseMenuSelect(xuiWidgetGetContext(pWidget), pWidget);
+#endif
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiMenuSetSelect(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser)
 {
 	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiMenuSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
+#if XUI_ENABLE_MENUBAR
+    xuiInternalMenuBarReleaseMenuSelect(xuiWidgetGetContext(pWidget), pWidget);
+#endif
 	return XUI_OK;
 }
 

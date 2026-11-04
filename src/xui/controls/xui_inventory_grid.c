@@ -1202,7 +1202,7 @@ static void __xuiInventoryNotifySelect(xui_widget pWidget, xui_inventory_grid_da
 	}
 	__xuiInventoryIncrementCounter(&pData->iSelectCount);
 	if ( pData->onSelect != NULL ) {
-		pData->onSelect(pWidget, iSlot, pData->pSelectUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_inventory_select_proc, pData->pSelectUser, pWidget, iSlot);
 	}
 }
 
@@ -1213,7 +1213,7 @@ static void __xuiInventoryNotifyActivate(xui_widget pWidget, xui_inventory_grid_
 	}
 	__xuiInventoryIncrementCounter(&pData->iActivateCount);
 	if ( pData->onActivate != NULL ) {
-		pData->onActivate(pWidget, iSlot, iButton, pData->pActivateUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onActivate, xui_inventory_activate_proc, pData->pActivateUser, pWidget, iSlot, iButton);
 	}
 }
 
@@ -2405,7 +2405,7 @@ static int __xuiInventoryContextMenu(xui_widget pWidget, xui_inventory_grid_data
 	xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
 	__xuiInventoryIncrementCounter(&pData->iContextCount);
 	if ( pData->onContext != NULL ) {
-		pData->onContext(pWidget, tHit.iSlot, fX, fY, pData->pContextUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onContext, xui_inventory_context_proc, pData->pContextUser, pWidget, tHit.iSlot, fX, fY);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }
@@ -2734,7 +2734,7 @@ static int __xuiInventoryGamepadOpenContext(xui_widget pWidget, xui_inventory_gr
 	fY = tWorld.fY + tSlot.fY + tSlot.fH * 0.5f;
 	__xuiInventoryIncrementCounter(&pData->iContextCount);
 	if ( pData->onContext != NULL ) {
-		pData->onContext(pWidget, iSlot, fX, fY, pData->pContextUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onContext, xui_inventory_context_proc, pData->pContextUser, pWidget, iSlot, fX, fY);
 	}
 	return XUI_OK;
 }
@@ -3099,7 +3099,7 @@ static int __xuiInventoryCommitSplitPopupInternal(xui_widget pWidget, xui_invent
 	__xuiInventoryIncrementCounter(&pData->iSplitCommitCount);
 	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	if ( pData->onSplit != NULL ) {
-		pData->onSplit(pWidget, iSlot, iCount, pData->pSplitUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSplit, xui_inventory_split_proc, pData->pSplitUser, pWidget, iSlot, iCount);
 	}
 	iRet = __xuiInventoryDataAlive(pWidget, pData) ? __xuiInventoryCloseSplitPopupInternal(pWidget, pData) : XUI_OK;
 	xuiInternalOperationLeave(pContext);
@@ -4758,28 +4758,73 @@ XUI_API int xuiInventoryGridGamepadButton(xui_widget pWidget, int iButton, int b
 	return iRet;
 }
 
+XUI_API int xuiInventoryGridSetSelectCallbackOwned(xui_widget pWidget, xui_inventory_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiInventoryGridSetSelectCallback(xui_widget pWidget, xui_inventory_select_proc onSelect, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiInventoryGridSetSelectCallbackOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiInventoryGridSetActivateCallbackOwned(xui_widget pWidget, xui_inventory_activate_proc onActivate, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onActivate, onActivate != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onActivate = onActivate;
+	pData->pActivateUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiInventoryGridSetActivateCallback(xui_widget pWidget, xui_inventory_activate_proc onActivate, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onActivate) )
+		return xuiInventoryGridSetActivateCallbackOwned(pWidget, onActivate, pUser, NULL);
 	pData->onActivate = onActivate;
 	pData->pActivateUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiInventoryGridSetContextCallbackOwned(xui_widget pWidget, xui_inventory_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onContext, onContext != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiInventoryGridSetContextCallback(xui_widget pWidget, xui_inventory_context_proc onContext, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onContext) )
+		return xuiInventoryGridSetContextCallbackOwned(pWidget, onContext, pUser, NULL);
 	pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
@@ -4803,10 +4848,25 @@ XUI_API int xuiInventoryGridSetDropCallback(xui_widget pWidget, xui_inventory_dr
 	return XUI_OK;
 }
 
+XUI_API int xuiInventoryGridSetSplitCallbackOwned(xui_widget pWidget, xui_inventory_split_proc onSplit, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSplit, onSplit != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSplit = onSplit;
+	pData->pSplitUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiInventoryGridSetSplitCallback(xui_widget pWidget, xui_inventory_split_proc onSplit, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSplit) )
+		return xuiInventoryGridSetSplitCallbackOwned(pWidget, onSplit, pUser, NULL);
 	pData->onSplit = onSplit;
 	pData->pSplitUser = pUser;
 	return XUI_OK;

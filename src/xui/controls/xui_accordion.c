@@ -675,7 +675,6 @@ static int __xuiAccordionCancelPress(xui_widget pAccordion, xui_accordion_data_t
 static int __xuiAccordionSetExpandedInternal(xui_widget pAccordion, xui_accordion_data_t* pData, int iIndex, int bExpanded, int bNotify)
 {
 	xui_accordion_select_proc onSelect;
-	void* pSelectUser;
 	int arrOldExpanded[XUI_ACCORDION_SECTION_CAPACITY];
 	int iOldSelected;
 	int iOldChangeCount;
@@ -723,9 +722,8 @@ static int __xuiAccordionSetExpandedInternal(xui_widget pAccordion, xui_accordio
 	if ( bChanged ) xuiInternalAccessibilityQueue(pAccordion, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
 	if ( bSelectionChanged ) xuiInternalAccessibilityQueue(pAccordion, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onSelect = pData->onSelect;
-	pSelectUser = pData->pSelectUser;
 	iId = pData->arrSections[iIndex].iId;
-	if ( bChanged && bNotify && onSelect != NULL ) onSelect(pAccordion, iIndex, iId, pSelectUser);
+	if ( bChanged && bNotify && onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pAccordion, pData->onSelect, xui_accordion_select_proc, pData->pSelectUser, pAccordion, iIndex, iId);
 	return XUI_OK;
 }
 
@@ -1640,12 +1638,29 @@ XUI_API int xuiAccordionCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiAccordionSetSelectOwned(xui_widget pWidget, xui_accordion_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_accordion_data_t* pData;
+
+	pData = __xuiAccordionGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiAccordionSetSelect(xui_widget pWidget, xui_accordion_select_proc onSelect, void* pUser)
 {
 	xui_accordion_data_t* pData;
 
 	pData = __xuiAccordionGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiAccordionSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;

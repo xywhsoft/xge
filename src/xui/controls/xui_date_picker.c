@@ -1000,7 +1000,6 @@ static int __xuiDatePickerInvalidateAll(xui_widget pWidget, xui_date_picker_data
 static int __xuiDatePickerNotifyDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
 	xui_date_picker_proc proc;
-	void* pUser;
 	xtime tStart;
 	xtime tEnd;
 	int iMode;
@@ -1009,13 +1008,12 @@ static int __xuiDatePickerNotifyDraft(xui_widget pWidget, xui_date_picker_data_t
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiDatePickerIncrement(&pData->iChangingCount);
 	proc = pData->onChanging;
-	pUser = pData->pChangingUser;
 	iMode = pData->iMode;
 	tStart = __xuiDatePickerIsRange(iMode) ? pData->tDraftStart : pData->tDraftValue;
 	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tDraftEnd : 0;
 	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( proc != NULL ) proc(pWidget, tStart, tEnd, iMode, pUser);
+	if ( proc != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChanging, xui_date_picker_proc, pData->pChangingUser, pWidget, tStart, tEnd, iMode);
 	return XUI_OK;
 }
 
@@ -1829,8 +1827,6 @@ static int __xuiDatePickerCommitDraft(xui_widget pWidget, xui_date_picker_data_t
 	xui_context pContext;
 	xui_date_picker_proc onChange;
 	xui_date_picker_proc onCommit;
-	void* pChangeUser;
-	void* pCommitUser;
 	int bChanged;
 	int iMode;
 	int iRet;
@@ -1861,9 +1857,7 @@ static int __xuiDatePickerCommitDraft(xui_widget pWidget, xui_date_picker_data_t
 	pData->bHasValue = 1;
 	__xuiDatePickerSyncText(pData);
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	onCommit = pData->onCommit;
-	pCommitUser = pData->pCommitUser;
 	iMode = pData->iMode;
 	tStart = __xuiDatePickerIsRange(iMode) ? pData->tStart : pData->tValue;
 	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tEnd : 0;
@@ -1875,17 +1869,16 @@ static int __xuiDatePickerCommitDraft(xui_widget pWidget, xui_date_picker_data_t
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	if ( bChanged && onChange != NULL ) {
-		onChange(pWidget, tStart, tEnd, iMode, pChangeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_date_picker_proc, pData->pChangeUser, pWidget, tStart, tEnd, iMode);
 		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
-	if ( onCommit != NULL ) onCommit(pWidget, tStart, tEnd, iMode, pCommitUser);
+	if ( onCommit != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onCommit, xui_date_picker_proc, pData->pCommitUser, pWidget, tStart, tEnd, iMode);
 	return XUI_OK;
 }
 
 static int __xuiDatePickerCancelDraft(xui_widget pWidget, xui_date_picker_data_t* pData)
 {
 	xui_date_picker_proc proc;
-	void* pUser;
 	xtime tStart;
 	xtime tEnd;
 	int iMode;
@@ -1894,13 +1887,12 @@ static int __xuiDatePickerCancelDraft(xui_widget pWidget, xui_date_picker_data_t
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiDatePickerIncrement(&pData->iCancelCount);
 	proc = pData->onCancel;
-	pUser = pData->pCancelUser;
 	iMode = pData->iMode;
 	tStart = __xuiDatePickerIsRange(iMode) ? pData->tStart : pData->tValue;
 	tEnd = __xuiDatePickerIsRange(iMode) ? pData->tEnd : 0;
 	iRet = __xuiDatePickerInvalidateAll(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( proc != NULL ) proc(pWidget, tStart, tEnd, iMode, pUser);
+	if ( proc != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onCancel, xui_date_picker_proc, pData->pCancelUser, pWidget, tStart, tEnd, iMode);
 	return XUI_OK;
 }
 
@@ -1909,8 +1901,6 @@ static int __xuiDatePickerClearInternal(xui_widget pWidget, xui_date_picker_data
 	xui_context pContext;
 	xui_date_picker_proc onClear;
 	xui_date_picker_proc onChange;
-	void* pClearUser;
-	void* pChangeUser;
 	int bChanged;
 	int iMode;
 	int iRet;
@@ -1923,9 +1913,7 @@ static int __xuiDatePickerClearInternal(xui_widget pWidget, xui_date_picker_data
 	pData->sText[0] = '\0';
 	__xuiDatePickerIncrement(&pData->iClearCount);
 	onClear = pData->onClear;
-	pClearUser = pData->pClearUser;
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	iMode = pData->iMode;
 	if ( bChanged ) {
 		__xuiDatePickerIncrement(&pData->iChangeCount);
@@ -1934,10 +1922,10 @@ static int __xuiDatePickerClearInternal(xui_widget pWidget, xui_date_picker_data
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	if ( onClear != NULL ) {
-		onClear(pWidget, 0, 0, iMode, pClearUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onClear, xui_date_picker_proc, pData->pClearUser, pWidget, 0, 0, iMode);
 		if ( !__xuiDatePickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
-	if ( bChanged && onChange != NULL ) onChange(pWidget, 0, 0, iMode, pChangeUser);
+	if ( bChanged && onChange != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_date_picker_proc, pData->pChangeUser, pWidget, 0, 0, iMode);
 	return XUI_OK;
 }
 
@@ -3281,46 +3269,121 @@ XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, cons
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiDatePickerSetChangingOwned(xui_widget pWidget, xui_date_picker_proc onChanging, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChanging, onChanging != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChanging = onChanging;
+	pData->pChangingUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiDatePickerSetChanging(xui_widget pWidget, xui_date_picker_proc onChanging, void* pUser)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChanging) )
+		return xuiDatePickerSetChangingOwned(pWidget, onChanging, pUser, NULL);
 	pData->onChanging = onChanging;
 	pData->pChangingUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDatePickerSetChangeOwned(xui_widget pWidget, xui_date_picker_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDatePickerSetChange(xui_widget pWidget, xui_date_picker_proc onChange, void* pUser)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiDatePickerSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDatePickerSetCommitOwned(xui_widget pWidget, xui_date_picker_proc onCommit, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onCommit, onCommit != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onCommit = onCommit;
+	pData->pCommitUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDatePickerSetCommit(xui_widget pWidget, xui_date_picker_proc onCommit, void* pUser)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onCommit) )
+		return xuiDatePickerSetCommitOwned(pWidget, onCommit, pUser, NULL);
 	pData->onCommit = onCommit;
 	pData->pCommitUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDatePickerSetCancelOwned(xui_widget pWidget, xui_date_picker_proc onCancel, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onCancel, onCancel != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onCancel = onCancel;
+	pData->pCancelUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDatePickerSetCancel(xui_widget pWidget, xui_date_picker_proc onCancel, void* pUser)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onCancel) )
+		return xuiDatePickerSetCancelOwned(pWidget, onCancel, pUser, NULL);
 	pData->onCancel = onCancel;
 	pData->pCancelUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiDatePickerSetClearOwned(xui_widget pWidget, xui_date_picker_proc onClear, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onClear, onClear != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onClear = onClear;
+	pData->pClearUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiDatePickerSetClear(xui_widget pWidget, xui_date_picker_proc onClear, void* pUser)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onClear) )
+		return xuiDatePickerSetClearOwned(pWidget, onClear, pUser, NULL);
 	pData->onClear = onClear;
 	pData->pClearUser = pUser;
 	return XUI_OK;

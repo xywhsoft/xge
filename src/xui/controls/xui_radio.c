@@ -1622,7 +1622,6 @@ int xuiInternalRadioGroupSyncTabStops(xui_widget pGroup)
 static int __xuiRadioGroupNotify(xui_widget pGroup, xui_radio_group_data_t* pData)
 {
 	xui_radio_group_change_proc onChange;
-	void* pChangeUser;
 	xui_widget pSelected;
 	int iSelectedIndex;
 
@@ -1630,10 +1629,9 @@ static int __xuiRadioGroupNotify(xui_widget pGroup, xui_radio_group_data_t* pDat
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	iSelectedIndex = pData->iSelectedIndex;
 	pSelected = __xuiRadioGroupRadioAt(pGroup, iSelectedIndex);
-	if ( onChange != NULL ) onChange(pGroup, pSelected, iSelectedIndex, pChangeUser);
+	if ( onChange != NULL ) XUI_INTERNAL_CALLBACK_VOID(pGroup, pData->onChange, xui_radio_group_change_proc, pData->pChangeUser, pGroup, pSelected, iSelectedIndex);
 	return XUI_OK;
 }
 
@@ -1915,10 +1913,25 @@ XUI_API int xuiRadioGroupCreate(xui_context pContext, xui_widget* ppWidget, cons
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiRadioGroupSetChangeOwned(xui_widget pGroup, xui_radio_group_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pGroup, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiRadioGroupSetChange(xui_widget pGroup, xui_radio_group_change_proc onChange, void* pUser)
 {
 	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pGroup, &pData->onChange) )
+		return xuiRadioGroupSetChangeOwned(pGroup, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

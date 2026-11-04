@@ -462,7 +462,6 @@ static int __xuiNumericInputSyncInputStyle(xui_widget pWidget, xui_numeric_input
 static int __xuiNumericInputSetErrorInternal(xui_widget pWidget, xui_numeric_input_data_t* pData, int bError)
 {
 	xui_numeric_input_error_proc onError;
-	void* pErrorUser;
 	int iRet;
 
 	bError = bError ? 1 : 0;
@@ -476,11 +475,10 @@ static int __xuiNumericInputSetErrorInternal(xui_widget pWidget, xui_numeric_inp
 		}
 		pData->bError = bError;
 		onError = pData->onError;
-		pErrorUser = pData->pErrorUser;
 		iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		if ( iRet != XUI_OK ) return iRet;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_STATE_CHANGED);
-		if ( onError != NULL ) onError(pWidget, bError, pErrorUser);
+		if ( onError != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onError, xui_numeric_input_error_proc, pData->pErrorUser, pWidget, bError);
 	}
 	return XUI_OK;
 }
@@ -490,7 +488,6 @@ static int __xuiNumericInputSetValueInternal(xui_widget pWidget, xui_numeric_inp
 	int bChanged;
 	xui_numeric_input_change_proc onChange;
 	xui_context pContext;
-	void* pChangeUser;
 	float fOldValue;
 	int iRet;
 
@@ -521,11 +518,10 @@ static int __xuiNumericInputSetValueInternal(xui_widget pWidget, xui_numeric_inp
 		__xuiNumericInputChange(pData);
 	}
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChanged ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
-	if ( bChanged && bNotify && onChange != NULL ) onChange(pWidget, fValue, pChangeUser);
+	if ( bChanged && bNotify && onChange != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_numeric_input_change_proc, pData->pChangeUser, pWidget, fValue);
 	return XUI_OK;
 }
 
@@ -1634,19 +1630,49 @@ XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, co
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiNumericInputSetChangeOwned(xui_widget pWidget, xui_numeric_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiNumericInputSetChange(xui_widget pWidget, xui_numeric_input_change_proc onChange, void* pUser)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiNumericInputSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiNumericInputSetErrorChangeOwned(xui_widget pWidget, xui_numeric_input_error_proc onError, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onError, onError != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onError = onError;
+	pData->pErrorUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiNumericInputSetErrorChange(xui_widget pWidget, xui_numeric_input_error_proc onError, void* pUser)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onError) )
+		return xuiNumericInputSetErrorChangeOwned(pWidget, onError, pUser, NULL);
 	pData->onError = onError;
 	pData->pErrorUser = pUser;
 	return XUI_OK;

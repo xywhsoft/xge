@@ -1026,4 +1026,30 @@ static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tK
 	if ( pY != NULL ) *pY = fY;
 }
 
+/* Invoke an exactly typed void publisher while retaining its selected owner.
+ * Payload expressions are evaluated AFTER snapshot acquisition, because Hold
+ * may reenter and replace payload storage. The enclosing native call scope
+ * protects widget/context storage until the entire public operation returns. */
+#define XUI_INTERNAL_CALLBACK_VOID(widget, slot, proc_type, user, ...) \
+    do { \
+        proc_type xui_selected_proc = (slot); \
+        void* xui_selected_user = (user); \
+        if ( xui_selected_proc != NULL ) { \
+            if ( !(widget)->pEventOwners || !(widget)->pEventOwners->pBindings ) { \
+                xui_selected_proc(__VA_ARGS__, xui_selected_user); \
+            } else { \
+                xui_callback_snapshot_t xui_selected_snapshot = {0}; \
+                if ( xuiInternalCallbackSnapshotBegin((widget), &(slot), &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
+                    xui_selected_proc(__VA_ARGS__, xui_selected_user); \
+                    (void)xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK); \
+                } \
+            } \
+        } \
+    } while (0)
+
+#if XUI_ENABLE_MENUBAR
+xui_widget xuiInternalMenuBarResolveSelect(xui_context pContext, xui_widget pMenu,
+    xui_menu_select_proc* pOnSelect, void** ppUser, const void** ppSlot);
+#endif
+
 #endif /* XUI_INTERNAL_H */

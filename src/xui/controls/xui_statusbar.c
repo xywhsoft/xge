@@ -837,7 +837,6 @@ static int __xuiStatusBarCancelPress(xui_widget pWidget, xui_statusbar_data_t* p
 static int __xuiStatusBarSelect(xui_widget pWidget, xui_statusbar_data_t* pData, int iIndex)
 {
 	xui_statusbar_select_proc onSelect;
-	void* pSelectUser;
 	int iValue;
 	int iOldSelectCount;
 	int iRet;
@@ -856,9 +855,8 @@ static int __xuiStatusBarSelect(xui_widget pWidget, xui_statusbar_data_t* pData,
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onSelect = pData->onSelect;
-	pSelectUser = pData->pSelectUser;
 	iValue = pData->arrItems[iIndex].iValue;
-	if ( onSelect != NULL ) onSelect(pWidget, iIndex, iValue, pSelectUser);
+	if ( onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_statusbar_select_proc, pData->pSelectUser, pWidget, iIndex, iValue);
 	return XUI_OK;
 }
 
@@ -1567,10 +1565,25 @@ XUI_API int xuiStatusBarCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiStatusBarSetSelectOwned(xui_widget pWidget, xui_statusbar_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiStatusBarSetSelect(xui_widget pWidget, xui_statusbar_select_proc onSelect, void* pUser)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiStatusBarSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;

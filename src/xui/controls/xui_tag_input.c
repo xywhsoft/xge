@@ -344,7 +344,7 @@ static void __xuiTagInputNotify(xui_widget pWidget, xui_tag_input_data_t* pData)
 	}
 	pData->iChangeCount++;
 	if ( pData->onChange != NULL ) {
-		pData->onChange(pWidget, pData->iTagCount, pData->pChangeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_tag_input_change_proc, pData->pChangeUser, pWidget, pData->iTagCount);
 	}
 }
 
@@ -1622,12 +1622,29 @@ XUI_API int xuiTagInputCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiTagInputSetChangeOwned(xui_widget pWidget, xui_tag_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tag_input_data_t* pData;
+
+	pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTagInputSetChange(xui_widget pWidget, xui_tag_input_change_proc onChange, void* pUser)
 {
 	xui_tag_input_data_t* pData;
 
 	pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiTagInputSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

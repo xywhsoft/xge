@@ -10,9 +10,6 @@
 
 #define XUI_MENUBAR_ITEM_STATE_MASK XUI_MENUBAR_ITEM_ENABLED
 
-/* Private bridge used to preserve callbacks while a MenuBar temporarily owns a Menu. */
-int xuiInternalMenuGetSelectBinding(xui_widget pWidget, xui_menu_select_proc* pOnSelect, void** ppUser);
-
 typedef struct xui_menubar_data_t {
 	xui_widget pWidget;
 	struct xui_menubar_data_t* pNext;
@@ -21,8 +18,6 @@ typedef struct xui_menubar_data_t {
 	char* arrDisplayText[XUI_MENUBAR_ITEM_CAPACITY];
 	float arrTextWidth[XUI_MENUBAR_ITEM_CAPACITY];
 	unsigned char arrSelectBound[XUI_MENUBAR_ITEM_CAPACITY];
-	xui_menu_select_proc arrPreviousSelect[XUI_MENUBAR_ITEM_CAPACITY];
-	void* arrPreviousSelectUser[XUI_MENUBAR_ITEM_CAPACITY];
 	xui_menubar_metrics_t tMetrics;
 	xui_menubar_colors_t tColors;
 	xui_menubar_metrics_t tLayoutMetrics;
@@ -63,54 +58,44 @@ static void __xuiMenuBarMarkChanged(xui_menubar_data_t* pData)
 	if ( pData != NULL && pData->iChangeCount < INT_MAX ) pData->iChangeCount++;
 }
 
+/* These are weak links within the context's live MenuBar directory. Menu
+ * callbacks remain in their original slots, including their owned references. */
 static int __xuiMenuBarReleaseSelectBinding(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex)
 {
-	xui_widget pMenu;
-	xui_menu_select_proc onCurrent;
-	xui_menu_select_proc onPrevious;
-	void* pCurrentUser;
-	void* pPreviousUser;
-	int iRet;
-
-	if ( pWidget == NULL || pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ||
-	     !pData->arrSelectBound[iIndex] ) return XUI_OK;
-	pMenu = pData->arrItems[iIndex].pMenu;
-	onPrevious = pData->arrPreviousSelect[iIndex];
-	pPreviousUser = pData->arrPreviousSelectUser[iIndex];
-	pData->arrSelectBound[iIndex] = 0;
-	pData->arrPreviousSelect[iIndex] = NULL;
-	pData->arrPreviousSelectUser[iIndex] = NULL;
-	if ( !__xuiMenuBarMenuValid(pWidget, pMenu) ) return XUI_OK;
-	iRet = xuiInternalMenuGetSelectBinding(pMenu, &onCurrent, &pCurrentUser);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( onCurrent != pData->onSelect || pCurrentUser != pData->pSelectUser ) return XUI_OK;
-	return xuiMenuSetSelect(pMenu, onPrevious, pPreviousUser);
+    if ( pWidget == NULL || pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ) return XUI_OK;
+    pData->arrSelectBound[iIndex] = 0;
+    return XUI_OK;
 }
-
 static int __xuiMenuBarBindSelect(xui_widget pWidget, xui_menubar_data_t* pData, int iIndex,
-	xui_menu_select_proc onSelect, void* pUser)
+    xui_menu_select_proc onSelect, void* pUser)
 {
-	xui_widget pMenu;
-	xui_menu_select_proc onCurrent;
-	void* pCurrentUser;
-	int iRet;
-
-	if ( pWidget == NULL || pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pMenu = pData->arrItems[iIndex].pMenu;
-	if ( !__xuiMenuBarMenuValid(pWidget, pMenu) || pMenu == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = xuiInternalMenuGetSelectBinding(pMenu, &onCurrent, &pCurrentUser);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( !pData->arrSelectBound[iIndex] ||
-	     onCurrent != pData->onSelect || pCurrentUser != pData->pSelectUser ) {
-		pData->arrPreviousSelect[iIndex] = onCurrent;
-		pData->arrPreviousSelectUser[iIndex] = pCurrentUser;
-	}
-	iRet = xuiMenuSetSelect(pMenu, onSelect, pUser);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->arrSelectBound[iIndex] = 1;
-	return XUI_OK;
+    (void)onSelect; (void)pUser;
+    if ( pWidget == NULL || pData == NULL || iIndex < 0 || iIndex >= pData->iItemCount ||
+         !__xuiMenuBarMenuValid(pWidget, pData->arrItems[iIndex].pMenu) ) return XUI_ERROR_INVALID_ARGUMENT;
+    pData->arrSelectBound[iIndex] = 1;
+    return XUI_OK;
+}
+void xuiInternalMenuBarReleaseMenuSelect(xui_context pContext, xui_widget pMenu)
+{
+    if ( !xuiInternalContextIsValid(pContext) ) return;
+    for ( xui_menubar_data_t* pData=pContext->pMenuBarList; pData!=NULL; pData=pData->pNext )
+        for ( int i=0; i<pData->iItemCount; ++i )
+            if ( pData->arrItems[i].pMenu == pMenu ) pData->arrSelectBound[i]=0;
+}
+xui_widget xuiInternalMenuBarResolveSelect(xui_context pContext, xui_widget pMenu,
+    xui_menu_select_proc* pOnSelect, void** ppUser, const void** ppSlot)
+{
+    if ( !xuiInternalContextIsValid(pContext) ) return NULL;
+    for ( xui_menubar_data_t* pData=pContext->pMenuBarList; pData!=NULL; pData=pData->pNext ) {
+        if ( !xuiInternalWidgetIsValid(pData->pWidget) || pData->onSelect == NULL ) continue;
+        for ( int i=0; i<pData->iItemCount; ++i ) {
+            if ( pData->arrSelectBound[i] && pData->arrItems[i].pMenu == pMenu ) {
+                *pOnSelect=pData->onSelect; *ppUser=pData->pSelectUser; *ppSlot=&pData->onSelect;
+                return pData->pWidget;
+            }
+        }
+    }
+    return NULL;
 }
 
 static int __xuiMenuBarAlpha(uint32_t iColor)
@@ -319,8 +304,6 @@ static void __xuiMenuBarMenuUnavailable(xui_context pContext, xui_widget pMenu)
 			pData->arrItems[i].pMenu = NULL;
 			pData->arrItems[i].iState &= ~XUI_MENUBAR_ITEM_ENABLED;
 			pData->arrSelectBound[i] = 0;
-			pData->arrPreviousSelect[i] = NULL;
-			pData->arrPreviousSelectUser[i] = NULL;
 			if ( pData->iHover == i ) {
 				pData->iHover = -1;
 				bSelectionChanged = 1;
@@ -957,7 +940,6 @@ static int __xuiMenuBarOpenItemInternal(xui_widget pWidget, xui_menubar_data_t* 
 	xui_widget pOldMenu;
 	xui_widget pPopup;
 	xui_menu_select_proc onSelect;
-	void* pSelectUser;
 	int iValue;
 	int iOldHover;
 	int iOldActive;
@@ -1032,10 +1014,9 @@ static int __xuiMenuBarOpenItemInternal(xui_widget pWidget, xui_menubar_data_t* 
 		return XUI_OK;
 	} else {
 		onSelect = pData->onSelect;
-		pSelectUser = pData->pSelectUser;
 		iValue = pData->arrItems[iIndex].iValue;
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-		if ( onSelect != NULL ) onSelect(pWidget, iIndex, iValue, pSelectUser);
+		if ( onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_menu_select_proc, pData->pSelectUser, pWidget, iIndex, iValue);
 		return XUI_OK;
 	}
 
@@ -1982,8 +1963,6 @@ XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pIt
 	memcpy(pData->arrItems, arrNew, sizeof(arrNew));
 	memcpy(pData->arrDisplayText, arrNewDisplay, sizeof(arrNewDisplay));
 	memset(pData->arrSelectBound, 0, sizeof(pData->arrSelectBound));
-	memset(pData->arrPreviousSelect, 0, sizeof(pData->arrPreviousSelect));
-	memset(pData->arrPreviousSelectUser, 0, sizeof(pData->arrPreviousSelectUser));
 	pData->iItemCount = iCount;
 	pData->iHover = -1;
 	pData->iActive = -1;
@@ -1999,8 +1978,6 @@ XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pIt
 		memcpy(pData->arrItems, arrOld, sizeof(arrOld));
 		memcpy(pData->arrDisplayText, arrOldDisplay, sizeof(arrOldDisplay));
 		memcpy(pData->arrSelectBound, arrOldSelectBound, sizeof(arrOldSelectBound));
-		memset(pData->arrPreviousSelect, 0, sizeof(pData->arrPreviousSelect));
-		memset(pData->arrPreviousSelectUser, 0, sizeof(pData->arrPreviousSelectUser));
 		pData->iItemCount = iOldCount;
 		pData->iHover = iOldHover;
 		pData->iActive = iOldActive;
@@ -2226,6 +2203,32 @@ XUI_API xui_widget xuiMenuBarGetOpenMenu(xui_widget pWidget)
 	return (pData->iOpen >= 0 && pData->iOpen < pData->iItemCount) ? pData->arrItems[pData->iOpen].pMenu : NULL;
 }
 
+XUI_API int xuiMenuBarSetSelectOwned(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
+	xui_widget pMenu;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iOpen >= 0 && pData->iOpen < pData->iItemCount ) {
+		pMenu = pData->arrItems[pData->iOpen].pMenu;
+		if ( onSelect != NULL && __xuiMenuBarMenuValid(pWidget, pMenu) ) {
+			iRet = __xuiMenuBarBindSelect(pWidget, pData, pData->iOpen, onSelect, pUser);
+			if ( iRet != XUI_OK ) return iRet;
+		} else {
+			iRet = __xuiMenuBarReleaseSelectBinding(pWidget, pData, pData->iOpen);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiMenuBarSetSelect(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser)
 {
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
@@ -2243,6 +2246,8 @@ XUI_API int xuiMenuBarSetSelect(xui_widget pWidget, xui_menu_select_proc onSelec
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiMenuBarSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;

@@ -755,7 +755,7 @@ static int __xuiTabsSelectInternal(xui_widget pTabs, xui_tabs_data_t* pData, int
 	}
 	xuiInternalAccessibilityQueue(pTabs, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify && (pData->onSelect != NULL) ) {
-		pData->onSelect(pTabs, iIndex, pData->pSelectUser);
+		XUI_INTERNAL_CALLBACK_VOID(pTabs, pData->onSelect, xui_tabs_select_proc, pData->pSelectUser, pTabs, iIndex);
 	}
 	return XUI_OK;
 }
@@ -2410,12 +2410,29 @@ XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_
 	return XUI_OK;
 }
 
+XUI_API int xuiTabsSetSelectOwned(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tabs_data_t* pData;
+
+	pData = __xuiTabsGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser)
 {
 	xui_tabs_data_t* pData;
 
 	pData = __xuiTabsGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiTabsSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;

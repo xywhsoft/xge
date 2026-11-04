@@ -1285,7 +1285,6 @@ static void __xuiPropertyGridChangeProc(xui_widget pWidget, int iRow, int iColum
 	xui_property_grid_data_t* pData;
 	xui_property_grid_property_t* pProp;
 	xui_property_grid_change_proc onChange;
-	void* pChangeUser;
 	xui_widget pOwner;
 	char sId[XUI_PROPERTY_GRID_ID_CAPACITY];
 	int iProperty;
@@ -1299,10 +1298,9 @@ static void __xuiPropertyGridChangeProc(xui_widget pWidget, int iRow, int iColum
 	pProp = &pData->arrProperties[iProperty];
 	pOwner = pData->pWidget;
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	__xuiPropertyGridCopy(sId, (int)sizeof(sId), pProp->sId);
 	if ( onChange != NULL ) {
-		onChange(pOwner, iProperty, sId, sValue, iType, pChangeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pOwner, pData->onChange, xui_property_grid_change_proc, pData->pChangeUser, pOwner, iProperty, sId, sValue, iType);
 		if ( !__xuiPropertyGridWidgetAlive(pOwner, pData) ) return;
 	}
 	if ( (pData->iDescriptionMode == XUI_PROPERTY_GRID_DESCRIPTION_PANEL) ||
@@ -1386,7 +1384,6 @@ static void __xuiPropertyGridNotifySelect(xui_property_grid_data_t* pData, int i
 {
 	xui_property_grid_property_t* pProp;
 	xui_property_grid_select_proc onSelect;
-	void* pSelectUser;
 	xui_widget pWidget;
 	char sId[XUI_PROPERTY_GRID_ID_CAPACITY];
 
@@ -1398,10 +1395,9 @@ static void __xuiPropertyGridNotifySelect(xui_property_grid_data_t* pData, int i
 	pProp = &pData->arrProperties[iProperty];
 	pWidget = pData->pWidget;
 	onSelect = pData->onSelect;
-	pSelectUser = pData->pSelectUser;
 	__xuiPropertyGridCopy(sId, (int)sizeof(sId), pProp->sId);
 	if ( onSelect != NULL ) {
-		onSelect(pWidget, iProperty, sId, pSelectUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_property_grid_select_proc, pData->pSelectUser, pWidget, iProperty, sId);
 		if ( !__xuiPropertyGridWidgetAlive(pWidget, pData) ) return;
 	}
 	if ( (pData->iDescriptionMode == XUI_PROPERTY_GRID_DESCRIPTION_PANEL) ||
@@ -2813,10 +2809,25 @@ XUI_API int xuiPropertyGridGetScrollbarMode(xui_widget pWidget)
 	return (pData != NULL && pData->pTableView != NULL) ? xuiTableViewGetScrollbarMode(pData->pTableView) : XUI_SCROLLBAR_MODE_COMPACT;
 }
 
+XUI_API int xuiPropertyGridSetSelectOwned(xui_widget pWidget, xui_property_grid_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiPropertyGridSetSelect(xui_widget pWidget, xui_property_grid_select_proc onSelect, void* pUser)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiPropertyGridSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;
@@ -2831,10 +2842,25 @@ XUI_API int xuiPropertyGridSetValidate(xui_widget pWidget, xui_property_grid_val
 	return XUI_OK;
 }
 
+XUI_API int xuiPropertyGridSetChangeOwned(xui_widget pWidget, xui_property_grid_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiPropertyGridSetChange(xui_widget pWidget, xui_property_grid_change_proc onChange, void* pUser)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiPropertyGridSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

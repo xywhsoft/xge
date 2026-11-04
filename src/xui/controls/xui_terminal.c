@@ -2094,7 +2094,7 @@ static int __xuiTerminalNotifyResize(xui_widget pWidget, xui_terminal_data_t* pD
 
 	if ( pData == NULL || pData->iColumns <= 0 || pData->iRows <= 0 ) return 1;
 	if ( pData->onResize != NULL ) {
-		pData->onResize(pWidget, pData->iColumns, pData->iRows, pData->pResizeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onResize, xui_terminal_resize_proc, pData->pResizeUser, pWidget, pData->iColumns, pData->iRows);
 		if ( !__xuiTerminalWidgetAlive(pWidget) ) return 0;
 	}
 	pSession = pData->pSession;
@@ -2997,6 +2997,7 @@ static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pD
 {
 	char* sOsc;
 	char* sSemi;
+	int iTitleOffset;
 
 	if ( (pWidget == NULL) || (pData == NULL) || pData->tParser.bOscDiscard ||
 	     (pData->tParser.iOscSize <= 0) ) {
@@ -3008,7 +3009,10 @@ static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pD
 	sSemi = strchr(sOsc, ';');
 	if ( (sSemi != NULL) && (pData->onTitle != NULL) &&
 	     ((sOsc[0] == '0') || (sOsc[0] == '2')) ) {
-		pData->onTitle(pWidget, sSemi + 1, pData->pTitleUser);
+        iTitleOffset = (int)(sSemi - sOsc) + 1;
+        XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onTitle, xui_terminal_title_proc, pData->pTitleUser,
+            pWidget, __xuiTerminalOscBuffer(&pData->tParser) +
+                (iTitleOffset <= pData->tParser.iOscSize ? iTitleOffset : 0));
 	}
 }
 
@@ -4196,7 +4200,7 @@ static int __xuiTerminalEmitInput(xui_widget pWidget, xui_terminal_data_t* pData
 		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	if ( pData->onData != NULL ) {
-		pData->onData(pWidget, pBytes, iSize, pData->pDataUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onData, xui_terminal_data_proc, pData->pDataUser, pWidget, pBytes, iSize);
 	}
 	if ( __xuiTerminalWidgetAlive(pWidget) && pData->pSession != NULL ) {
 		iRet = xuiTerminalSessionWrite(pData->pSession, pBytes, iSize);
@@ -4790,7 +4794,7 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 		(void)iStartColumn;
 		(void)iLength;
 		if ( __xuiTerminalLinkSchemeAllowed(sUrl) ) {
-			pData->onLink(pWidget, sUrl, pData->pLinkUser);
+			XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLink, xui_terminal_link_proc, pData->pLinkUser, pWidget, sUrl);
 		}
 		xrtFree(sUrl);
 		return XUI_EVENT_DISPATCH_STOP;
@@ -6938,37 +6942,97 @@ XUI_API int xuiTerminalGetCursor(xui_widget pWidget, int* pColumn, int* pRow)
 	return XUI_OK;
 }
 
+XUI_API int xuiTerminalSetInputCallbackOwned(xui_widget pWidget, xui_terminal_data_proc onData, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onData, onData != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onData = onData;
+	pData->pDataUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTerminalSetInputCallback(xui_widget pWidget, xui_terminal_data_proc onData, void* pUser)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onData) )
+		return xuiTerminalSetInputCallbackOwned(pWidget, onData, pUser, NULL);
 	pData->onData = onData;
 	pData->pDataUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSetResizeCallbackOwned(xui_widget pWidget, xui_terminal_resize_proc onResize, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onResize, onResize != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onResize = onResize;
+	pData->pResizeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTerminalSetResizeCallback(xui_widget pWidget, xui_terminal_resize_proc onResize, void* pUser)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onResize) )
+		return xuiTerminalSetResizeCallbackOwned(pWidget, onResize, pUser, NULL);
 	pData->onResize = onResize;
 	pData->pResizeUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSetTitleCallbackOwned(xui_widget pWidget, xui_terminal_title_proc onTitle, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onTitle, onTitle != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onTitle = onTitle;
+	pData->pTitleUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTerminalSetTitleCallback(xui_widget pWidget, xui_terminal_title_proc onTitle, void* pUser)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onTitle) )
+		return xuiTerminalSetTitleCallbackOwned(pWidget, onTitle, pUser, NULL);
 	pData->onTitle = onTitle;
 	pData->pTitleUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSetLinkCallbackOwned(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onLink, onLink != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onLink = onLink;
+	pData->pLinkUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onLink) )
+		return xuiTerminalSetLinkCallbackOwned(pWidget, onLink, pUser, NULL);
 	pData->onLink = onLink;
 	pData->pLinkUser = pUser;
 	return XUI_OK;

@@ -1310,7 +1310,6 @@ static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 {
 	xui_context pContext;
 	xui_input_change_proc onChange;
-	void* pChangeUser;
 
 	if ( pData == NULL ) {
 		return;
@@ -1320,9 +1319,8 @@ static void __xuiInputNotifyChange(xui_widget pWidget, xui_input_data_t* pData)
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	pData->iChangeCount++;
 	onChange = pData->onChange;
-	pChangeUser = pData->pChangeUser;
 	if ( onChange != NULL ) {
-		onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pChangeUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onChange, xui_input_change_proc, pData->pChangeUser, pWidget, (pData->sText != NULL) ? pData->sText : "");
 	}
 	if ( !__xuiInputAlive(pContext, pWidget, pData) ) return;
 	(void)xuiInternalEditEmit(pWidget, XUI_EDIT_EVENT_TEXT_CHANGED,
@@ -3448,10 +3446,25 @@ XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiInputSetChangeOwned(xui_widget pWidget, xui_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onChange = onChange;
+	pData->pChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiInputSetChange(xui_widget pWidget, xui_input_change_proc onChange, void* pUser)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onChange) )
+		return xuiInputSetChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onChange = onChange;
 	pData->pChangeUser = pUser;
 	return XUI_OK;

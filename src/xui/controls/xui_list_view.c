@@ -673,15 +673,13 @@ static int __xuiListViewSyncState(xui_widget pWidget)
 static void __xuiListViewNotifySelect(xui_widget pWidget, xui_list_view_data_t* pData, int iIndex)
 {
 	xui_list_view_select_proc onSelect;
-	void* pSelectUser;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) ) {
 		return;
 	}
 	__xuiListViewIncrement(&pData->iSelectCount);
 	onSelect = pData->onSelect;
-	pSelectUser = pData->pSelectUser;
-	if ( onSelect != NULL ) onSelect(pWidget, iIndex, pSelectUser);
+	if ( onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_list_view_select_proc, pData->pSelectUser, pWidget, iIndex);
 }
 
 static void __xuiListViewNotifyActivate(xui_widget pWidget, xui_list_view_data_t* pData, int iIndex, int iButton)
@@ -2000,10 +1998,25 @@ XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiListViewSetSelectOwned(xui_widget pWidget, xui_list_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiListViewSetSelect(xui_widget pWidget, xui_list_view_select_proc onSelect, void* pUser)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiListViewSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;

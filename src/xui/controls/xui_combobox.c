@@ -528,7 +528,6 @@ static int __xuiComboBoxClearSelectionIfTextMismatch(xui_widget pWidget, xui_com
 static int __xuiComboBoxSetSelectedInternal(xui_widget pWidget, xui_combobox_data_t* pData, int iIndex, int bNotify)
 {
 	xui_combobox_select_proc onSelect;
-	void* pUser;
 	int iOld;
 	int iValue;
 	int iRet;
@@ -559,10 +558,9 @@ static int __xuiComboBoxSetSelectedInternal(xui_widget pWidget, xui_combobox_dat
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	if ( bNotify && (iOld != iIndex) && (iIndex >= 0) ) {
 		onSelect = pData->onSelect;
-		pUser = pData->pSelectUser;
 		iValue = pData->arrItems[iIndex].iValue;
 		if ( onSelect != NULL ) {
-			onSelect(pWidget, iIndex, iValue, pUser);
+			XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_combobox_select_proc, pData->pSelectUser, pWidget, iIndex, iValue);
 		}
 	}
 	return XUI_OK;
@@ -832,7 +830,6 @@ static void __xuiComboBoxInputChanged(xui_widget pInput, const char* sText, void
 	xui_widget pCombo;
 	xui_combobox_data_t* pData;
 	xui_combobox_text_proc onTextChange;
-	void* pTextUser;
 
 	(void)pInput;
 	pCombo = (xui_widget)pUser;
@@ -844,9 +841,8 @@ static void __xuiComboBoxInputChanged(xui_widget pInput, const char* sText, void
 	__xuiComboBoxChange(pData);
 	if ( xuiWidgetInvalidate(pCombo, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) != XUI_OK ) return;
 	onTextChange = pData->onTextChange;
-	pTextUser = pData->pTextChangeUser;
 	if ( onTextChange != NULL ) {
-		onTextChange(pCombo, __xuiComboBoxText(sText), pTextUser);
+		XUI_INTERNAL_CALLBACK_VOID(pCombo, pData->onTextChange, xui_combobox_text_proc, pData->pTextChangeUser, pCombo, __xuiComboBoxText(sText));
 	}
 }
 
@@ -938,7 +934,6 @@ static int __xuiComboBoxCommit(xui_widget pWidget, xui_combobox_data_t* pData, i
 {
 	xui_combobox_select_proc onSelect;
 	xui_context pContext;
-	void* pSelectUser;
 	int iOld;
 	int iValue;
 	int iRet;
@@ -963,9 +958,8 @@ static int __xuiComboBoxCommit(xui_widget pWidget, xui_combobox_data_t* pData, i
 	}
 	if ( bNotify && (iOld != iIndex) ) {
 		onSelect = pData->onSelect;
-		pSelectUser = pData->pSelectUser;
 		iValue = pData->arrItems[iIndex].iValue;
-		if ( onSelect != NULL ) onSelect(pWidget, iIndex, iValue, pSelectUser);
+		if ( onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_combobox_select_proc, pData->pSelectUser, pWidget, iIndex, iValue);
 	}
 	return XUI_OK;
 }
@@ -1847,19 +1841,49 @@ XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const 
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiComboBoxSetSelectOwned(xui_widget pWidget, xui_combobox_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiComboBoxSetSelect(xui_widget pWidget, xui_combobox_select_proc onSelect, void* pUser)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiComboBoxSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiComboBoxSetTextChangeOwned(xui_widget pWidget, xui_combobox_text_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onTextChange, onChange != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onTextChange = onChange;
+	pData->pTextChangeUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiComboBoxSetTextChange(xui_widget pWidget, xui_combobox_text_proc onChange, void* pUser)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onTextChange) )
+		return xuiComboBoxSetTextChangeOwned(pWidget, onChange, pUser, NULL);
 	pData->onTextChange = onChange;
 	pData->pTextChangeUser = pUser;
 	return XUI_OK;

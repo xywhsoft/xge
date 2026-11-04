@@ -859,7 +859,6 @@ static int __xuiToolbarActivateOverflow(xui_widget pWidget, xui_toolbar_data_t* 
 static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)
 {
 	xui_toolbar_select_proc onSelect;
-	void* pSelectUser;
 	int iValue;
 	int iOldChangeCount;
 	int iOldSelectCount;
@@ -889,9 +888,8 @@ static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int
 	}
 	xuiInternalAccessibilityQueue(pWidget, bToggle ? XUI_ACCESSIBLE_EVENT_STATE_CHANGED : XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onSelect = pData->onSelect;
-	pSelectUser = pData->pSelectUser;
 	iValue = pData->arrItems[iIndex].iValue;
-	if ( onSelect != NULL ) onSelect(pWidget, iIndex, iValue, pSelectUser);
+	if ( onSelect != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSelect, xui_toolbar_select_proc, pData->pSelectUser, pWidget, iIndex, iValue);
 	return XUI_OK;
 }
 
@@ -1835,10 +1833,25 @@ XUI_API int xuiToolbarCreate(xui_context pContext, xui_widget* ppWidget, const x
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
+XUI_API int xuiToolbarSetSelectOwned(xui_widget pWidget, xui_toolbar_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onSelect, onSelect != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onSelect = onSelect;
+	pData->pSelectUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiToolbarSetSelect(xui_widget pWidget, xui_toolbar_select_proc onSelect, void* pUser)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onSelect) )
+		return xuiToolbarSetSelectOwned(pWidget, onSelect, pUser, NULL);
 	pData->onSelect = onSelect;
 	pData->pSelectUser = pUser;
 	return XUI_OK;
