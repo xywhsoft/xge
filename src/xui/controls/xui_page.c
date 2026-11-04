@@ -82,7 +82,7 @@ static void __xuiPageInvokeOwnedChange(xui_widget widget,xui_page_data_t* data,x
 {
     xui_callback_snapshot_t snapshot={0};
     if(widget->pEventOwners && widget->pEventOwners->pBindings &&
-       xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+       xuiInternalCallbackSnapshotBeginReported(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
     callback(widget,oldPage,page,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }
@@ -1374,8 +1374,8 @@ XUI_API int xuiPageSetCurrent(xui_widget pWidget, int iPage, int bNotify)
 	{ operationResult=(__xuiPageSetCurrentInternal(pWidget, pData, iPage, bNotify)); goto operationEnd; }
 
 operationEnd:;
-    int cleanupResult=xuiCallScopeEnd(&operation);
-    return operationResult!=XUI_OK ? operationResult : cleanupResult;
+    xuiInternalCallScopeRecordOutcome(&operation,operationResult,xrtGetError());
+    return xuiCallScopeEnd(&operation);
 }
 
 XUI_API int xuiPageGetCurrent(xui_widget pWidget)

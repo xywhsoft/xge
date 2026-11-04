@@ -176,9 +176,12 @@ static void context_snapshots(void)
         ContextUser oldUser={0xCE101,&old},otherUser={0xCE101,&other};xui_callback_owner_t ref=context_ref(&old);
         assert(install_context(kind,w,&oldUser,&ref)==XUI_OK && context_drop(&old));
         old.other=&other;old.otherUser=&otherUser;old.holdAction=close ? 2:1;
-        xui_call_scope_t scope={0};assert(xuiCallScopeBegin(c,&scope)==XUI_OK);(void)fire_context(kind,c,w);int ended=xuiCallScopeEnd(&scope);
+        xui_call_scope_t scope={0};assert(xuiCallScopeBegin(c,&scope)==XUI_OK);int fired=fire_context(kind,c,w);int ended=xuiCallScopeEnd(&scope);
         assert(old.calls==(close ? 0u:1u) && !other.calls);
-        if(close)assert(ended==XUI_ERROR_INVALID_STATE);else xuiDestroy(c);
+        if(close){
+            if(kind==13)assert(fired==XUI_ERROR_INVALID_STATE && ended==XUI_OK);
+            else assert(ended==XUI_ERROR_INVALID_STATE);
+        }else xuiDestroy(c);
         assert(old.released==1 && other.refs==1 && context_drop(&other));xrtClearError();
     }
 }

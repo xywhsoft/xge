@@ -958,7 +958,7 @@ XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope)
 {
 	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pScope->pPrevious != NULL ||
-		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pContext->bDestroying ||
+		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pScope->_pFirstError != NULL || pContext->bDestroying ||
 		pContext->bDestroyPending || pContext->iOperationDepth == INT_MAX ) return XUI_ERROR_INVALID_STATE;
 	pScope->pContext = pContext;
 	pScope->pSelf = pScope;
@@ -974,10 +974,11 @@ XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 	xui_context pContext;
 	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pScope->pContext == NULL && pScope->pSelf == NULL && pScope->pPrevious == NULL &&
-		pScope->pNext == NULL && pScope->iResult == XUI_OK && !pScope->bEnding ) return XUI_OK;
+		pScope->pNext == NULL && pScope->iResult == XUI_OK && !pScope->bEnding && pScope->_pFirstError == NULL ) return XUI_OK;
 	if ( pScope->pSelf != pScope || pScope->pContext == NULL || pScope->bEnding ) return XUI_ERROR_INVALID_STATE;
 	pContext = pScope->pContext;
 	pScope->bEnding = 1;
+    xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
 	xuiInternalOperationLeave(pContext);
 	/* Destruction clears pContext in every still-linked receipt before free.
 	 * Keep this receipt linked during Leave, including final native cleanup. */
@@ -987,7 +988,9 @@ XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 		if ( pScope->pNext != NULL ) pScope->pNext->pPrevious = pScope->pPrevious;
 	}
 	int iResult = pScope->iResult;
+    xerror* first=pScope->_pFirstError;
 	memset(pScope, 0, sizeof(*pScope));
+    if(iResult!=XUI_OK)xrtSetErrorTake(first);
 	return iResult;
 }
 
@@ -1775,7 +1778,7 @@ static void __xuiContextDestroyFonts(xui_context pContext)
         if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
         else xrtErrorFree(error);
     }
-    xuiInternalContextRecordFailure(pContext,result);xrtSetErrorTake(first);
+    xuiInternalContextRecordOutcome(pContext,result,first);xrtSetErrorTake(first);
 }
 
 static void __xuiContextDestroyNow(xui_context pContext)
@@ -1783,6 +1786,13 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	if ( !__xuiContextValid(pContext) || pContext->bDestroying ) {
 		return;
 	}
+    /* Physical destruction can follow an ordinary native operation with no
+     * external Scope. Keep a stack receipt through every cleanup phase. */
+    xui_call_scope_t receipt={0};
+    receipt.pContext=pContext;receipt.pSelf=&receipt;receipt.pNext=pContext->pCallScopes;
+    if(receipt.pNext)receipt.pNext->pPrevious=&receipt;
+    pContext->pCallScopes=&receipt;
+    xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
 	pContext->bDestroying = 1;
 	xuiInternalOperationEnter(pContext);
 	xuiInternalContextInvalidateLifetimes(pContext);
@@ -1836,17 +1846,27 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
 		pScope->pContext = NULL;
 	xrtFree(pContext);
+    if(receipt.iResult!=XUI_OK)xrtSetErrorTake(receipt._pFirstError);
 }
 
+XUI_API int xuiDestroyOwnerChecked(xui_context pContext,bool* pConsumed)
+{
+    if(!pConsumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *pConsumed=false;
+    if(!__xuiContextValid(pContext))return XUI_ERROR_INVALID_ARGUMENT;
+    if(pContext->bDestroying || pContext->bDestroyPending)return XUI_ERROR_INVALID_STATE;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(pContext,&scope);
+    if(result!=XUI_OK)return result;
+    pContext->bDestroyPending=1;*pConsumed=true;
+    xuiInternalContextInvalidateLifetimes(pContext);
+    return xuiCallScopeEnd(&scope);
+}
+XUI_API int xuiDestroyChecked(xui_context pContext)
+{bool consumed=false;return xuiDestroyOwnerChecked(pContext,&consumed);}
 XUI_API void xuiDestroy(xui_context pContext)
 {
-	if ( !__xuiContextValid(pContext) || pContext->bDestroying || pContext->bDestroyPending ) {
-		return;
-	}
-	xuiInternalOperationEnter(pContext);
-	pContext->bDestroyPending = 1;
-	xuiInternalContextInvalidateLifetimes(pContext);
-	xuiInternalOperationLeave(pContext);
+    if(__xuiContextValid(pContext) && !pContext->bDestroying && !pContext->bDestroyPending)
+        (void)xuiDestroyChecked(pContext);
 }
 
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))
@@ -1897,15 +1917,14 @@ XUI_API int xuiSetProxyOwned(xui_context pContext,xui_proxy pProxy)
         }
     }
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    xuiInternalContextRecordFailure(pContext,result);
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
     if(retained){
         int next=xuiProxyReleaseChecked(pProxy);xerror* error=xrtTakeError();
+        if(next!=XUI_OK || error)xuiInternalContextRecordOutcome(pContext,next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED,result!=XUI_OK ? first:error);
         if(result==XUI_OK && (next!=XUI_OK || error)){result=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;first=error;}
         else xrtErrorFree(error);
     }
-    int next=xuiCallScopeEnd(&scope);xerror* error=xrtTakeError();
-    if(result==XUI_OK && (next!=XUI_OK || error)){result=next!=XUI_OK ? next:XUI_ERROR_CALLBACK_FAILED;first=error;}
-    else xrtErrorFree(error);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 

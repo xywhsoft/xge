@@ -43,7 +43,7 @@ static void __xuiHyperlinkInvokeOwnedClick(xui_widget widget,xui_hyperlink_data_
 {
     xui_callback_snapshot_t snapshot={0};
     if(widget->pEventOwners && widget->pEventOwners->pBindings &&
-       xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+       xuiInternalCallbackSnapshotBeginReported(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
     callback(widget,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }

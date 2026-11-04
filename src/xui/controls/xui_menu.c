@@ -1293,7 +1293,7 @@ static int __xuiMenuCommit(xui_widget pWidget, xui_menu_data_t* pData, int iInde
 	iValue = pData->arrItems[iIndex].iValue;
     pSelectOwner = __xuiMenuResolveSelect(pWidget, &onSelect, &pUser, &pSelectSlot);
     if ( pSelectOwner != NULL ) {
-        iRet = xuiInternalCallbackSnapshotBegin(pSelectOwner, pSelectSlot, &pUser, &tSnapshot);
+        iRet = xuiInternalCallbackSnapshotBeginReported(pSelectOwner, pSelectSlot, &pUser, &tSnapshot);
         if ( iRet != XUI_OK ) return iRet;
     }
     if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(xuiWidgetGetContext(pWidget)) )

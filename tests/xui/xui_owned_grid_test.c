@@ -131,7 +131,9 @@ static void publication_preflight(void)
         xui_callback_owner_t e=owner_ref(&s.owners[4]);xui_call_scope_t scope={0};assert(xuiCallScopeBegin(s.context,&scope)==XUI_OK);
         int expected=action==2 ? XUI_ERROR_INVALID_STATE:XUI_ERROR_UNSUPPORTED;
         assert(xuiTableGridSetEditorOwned(s.widget,editor,&s.owners[4],&e)==expected && s.changed && s.owners[4].refs==1 && !xrtGetError());
-        assert(xuiCallScopeEnd(&scope)==expected && !xrtGetError());
+        /* The caller handled the ordinary setter result. Only rollback's
+         * consuming Drop failure remains sticky in the parent receipt. */
+        assert(xuiCallScopeEnd(&scope)==(failedDrop ? XUI_ERROR_CALLBACK_FAILED:XUI_OK) && !xrtGetError());
         s.owners[4].failDrop=false;finish(&s);
     }
 }

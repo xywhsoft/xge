@@ -5618,6 +5618,7 @@ typedef struct xui_call_scope_t {
 	struct xui_call_scope_t* pNext;
 	int iResult;
 	int bEnding;
+	xerror* _pFirstError; /* Exact first diagnostic, including failed-with-NULL. */
 } xui_call_scope_t;
 
 
@@ -6196,6 +6197,11 @@ struct xui_proxy_t {
 XUI_API int xuiCreate(xui_context* ppContext);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
+/* Accepted logical close consumes the context owner even when physical cleanup
+ * fails. A surrounding operation can defer that cleanup; its enclosing Scope
+ * reports the failure at its physical tail. Rejected calls consume nothing. */
+XUI_API int xuiDestroyOwnerChecked(xui_context pContext, bool* pConsumed);
+XUI_API int xuiDestroyChecked(xui_context pContext);
 /* Watch logical destruction, before user destructors and physical free.
  * Context close also invalidates all widget links, including unattached
  * instances. No allocation; failure leaves the zeroed link untouched.
@@ -6212,8 +6218,9 @@ XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
  * destruction waits until the last enclosing native operation/callback ends.
  * End marks the token as ending before deferred callbacks/destructors, retains
  * its checked cleanup receipt until they return, and then zeros the token.
- * It may physically destroy the context. Owned cleanup failures return
- * XUI_ERROR_CALLBACK_FAILED even without a diagnostic. End on an empty token
+ * It may physically destroy the context. Cleanup receipts retain their exact
+ * first status and diagnostic (which may be NULL). Error
+ * references are retained only on failure, without allocation. End on an empty token
  * is a no-op. Balance every successful Begin on all exits; End executes user
  * code and rejects reentry on the same ending token. */
 XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
@@ -6279,6 +6286,20 @@ XUI_API int xuiSetProxyOwned(xui_context pContext, xui_proxy pProxy);
  * outside graph freeze, never frees the common header, never repeats on failure. */
 XUI_API int xuiFontCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_proxy_payload_finalize_proc onFinalize, xui_font* ppFont, void** ppPayload);
 XUI_API int xuiSurfaceCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_proxy_payload_finalize_proc onFinalize, xui_surface* ppSurface, void** ppPayload);
+/* A session owns its proxy/target. End semantically consumes its drawing
+ * payload at most once; the RC carrier can remain alive for checked cleanup. */
+typedef struct xui_draw_scope_t {const void* _pSelf; xui_draw_context _pDraw;} xui_draw_scope_t;
+XUI_API int xuiDrawCreateOwned(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_draw_context* ppDraw, void** ppPayload);
+XUI_API int xuiDrawEndChecked(xui_draw_context pDraw);
+XUI_API int xuiDrawAddRef(xui_draw_context pDraw);
+XUI_API int xuiDrawReleaseOwnerChecked(xui_draw_context pDraw, bool* pConsumed);
+XUI_API int xuiDrawReleaseChecked(xui_draw_context pDraw);
+XUI_API int xuiDrawCallScopeBegin(xui_draw_context pDraw, xui_draw_scope_t* pScope);
+XUI_API int xuiDrawCallScopeEnd(xui_draw_scope_t* pScope);
+XUI_API bool xuiDrawEnded(xui_draw_context pDraw);
+XUI_API xui_proxy xuiDrawGetProxy(xui_draw_context pDraw); /* borrowed; NULL after End */
+XUI_API xui_surface xuiDrawGetTarget(xui_draw_context pDraw); /* borrowed; NULL after End */
+XUI_API xrtownershipref xuiDrawOwnership(xui_draw_context pDraw);
 XUI_API int xuiFontAddRef(xui_font pFont);
 XUI_API int xuiFontReleaseOwnerChecked(xui_font pFont, bool* pConsumed);
 XUI_API xui_proxy xuiFontGetProxy(xui_font pFont); /* borrowed, exact capability */
@@ -11082,6 +11103,8 @@ typedef struct xui_table_cell_scope_t {
     struct xui_table_cell_scope_t* pPrevious;
     struct xui_table_cell_scope_t* pNext;
     int iResult;
+    int bEnding;
+    xerror* _pFirstError;
 } xui_table_cell_scope_t;
 XUI_API int xuiTableViewCellOutputCallScopeBegin(xui_table_view_cell_output_t* pCell, xui_table_cell_scope_t* pScope);
 XUI_API int xuiTableViewCellOutputCallScopeEnd(xui_table_cell_scope_t* pScope);

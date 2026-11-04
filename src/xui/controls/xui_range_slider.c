@@ -54,7 +54,7 @@ static void __xuiRangeSliderInvokeOwnedChange(xui_widget widget,xui_range_slider
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,start,end,user);return;}
     xui_callback_snapshot_t snapshot={0};
-    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    if(xuiInternalCallbackSnapshotBeginReported(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
     callback(widget,start,end,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }

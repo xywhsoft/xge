@@ -64,7 +64,7 @@ static int __xuiBreadcrumbInvokeOwnedContextMenu(xui_widget widget,xui_breadcrum
 {
     xui_callback_snapshot_t snapshot={0};
     if(widget->pEventOwners && widget->pEventOwners->pBindings &&
-       xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot)!=XUI_OK)return XUI_ERROR_CALLBACK_FAILED;
+       xuiInternalCallbackSnapshotBeginReported(widget,&data->onContext,&user,&snapshot)!=XUI_OK)return XUI_ERROR_CALLBACK_FAILED;
     int result=callback(widget,index,value,x,y,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
 }
@@ -75,7 +75,7 @@ static void __xuiBreadcrumbInvokeOwnedClick(xui_widget widget,xui_breadcrumb_dat
 {
     xui_callback_snapshot_t snapshot={0};
     if(widget->pEventOwners && widget->pEventOwners->pBindings &&
-       xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+       xuiInternalCallbackSnapshotBeginReported(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
     callback(widget,index,value,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }

@@ -36,14 +36,23 @@ int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner)
 		? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
 }
 
-int xuiInternalCallbackOwnerDrop(xui_context pContext, const xui_callback_owner_t* pOwner)
+int xuiInternalCallbackOwnerDropOutcome(xui_context context,const xui_callback_owner_t* owner,int primaryStatus,const xerror* primaryError)
 {
-	if ( pOwner == NULL || pOwner->onDrop == NULL || pOwner->onDrop(pOwner->tReference.Data) ) return XUI_OK;
-	/* A consuming callback may fail without an allocated diagnostic. Keep the
-	 * status in every enclosing checked native call, through final destruction. */
-	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
-		if ( pScope->iResult == XUI_OK ) pScope->iResult = XUI_ERROR_CALLBACK_FAILED;
-	return XUI_ERROR_CALLBACK_FAILED;
+    if(!owner || !owner->onDrop)return XUI_OK;
+    /* The caller has detached its exact primary from TLS. Every return from
+     * Drop consumes this owner; a later failure cannot replace that primary. */
+    bool success=owner->onDrop(owner->tReference.Data);
+    int result=success && !xrtGetError() ? XUI_OK:XUI_ERROR_CALLBACK_FAILED;
+    if(result!=XUI_OK)xuiInternalContextRecordOutcome(context,result,primaryStatus!=XUI_OK ? primaryError:xrtGetError());
+    return result;
+}
+int xuiInternalCallbackOwnerDrop(xui_context context,const xui_callback_owner_t* owner)
+{
+    if(!owner || !owner->onDrop)return XUI_OK;
+    xerror* first=xrtTakeError();int primary=first ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+    int result=xuiInternalCallbackOwnerDropOutcome(context,owner,primary,first);
+    if(primary!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return primary;}
+    return result;
 }
 
 static int __xuiWidgetMemoryValid(xui_widget pWidget)
@@ -2608,7 +2617,7 @@ static int __xuiTypeFontAdmit(xui_widget widget,xui_widget_type type)
     for(size_t i=0;i<type->iFontSlotCount;++i){
         status=xuiInternalFontAdmit(widget->pContext,__xuiTypeFont(widget,type,i));
         if(status!=XUI_OK){
-            xerror* first=xrtTakeError();xuiInternalContextRecordFailure(widget->pContext,status);
+            xerror* first=xrtTakeError();
             for(size_t j=i;j>0;--j){xui_font font=__xuiTypeFont(widget,type,j-1);if(font)(void)xuiFontReleaseChecked(font);}
             __xuiTypeFontRollback(widget,type->pParent);xrtSetErrorTake(first);return status;
         }
@@ -3652,7 +3661,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
      * full inheritance chain succeeds; partial failure rolls back held slots. */
     iRet=pContext->pOwnedProxy && !xuiInternalWidgetIsValid(pWidget) ? XUI_ERROR_INVALID_STATE:__xuiTypeFontAdmit(pWidget,pType);
     if(iRet!=XUI_OK){
-        xerror* first=xrtTakeError();xuiInternalContextRecordFailure(pContext,iRet);
+        xerror* first=xrtTakeError();
         __xuiWidgetTypeDestroyChain(pWidget,pType);
         (void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);xrtSetErrorTake(first);return iRet;
     }
@@ -4051,9 +4060,8 @@ XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
     xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
     result=__xuiWidgetRequestDestroy(widget,NULL);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiCallScopeEnd(&scope);
-    if(result!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return result;}
-    return ended;
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);
+    xrtSetErrorTake(first);return result;
 }
 XUI_API void xuiWidgetDestroy(xui_widget widget)
 {
@@ -5729,20 +5737,20 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	xui_callback_owner_t* pNewHandlers = NULL;
 	if ( pWidget->pEventOwners == NULL && pOwner != NULL && pOwner->onHold != NULL ) {
 		pNew = xrtCalloc(1, sizeof(*pNew));
-		if ( pNew == NULL ) { (void)xuiCallScopeEnd(&tScope); return XUI_ERROR_OUT_OF_MEMORY; }
+		if ( pNew == NULL ) { xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_OUT_OF_MEMORY,xrtGetError()); return xuiCallScopeEnd(&tScope); }
 	}
 	if ( iEventType != -1 && pOwner != NULL && pOwner->onHold != NULL &&
 		(pWidget->pEventOwners == NULL || pWidget->pEventOwners->pHandlers == NULL) ) {
 		pNewHandlers = xrtCalloc(XUI_WIDGET_EVENT_SLOT_COUNT, sizeof(*pNewHandlers));
-		if ( pNewHandlers == NULL ) { xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return XUI_ERROR_OUT_OF_MEMORY; }
+		if ( pNewHandlers == NULL ) { xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_OUT_OF_MEMORY,xrtGetError()); xrtFree(pNew); return xuiCallScopeEnd(&tScope); }
 	}
 	iResult = xuiInternalCallbackOwnerHold(pOwner);
-	if ( iResult != XUI_OK ) { xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiCallScopeEnd(&tScope); return iResult; }
+	if ( iResult != XUI_OK ) { xuiInternalCallScopeRecordOutcome(&tScope,iResult,xrtGetError()); xrtFree(pNewHandlers); xrtFree(pNew); return xuiCallScopeEnd(&tScope); }
 	if ( !__xuiWidgetValid(pWidget) || pContext->bDestroyPending || pContext->bDestroying ) {
+        xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_INVALID_STATE,xrtGetError());
 		xrtFree(pNewHandlers); xrtFree(pNew);
 		(void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
-		(void)xuiCallScopeEnd(&tScope);
-		return XUI_ERROR_INVALID_STATE;
+        return xuiCallScopeEnd(&tScope);
 	}
 	/* A nested registration may have installed either allocation. Never
 	 * overwrite it with a stale pre-Hold candidate; replace its actual slot
@@ -5755,8 +5763,9 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	}
 	xrtownershipscope tMutation = {0};
 	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
+        xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_INVALID_STATE,xrtGetError());
 		xrtFree(pNewHandlers); xrtFree(pNew); (void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
-		(void)xuiCallScopeEnd(&tScope); return XUI_ERROR_INVALID_STATE;
+        return xuiCallScopeEnd(&tScope);
 	}
 	if ( pNew != NULL ) pWidget->pEventOwners = pNew;
 	if ( pNewHandlers != NULL ) pWidget->pEventOwners->pHandlers = pNewHandlers;
@@ -5775,9 +5784,8 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 		__xuiWidgetUpdateEventMasksToRoot(pWidget);
 	}
 	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
-	iResult = xuiInternalCallbackOwnerDrop(pContext, &tOld);
-	int iCleanup = xuiCallScopeEnd(&tScope);
-	return iResult != XUI_OK ? iResult : iCleanup;
+    (void)xuiInternalCallbackOwnerDrop(pContext, &tOld);
+    return xuiCallScopeEnd(&tScope);
 }
 
 XUI_API int xuiWidgetSetEventCallbackOwned(xui_widget pWidget, xui_widget_event_proc onEvent, void* pUser,

@@ -30,12 +30,18 @@ static void __xuiCellDefaultScalars(xui_table_view_cell_output_t* cell)
     const xui_table_view_cell_output_t defaults={.iRowSpan=1,.iColSpan=1};
     __xuiCellScalars(cell,&defaults);
 }
-static void __xuiCellRecordFailure(xui_table_view_cell_output_t* cell,int status)
+static void __xuiCellRecordOwnOutcome(xui_table_cell_scope_t* scope,int status,const xerror* error)
 {
-    if(status==XUI_OK)return;
-    for(xui_table_cell_scope_t* scope=cell->_pScopes;scope;scope=scope->pNext)
-        if(scope->iResult==XUI_OK)scope->iResult=status;
+    if(!scope || scope->pSelf!=scope || scope->iResult!=XUI_OK || (status==XUI_OK && !error))return;
+    scope->iResult=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;scope->_pFirstError=xrtErrorRef(error);
 }
+static void __xuiCellRecordOutcome(xui_table_view_cell_output_t* cell,int status,const xerror* error)
+{
+    for(xui_table_cell_scope_t* scope=cell->_pScopes;scope;scope=scope->pNext)
+        __xuiCellRecordOwnOutcome(scope,status,error);
+}
+static void __xuiCellRecordFailure(xui_table_view_cell_output_t* cell,int status)
+{__xuiCellRecordOutcome(cell,status,xrtGetError());}
 /* Preserve the first failure, including a NULL diagnostic. A later Drop must
  * never replace it merely because the first error could not allocate text. */
 static void __xuiCellOutcome(int status,int* result,xerror** first)
@@ -73,7 +79,7 @@ static int __xuiCellDropPayload(xui_cell_payload_t payload)
  * User invalidation/Drop and physical free are deliberately outside the gate. */
 static int __xuiCellDestroy(xui_table_view_cell_output_t* cell)
 {
-    int heap=cell->_bHeap;int result=XUI_OK;xerror* first=NULL;
+    int heap=cell->_bHeap;xerror* first=xrtTakeError();int result=first ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
     xui_cell_payload_t payload={0};__xuiCellDetach(cell,&payload);
     xuiInternalLifetimeInvalidateAll(&cell->_pLifetimeLinks);
     __xuiCellOutcome(XUI_OK,&result,&first);
@@ -166,7 +172,8 @@ XUI_API int xuiTableViewCellOutputDisposeChecked(xui_table_view_cell_output_t* c
 }
 XUI_API int xuiTableViewCellOutputCallScopeBegin(xui_table_view_cell_output_t* cell,xui_table_cell_scope_t* scope)
 {
-    if(!scope || scope->pCell || scope->pSelf || scope->pPrevious || scope->pNext || !__xuiCellValid(cell) || cell->_pOwnershipClaim)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!scope || scope->pCell || scope->pSelf || scope->pPrevious || scope->pNext || scope->iResult || scope->bEnding || scope->_pFirstError || !__xuiCellValid(cell) || cell->_pOwnershipClaim)return XUI_ERROR_INVALID_ARGUMENT;
+    if(cell->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     if(cell->_iReferences==SIZE_MAX || cell->_iCalls==SIZE_MAX){(void)xrtOwnershipScopeEnd(&mutation);return XUI_ERROR_INVALID_STATE;}
     ++cell->_iReferences;++cell->_iCalls;
@@ -179,29 +186,44 @@ XUI_API int xuiTableViewCellOutputCallScopeBegin(xui_table_view_cell_output_t* c
 XUI_API int xuiTableViewCellOutputCallScopeEnd(xui_table_cell_scope_t* scope)
 {
     if(!scope)return XUI_ERROR_INVALID_ARGUMENT;
-    if(!scope->pCell && !scope->pSelf)return XUI_OK;
-    if(scope->pSelf!=scope || !__xuiCellValid(scope->pCell))return XUI_ERROR_INVALID_STATE;
-    xui_table_view_cell_output_t* cell=scope->pCell;int result=scope->iResult;
+    if(!scope->pCell && !scope->pSelf && !scope->pPrevious && !scope->pNext &&
+       scope->iResult==XUI_OK && !scope->bEnding && !scope->_pFirstError)return XUI_OK;
+    if(scope->pSelf!=scope || scope->bEnding || !__xuiCellValid(scope->pCell))return XUI_ERROR_INVALID_STATE;
+    xui_table_view_cell_output_t* cell=scope->pCell;
+    if(cell->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    __xuiCellRecordOutcome(cell,XUI_OK,xrtGetError());
+    int result=scope->iResult;xerror* first=scope->_pFirstError;scope->bEnding=1;
     if(scope->pPrevious)scope->pPrevious->pNext=scope->pNext;else cell->_pScopes=scope->pNext;
     if(scope->pNext)scope->pNext->pPrevious=scope->pPrevious;
-    --cell->_iCalls;memset(scope,0,sizeof(*scope));
+    --cell->_iCalls;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
-    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    __xuiCellOutcome(__xuiCellReleasePin(cell,false),&result,&first);
-    xrtSetErrorTake(first);return result;
+    /* Keep the address-stable ending token until the final pin's consuming
+     * cleanup returns. Its nullable primary owns a separate error reference. */
+    xrtClearError();__xuiCellOutcome(__xuiCellReleasePin(cell,false),&result,&first);
+    memset(scope,0,sizeof(*scope));xrtSetErrorTake(first);return result;
 }
+static int __xuiCellScopeEndOutcome(xui_table_cell_scope_t* scope,int status,xerror** first)
+{
+    __xuiCellRecordOwnOutcome(scope,status,*first);
+    int ended=xuiTableViewCellOutputCallScopeEnd(scope);xerror* error=xrtTakeError();
+    if(status!=XUI_OK){xrtErrorFree(error);return status;}
+    if(ended!=XUI_OK){xrtErrorFree(*first);*first=error;return ended;}
+    if(status==XUI_OK && error){*first=error;return XUI_ERROR_CALLBACK_FAILED;}
+    xrtErrorFree(error);return status;
+}
+
 XUI_API int xuiTableViewCellOutputReset(xui_table_view_cell_output_t* cell)
 {
     int result=__xuiCellMutable(cell,false);if(result!=XUI_OK)return result;
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(cell,&scope);if(result!=XUI_OK)return result;
     xui_cell_payload_t old={0};xrtownershipscope mutation={0};
-    if(!xrtOwnershipMutationBegin(&mutation)){(void)xuiTableViewCellOutputCallScopeEnd(&scope);return XUI_ERROR_INVALID_STATE;}
+    if(!xrtOwnershipMutationBegin(&mutation)){__xuiCellRecordOwnOutcome(&scope,XUI_ERROR_INVALID_STATE,xrtGetError());return xuiTableViewCellOutputCallScopeEnd(&scope);}
     __xuiCellDetach(cell,&old);__xuiCellDefaultScalars(cell);
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     result=__xuiCellDropPayload(old);__xuiCellRecordFailure(cell,result);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    __xuiCellOutcome(xuiTableViewCellOutputCallScopeEnd(&scope),&result,&first);
+    result=__xuiCellScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 XUI_API int xuiTableViewCellOutputUse(xui_table_view_cell_output_t* cell,xui_table_view_cell_output_t* cached)
@@ -217,16 +239,17 @@ XUI_API int xuiTableViewCellOutputUse(xui_table_view_cell_output_t* cell,xui_tab
     if(source==cell || !source->_bHeap)return XUI_ERROR_INVALID_ARGUMENT;
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(cell,&scope);if(result!=XUI_OK)return result;
     result=__xuiCellRetainPin(source,2);
-    if(result!=XUI_OK){(void)xuiTableViewCellOutputCallScopeEnd(&scope);return result;}
+    if(result!=XUI_OK){__xuiCellRecordOwnOutcome(&scope,result,xrtGetError());return xuiTableViewCellOutputCallScopeEnd(&scope);}
     xui_cell_payload_t old={0};xrtownershipscope mutation={0};
     if(!xrtOwnershipMutationBegin(&mutation)){
-        (void)__xuiCellUnpinUse(source);(void)xuiTableViewCellOutputCallScopeEnd(&scope);return XUI_ERROR_INVALID_STATE;
+        __xuiCellRecordOwnOutcome(&scope,XUI_ERROR_INVALID_STATE,xrtGetError());
+        (void)__xuiCellUnpinUse(source);return xuiTableViewCellOutputCallScopeEnd(&scope);
     }
     __xuiCellDetach(cell,&old);__xuiCellScalars(cell,cached);cell->_pSource=source;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     result=__xuiCellDropPayload(old);__xuiCellRecordFailure(cell,result);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    __xuiCellOutcome(xuiTableViewCellOutputCallScopeEnd(&scope),&result,&first);
+    result=__xuiCellScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 static int __xuiCellSetText(xui_table_view_cell_output_t* cell,xstrview text,bool tooltip)
@@ -257,18 +280,26 @@ XUI_API int xuiTableViewCellOutputSetValue(xui_table_view_cell_output_t* cell,co
     int result=__xuiCellMutable(cell,true);if(result!=XUI_OK)return result;
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(cell,&scope);if(result!=XUI_OK)return result;
     xvalue* copy=value ? xrtValueClone(value):NULL;
-    if(value && !copy){(void)xuiTableViewCellOutputCallScopeEnd(&scope);return XUI_ERROR_OUT_OF_MEMORY;}
+    if(value && !copy){__xuiCellRecordOwnOutcome(&scope,XUI_ERROR_OUT_OF_MEMORY,xrtGetError());return xuiTableViewCellOutputCallScopeEnd(&scope);}
     /* Clone can invoke a value's native clone hook. Revalidate the live receiver. */
     result=__xuiCellMutable(cell,true);
-    if(result!=XUI_OK){xrtValueRelease(copy);(void)xuiTableViewCellOutputCallScopeEnd(&scope);return result;}
+    if(result!=XUI_OK){__xuiCellRecordOwnOutcome(&scope,result,xrtGetError());xrtValueRelease(copy);return xuiTableViewCellOutputCallScopeEnd(&scope);}
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){
-        xrtValueRelease(copy);(void)xuiTableViewCellOutputCallScopeEnd(&scope);return XUI_ERROR_INVALID_STATE;
+        __xuiCellRecordOwnOutcome(&scope,XUI_ERROR_INVALID_STATE,xrtGetError());
+        xrtValueRelease(copy);return xuiTableViewCellOutputCallScopeEnd(&scope);
     }
     xvalue* old=cell->_pValue;cell->_pValue=copy;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     xrtValueRelease(old);xerror* first=NULL;__xuiCellOutcome(XUI_OK,&result,&first);
-    __xuiCellRecordFailure(cell,result);__xuiCellOutcome(xuiTableViewCellOutputCallScopeEnd(&scope),&result,&first);
+    __xuiCellRecordOutcome(cell,result,first);result=__xuiCellScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
+}
+static void __xuiCellCleanupOutcome(xui_table_view_cell_output_t* cell,int status,int* result,xerror** first)
+{
+    xerror* error=xrtTakeError();if(status==XUI_OK && !error)return;
+    if(status==XUI_OK)status=XUI_ERROR_CALLBACK_FAILED;
+    __xuiCellRecordOutcome(cell,status,*result!=XUI_OK ? *first:error);
+    if(*result==XUI_OK){*result=status;*first=error;}else xrtErrorFree(error);
 }
 static int __xuiCellSetCallback(xui_table_view_cell_output_t* cell,
     xui_table_view_cell_text_owned_proc text,xui_table_view_cell_render_owned_proc render,
@@ -282,21 +313,22 @@ static int __xuiCellSetCallback(xui_table_view_cell_output_t* cell,
     bool held=result==XUI_OK;
     if(held)result=__xuiCellMutable(cell,true);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    __xuiCellRecordOwnOutcome(&scope,result,first);
     if(result!=XUI_OK){
-        if(held)__xuiCellOutcome(__xuiCellDrop(owner),&result,&first);
+        if(held)__xuiCellCleanupOutcome(cell,__xuiCellDrop(owner),&result,&first);
     }else{
         xrtownershipscope mutation={0};
         if(!xrtOwnershipMutationBegin(&mutation)){
-            result=XUI_ERROR_INVALID_STATE;__xuiCellOutcome(__xuiCellDrop(owner),&result,&first);
+            result=XUI_ERROR_INVALID_STATE;__xuiCellCleanupOutcome(cell,__xuiCellDrop(owner),&result,&first);
         }else{
             xui_callback_owner_t old=formatter ? cell->_tTextOwner:cell->_tRenderOwner;
             if(formatter){cell->_onText=text;cell->_pTextUser=user;cell->_tTextOwner=owner;}
             else{cell->_onRender=render;cell->_pRenderUser=user;cell->_tRenderOwner=owner;}
             if(!xrtOwnershipScopeEnd(&mutation))abort();
-            __xuiCellOutcome(__xuiCellDrop(old),&result,&first);
+            __xuiCellCleanupOutcome(cell,__xuiCellDrop(old),&result,&first);
         }
     }
-    __xuiCellRecordFailure(cell,result);__xuiCellOutcome(xuiTableViewCellOutputCallScopeEnd(&scope),&result,&first);
+    __xuiCellRecordOwnOutcome(&scope,result,first);result=__xuiCellScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 XUI_API int xuiTableViewCellOutputSetFormatterOwned(xui_table_view_cell_output_t* cell,xui_table_view_cell_text_owned_proc text,void* user,const xui_callback_owner_t* owner)
@@ -354,7 +386,7 @@ int xuiInternalTableCellMove(xui_table_view_cell_output_t* target,xui_table_view
     if(target==source)return XUI_OK;
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(target,&scope);if(result!=XUI_OK)return result;
     xui_cell_payload_t old={0};xrtownershipscope mutation={0};
-    if(!xrtOwnershipMutationBegin(&mutation)){(void)xuiTableViewCellOutputCallScopeEnd(&scope);return XUI_ERROR_INVALID_STATE;}
+    if(!xrtOwnershipMutationBegin(&mutation)){__xuiCellRecordOwnOutcome(&scope,XUI_ERROR_INVALID_STATE,xrtGetError());return xuiTableViewCellOutputCallScopeEnd(&scope);}
     __xuiCellDetach(target,&old);__xuiCellScalars(target,source);
     target->_tText=source->_tText;target->_tTooltip=source->_tTooltip;target->_pValue=source->_pValue;
     target->_onText=source->_onText;target->_pTextUser=source->_pTextUser;target->_tTextOwner=source->_tTextOwner;
@@ -364,7 +396,7 @@ int xuiInternalTableCellMove(xui_table_view_cell_output_t* target,xui_table_view
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     result=__xuiCellDropPayload(old);__xuiCellRecordFailure(target,result);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    __xuiCellOutcome(xuiTableViewCellOutputCallScopeEnd(&scope),&result,&first);
+    result=__xuiCellScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 
@@ -476,13 +508,20 @@ int xuiInternalTableCellFormatBegin(xui_widget widget,int row,int column,
        (format->text.Data && (memchr(format->text.Data,0,format->text.Size) || format->text.Data[format->text.Size]!=0)))return XUI_ERROR_INVALID_ARGUMENT;
     return XUI_OK;
 }
+int xuiInternalTableCellFormatEndOutcome(xui_table_cell_format_t* format,int result,xerror* first)
+{
+    xerror* ambient=xrtTakeError();
+    if(result==XUI_OK && (first || ambient)){result=XUI_ERROR_CALLBACK_FAILED;if(!first){first=ambient;ambient=NULL;}}
+    xrtErrorFree(ambient);
+    if(format->owned){format->owned=false;xrtFree((void*)format->text.Data);format->text=(xstrview){0};}
+    __xuiCellOutcome(XUI_OK,&result,&first);
+    if(format->held){format->held=false;__xuiCellOutcome(xuiInternalCallbackOwnerDropOutcome(format->context,&format->owner,result,first),&result,&first);}
+    memset(format,0,sizeof(*format));xrtSetErrorTake(first);return result;
+}
 int xuiInternalTableCellFormatEnd(xui_table_cell_format_t* format,int result)
 {
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    if(format->owned){format->owned=false;xrtFree((void*)format->text.Data);format->text=(xstrview){0};}
-    __xuiCellOutcome(XUI_OK,&result,&first);
-    if(format->held){format->held=false;__xuiCellOutcome(xuiInternalCallbackOwnerDrop(format->context,&format->owner),&result,&first);}
-    memset(format,0,sizeof(*format));xrtSetErrorTake(first);return result;
+    return xuiInternalTableCellFormatEndOutcome(format,result,first);
 }
 
 /* Internal read lease covers the actual native formatter/draw consumer, not

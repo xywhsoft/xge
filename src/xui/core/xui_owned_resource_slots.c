@@ -5,12 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-void xuiInternalContextRecordFailure(xui_context context,int status)
+void xuiInternalContextRecordOutcome(xui_context context,int status,const xerror* error)
 {
-    if(status==XUI_OK || !context)return;
-    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext)
-        if(scope->iResult==XUI_OK)scope->iResult=status;
+    if(!context || (status==XUI_OK && !error))return;
+    if(status==XUI_OK)status=XUI_ERROR_CALLBACK_FAILED;
+    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext){
+        xuiInternalCallScopeRecordOutcome(scope,status,error);
+    }
 }
+void xuiInternalContextRecordFailure(xui_context context,int status)
+{xuiInternalContextRecordOutcome(context,status,xrtGetError());}
 static void outcome(int status,int* result,xerror** first)
 {
     xerror* error=xrtTakeError();
@@ -22,9 +26,9 @@ int xuiInternalFontRelease(xui_context context,xui_font font)
 {
     int result=xrtGetError() ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    xuiInternalContextRecordFailure(context,result);
-    if(font)outcome(xuiFontReleaseChecked(font),&result,&first);
-    xuiInternalContextRecordFailure(context,result);xrtSetErrorTake(first);return result;
+    xuiInternalContextRecordOutcome(context,result,first);
+    if(font)xuiInternalContextCleanupOutcome(context,xuiFontReleaseChecked(font),&result,&first);
+    xuiInternalContextRecordOutcome(context,result,first);xrtSetErrorTake(first);return result;
 }
 static int fontValidate(xui_context context,xui_font font)
 {
@@ -101,15 +105,15 @@ int xuiInternalFontSlotEnd(xui_font_slot_update_t* update,bool commit,int status
     xui_context context=update->context;
     if(status==XUI_OK && xrtGetError())status=XUI_ERROR_CALLBACK_FAILED;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    xuiInternalContextRecordFailure(context,status);
+    xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
     if(update->published && !commit && !update->restored)outcome(xuiInternalFontSlotRestore(update),&status,&first);
     xui_font retired=!update->published || update->restored ? update->current:update->previous;
-    if(update->ownsSlots && retired && (update->published || update->newHeld))outcome(xuiFontReleaseChecked(retired),&status,&first);
-    if(update->guardHeld)outcome(xuiFontReleaseChecked(update->guarded),&status,&first);
-    xuiInternalContextRecordFailure(context,status);
+    if(update->ownsSlots && retired && (update->published || update->newHeld))xuiInternalContextCleanupOutcome(context,xuiFontReleaseChecked(retired),&status,&first);
+    if(update->guardHeld)xuiInternalContextCleanupOutcome(context,xuiFontReleaseChecked(update->guarded),&status,&first);
+    xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
     if(context->pActiveFontUpdates!=update)abort();
     context->pActiveFontUpdates=update->next;
-    outcome(xuiCallScopeEnd(&update->scope),&status,&first);
+    status=xuiInternalCallScopeEndOutcome(&update->scope,status,&first);
     memset(update,0,sizeof(*update));xrtSetErrorTake(first);return status;
 }
 bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user)

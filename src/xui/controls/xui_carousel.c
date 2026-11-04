@@ -60,7 +60,7 @@ static void __xuiCarouselInvokeOwnedChange(xui_widget widget,xui_carousel_data_t
 {
     xui_callback_snapshot_t snapshot={0};
     if(widget->pEventOwners && widget->pEventOwners->pBindings &&
-       xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+       xuiInternalCallbackSnapshotBeginReported(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
     callback(widget,oldPage,page,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }
@@ -1490,8 +1490,8 @@ XUI_API int xuiCarouselSetCurrent(xui_widget pWidget, int iIndex, int bNotify)
 	{ operationResult=(__xuiCarouselSetCurrentInternal(pWidget, pData, iIndex, bNotify)); goto operationEnd; }
 
 operationEnd:;
-    int cleanupResult=xuiCallScopeEnd(&operation);
-    return operationResult!=XUI_OK ? operationResult : cleanupResult;
+    xuiInternalCallScopeRecordOutcome(&operation,operationResult,xrtGetError());
+    return xuiCallScopeEnd(&operation);
 }
 
 XUI_API int xuiCarouselGetCurrent(xui_widget pWidget)
@@ -1515,8 +1515,8 @@ XUI_API int xuiCarouselNext(xui_widget pWidget, int bNotify)
 	{ operationResult=(__xuiCarouselMove(pWidget, pData, 1, bNotify)); goto operationEnd; }
 
 operationEnd:;
-    int cleanupResult=xuiCallScopeEnd(&operation);
-    return operationResult!=XUI_OK ? operationResult : cleanupResult;
+    xuiInternalCallScopeRecordOutcome(&operation,operationResult,xrtGetError());
+    return xuiCallScopeEnd(&operation);
 }
 
 XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify)
@@ -1534,8 +1534,8 @@ XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify)
 	{ operationResult=(__xuiCarouselMove(pWidget, pData, -1, bNotify)); goto operationEnd; }
 
 operationEnd:;
-    int cleanupResult=xuiCallScopeEnd(&operation);
-    return operationResult!=XUI_OK ? operationResult : cleanupResult;
+    xuiInternalCallScopeRecordOutcome(&operation,operationResult,xrtGetError());
+    return xuiCallScopeEnd(&operation);
 }
 
 XUI_API int xuiCarouselSetAutoPlay(xui_widget pWidget, int bEnabled, float fInterval)

@@ -71,7 +71,7 @@ static void __xuiButtonInvokeOwnedClick(xui_widget widget,xui_button_data_t* dat
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return;}
     xui_callback_snapshot_t snapshot={0};
-    if(xuiInternalCallbackSnapshotBegin(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
+    if(xuiInternalCallbackSnapshotBeginReported(widget,&data->onClick,&user,&snapshot)!=XUI_OK)return;
     callback(widget,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }

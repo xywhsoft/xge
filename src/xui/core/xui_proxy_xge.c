@@ -254,11 +254,38 @@ static void __xuiProxyXgeSurfaceDiscard(xui_surface surface)
 }
 
 struct xui_draw_context_t {
+	xui_owned_draw_t tOwned;
 	uint32_t iMagic;
-	xui_surface pTarget;
 	xge_pass_t tPass;
 	int bDirty;
+	xui_draw_context pNextManual;
 };
+/* Weak records embedded in live sessions, with no extra root or allocation.
+ * Rendering remains creator-affine; this cold lock only coordinates begin/end
+ * from distinct creator threads and distinct capability tables. */
+static xatomic32 g_xuiProxyXgeManualLock;
+static xui_draw_context g_xuiProxyXgeManualDraws;
+static int __xuiProxyXgeDrawPayloadFinalize(xui_proxy,void*);
+static void __xuiProxyXgeManualLock(void)
+{while(xrtAtomic32Exchange(&g_xuiProxyXgeManualLock,1,XMEMORY_ACQUIRE))while(xrtAtomic32Load(&g_xuiProxyXgeManualLock,XMEMORY_RELAXED)){} }
+static void __xuiProxyXgeManualUnlock(void)
+{xrtAtomic32Store(&g_xuiProxyXgeManualLock,0,XMEMORY_RELEASE);}
+static bool __xuiProxyXgeManualBusy(void)
+{
+	uint64_t thread=xrtThreadCurrentId();bool found=false;
+	__xuiProxyXgeManualLock();
+	for(xui_draw_context value=g_xuiProxyXgeManualDraws;value;value=value->pNextManual)
+		if(value->tOwned.tResource.iCreatorThread==thread){found=true;break;}
+	__xuiProxyXgeManualUnlock();return found;
+}
+static void __xuiProxyXgeManualRemove(xui_draw_context draw)
+{
+	__xuiProxyXgeManualLock();
+	xui_draw_context* slot=&g_xuiProxyXgeManualDraws;
+	while(*slot && *slot!=draw)slot=&(*slot)->pNextManual;
+	if(*slot)*slot=draw->pNextManual;
+	draw->pNextManual=NULL;__xuiProxyXgeManualUnlock();
+}
 
 static uint32_t __xuiProxyXgeImageFlags(uint32_t iFlags)
 {
@@ -704,9 +731,14 @@ static int __xuiProxyXgeTargetEndDirty(xge_pass_t* pPass, xui_surface pTarget, i
 static int __xuiProxyXgeDrawValid(xui_draw_context pDraw)
 {
 	return (pDraw != NULL) &&
+	       (xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW) ||
+	        pDraw->tOwned.tResource.iMagic==XUI_PROXY_XGE_DRAW_MAGIC) &&
+	       (!xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW) ||
+	        (pDraw->tOwned.tResource.onFinalize==__xuiProxyXgeDrawPayloadFinalize &&
+	         xuiInternalProxyResourceReady(pDraw,XUI_OWNED_DRAW))) &&
 	       (pDraw->iMagic == XUI_PROXY_XGE_DRAW_MAGIC) &&
 	       (pDraw->tPass.bActive != 0) &&
-	       __xuiProxyXgeSurfaceTargetValid(pDraw->pTarget);
+	       __xuiProxyXgeSurfaceTargetValid(pDraw->tOwned.pTarget);
 }
 
 static void __xuiProxyXgeDrawMarkDirty(xui_draw_context pDraw)
@@ -1761,7 +1793,8 @@ static int __xuiProxyXgeDrawBegin(xui_proxy pProxy, xui_draw_context* ppDraw, xu
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pDraw->iMagic = XUI_PROXY_XGE_DRAW_MAGIC;
-	pDraw->pTarget = pTarget;
+	pDraw->tOwned.tResource.iMagic = XUI_PROXY_XGE_DRAW_MAGIC;
+	pDraw->tOwned.pTarget = pTarget;
 	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &pDraw->tPass);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pDraw);
@@ -1777,11 +1810,15 @@ static int __xuiProxyXgeDrawEnd(xui_proxy pProxy, xui_draw_context pDraw)
 	int bDirty;
 	int iRet;
 
+	if(pProxy && xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW)){
+		if(pDraw->tOwned.tResource.onFinalize!=__xuiProxyXgeDrawPayloadFinalize)return XUI_ERROR_INVALID_ARGUMENT;
+		return xuiDrawReleaseChecked(pDraw);
+	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	pTarget = pDraw->pTarget;
+	pTarget = pDraw->tOwned.pTarget;
 	bDirty = pDraw->bDirty;
 	iRet = __xuiProxyXgeTargetEnd(&pDraw->tPass, XGE_OK);
 	if ( (iRet == XGE_OK) && bDirty ) {
@@ -1790,6 +1827,38 @@ static int __xuiProxyXgeDrawEnd(xui_proxy pProxy, xui_draw_context pDraw)
 	pDraw->iMagic = 0;
 	xrtFree(pDraw);
 	return iRet;
+}
+
+static int __xuiProxyXgeDrawPayloadFinalize(xui_proxy proxy,void* payload)
+{
+	(void)proxy;
+	xui_draw_context draw=(xui_draw_context)((xui_owned_draw_t*)payload-1);
+	int status=XUI_OK;
+	if(draw->tPass.bActive)status=__xuiProxyXgeTargetEnd(&draw->tPass,XGE_OK);
+	/* Preparation completes End before target finalization. This privileged
+	 * generation update uses the known owned payload, even while claimed. */
+	xui_surface target=draw->tOwned.pTarget;
+	if(status==XUI_OK && draw->bDirty && target && target->iMagic==XUI_PROXY_XGE_SURFACE_MAGIC){
+		if(++target->iGeneration==0)target->iGeneration=1;
+	}
+	draw->iMagic=0;__xuiProxyXgeManualRemove(draw);return status;
+}
+static int __xuiProxyXgeManualDrawBegin(xui_proxy proxy,xui_draw_context* output,xui_surface target)
+{
+	if(!xuiProxyIsOwned(proxy))return __xuiProxyXgeDrawBegin(proxy,output,target);
+	if(!output || !__xuiProxyXgeSurfaceTargetValid(target) ||
+	   !xuiInternalProxyResourceReady(target,XUI_OWNED_SURFACE) || xuiSurfaceGetProxy(target)!=proxy)return XUI_ERROR_INVALID_ARGUMENT;
+	if(__xuiProxyXgeManualBusy())return XUI_ERROR_BUSY;
+	xui_draw_context draw=NULL;void* payload=NULL;
+	int status=xuiDrawCreateOwned(proxy,target,sizeof(*draw)-sizeof(draw->tOwned),__xuiProxyXgeDrawPayloadFinalize,&draw,&payload);
+	if(status!=XUI_OK)return status;
+	(void)payload;draw->iMagic=XUI_PROXY_XGE_DRAW_MAGIC;
+	__xuiProxyXgeManualLock();draw->pNextManual=g_xuiProxyXgeManualDraws;g_xuiProxyXgeManualDraws=draw;__xuiProxyXgeManualUnlock();
+	status=__xuiProxyXgeTargetBegin(proxy,target,&draw->tPass);
+	if(status!=XUI_OK){
+		xerror* first=xrtTakeError();(void)xuiDrawReleaseChecked(draw);xrtClearError();xrtSetErrorTake(first);return status;
+	}
+	*output=draw;return XUI_OK;
 }
 
 static int __xuiProxyXgeDrawClearRect(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -3316,7 +3385,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.fontDestroy = __xuiProxyXgeFontDestroy;
 	tProxy.textMeasure = __xuiProxyXgeTextMeasure;
 	tProxy.textDraw = __xuiProxyXgeTextDraw;
-	tProxy.drawBegin = __xuiProxyXgeDrawBegin;
+	tProxy.drawBegin = __xuiProxyXgeManualDrawBegin;
 	tProxy.drawEnd = __xuiProxyXgeDrawEnd;
 	tProxy.drawClearRect = __xuiProxyXgeDrawClearRect;
 	tProxy.drawSurface = __xuiProxyXgeDrawSurface;

@@ -94,7 +94,7 @@ static void __xuiToggleInvokeOwnedChange(xui_widget widget,xui_toggle_data_t* da
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,value,user);return;}
     xui_callback_snapshot_t snapshot={0};
-    if(xuiInternalCallbackSnapshotBegin(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
+    if(xuiInternalCallbackSnapshotBeginReported(widget,&data->onChange,&user,&snapshot)!=XUI_OK)return;
     callback(widget,value,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
 }

@@ -58,6 +58,38 @@ int xuiInternalFontSlotEnd(xui_font_slot_update_t* update,bool commit,int status
 int xuiInternalFontAdmit(xui_context context,xui_font font);
 int xuiInternalFontRelease(xui_context context,xui_font font);
 void xuiInternalContextRecordFailure(xui_context context,int status);
+/* Borrows error, retaining one reference in each still-successful receipt.
+ * status is independent of nullable error; callers that took TLS pass it here. */
+void xuiInternalContextRecordOutcome(xui_context context,int status,const xerror* error);
+/* Consuming cleanup is sticky in enclosing receipts; an ordinary returned
+ * operation failure is local and can be handled by a native caller. */
+static inline void xuiInternalContextCleanupOutcome(xui_context context,int next,int* status,xerror** first)
+{
+    xerror* error=xrtTakeError();if(next==XUI_OK && !error)return;
+    if(next==XUI_OK)next=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalContextRecordOutcome(context,next,*status!=XUI_OK ? *first:error);
+    if(*status==XUI_OK){*status=next;*first=error;}else xrtErrorFree(error);
+}
+
+static inline void xuiInternalCallScopeRecordOutcome(xui_call_scope_t* scope,int status,const xerror* error)
+{
+    if(!scope || scope->pSelf!=scope || scope->iResult!=XUI_OK || (status==XUI_OK && !error))return;
+    scope->iResult=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;
+    scope->_pFirstError=xrtErrorRef(error);
+}
+
+/* Finish an owned local outcome through the authoritative enclosing receipt.
+ * The caller has detached *first from TLS and owns its reference. */
+static inline int xuiInternalCallScopeEndOutcome(xui_call_scope_t* scope,int status,xerror** first)
+{
+    xuiInternalCallScopeRecordOutcome(scope,status,*first);
+    int ended=xuiCallScopeEnd(scope);xerror* error=xrtTakeError();
+    if(status!=XUI_OK){xrtErrorFree(error);return status;}
+    if(ended!=XUI_OK){xrtErrorFree(*first);*first=error;return ended;}
+    if(status==XUI_OK && error){*first=error;return XUI_ERROR_CALLBACK_FAILED;}
+    xrtErrorFree(error);return status;
+}
+
 bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user);
 
 void xuiInternalTableGridConfigProject(const xui_table_grid_editor_config_output_t* pOutput,xui_table_grid_editor_config_t* pConfig);
@@ -92,6 +124,8 @@ typedef struct xui_table_cell_format_t {
 } xui_table_cell_format_t;
 int xuiInternalTableCellFormatBegin(xui_widget pWidget,int iRow,int iColumn,const xui_table_view_cell_output_t* pCell,xui_table_cell_format_t* pFormat);
 int xuiInternalTableCellFormatEnd(xui_table_cell_format_t* pFormat,int iResult);
+/* Consumes the detached primary reference. */
+int xuiInternalTableCellFormatEndOutcome(xui_table_cell_format_t* pFormat,int iResult,xerror* pFirst);
 
 #define XUI_CONTEXT_MAGIC 0x58554943u
 #define XUI_CONTEXT_DAMAGE_INLINE 8
@@ -699,18 +733,24 @@ int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);
 int xuiInternalCallbackGroupUpdateBegin(xui_widget,xui_callback_group_entry_t*,size_t,xui_callback_group_update_t*);
 void xuiInternalCallbackGroupUpdatePublish(xui_callback_group_update_t*);
 int xuiInternalCallbackGroupUpdateEnd(xui_callback_group_update_t*,int);
-int xuiInternalCallbackSnapshotBegin(xui_widget,const void*,void**,xui_callback_snapshot_t*);
+/* Returned: the consumer propagates negative status. Reported: a void/value/
+ * veto consumer has no status channel, so admission failure reaches receipts. */
+int xuiInternalCallbackSnapshotBeginReturned(xui_widget,const void*,void**,xui_callback_snapshot_t*);
+int xuiInternalCallbackSnapshotBeginReported(xui_widget,const void*,void**,xui_callback_snapshot_t*);
 int xuiInternalCallbackSnapshotEnd(xui_callback_snapshot_t*,int);
+/* Consumes the detached primary error reference, including NULL on failure. */
+int xuiInternalCallbackSnapshotEndOutcome(xui_callback_snapshot_t* snapshot,int result,xerror* first);
 bool xuiInternalCallbackSlotOwned(xui_widget,const void*);
 int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner);
 int xuiInternalCallbackOwnerDrop(xui_context pContext, const xui_callback_owner_t* pOwner);
+int xuiInternalCallbackOwnerDropOutcome(xui_context pContext,const xui_callback_owner_t* pOwner,int iPrimaryStatus,const xerror* pPrimaryError);
 static inline int xuiInternalInvokeContentMeasure(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output)
 {
     xui_widget_content_measure_proc callback=widget->onContentMeasure;void* user=widget->pContentMeasureUser;
     if(!callback)return XUI_OK;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,constraint,output,user);
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onContentMeasure,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onContentMeasure,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,constraint,output,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -722,7 +762,7 @@ static inline int xuiInternalInvokeLayoutPrepare(xui_widget widget)
     if(!callback)return XUI_OK;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,user);
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutPrepare,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onLayoutPrepare,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -734,7 +774,7 @@ static inline int xuiInternalInvokeLayoutChildren(xui_widget widget,xui_rect_t c
     if(!callback)return XUI_OK;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,content,user);
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutChildren,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onLayoutChildren,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,content,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -746,7 +786,7 @@ static inline int xuiInternalInvokeLayoutComplete(xui_widget widget,xui_rect_t c
     if(!callback)return XUI_OK;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return callback(widget,content,user);
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onLayoutComplete,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onLayoutComplete,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,content,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -757,7 +797,7 @@ static inline int xuiInternalInvokeDefaultAction(xui_widget widget)
     xui_widget_action_proc callback=widget->onDefaultAction;void* user=widget->pDefaultActionUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return XUI_OK;}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onDefaultAction,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReported(widget,&widget->onDefaultAction,&user,&snapshot);
     if(result!=XUI_OK)return XUI_ERROR_INVALID_STATE;
     callback(widget,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
@@ -768,7 +808,7 @@ static inline int xuiInternalInvokeCancelAction(xui_widget widget)
     xui_widget_action_proc callback=widget->onCancelAction;void* user=widget->pCancelActionUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){callback(widget,user);return XUI_OK;}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onCancelAction,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReported(widget,&widget->onCancelAction,&user,&snapshot);
     if(result!=XUI_OK)return XUI_ERROR_INVALID_STATE;
     callback(widget,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
@@ -779,7 +819,7 @@ static inline xui_rect_t xuiInternalInvokeImeCandidateRect(xui_widget widget)
     xui_widget_ime_rect_proc callback=widget->onImeCandidateRect;void* user=widget->pImeCandidateRectUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,user);}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onImeCandidateRect,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReported(widget,&widget->onImeCandidateRect,&user,&snapshot);
     if(result!=XUI_OK)return (xui_rect_t){0};
     xui_rect_t rect=callback(widget,user);
     (void)xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);return rect;
@@ -790,7 +830,7 @@ static inline int xuiInternalInvokeCursorQueryCallback(xui_widget widget,int x,i
     xui_widget_cursor_proc callback=widget->onQueryCursor;void* user=widget->pQueryCursorUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,x,y,user);}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onQueryCursor,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReported(widget,&widget->onQueryCursor,&user,&snapshot);
     if(result!=XUI_OK)return -1;
     int cursor=callback(widget,x,y,user);
     if(xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK)!=XUI_OK)return -1;
@@ -802,7 +842,7 @@ static inline int xuiInternalInvokeCacheRenderCallback(xui_widget widget,xui_dra
     xui_widget_cache_render_proc callback=widget->onCacheRender;void* user=widget->pCacheRenderUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,draw,state,user);}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onCacheRender,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onCacheRender,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,draw,state,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -813,7 +853,7 @@ static inline int xuiInternalInvokeUpdateCallback(xui_widget widget,float delta)
     xui_widget_update_proc callback=widget->onUpdate;void* user=widget->pUpdateUser;
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings){return callback(widget,delta,user);}
     xui_callback_snapshot_t snapshot={0};
-    int result=xuiInternalCallbackSnapshotBegin(widget,&widget->onUpdate,&user,&snapshot);
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&widget->onUpdate,&user,&snapshot);
     if(result!=XUI_OK)return result;
     result=callback(widget,delta,user);
     return xuiInternalCallbackSnapshotEnd(&snapshot,result);
@@ -1163,7 +1203,7 @@ static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tK
                 xui_selected_proc(__VA_ARGS__, xui_selected_user); \
             } else { \
                 xui_callback_snapshot_t xui_selected_snapshot = {0}; \
-                if ( xuiInternalCallbackSnapshotBegin((widget), &(slot), &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
+                if ( xuiInternalCallbackSnapshotBeginReported((widget), &(slot), &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
                     xui_selected_proc(__VA_ARGS__, xui_selected_user); \
                     (void)xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK); \
                 } \
@@ -1185,7 +1225,7 @@ static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tK
                 (output) = xui_selected_proc(__VA_ARGS__, xui_selected_user); \
             } else { \
                 xui_callback_snapshot_t xui_selected_snapshot = {0}; \
-                if ( xuiInternalCallbackSnapshotBegin(xui_selected_widget, xui_selected_slot, &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
+                if ( xuiInternalCallbackSnapshotBeginReported(xui_selected_widget, xui_selected_slot, &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
                     (output) = xui_selected_proc(__VA_ARGS__, xui_selected_user); \
                     if ( xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK) != XUI_OK ) (output) = (failure); \
                 } \

@@ -183,13 +183,12 @@ static int __xuiOwnedInvoke_xuiTableViewSetMergeProvider(xui_widget widget,xui_t
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iRow,iColumn,pRowSpan,pColSpan,user);
     xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onMerge,&user,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onMerge,&user,&snapshot);
     if(status!=XUI_OK)return status;
     int value=selected(widget,iRow,iColumn,pRowSpan,pColSpan,user);
     status=value<0 ? value:XUI_OK;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
-    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    int ended=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
     return ended!=XUI_OK ? ended:value;
 }
 
@@ -200,13 +199,12 @@ static int __xuiOwnedInvoke_xuiTableViewSetContextMenu(xui_widget widget,xui_tab
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,iRow,iColumn,fX,fY,user);
     xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReported(widget,&data->onContext,&user,&snapshot);
     if(status!=XUI_OK)return status;
     int value=selected(widget,iPart,iRow,iColumn,fX,fY,user);
     status=value<0 ? value:XUI_OK;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
-    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    int ended=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
     return ended!=XUI_OK ? ended:value;
 }
 
@@ -735,14 +733,13 @@ static int __xuiTableViewSyncRowCount(xui_widget pWidget, xui_table_view_data_t*
 		tRead = (xui_table_view_count_read_t){selected, selectedUser, pData->pCountRead};
 		pData->pCountRead = &tRead;
 		xui_callback_snapshot_t snapshot={0};
-        int status=pData->bAdapterOwned ? xuiInternalCallbackSnapshotBegin(pWidget,&pData->onCountOwned,&selectedUser,&snapshot):XUI_OK;
+        int status=pData->bAdapterOwned ? xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onCountOwned,&selectedUser,&snapshot):XUI_OK;
         if(status==XUI_OK && !__xuiTableViewCallbackCurrent(pWidget,pData,iGeneration))status=XUI_ERROR_INVALID_STATE;
         iCount=status==XUI_OK ? selected(pWidget,selectedUser):0;
         pData->pCountRead=tRead.pPrevious;
         if(status==XUI_OK && ownedCount && iCount<0)status=iCount;
         xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-        __xuiTableViewLeaseOutcome(xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK),&status,&first);
-        xrtSetErrorTake(first);
+        status=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
         if(status!=XUI_OK)return status;
 		pData->pCountRead = tRead.pPrevious;
 		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_ERROR_INVALID_STATE;
@@ -990,18 +987,14 @@ static void __xuiTableViewLeaseOutcome(int next,int* result,xerror** first)
     else xrtErrorFree(error);
 }
 static void __xuiTableViewRecordFailure(xui_context context,int result)
-{
-    if(!context || result==XUI_OK)return;
-    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext)
-        if(scope->iResult==XUI_OK)scope->iResult=result;
-}
+{xuiInternalContextRecordFailure(context,result);}
 static int __xuiTableViewLeaseEnd(xui_table_view_cell_lease_t* lease,int result)
 {
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    if(lease->format.context)__xuiTableViewLeaseOutcome(xuiInternalTableCellFormatEnd(&lease->format,XUI_OK),&result,&first);
-    if(lease->reading){lease->reading=false;__xuiTableViewLeaseOutcome(xuiInternalTableCellReadEnd(&lease->output),&result,&first);}
-    if(lease->owned){lease->owned=false;__xuiTableViewLeaseOutcome(xuiTableViewCellOutputDisposeChecked(&lease->output),&result,&first);}
-    __xuiTableViewLeaseOutcome(xuiInternalCallbackSnapshotEnd(&lease->provider,XUI_OK),&result,&first);
+    if(lease->format.context){result=xuiInternalTableCellFormatEndOutcome(&lease->format,result,first);first=xrtTakeError();}
+    if(lease->reading){lease->reading=false;xuiInternalContextCleanupOutcome(lease->context,xuiInternalTableCellReadEnd(&lease->output),&result,&first);}
+    if(lease->owned){lease->owned=false;xuiInternalContextCleanupOutcome(lease->context,xuiTableViewCellOutputDisposeChecked(&lease->output),&result,&first);}
+    result=xuiInternalCallbackSnapshotEndOutcome(&lease->provider,result,first);first=xrtTakeError();
     memset(lease,0,sizeof(*lease));
     xrtSetErrorTake(first);return result;
 }
@@ -1022,7 +1015,7 @@ static int __xuiTableViewGetCell(xui_widget pWidget,xui_table_view_data_t* pData
         lease->owned=true;xuiTableViewCellOutputInit(&lease->output);lease->output.iType=pCell->iType;
         xui_table_view_cell_owned_proc selected=pData->onCellOwned;void* user=pData->pCellOwnedUser;
         if(selected){
-            result=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onCellOwned,&user,&lease->provider);
+            result=xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onCellOwned,&user,&lease->provider);
             if(result!=XUI_OK)goto failed;
             if(!__xuiTableViewCallbackCurrent(pWidget,pData,generation)){result=XUI_ERROR_INVALID_STATE;goto failed;}
             result=selected(pWidget,iRow,iColumn,&lease->output,user);
@@ -1112,8 +1105,9 @@ static int __xuiTableViewIndexMerges(xui_widget pWidget, xui_table_view_data_t* 
 		for ( c = 0; c < pData->iColumnCount; c++ ) {
 			iRet = __xuiTableViewGetCell(pWidget, pData, r, c, &tCell,&lease);
             iRet=__xuiTableViewLeaseEnd(&lease,iRet);
-			if ( iRet != XUI_OK || iGeneration != pData->iMergeGeneration ) {
-				iRet = XUI_ERROR_INVALID_ARGUMENT;
+			if ( iRet != XUI_OK ) goto done;
+			if ( iGeneration != pData->iMergeGeneration ) {
+				iRet = XUI_ERROR_INVALID_STATE;
 				goto done;
 			}
 			if ( tCell.iRowSpan <= 1 && tCell.iColSpan <= 1 ) continue;
@@ -1355,8 +1349,8 @@ static int __xuiTableViewOwnedRender(xui_widget widget,xui_table_view_data_t* da
     else{handled=selected(widget,row,column,&lease->output,draw,rect,state,user);if(handled<0)result=handled;}
     if(!__xuiTableViewCallbackCurrent(widget,data,generation) && result==XUI_OK)result=XUI_ERROR_INVALID_STATE;
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
-    __xuiTableViewLeaseOutcome(!owner.onDrop || owner.onDrop(owner.tReference.Data) ? XUI_OK:XUI_ERROR_CALLBACK_FAILED,&result,&first);
-    __xuiTableViewRecordFailure(lease->context,result);xrtSetErrorTake(first);
+    __xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(lease->context,&owner,result,first),&result,&first);
+    xrtSetErrorTake(first);
     return result!=XUI_OK ? result:handled;
 }
 static const char* __xuiTableViewCellText(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_table_view_cell_lease_t* pLease, char* sBuffer, int iCapacity)
@@ -1762,7 +1756,8 @@ static int __xuiTableViewEnsureVisibleInternal(xui_widget pWidget, xui_table_vie
 	}
 	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
 	if ( iRet < 0 ) return iRet;
-	if ( __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell,&lease) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
+	iRet = __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell,&lease);
+	if ( iRet != XUI_OK ) return iRet;
 	tRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
     int ended=__xuiTableViewLeaseEnd(&lease,XUI_OK);
     if(ended!=XUI_OK)return ended;
@@ -3760,7 +3755,7 @@ XUI_API int xuiTableViewGetCellOwned(xui_widget widget,int row,int column,xui_ta
     result=__xuiTableViewLeaseEnd(&lease,result);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     __xuiTableViewLeaseOutcome(xuiTableViewCellOutputCallScopeEnd(&cellScope),&result,&first);
-    __xuiTableViewLeaseOutcome(xuiCallScopeEnd(&contextScope),&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&contextScope,result,&first);
     xrtSetErrorTake(first);return result;
 }
 
@@ -4325,7 +4320,8 @@ static int __xuiTableViewGetCellContentRectOperation(xui_widget pWidget, int iRo
 	if ( iRow >= iRet || iColumn >= pData->iColumnCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiTableViewMergeOwner(pWidget, pData, iRow, iColumn, &iOwnerRow, &iOwnerColumn);
 	if ( iRet < 0 ) return iRet;
-	if ( __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell,&lease) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
+	iRet = __xuiTableViewGetCell(pWidget, pData, iOwnerRow, iOwnerColumn, &tCell,&lease);
+	if ( iRet != XUI_OK ) return iRet;
 	*pRect = __xuiTableViewCellContentRectData(pData, iOwnerRow, iOwnerColumn, tCell.iRowSpan, tCell.iColSpan);
 	return __xuiTableViewLeaseEnd(&lease,XUI_OK);
 }

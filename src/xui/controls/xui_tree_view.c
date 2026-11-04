@@ -109,13 +109,12 @@ static int __xuiOwnedInvoke_xuiTreeViewSetContextMenu(xui_widget widget,xui_tree
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iNodeId,iVisibleIndex,fX,fY,user);
     xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReported(widget,&data->onContext,&user,&snapshot);
     if(status!=XUI_OK)return status;
     int value=selected(widget,iNodeId,iVisibleIndex,fX,fY,user);
     status=value<0 ? value:XUI_OK;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
-    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    int ended=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
     return ended!=XUI_OK ? ended:value;
 }
 
@@ -2777,7 +2776,7 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
     xui_tree_view_count_proc countCallback=pData->onCount;
     void* countUser=pData->pCountUser;
     xui_callback_snapshot_t countSnapshot={0};
-    iRet=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onCount,&countUser,&countSnapshot);
+    iRet=xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onCount,&countUser,&countSnapshot);
     if(iRet!=XUI_OK)goto cleanup;
     iCount=countCallback(pWidget,countUser);
     iRet=xuiInternalCallbackSnapshotEnd(&countSnapshot,pData->onNodeOwned && iCount<0 ? iCount:XUI_OK);
@@ -2802,7 +2801,7 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
             xui_tree_view_node_owned_proc nodeCallback=pData->onNodeOwned;
             void* nodeUser=pData->pNodeUser;
             xui_callback_snapshot_t nodeSnapshot={0};
-            iReadRet=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onNodeOwned,&nodeUser,&nodeSnapshot);
+            iReadRet=xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onNodeOwned,&nodeUser,&nodeSnapshot);
             if(iReadRet==XUI_OK)iReadRet=nodeCallback(pWidget,i,&output,nodeUser);
             if(!__xuiTreeViewAdapterCurrent(pWidget,pData,iChange))iReadRet=XUI_ERROR_INVALID_STATE;
             if(iReadRet==XUI_OK){

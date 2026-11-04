@@ -82,13 +82,12 @@ static int __xuiOwnedInvoke_xuiWindowSetContextMenu(xui_widget widget,xui_window
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,fX,fY,user);
     xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReported(widget,&data->onContext,&user,&snapshot);
     if(status!=XUI_OK)return status;
     int value=selected(widget,iPart,fX,fY,user);
     status=value<0 ? value:XUI_OK;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
-    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    int ended=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
     return ended!=XUI_OK ? ended:value;
 }
 

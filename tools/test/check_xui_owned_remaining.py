@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','parts','grid','port','fonts','paint'),default='remaining')
+    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','parts','grid','port','fonts','paint','receipt'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())
@@ -22,7 +22,8 @@ def main():
     library=engine/('xge.lib' if os.name=='nt' else 'libxge.so');native=engine/('xge.dll' if os.name=='nt' else 'libxge.so')
     pins={Path(__file__).resolve(),Path(cc),source,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
     pins.update(regressions);
-    if regressions or a.case in ('table','parts','grid','fonts'):pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
+    if a.case=='receipt':pins.add(root/'tests/xui/xui_owned_fonts_test.c')
+    if regressions or a.case in ('table','parts','grid','fonts','receipt'):pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
     pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'src/xui/core/xui_xrt_port.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
     out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
     env=dict(os.environ,TEMP=str(out/'tmp'),TMP=str(out/'tmp'),TMPDIR=str(out/'tmp'))
@@ -39,8 +40,8 @@ def main():
     systems=['-Wl,-rpath,'+str(runtime.parent),'-Wl,-rpath,'+str(engine),'-pthread','-ldl','-lm'] if os.name!='nt' else []
     for opt in ('O0','O2'):
         exe=out/('owned-'+opt+('.exe' if os.name=='nt' else ''))
-        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case in ('table','parts','grid','fonts') else []
-        if a.case in ('parts','fonts'):test_extra+=['-Wno-unused-function']
+        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case in ('table','parts','grid','fonts','receipt') else []
+        if a.case in ('parts','fonts','receipt'):test_extra+=['-Wno-unused-function']
         run(opt+'-build',[cc,*flags,'-'+opt,source,*test_extra,library,runtime,*systems,'-o',exe]);run(opt+'-run',[exe])
     if regressions:
         prefix=source.read_text(encoding='utf8').split('typedef struct TreeState' if a.case=='tree' else '#include "xui_test_proxy.h"')[0]

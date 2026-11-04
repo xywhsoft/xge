@@ -86,13 +86,12 @@ static int __xuiOwnedInvoke_xuiTableGridSetContextMenu(xui_widget widget,xui_tab
 {
     if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,iRow,iColumn,fX,fY,user);
     xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReported(widget,&data->onContext,&user,&snapshot);
     if(status!=XUI_OK)return status;
     int value=selected(widget,iPart,iRow,iColumn,fX,fY,user);
     status=value<0 ? value:XUI_OK;
     xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
-    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
-    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    int ended=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
     return ended!=XUI_OK ? ended:value;
 }
 
@@ -629,10 +628,9 @@ static int __xuiTableGridCellEnd(xui_table_grid_cell_lease_t* lease,int status)
 {
     xerror* first=xrtTakeError();
     if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
-    if(lease->format.context)__xuiTableGridOutcome(xuiInternalTableCellFormatEnd(&lease->format,XUI_OK),&status,&first);
-    if(lease->reading){lease->reading=false;__xuiTableGridOutcome(xuiInternalTableCellReadEnd(&lease->output),&status,&first);}
-    if(lease->owned){lease->owned=false;__xuiTableGridOutcome(xuiTableViewCellOutputDisposeChecked(&lease->output),&status,&first);}
-    if(status!=XUI_OK && lease->context)__xuiTableGridRecordFailure(lease->context,status);
+    if(lease->format.context){status=xuiInternalTableCellFormatEndOutcome(&lease->format,status,first);first=xrtTakeError();}
+    if(lease->reading){lease->reading=false;xuiInternalContextCleanupOutcome(lease->context,xuiInternalTableCellReadEnd(&lease->output),&status,&first);}
+    if(lease->owned){lease->owned=false;xuiInternalContextCleanupOutcome(lease->context,xuiTableViewCellOutputDisposeChecked(&lease->output),&status,&first);}
     memset(lease,0,sizeof(*lease));xrtSetErrorTake(first);return status;
 }
 static int __xuiTableGridGetCell(xui_widget pWidget, xui_table_grid_data_t* pData, int iRow, int iColumn, xui_table_view_cell_t* pCell, xui_table_grid_cell_lease_t* lease)
@@ -751,7 +749,7 @@ static int __xuiTableGridLoadEditorConfig(xui_widget widget,xui_table_grid_data_
         xui_table_grid_editor_config_owned_proc selected=data->onEditorConfigOwned;
         if(selected){
             void* user=data->pEditorConfigOwnedUser;xui_callback_snapshot_t snapshot={0};
-            int status=xuiInternalCallbackSnapshotBegin(widget,&data->onEditorConfigOwned,&user,&snapshot);
+            int status=xuiInternalCallbackSnapshotBeginReported(widget,&data->onEditorConfigOwned,&user,&snapshot);
             if(status==XUI_OK){int result=selected(widget,row,column,type,&data->tOwnedEditorConfig,user);if(result!=XUI_OK)status=result<0 ? result:XUI_ERROR_INVALID_ARGUMENT;}
             status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
             if(status!=XUI_OK){__xuiTableGridRecordFailure(context,status);return 0;}
@@ -894,7 +892,7 @@ static int __xuiTableGridCommitValue(xui_widget pWidget, xui_table_grid_data_t* 
 	pData->bCommitting = 1;
 	if ( onValidate != NULL ) {
         xui_callback_snapshot_t validateSnapshot={0};
-        int status=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onValidate,&pValidateUser,&validateSnapshot);
+        int status=xuiInternalCallbackSnapshotBeginReported(pWidget,&pData->onValidate,&pValidateUser,&validateSnapshot);
         bool ownedValidate=validateSnapshot.pContext!=NULL;
         bAccepted=status==XUI_OK ? onValidate(pWidget,iRow,iColumn,sStable,iType,pValidateUser):0;
         if(ownedValidate && bAccepted<0){status=bAccepted;bAccepted=0;}
@@ -963,11 +961,7 @@ static int __xuiTableGridSyncActiveEditorRect(xui_widget pWidget, xui_table_grid
 }
 
 static void __xuiTableGridRecordFailure(xui_context context,int status)
-{
-    if(status==XUI_OK || !xuiInternalContextIsValid(context))return;
-    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext)
-        if(scope->iResult==XUI_OK)scope->iResult=status;
-}
+{xuiInternalContextRecordFailure(context,status);}
 static int __xuiTableGridOwnedCount(xui_widget table,void* user)
 {
     xui_table_grid_data_t* data=user;xui_widget widget=xuiWidgetGetParent(table);
@@ -975,7 +969,7 @@ static int __xuiTableGridOwnedCount(xui_widget table,void* user)
     xui_table_view_count_proc selected=data->onCountOwned;void* selectedUser=data->pCountOwnedUser;
     if(!selected)return 0;
     uint64_t generation=data->iAdapterGeneration;xui_callback_snapshot_t snapshot={0};
-    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onCountOwned,&selectedUser,&snapshot);
+    int status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onCountOwned,&selectedUser,&snapshot);
     int count=0;
     if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
     if(status==XUI_OK){count=selected(widget,selectedUser);if(count<0)status=count;}
@@ -990,7 +984,7 @@ static int __xuiTableGridOwnedCell(xui_widget table,int row,int column,xui_table
     xui_table_view_cell_owned_proc selected=data->onCellOwned;void* selectedUser=data->pCellOwnedUser;
     uint64_t generation=data->iAdapterGeneration;xui_callback_snapshot_t snapshot={0};int status=XUI_OK;
     if(selected){
-        status=xuiInternalCallbackSnapshotBegin(widget,&data->onCellOwned,&selectedUser,&snapshot);
+        status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onCellOwned,&selectedUser,&snapshot);
         if(status==XUI_OK && (!__xuiTableGridWidgetAlive(widget,data) || data->iAdapterGeneration!=generation))status=XUI_ERROR_INVALID_STATE;
         if(status==XUI_OK){int result=selected(widget,row,column,output,selectedUser);if(result<0)status=result;}
     }
@@ -1194,7 +1188,7 @@ static int __xuiTableGridOpenPicker(xui_widget pWidget, xui_table_grid_data_t* p
     if(pData->onEditorOwned){
         if(!lease->owned)return 0;
         xui_table_grid_editor_owned_proc selected=pData->onEditorOwned;void* user=pData->pEditorOwnedUser;
-        xui_callback_snapshot_t snapshot={0};int status=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onEditorOwned,&user,&snapshot);
+        xui_callback_snapshot_t snapshot={0};int status=xuiInternalCallbackSnapshotBeginReported(pWidget,&pData->onEditorOwned,&user,&snapshot);
         int result=0;if(status==XUI_OK)result=selected(pWidget,pData->iEditingRow,pData->iEditingColumn,&lease->output,&pData->tOwnedEditorConfig,tRect,user);
         if(result<0)status=result;
         status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
