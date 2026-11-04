@@ -2448,9 +2448,9 @@ XGE_API int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, cons
 /* 材质重置为默认（内置纹理着色器）。 */
 #if XGE_ENABLE_2D
 XGE_API void xgeMaterialInit(xge_material pMaterial);
-/* 释放材质（不释放其引用的 shader/纹理）。 */
+/* 清空材质并释放三个纹理槽持有的引用；shader 为借用，不释放记录存储。 */
 XGE_API void xgeMaterialFree(xge_material pMaterial);
-/* 绑定自定义着色器。 */
+/* 绑定借用的自定义着色器；调用方保证 shader 记录与程序在使用期间有效。 */
 XGE_API void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader);
 /* 设置主纹理槽。 */
 XGE_API void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture);
