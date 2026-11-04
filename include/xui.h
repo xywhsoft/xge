@@ -58,7 +58,8 @@ typedef enum xui_result_t {
 	/* 有界异步操作队列已满。 */
 	XUI_ERROR_LIMIT_EXCEEDED = -15,
 /* An admitted owned callback or its consuming cleanup returned false. */
-	XUI_ERROR_CALLBACK_FAILED = -16
+	XUI_ERROR_CALLBACK_FAILED = -16,
+	XUI_ERROR_BUSY = -17
 } xui_result_t;
 
 /* 错误发生阶段（错误信息定位用）。 */
@@ -2037,6 +2038,21 @@ typedef struct xui_separator_desc_t {
 	int iLineStyle;
 } xui_separator_desc_t;
 
+/* An actual owned userdata slot, not a trace-only annotation. The immutable
+ * reference and resident Hold/Drop code remain valid through the last Drop.
+ * Hold borrows and owns one reference on true, retains nothing on false;
+ * Drop always consumes, including false without a diagnostic. Neither hook
+ * unwinds across C. All-zero explicitly denotes borrowed userdata.
+ * Owned setters borrow this descriptor and retain its reference. Replacement
+ * is committed before old cleanup, so cleanup failure does not undo it.
+ * Invocation retains an independent snapshot until the typed callback has
+ * completely returned, including its native adapter's return instructions. */
+typedef struct xui_callback_owner_t {
+	xrtownershipref tReference;
+	bool (*onHold)(const void*);
+	bool (*onDrop)(const void*);
+} xui_callback_owner_t;
+
 typedef struct xui_context_t xui_context_t;
 typedef struct xui_language_t xui_language_t;
 typedef struct xui_widget_t xui_widget_t;
@@ -2053,6 +2069,9 @@ typedef struct xui_tree_view_node_output_t xui_tree_view_node_output_t;
 typedef struct xui_table_view_column_t xui_table_view_column_t;
 typedef struct xui_table_view_row_t xui_table_view_row_t;
 typedef struct xui_table_view_cell_t xui_table_view_cell_t;
+typedef struct xui_table_view_cell_output_t xui_table_view_cell_output_t;
+struct xui_table_cell_scope_t;
+struct xui_lifetime_link_t;
 typedef struct xui_table_view_colors_t xui_table_view_colors_t;
 typedef struct xui_message_node_t xui_message_node_t;
 typedef struct xui_message_list_metrics_t xui_message_list_metrics_t;
@@ -2991,6 +3010,12 @@ typedef int (*xui_tree_view_node_owned_proc)(xui_widget_t* pWidget, int iIndex,
  * the current render batch safely. */
 typedef int (*xui_tree_view_item_proc)(xui_widget_t* pWidget, int iNodeId, int iVisible, const xui_tree_view_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef int (*xui_table_view_count_proc)(xui_widget_t* pWidget, void* pUser);
+/* Owned output callbacks use a real record; pValue in the raw cell is never
+ * interpreted as a language value. A text callback transfers one XRT allocation
+ * (terminated at Size, no embedded NUL), even when Size is zero. */
+typedef int (*xui_table_view_cell_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, xui_table_view_cell_output_t* pCell, void* pUser);
+typedef xstrview (*xui_table_view_cell_text_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_output_t* pCell, void* pUser);
+typedef int (*xui_table_view_cell_render_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_output_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef int (*xui_table_view_cell_proc)(xui_widget_t* pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser);
 typedef int (*xui_table_view_format_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, char* sBuffer, int iCapacity, void* pUser);
 typedef int (*xui_table_view_cell_renderer_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
@@ -4571,6 +4596,33 @@ struct xui_table_view_cell_t {
 	int bReadOnly;
 };
 
+/* Address-stable owning cell. Only scalar/style fields are public data.
+ * All _ fields are private native state. Never copy/move an initialized record;
+ * use Use for a no-copy payload snapshot or the setters for owned copies.
+ * The UI execution thread serializes these methods, as with the widget APIs. */
+struct xui_table_view_cell_output_t {
+    int iType, iRowSpan, iColSpan;
+    int bDisabled, bEditing, bInvalid, bDirty, bHasStyle;
+    uint32_t iBackgroundColor, iTextColor, iGridColor;
+    int bReadOnly;
+    uint32_t _iMagic;
+    int _bHeap, _bRetiring;
+    const void* _pOwnershipClaim;
+    int _bOwnershipCleared, _bOwnershipFinished;
+    size_t _iReferences, _iExternalReferences, _iReadPins, _iUsePins, _iCalls;
+    xstrview _tText, _tTooltip;
+    xvalue* _pValue;
+    xui_table_view_cell_text_owned_proc _onText;
+    void* _pTextUser;
+    xui_callback_owner_t _tTextOwner;
+    xui_table_view_cell_render_owned_proc _onRender;
+    void* _pRenderUser;
+    xui_callback_owner_t _tRenderOwner;
+    xui_table_view_cell_output_t* _pSource;
+    struct xui_lifetime_link_t* _pLifetimeLinks;
+    struct xui_table_cell_scope_t* _pScopes;
+};
+
 struct xui_table_view_colors_t {
 	uint32_t iBackgroundColor;
 	uint32_t iHeaderColor;
@@ -5516,20 +5568,7 @@ typedef struct xui_call_scope_t {
 	int bEnding;
 } xui_call_scope_t;
 
-/* An actual owned userdata slot, not a trace-only annotation. The immutable
- * reference and resident Hold/Drop code remain valid through the last Drop.
- * Hold borrows and owns one reference on true, retains nothing on false;
- * Drop always consumes, including false without a diagnostic. Neither hook
- * unwinds across C. All-zero explicitly denotes borrowed userdata.
- * Owned setters borrow this descriptor and retain its reference. Replacement
- * is committed before old cleanup, so cleanup failure does not undo it.
- * Invocation retains an independent snapshot until the typed callback has
- * completely returned, including its native adapter's return instructions. */
-typedef struct xui_callback_owner_t {
-	xrtownershipref tReference;
-	bool (*onHold)(const void*);
-	bool (*onDrop)(const void*);
-} xui_callback_owner_t;
+
 typedef xui_language_t* xui_language;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
@@ -10892,6 +10931,52 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 /* 设置虚拟化适配器（count + cell 回调，按需取值）。回调在调用线程同步执行；
  * cell 输出中的字符串/用户指针仅须在本次回调消费完成前有效。回调可重入修改或
  * 销毁控件；此时外层读取以 XUI_ERROR_INVALID_STATE 中止，重入修改保留。 */
+/* Init requires fresh automatic storage; Dispose consumes it. Create owns one
+ * heap reference; ReleaseChecked consumes one even when final cleanup fails.
+ * AddRef cannot retain automatic storage. A Use read pin keeps cached payloads
+ * alive and setters/Reset on that source return BUSY until the last consumer.
+ * Returned text/value views are borrowed until the next successful mutation. */
+XUI_API void xuiTableViewCellOutputInit(xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** ppCell);
+XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputReleaseChecked(xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputDisposeChecked(xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputReset(xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputUse(xui_table_view_cell_output_t* pCell, xui_table_view_cell_output_t* pCached);
+XUI_API int xuiTableViewCellOutputSetText(xui_table_view_cell_output_t* pCell, xstrview tText);
+XUI_API xstrview xuiTableViewCellOutputGetText(const xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputSetTooltip(xui_table_view_cell_output_t* pCell, xstrview tText);
+XUI_API xstrview xuiTableViewCellOutputGetTooltip(const xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputSetValue(xui_table_view_cell_output_t* pCell, const xvalue* pValue);
+XUI_API const xvalue* xuiTableViewCellOutputGetValue(const xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputSetFormatterOwned(xui_table_view_cell_output_t* pCell, xui_table_view_cell_text_owned_proc onText, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API int xuiTableViewCellOutputSetRendererOwned(xui_table_view_cell_output_t* pCell, xui_table_view_cell_render_owned_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API xrtownershipref xuiTableViewCellOutputOwnership(const xui_table_view_cell_output_t* pCell);
+XUI_API const xrtownershipadapterv1* xuiTableViewCellOutputOwnershipAdapterV1(xrtownershipref tReference);
+XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenceV1(xrtownershipref tReference);
+XUI_API bool xuiTableViewCellOutputBusy(const xui_table_view_cell_output_t* pCell);
+XUI_API bool xuiTableViewCellOutputCanRetire(const xui_table_view_cell_output_t* pCell);
+XUI_API int xuiTableViewCellOutputLifetimeWatch(xui_table_view_cell_output_t* pCell, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Zero-initialized, address-stable, caller-owned token. Never copy a live token. */
+typedef struct xui_table_cell_scope_t {
+    xui_table_view_cell_output_t* pCell;
+    struct xui_table_cell_scope_t* pSelf;
+    struct xui_table_cell_scope_t* pPrevious;
+    struct xui_table_cell_scope_t* pNext;
+    int iResult;
+} xui_table_cell_scope_t;
+XUI_API int xuiTableViewCellOutputCallScopeBegin(xui_table_view_cell_output_t* pCell, xui_table_cell_scope_t* pScope);
+XUI_API int xuiTableViewCellOutputCallScopeEnd(xui_table_cell_scope_t* pScope);
+
+/* Owned registration is committed before refresh/old-owner cleanup. A failed
+ * refresh preserves the registration so it can be retried. Independent owners
+ * are held through the actual native output consumption, including formatting. */
+XUI_API int xuiTableViewSetAdapterOwned(xui_widget pWidget,
+    xui_table_view_count_proc onCount, void* pCountUser, const xui_callback_owner_t* pCountOwner,
+    xui_table_view_cell_owned_proc onCell, void* pCellUser, const xui_callback_owner_t* pCellOwner);
+/* pCell is an initialized caller-owned record. Provider/clone failure leaves it
+ * intact. Cleanup failure can follow a committed replacement. */
+XUI_API int xuiTableViewGetCellOwned(xui_widget pWidget, int iRow, int iColumn, xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, void* pUser);
 /* 数据源变更后请求重取（行数变化）。 */
 XUI_API int xuiTableViewRefreshAdapter(xui_widget pWidget);

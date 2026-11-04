@@ -6,6 +6,12 @@
 #include "xui_unicode_core.h"
 #include "../modules/xlayout/xlayout.h"
 
+/* Native Cell output read protection; last consumer ends it. */
+int xuiInternalTableCellMove(xui_table_view_cell_output_t* pTarget, xui_table_view_cell_output_t* pSource);
+int xuiInternalTableCellReadBegin(xui_table_view_cell_output_t* pCell);
+int xuiInternalTableCellReadEnd(xui_table_view_cell_output_t* pCell);
+const xui_table_view_cell_output_t* xuiInternalTableCellSource(const xui_table_view_cell_output_t* pCell);
+
 #define XUI_CONTEXT_MAGIC 0x58554943u
 #define XUI_CONTEXT_DAMAGE_INLINE 8
 #define XUI_CONTEXT_EVENT_INLINE 32

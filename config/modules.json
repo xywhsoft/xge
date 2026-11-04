@@ -77,6 +77,7 @@
     "src/xui/controls/xui_statusbar.c": "XUI_ENABLE_STATUSBAR",
     "src/xui/controls/xui_accordion.c": "XUI_ENABLE_ACCORDION",
     "src/xui/controls/xui_list_view.c": "XUI_ENABLE_LIST_VIEW",
+    "src/xui/controls/xui_table_cell_output.c": "XUI_ENABLE_TABLE_VIEW",
     "src/xui/controls/xui_table_view.c": "XUI_ENABLE_TABLE_VIEW",
     "src/xui/controls/xui_table_grid.c": "XUI_ENABLE_TABLE_GRID",
     "src/xui/controls/xui_tree_view.c": "XUI_ENABLE_TREE_VIEW",
