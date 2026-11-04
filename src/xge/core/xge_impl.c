@@ -1541,10 +1541,14 @@ uint64_t __xge3dContext(void)
 }
 #endif
 
+static sapp_mouse_cursor __xgeSokolCursor(int iCursor);
+
 // Sokol 初始化回调
 static void __xgeSokolInit(void)
 {
 	g_xge.bSokolRunning = 1;
+    /* Apply the cursor recorded before native window readiness exactly once. */
+    sapp_set_mouse_cursor(__xgeSokolCursor(g_xge.iCursor));
 #if XGE_ENABLE_3D
 	xrtAtomic64FetchAdd(&g_xge3d_context_serial,1,XMEMORY_RELAXED);
 	xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
@@ -2233,7 +2237,8 @@ int xgeSetCursor(int iCursor)
 		return XGE_OK;
 	}
 	g_xge.iCursor = iCursor;
-	if ( g_xge.bRunning != 0 ) {
+	/* Logical init/manual mode does not create a native Sokol window. */
+	if ( g_xge.bRunning != 0 && sapp_isvalid() ) {
 		sapp_set_mouse_cursor(__xgeSokolCursor(iCursor));
 	}
 	return XGE_OK;
