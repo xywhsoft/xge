@@ -696,8 +696,7 @@ static xtime __xuiTableGridParseDateValue(const char* sText, int iType, const ch
 		return xrtNow();
 	}
 	if ( sFormat != NULL && sFormat[0] != '\0' ) {
-		tValue = xuiXrtTimeParse((str)sText, (str)sFormat);
-		if ( tValue > 0 ) return tValue;
+		if ( xuiXrtTryTimeParse(sText,sFormat,&tValue) ) return tValue;
 	}
 	iYear = 0;
 	iMonth = 0;

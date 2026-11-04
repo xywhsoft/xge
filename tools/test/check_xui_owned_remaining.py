@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context'),default='remaining')
+    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','port'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())
@@ -23,7 +23,7 @@ def main():
     pins={Path(__file__).resolve(),Path(cc),source,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
     pins.update(regressions);
     if regressions or a.case=='table':pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
-    pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
+    pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'src/xui/core/xui_xrt_port.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
     out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
     env=dict(os.environ,TEMP=str(out/'tmp'),TMP=str(out/'tmp'),TMPDIR=str(out/'tmp'))
     if os.name=='nt':shutil.copy2(runtime,out/runtime.name);shutil.copy2(native,out/native.name)

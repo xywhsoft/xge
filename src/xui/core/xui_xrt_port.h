@@ -357,11 +357,38 @@ static inline xtime xuiXrtFirstDayOfMonth(xtime tValue)
 	return tResult;
 }
 
-static inline xtime xuiXrtTimeParse(const char* sText, const char* sFormat)
+/* DatePicker's public format syntax is the literal VB-style token set used
+ * by its formatter. Convert exactly those tokens; this is a speculative parse
+ * before Grid's existing numeric/text fallback, so its diagnostic is local. */
+static inline bool xuiXrtTryTimeParse(const char* text,const char* format,xtime* result)
 {
-	xtime tResult = 0;
-	(void)xrtTimeParse(xuiXrtText(sText, 0u), xuiXrtText(sFormat, 0u), &tResult);
-	return tResult;
+    static const struct {const char* token;size_t length;char field;} tokens[]={
+        {"yyyy",4,'Y'},{"yy",2,'y'},{"mm",2,'m'},{"dd",2,'d'},
+        {"hh",2,'H'},{"nn",2,'M'},{"ss",2,'S'}
+    };
+    char converted[512];size_t used=0;
+    if(!text || !format || !result || !format[0])return false;
+    for(size_t i=0;format[i];){
+        size_t token=0;
+        while(token<sizeof(tokens)/sizeof(tokens[0]) && strncmp(format+i,tokens[token].token,tokens[token].length)!=0)++token;
+        if(token<sizeof(tokens)/sizeof(tokens[0])){
+            if(used>sizeof(converted)-3)return false;
+            converted[used++]='%';converted[used++]=tokens[token].field;i+=tokens[token].length;
+        }else{
+            size_t bytes=format[i]=='%' ? 2u:1u;
+            if(used>sizeof(converted)-1-bytes)return false;
+            if(bytes==2)converted[used++]='%';
+            converted[used++]=format[i++];
+        }
+    }
+    converted[used]='\0';
+    xerror* prior=xrtTakeError();xtime parsed=0;
+    bool matched=xrtTimeParse(xuiXrtText(text,0u),xuiXrtText(converted,used),&parsed);
+    /* Time parsing itself is stack-only. A non-match diagnostic belongs to
+     * this try operation, never to a later unrelated native callback. */
+    xrtErrorFree(xrtTakeError());xrtSetErrorTake(prior);
+    if(matched)*result=parsed;
+    return matched;
 }
 
 #endif
