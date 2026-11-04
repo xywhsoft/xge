@@ -4,8 +4,8 @@
   "source_commit": "93347eb5ae6beba8cf7ee3558708cc4f628fdd07",
   "source_worktree_dirty": false,
   "source_snapshot_sha256": "637ec2268d16418eaae78a600e210667e7dd67dd957a8e715f5bea95ee851f3d",
-  "header_sha256": "2c0dd0c2fdd15deb34aedd78fea9a9128760257febdaf3d886c88a1df76d1983",
-  "declaration_header_sha256": "a8b671ff77d9423b8d3d6d74b1842902457b5806d0d3ce963b0a754ae746368f",
+  "header_sha256": "0f1637529a32ffd1c3e468cd9d4898692f687efda504de75941d2124953443fd",
+  "declaration_header_sha256": "c62088a29b7a74c571447924d13ce4f0c3caf1e5853b85ba3a559d64d6835a3f",
   "generation": "tools/amalgamate.py in isolated source snapshot",
   "text_eol": "lf",
   "snapshot_mode": "immutable_base_with_explicit_overlays",
@@ -34,6 +34,17 @@
       ],
       "abiChanged": false,
       "protocolExtension": "xrtownershipfinishv2"
+    },
+    {
+      "commit": "031e59a04644701a54fc8af3c7bf5aaf678c9874",
+      "kind": "Unreleased FinishV2 pure snapshot-drop preflight",
+      "modules": [
+        "include/xrt/core.h"
+      ],
+      "abiChanged": false,
+      "protocolExtension": "xrtownershipfinishv2.DropReady",
+      "unreleasedPrototypeBytesBefore": 40,
+      "descriptorBytes": 48
     }
   ]
 }
