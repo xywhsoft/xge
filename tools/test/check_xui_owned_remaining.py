@@ -9,13 +9,14 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--case',choices=('remaining','groups'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())
     assert metadata['linked'] and metadata['xrt_mode']=='host'
     assert metadata['xrt_host_header_sha256']==hashlib.sha256(header.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
     cc=shutil.which('gcc');assert cc
-    source=root/'tests/xui/xui_owned_remaining_test.c'
+    source=root/('tests/xui/xui_owned_'+a.case+'_test.c')
     library=engine/('xge.lib' if os.name=='nt' else 'libxge.so');native=engine/('xge.dll' if os.name=='nt' else 'libxge.so')
     pins={Path(__file__).resolve(),Path(cc),source,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
     pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}

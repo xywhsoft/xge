@@ -54,6 +54,29 @@ typedef struct xui_callback_update_t {
     xui_callback_binding_t* pRetired;
     bool bPublished;
 } xui_callback_update_t;
+/* Multi-slot publications retain and allocate all candidates before one
+ * ownership mutation. Entries stay in caller-owned stable stack storage. */
+typedef struct xui_callback_group_entry_t {
+    const void* pSlot;
+    bool bHasCallback;
+    void* pUser;
+    const xui_callback_owner_t* pOwner;
+    xui_callback_owner_t tCandidate;
+    xui_callback_owner_t tOld;
+    xui_callback_binding_t* pAllocated;
+    xui_callback_binding_t* pRetired;
+    bool bHeld;
+} xui_callback_group_entry_t;
+typedef struct xui_callback_group_update_t {
+    xui_widget pWidget;
+    xui_context pContext;
+    xui_call_scope_t tScope;
+    xrtownershipscope tMutation;
+    xui_callback_group_entry_t* pEntries;
+    size_t iCount;
+    bool bPublished;
+} xui_callback_group_update_t;
+
 typedef struct xui_callback_snapshot_t {
     xui_context pContext;
     xui_callback_owner_t tOwner;
@@ -575,6 +598,9 @@ int xuiInternalCallbackOwnerValid(const xui_callback_owner_t*);
 int xuiInternalCallbackUpdateBegin(xui_widget,const void*,bool,void*,const xui_callback_owner_t*,xui_callback_update_t*);
 void xuiInternalCallbackUpdatePublish(xui_callback_update_t*);
 int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);
+int xuiInternalCallbackGroupUpdateBegin(xui_widget,xui_callback_group_entry_t*,size_t,xui_callback_group_update_t*);
+void xuiInternalCallbackGroupUpdatePublish(xui_callback_group_update_t*);
+int xuiInternalCallbackGroupUpdateEnd(xui_callback_group_update_t*,int);
 int xuiInternalCallbackSnapshotBegin(xui_widget,const void*,void**,xui_callback_snapshot_t*);
 int xuiInternalCallbackSnapshotEnd(xui_callback_snapshot_t*,int);
 bool xuiInternalCallbackSlotOwned(xui_widget,const void*);
@@ -1046,6 +1072,30 @@ static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tK
             } \
         } \
     } while (0)
+
+/* Statement form preserves ordinary C11 and exact callback signatures. Its
+ * payload expressions run after Hold, just like the void publisher above. */
+#define XUI_INTERNAL_CALLBACK_RESULT_AT(widget, slot_address, proc_type, proc, user, output, failure, ...) \
+    do { \
+        xui_widget xui_selected_widget = (widget); \
+        const void* xui_selected_slot = (slot_address); \
+        proc_type xui_selected_proc = (proc); \
+        void* xui_selected_user = (user); \
+        (output) = (failure); \
+        if ( xui_selected_proc != NULL ) { \
+            if ( !xui_selected_widget->pEventOwners || !xui_selected_widget->pEventOwners->pBindings ) { \
+                (output) = xui_selected_proc(__VA_ARGS__, xui_selected_user); \
+            } else { \
+                xui_callback_snapshot_t xui_selected_snapshot = {0}; \
+                if ( xuiInternalCallbackSnapshotBegin(xui_selected_widget, xui_selected_slot, &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
+                    (output) = xui_selected_proc(__VA_ARGS__, xui_selected_user); \
+                    (void)xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK); \
+                } \
+            } \
+        } \
+    } while (0)
+#define XUI_INTERNAL_CALLBACK_RESULT(widget, slot, proc_type, user, output, failure, ...) \
+    XUI_INTERNAL_CALLBACK_RESULT_AT(widget, &(slot), proc_type, (slot), user, output, failure, __VA_ARGS__)
 
 #if XUI_ENABLE_MENUBAR
 xui_widget xuiInternalMenuBarResolveSelect(xui_context pContext, xui_widget pMenu,

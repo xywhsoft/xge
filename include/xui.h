@@ -11157,18 +11157,23 @@ XUI_API int xuiTimeLineViewGetSelectionCount(xui_widget pWidget);
 XUI_API int xuiTimeLineViewGetSelection(xui_widget pWidget, int iIndex, xui_timeline_selection_t* pSelection);
 /* 注册当前帧 changing/changed 回调对。 */
 XUI_API int xuiTimeLineViewSetCurrentFrameCallbacks(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, xui_timeline_current_frame_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetCurrentFrameCallbacksOwned(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_current_frame_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 注册图层名称、可见性、锁定与激活选择的 changing/changed 回调对；
  * changing 返回 0 可否决对应变更。 */
 XUI_API int xuiTimeLineViewSetLayerCallbacks(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, xui_timeline_layer_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetLayerCallbacksOwned(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_layer_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 注册关键帧变更回调对。 */
 XUI_API int xuiTimeLineViewSetFrameCallbacks(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, xui_timeline_frame_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetFrameCallbacksOwned(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_frame_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 注册区间变更回调对。 */
 XUI_API int xuiTimeLineViewSetSpanCallbacks(xui_widget pWidget, xui_timeline_span_changing_proc onChanging, xui_timeline_span_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetSpanCallbacksOwned(xui_widget pWidget, xui_timeline_span_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_span_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 注册图层选中回调。 */
 XUI_API int xuiTimeLineViewSetLayerSelected(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser);
 XUI_API int xuiTimeLineViewSetLayerSelectedOwned(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键菜单打开/命令回调对。 */
 XUI_API int xuiTimeLineViewSetContextMenu(xui_widget pWidget, xui_timeline_context_opening_proc onOpening, xui_timeline_context_command_proc onCommand, void* pUser);
+XUI_API int xuiTimeLineViewSetContextMenuOwned(xui_widget pWidget, xui_timeline_context_opening_proc onOpening, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_context_command_proc onCommand, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 按命令 id 设置菜单标题。 */
 XUI_API int xuiTimeLineViewSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
 /* 按命令 id 读取菜单标题；返回借用字符串，下次标题修改或控件销毁后失效。 */
@@ -11177,6 +11182,7 @@ XUI_API const char* xuiTimeLineViewGetMenuTitle(xui_widget pWidget, int iCommand
 XUI_API int xuiTimeLineViewRunContextCommand(xui_widget pWidget, int iCommand);
 /* 注册帧单击/双击回调。 */
 XUI_API int xuiTimeLineViewSetFrameClick(xui_widget pWidget, xui_timeline_frame_click_proc onClick, xui_timeline_frame_click_proc onDoubleClick, void* pUser);
+XUI_API int xuiTimeLineViewSetFrameClickOwned(xui_widget pWidget, xui_timeline_frame_click_proc onClick, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_frame_click_proc onDoubleClick, void* pUser1, const xui_callback_owner_t* pOwner1);
 /* 注册选择集变更回调。 */
 XUI_API int xuiTimeLineViewSetSelectionChange(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser);
 XUI_API int xuiTimeLineViewSetSelectionChangeOwned(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser, const xui_callback_owner_t* pOwner);

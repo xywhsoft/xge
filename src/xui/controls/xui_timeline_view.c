@@ -74,24 +74,30 @@ typedef struct xui_timeline_view_data_t {
 	xui_timeline_view_colors_t tColors;
 	xui_timeline_current_frame_changing_proc onCurrentChanging;
 	xui_timeline_current_frame_changed_proc onCurrentChanged;
-	void* pCurrentUser;
+	void* pCurrentChangingUser;
+	void* pCurrentChangedUser;
 	xui_timeline_layer_changing_proc onLayerChanging;
 	xui_timeline_layer_changed_proc onLayerChanged;
-	void* pLayerUser;
+	void* pLayerChangingUser;
+	void* pLayerChangedUser;
 	xui_timeline_frame_changing_proc onFrameChanging;
 	xui_timeline_frame_changed_proc onFrameChanged;
-	void* pFrameUser;
+	void* pFrameChangingUser;
+	void* pFrameChangedUser;
 	xui_timeline_span_changing_proc onSpanChanging;
 	xui_timeline_span_changed_proc onSpanChanged;
-	void* pSpanUser;
+	void* pSpanChangingUser;
+	void* pSpanChangedUser;
 	xui_timeline_layer_selected_proc onLayerSelected;
 	void* pLayerSelectedUser;
 	xui_timeline_context_opening_proc onContextOpening;
 	xui_timeline_context_command_proc onContextCommand;
-	void* pContextUser;
+	void* pContextOpeningUser;
+	void* pContextCommandUser;
 	xui_timeline_frame_click_proc onFrameClick;
 	xui_timeline_frame_click_proc onFrameDoubleClick;
 	void* pFrameClickUser;
+	void* pFrameDoubleClickUser;
 	xui_timeline_selection_proc onSelection;
 	void* pSelectionUser;
 	xui_timeline_layer_renderer_proc onLayerRender;
@@ -630,7 +636,6 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 	xui_timeline_layer_changing_proc onChanging;
 	xui_timeline_layer_changed_proc onChanged;
 	xui_timeline_layer_selected_proc onSelected;
-	void* pLayerUser;
 	int iGeneration;
 	int iLayerId;
 	int iOld;
@@ -644,9 +649,8 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 	iLayerId = (iLayer >= 0) ? pData->arrLayers[iLayer].iId : -1;
 	iGeneration = pData->iLayerChangeCount;
 	onChanging = pData->onLayerChanging;
-	pLayerUser = pData->pLayerUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT, pLayerUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onLayerChanging, xui_timeline_layer_changing_proc, pData->pLayerChangingUser, bAllowed, 0, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iGeneration ) return XUI_OK;
 		if ( iLayerId > 0 ) {
@@ -664,9 +668,8 @@ static int __xuiTimeLineSetActiveLayer(xui_widget pWidget, xui_timeline_view_dat
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onLayerChanged;
-	pLayerUser = pData->pLayerUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT, pLayerUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLayerChanged, xui_timeline_layer_changed_proc, pData->pLayerChangedUser, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_SELECT);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( iLayerId > 0 ) {
 			iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
@@ -932,7 +935,6 @@ static int __xuiTimeLineSetCurrentFrameInternal(xui_widget pWidget, xui_timeline
 	xui_context pContext;
 	xui_timeline_current_frame_changing_proc onChanging;
 	xui_timeline_current_frame_changed_proc onChanged;
-	void* pCurrentUser;
 	int iGeneration;
 	int iOld;
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->iTotalFrames <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -941,10 +943,10 @@ static int __xuiTimeLineSetCurrentFrameInternal(xui_widget pWidget, xui_timeline
 	iOld = pData->iCurrentFrame;
 	if ( iOld == iFrame ) return XUI_OK;
 	onChanging = pData->onCurrentChanging;
-	pCurrentUser = pData->pCurrentUser;
 	iGeneration = pData->iCurrentFrameChangeCount;
 	if ( onChanging != NULL ) {
-		int bAllowed = onChanging(pWidget, iOld, iFrame, pCurrentUser);
+		int bAllowed;
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onCurrentChanging, xui_timeline_current_frame_changing_proc, pData->pCurrentChangingUser, bAllowed, 0, pWidget, iOld, iFrame);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iCurrentFrameChangeCount != iGeneration || pData->iCurrentFrame != iOld ) return XUI_OK;
 	}
@@ -952,9 +954,8 @@ static int __xuiTimeLineSetCurrentFrameInternal(xui_widget pWidget, xui_timeline
 	pData->iCurrentFrameChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onCurrentChanged;
-	pCurrentUser = pData->pCurrentUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iOld, iFrame, pCurrentUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onCurrentChanged, xui_timeline_current_frame_changed_proc, pData->pCurrentChangedUser, pWidget, iOld, iFrame);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1589,7 +1590,6 @@ static int __xuiTimeLinePointerDown(xui_widget pWidget, xui_timeline_view_data_t
 	xui_context pContext;
 	xui_timeline_hit_t tHit;
 	xui_timeline_frame_click_proc onClick;
-	void* pClickUser;
 	int iRet;
 	int bSelected;
 	if ( (pEvent == NULL) || (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) return XUI_OK;
@@ -1673,9 +1673,8 @@ static int __xuiTimeLinePointerDown(xui_widget pWidget, xui_timeline_view_data_t
 		}
 		pData->iClickCount++;
 		onClick = pData->onFrameClick;
-		pClickUser = pData->pFrameClickUser;
 		if ( onClick != NULL ) {
-			onClick(pWidget, tHit.iLayer, tHit.iFrame, pEvent->iButton, pEvent->iModifiers, pClickUser);
+			XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onFrameClick, xui_timeline_frame_click_proc, pData->pFrameClickUser, pWidget, tHit.iLayer, tHit.iFrame, pEvent->iButton, pEvent->iModifiers);
 			if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 		}
 		pData->bDraggingSelection = 1;
@@ -1727,9 +1726,8 @@ static int __xuiTimeLineDoubleClick(xui_widget pWidget, xui_timeline_view_data_t
 	(void)__xuiTimeLineHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
 	if ( tHit.iLayer >= 0 && tHit.iFrame >= 0 ) {
 		xui_timeline_frame_click_proc onDoubleClick = pData->onFrameDoubleClick;
-		void* pClickUser = pData->pFrameClickUser;
 		pData->iClickCount++;
-		if ( onDoubleClick != NULL ) onDoubleClick(pWidget, tHit.iLayer, tHit.iFrame, pEvent->iButton, pEvent->iModifiers, pClickUser);
+		if ( onDoubleClick != NULL ) XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onFrameDoubleClick, xui_timeline_frame_click_proc, pData->pFrameDoubleClickUser, pWidget, tHit.iLayer, tHit.iFrame, pEvent->iButton, pEvent->iModifiers);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	return XUI_OK;
@@ -1927,7 +1925,6 @@ static int __xuiTimeLineOpenContextMenuAt(xui_widget pWidget, xui_timeline_view_
 	xui_context pContext;
 	xui_widget pMenu;
 	xui_timeline_context_opening_proc onOpening;
-	void* pContextUser;
 	xui_timeline_hit_t tHit;
 	int iGeneration;
 	int iRet;
@@ -1946,10 +1943,10 @@ static int __xuiTimeLineOpenContextMenuAt(xui_widget pWidget, xui_timeline_view_
 	}
 	if ( iRet != XUI_OK ) return iRet;
 	onOpening = pData->onContextOpening;
-	pContextUser = pData->pContextUser;
 	iGeneration = pData->iChangeCount;
 	if ( onOpening != NULL ) {
-		int bOpen = onOpening(pWidget, &tHit, pContextUser);
+		int bOpen;
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onContextOpening, xui_timeline_context_opening_proc, pData->pContextOpeningUser, bOpen, 0, pWidget, &tHit);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bOpen || pData->iChangeCount != iGeneration ) return XUI_OK;
 	}
@@ -1960,9 +1957,7 @@ static void __xuiTimeLineNotifyContextCommand(xui_widget pWidget, xui_timeline_v
 	int iCommand, const xui_timeline_hit_t* pHit)
 {
 	if ( (pData != NULL) && (pData->onContextCommand != NULL) ) {
-		xui_timeline_context_command_proc onCommand = pData->onContextCommand;
-		void* pContextUser = pData->pContextUser;
-		onCommand(pWidget, iCommand, pHit, pContextUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onContextCommand, xui_timeline_context_command_proc, pData->pContextCommandUser, pWidget, iCommand, pHit);
 	}
 }
 
@@ -2788,7 +2783,6 @@ XUI_API int xuiTimeLineViewSetFrameCount(xui_widget pWidget, int iFrameCount)
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
 	xui_context pContext;
 	xui_timeline_current_frame_changed_proc onCurrentChanged;
-	void* pCurrentUser;
 	int iOldFrameCount;
 	int iOldCurrentFrame;
 	int iOldFrameRecordCount;
@@ -2839,9 +2833,8 @@ XUI_API int xuiTimeLineViewSetFrameCount(xui_widget pWidget, int iFrameCount)
 	pData->iChangeCount++;
 	if ( pData->iCurrentFrame != iOldCurrentFrame ) {
 		onCurrentChanged = pData->onCurrentChanged;
-		pCurrentUser = pData->pCurrentUser;
 		if ( onCurrentChanged != NULL ) {
-			onCurrentChanged(pWidget, iOldCurrentFrame, pData->iCurrentFrame, pCurrentUser);
+			XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onCurrentChanged, xui_timeline_current_frame_changed_proc, pData->pCurrentChangedUser, pWidget, iOldCurrentFrame, pData->iCurrentFrame);
 			if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		}
 	}
@@ -3212,7 +3205,6 @@ XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const ch
 	xui_context pContext;
 	xui_timeline_layer_changing_proc onChanging;
 	xui_timeline_layer_changed_proc onChanged;
-	void* pUser;
 	char sNewName[XUI_TIMELINE_NAME_CAPACITY];
 	int iLayerId;
 	int iGeneration;
@@ -3224,9 +3216,8 @@ XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const ch
 	iLayerId = pData->arrLayers[iLayer].iId;
 	iGeneration = pData->iLayerChangeCount;
 	onChanging = pData->onLayerChanging;
-	pUser = pData->pLayerUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_NAME, pUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onLayerChanging, xui_timeline_layer_changing_proc, pData->pLayerChangingUser, bAllowed, 0, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_NAME);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iGeneration ) return XUI_OK;
 		iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
@@ -3236,9 +3227,8 @@ XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const ch
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onLayerChanged;
-	pUser = pData->pLayerUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_NAME, pUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLayerChanged, xui_timeline_layer_changed_proc, pData->pLayerChangedUser, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_NAME);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3256,7 +3246,6 @@ XUI_API int xuiTimeLineViewSetLayerVisible(xui_widget pWidget, int iLayer, int b
 	xui_context pContext;
 	xui_timeline_layer_changing_proc onChanging;
 	xui_timeline_layer_changed_proc onChanged;
-	void* pUser;
 	int iLayerId;
 	int iGeneration;
 	int bAllowed;
@@ -3267,9 +3256,8 @@ XUI_API int xuiTimeLineViewSetLayerVisible(xui_widget pWidget, int iLayer, int b
 	iLayerId = pData->arrLayers[iLayer].iId;
 	iGeneration = pData->iLayerChangeCount;
 	onChanging = pData->onLayerChanging;
-	pUser = pData->pLayerUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_VISIBLE, pUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onLayerChanging, xui_timeline_layer_changing_proc, pData->pLayerChangingUser, bAllowed, 0, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_VISIBLE);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iGeneration ) return XUI_OK;
 		iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
@@ -3279,9 +3267,8 @@ XUI_API int xuiTimeLineViewSetLayerVisible(xui_widget pWidget, int iLayer, int b
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onLayerChanged;
-	pUser = pData->pLayerUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_VISIBLE, pUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLayerChanged, xui_timeline_layer_changed_proc, pData->pLayerChangedUser, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_VISIBLE);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3299,7 +3286,6 @@ XUI_API int xuiTimeLineViewSetLayerLocked(xui_widget pWidget, int iLayer, int bL
 	xui_context pContext;
 	xui_timeline_layer_changing_proc onChanging;
 	xui_timeline_layer_changed_proc onChanged;
-	void* pUser;
 	int iLayerId;
 	int iGeneration;
 	int bAllowed;
@@ -3310,9 +3296,8 @@ XUI_API int xuiTimeLineViewSetLayerLocked(xui_widget pWidget, int iLayer, int bL
 	iLayerId = pData->arrLayers[iLayer].iId;
 	iGeneration = pData->iLayerChangeCount;
 	onChanging = pData->onLayerChanging;
-	pUser = pData->pLayerUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_LOCKED, pUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onLayerChanging, xui_timeline_layer_changing_proc, pData->pLayerChangingUser, bAllowed, 0, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_LOCKED);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iGeneration ) return XUI_OK;
 		iLayer = __xuiTimeLineFindLayerId(pData, iLayerId);
@@ -3322,9 +3307,8 @@ XUI_API int xuiTimeLineViewSetLayerLocked(xui_widget pWidget, int iLayer, int bL
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onLayerChanged;
-	pUser = pData->pLayerUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_LOCKED, pUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onLayerChanged, xui_timeline_layer_changed_proc, pData->pLayerChangedUser, pWidget, iLayer, XUI_TIMELINE_LAYER_CHANGE_LOCKED);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3401,7 +3385,6 @@ XUI_API int xuiTimeLineViewSetFrame(xui_widget pWidget, int iLayer, int iFrame, 
 	xui_context pContext;
 	xui_timeline_frame_changing_proc onChanging;
 	xui_timeline_frame_changed_proc onChanged;
-	void* pCallbackUser;
 	int iIndex;
 	int iOldType;
 	int iLayerId;
@@ -3421,9 +3404,8 @@ XUI_API int xuiTimeLineViewSetFrame(xui_widget pWidget, int iLayer, int iFrame, 
 	iLayerGeneration = pData->iLayerChangeCount;
 	iFrameGeneration = pData->iFrameChangeCount;
 	onChanging = pData->onFrameChanging;
-	pCallbackUser = pData->pFrameUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, iFrame, iOldType, iType, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onFrameChanging, xui_timeline_frame_changing_proc, pData->pFrameChangingUser, bAllowed, 0, pWidget, iLayer, iFrame, iOldType, iType);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iLayerGeneration ||
 		     pData->iFrameChangeCount != iFrameGeneration ) return XUI_OK;
@@ -3441,9 +3423,8 @@ XUI_API int xuiTimeLineViewSetFrame(xui_widget pWidget, int iLayer, int iFrame, 
 	pData->iFrameChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onFrameChanged;
-	pCallbackUser = pData->pFrameUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, iFrame, iOldType, iType, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onFrameChanged, xui_timeline_frame_changed_proc, pData->pFrameChangedUser, pWidget, iLayer, iFrame, iOldType, iType);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3471,7 +3452,6 @@ XUI_API int xuiTimeLineViewClearFrame(xui_widget pWidget, int iLayer, int iFrame
 	xui_context pContext;
 	xui_timeline_frame_changing_proc onChanging;
 	xui_timeline_frame_changed_proc onChanged;
-	void* pCallbackUser;
 	int iIndex;
 	int iOldType;
 	int iLayerId;
@@ -3487,9 +3467,8 @@ XUI_API int xuiTimeLineViewClearFrame(xui_widget pWidget, int iLayer, int iFrame
 	iLayerGeneration = pData->iLayerChangeCount;
 	iFrameGeneration = pData->iFrameChangeCount;
 	onChanging = pData->onFrameChanging;
-	pCallbackUser = pData->pFrameUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iLayer, iFrame, iOldType, XUI_TIMELINE_FRAME_EMPTY, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onFrameChanging, xui_timeline_frame_changing_proc, pData->pFrameChangingUser, bAllowed, 0, pWidget, iLayer, iFrame, iOldType, XUI_TIMELINE_FRAME_EMPTY);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iLayerGeneration ||
 		     pData->iFrameChangeCount != iFrameGeneration ) return XUI_OK;
@@ -3502,9 +3481,8 @@ XUI_API int xuiTimeLineViewClearFrame(xui_widget pWidget, int iLayer, int iFrame
 	pData->iFrameChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onFrameChanged;
-	pCallbackUser = pData->pFrameUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iLayer, iFrame, iOldType, XUI_TIMELINE_FRAME_EMPTY, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onFrameChanged, xui_timeline_frame_changed_proc, pData->pFrameChangedUser, pWidget, iLayer, iFrame, iOldType, XUI_TIMELINE_FRAME_EMPTY);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3538,7 +3516,6 @@ XUI_API int xuiTimeLineViewAddSpan(xui_widget pWidget, int iLayer, int iStartFra
 	xui_context pContext;
 	xui_timeline_span_changing_proc onChanging;
 	xui_timeline_span_changed_proc onChanged;
-	void* pCallbackUser;
 	xui_timeline_span_t* pSpan;
 	int iLayerId;
 	int iLayerGeneration;
@@ -3558,9 +3535,8 @@ XUI_API int xuiTimeLineViewAddSpan(xui_widget pWidget, int iLayer, int iStartFra
 	iLayerGeneration = pData->iLayerChangeCount;
 	iSpanGeneration = pData->iSpanChangeCount;
 	onChanging = pData->onSpanChanging;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, -1, XUI_TIMELINE_SPAN_CHANGE_ADD, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onSpanChanging, xui_timeline_span_changing_proc, pData->pSpanChangingUser, bAllowed, 0, pWidget, -1, XUI_TIMELINE_SPAN_CHANGE_ADD);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iLayerChangeCount != iLayerGeneration ||
 		     pData->iSpanChangeCount != iSpanGeneration ) return XUI_OK;
@@ -3583,9 +3559,8 @@ XUI_API int xuiTimeLineViewAddSpan(xui_widget pWidget, int iLayer, int iStartFra
 	pData->iSpanChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onSpanChanged;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iNewSpanId, XUI_TIMELINE_SPAN_CHANGE_ADD, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSpanChanged, xui_timeline_span_changed_proc, pData->pSpanChangedUser, pWidget, iNewSpanId, XUI_TIMELINE_SPAN_CHANGE_ADD);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3597,7 +3572,6 @@ XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId)
 	xui_context pContext;
 	xui_timeline_span_changing_proc onChanging;
 	xui_timeline_span_changed_proc onChanged;
-	void* pCallbackUser;
 	int iIndex;
 	int iGeneration;
 	int bAllowed;
@@ -3607,9 +3581,8 @@ XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId)
 	pContext = xuiWidgetGetContext(pWidget);
 	iGeneration = pData->iSpanChangeCount;
 	onChanging = pData->onSpanChanging;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_REMOVE, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onSpanChanging, xui_timeline_span_changing_proc, pData->pSpanChangingUser, bAllowed, 0, pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_REMOVE);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iSpanChangeCount != iGeneration ) return XUI_OK;
 		iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
@@ -3620,9 +3593,8 @@ XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId)
 	pData->iSpanChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onSpanChanged;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_REMOVE, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSpanChanged, xui_timeline_span_changed_proc, pData->pSpanChangedUser, pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_REMOVE);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3634,7 +3606,6 @@ XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFr
 	xui_context pContext;
 	xui_timeline_span_changing_proc onChanging;
 	xui_timeline_span_changed_proc onChanged;
-	void* pCallbackUser;
 	xui_timeline_span_t* pSpan;
 	char sNewLabel[XUI_TIMELINE_LABEL_CAPACITY];
 	int iIndex;
@@ -3656,9 +3627,8 @@ XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFr
 	pContext = xuiWidgetGetContext(pWidget);
 	iGeneration = pData->iSpanChangeCount;
 	onChanging = pData->onSpanChanging;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanging != NULL ) {
-		bAllowed = onChanging(pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_SET, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onSpanChanging, xui_timeline_span_changing_proc, pData->pSpanChangingUser, bAllowed, 0, pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_SET);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 		if ( !bAllowed || pData->iSpanChangeCount != iGeneration ) return XUI_OK;
 		iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
@@ -3672,9 +3642,8 @@ XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFr
 	pData->iSpanChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onSpanChanged;
-	pCallbackUser = pData->pSpanUser;
 	if ( onChanged != NULL ) {
-		onChanged(pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_SET, pCallbackUser);
+		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSpanChanged, xui_timeline_span_changed_proc, pData->pSpanChangedUser, pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_SET);
 		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3792,45 +3761,121 @@ XUI_API int xuiTimeLineViewGetSelection(xui_widget pWidget, int iIndex, xui_time
 	return XUI_OK;
 }
 
+XUI_API int xuiTimeLineViewSetCurrentFrameCallbacksOwned(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_current_frame_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onCurrentChanging,.bHasCallback=onChanging!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onCurrentChanged,.bHasCallback=onChanged!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onCurrentChanging=onChanging;pData->pCurrentChangingUser=pUser0;
+    pData->onCurrentChanged=onChanged;pData->pCurrentChangedUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiTimeLineViewSetCurrentFrameCallbacks(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, xui_timeline_current_frame_changed_proc onChanged, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onCurrentChanging = onChanging;
-	pData->onCurrentChanged = onChanged;
-	pData->pCurrentUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onCurrentChanging) || xuiInternalCallbackSlotOwned(pWidget,&pData->onCurrentChanged))
+        return xuiTimeLineViewSetCurrentFrameCallbacksOwned(pWidget,onChanging, pUser, NULL, onChanged, pUser, NULL);
+    pData->onCurrentChanging=onChanging;pData->pCurrentChangingUser=pUser;
+    pData->onCurrentChanged=onChanged;pData->pCurrentChangedUser=pUser;
+    return XUI_OK;
+}
+
+
+XUI_API int xuiTimeLineViewSetLayerCallbacksOwned(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_layer_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onLayerChanging,.bHasCallback=onChanging!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onLayerChanged,.bHasCallback=onChanged!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onLayerChanging=onChanging;pData->pLayerChangingUser=pUser0;
+    pData->onLayerChanged=onChanged;pData->pLayerChangedUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
 }
 
 XUI_API int xuiTimeLineViewSetLayerCallbacks(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, xui_timeline_layer_changed_proc onChanged, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onLayerChanging = onChanging;
-	pData->onLayerChanged = onChanged;
-	pData->pLayerUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onLayerChanging) || xuiInternalCallbackSlotOwned(pWidget,&pData->onLayerChanged))
+        return xuiTimeLineViewSetLayerCallbacksOwned(pWidget,onChanging, pUser, NULL, onChanged, pUser, NULL);
+    pData->onLayerChanging=onChanging;pData->pLayerChangingUser=pUser;
+    pData->onLayerChanged=onChanged;pData->pLayerChangedUser=pUser;
+    return XUI_OK;
+}
+
+
+XUI_API int xuiTimeLineViewSetFrameCallbacksOwned(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_frame_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onFrameChanging,.bHasCallback=onChanging!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onFrameChanged,.bHasCallback=onChanged!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onFrameChanging=onChanging;pData->pFrameChangingUser=pUser0;
+    pData->onFrameChanged=onChanged;pData->pFrameChangedUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
 }
 
 XUI_API int xuiTimeLineViewSetFrameCallbacks(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, xui_timeline_frame_changed_proc onChanged, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onFrameChanging = onChanging;
-	pData->onFrameChanged = onChanged;
-	pData->pFrameUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onFrameChanging) || xuiInternalCallbackSlotOwned(pWidget,&pData->onFrameChanged))
+        return xuiTimeLineViewSetFrameCallbacksOwned(pWidget,onChanging, pUser, NULL, onChanged, pUser, NULL);
+    pData->onFrameChanging=onChanging;pData->pFrameChangingUser=pUser;
+    pData->onFrameChanged=onChanged;pData->pFrameChangedUser=pUser;
+    return XUI_OK;
+}
+
+
+XUI_API int xuiTimeLineViewSetSpanCallbacksOwned(xui_widget pWidget, xui_timeline_span_changing_proc onChanging, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_span_changed_proc onChanged, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onSpanChanging,.bHasCallback=onChanging!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onSpanChanged,.bHasCallback=onChanged!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onSpanChanging=onChanging;pData->pSpanChangingUser=pUser0;
+    pData->onSpanChanged=onChanged;pData->pSpanChangedUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
 }
 
 XUI_API int xuiTimeLineViewSetSpanCallbacks(xui_widget pWidget, xui_timeline_span_changing_proc onChanging, xui_timeline_span_changed_proc onChanged, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onSpanChanging = onChanging;
-	pData->onSpanChanged = onChanged;
-	pData->pSpanUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onSpanChanging) || xuiInternalCallbackSlotOwned(pWidget,&pData->onSpanChanged))
+        return xuiTimeLineViewSetSpanCallbacksOwned(pWidget,onChanging, pUser, NULL, onChanged, pUser, NULL);
+    pData->onSpanChanging=onChanging;pData->pSpanChangingUser=pUser;
+    pData->onSpanChanged=onChanged;pData->pSpanChangedUser=pUser;
+    return XUI_OK;
 }
+
 
 XUI_API int xuiTimeLineViewSetLayerSelectedOwned(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser, const xui_callback_owner_t* pOwner)
 {
@@ -3856,15 +3901,34 @@ XUI_API int xuiTimeLineViewSetLayerSelected(xui_widget pWidget, xui_timeline_lay
 	return XUI_OK;
 }
 
+XUI_API int xuiTimeLineViewSetContextMenuOwned(xui_widget pWidget, xui_timeline_context_opening_proc onOpening, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_context_command_proc onCommand, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onContextOpening,.bHasCallback=onOpening!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onContextCommand,.bHasCallback=onCommand!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onContextOpening=onOpening;pData->pContextOpeningUser=pUser0;
+    pData->onContextCommand=onCommand;pData->pContextCommandUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiTimeLineViewSetContextMenu(xui_widget pWidget, xui_timeline_context_opening_proc onOpening, xui_timeline_context_command_proc onCommand, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContextOpening = onOpening;
-	pData->onContextCommand = onCommand;
-	pData->pContextUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContextOpening) || xuiInternalCallbackSlotOwned(pWidget,&pData->onContextCommand))
+        return xuiTimeLineViewSetContextMenuOwned(pWidget,onOpening, pUser, NULL, onCommand, pUser, NULL);
+    pData->onContextOpening=onOpening;pData->pContextOpeningUser=pUser;
+    pData->onContextCommand=onCommand;pData->pContextCommandUser=pUser;
+    return XUI_OK;
 }
+
 
 XUI_API int xuiTimeLineViewSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
 {
@@ -3912,15 +3976,34 @@ XUI_API int xuiTimeLineViewRunContextCommand(xui_widget pWidget, int iCommand)
 	return __xuiTimeLineRunContextCommand(pWidget, pData, iCommand);
 }
 
+XUI_API int xuiTimeLineViewSetFrameClickOwned(xui_widget pWidget, xui_timeline_frame_click_proc onClick, void* pUser0, const xui_callback_owner_t* pOwner0, xui_timeline_frame_click_proc onDoubleClick, void* pUser1, const xui_callback_owner_t* pOwner1)
+{
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_group_entry_t entries[]={
+        {.pSlot=&pData->onFrameClick,.bHasCallback=onClick!=NULL,.pUser=pUser0,.pOwner=pOwner0},
+        {.pSlot=&pData->onFrameDoubleClick,.bHasCallback=onDoubleClick!=NULL,.pUser=pUser1,.pOwner=pOwner1},
+    };
+    xui_callback_group_update_t update={0};
+    int result=xuiInternalCallbackGroupUpdateBegin(pWidget,entries,2,&update);
+    if(result!=XUI_OK)return result;
+    pData->onFrameClick=onClick;pData->pFrameClickUser=pUser0;
+    pData->onFrameDoubleClick=onDoubleClick;pData->pFrameDoubleClickUser=pUser1;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    return xuiInternalCallbackGroupUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiTimeLineViewSetFrameClick(xui_widget pWidget, xui_timeline_frame_click_proc onClick, xui_timeline_frame_click_proc onDoubleClick, void* pUser)
 {
-	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onFrameClick = onClick;
-	pData->onFrameDoubleClick = onDoubleClick;
-	pData->pFrameClickUser = pUser;
-	return XUI_OK;
+    xui_timeline_view_data_t* pData=__xuiTimeLineViewGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiInternalCallbackSlotOwned(pWidget,&pData->onFrameClick) || xuiInternalCallbackSlotOwned(pWidget,&pData->onFrameDoubleClick))
+        return xuiTimeLineViewSetFrameClickOwned(pWidget,onClick, pUser, NULL, onDoubleClick, pUser, NULL);
+    pData->onFrameClick=onClick;pData->pFrameClickUser=pUser;
+    pData->onFrameDoubleClick=onDoubleClick;pData->pFrameDoubleClickUser=pUser;
+    return XUI_OK;
 }
+
 
 XUI_API int xuiTimeLineViewSetSelectionChangeOwned(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser, const xui_callback_owner_t* pOwner)
 {
