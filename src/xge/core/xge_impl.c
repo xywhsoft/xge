@@ -213,9 +213,6 @@ typedef struct xge_context_t {
 	xge_desc_t objDesc;
 	xge_scene_proc procFrame;
 	void* pFrameUser;
-	xge_quit_request_proc procQuitRequest;
-	void* pQuitRequestUser;
-	int bQuitRequestDispatching;
 	int bRenderRequested;
 	int iOnDemandRenderBurst;
 	double fOnDemandRenderDeadline;
@@ -648,18 +645,29 @@ static void __xgeLogError(const char* sTag, const char* sMessage)
 	__xgeLogFormat(XGE_LOG_ERROR, sTag, "%s", (sMessage != NULL) ? sMessage : "");
 }
 
+#include "xge_callback_owned.h"
 static xspinlock g_xgeErrorSpin = XRT_SPIN_INIT;
 static xge_error_proc g_xgeErrorCallback;
 static void* g_xgeErrorUser;
+static xge_callback_node_t* g_xgeErrorOwner;
 static int g_xgeReportingError;
 
 int xgeSetErrorCallback(xge_error_proc onError, void* pUser)
 {
+	return xgeSetErrorCallbackOwned(onError,pUser,NULL);
+}
+
+int xgeSetErrorCallbackOwned(xge_error_proc onError,void* pUser,const xge_callback_owner_t* pOwner)
+{
+	xge_callback_node_t* next=NULL;
+	int prepared=__xgeCallbackNodePrepare(onError!=NULL,true,pOwner,&next);
+	if(prepared!=XGE_OK)return prepared;
 	(void)xrtSpinLock(&g_xgeErrorSpin);
+	xge_callback_node_t* old=g_xgeErrorOwner;g_xgeErrorOwner=next;
 	g_xgeErrorCallback = onError;
 	g_xgeErrorUser = (onError != NULL) ? pUser : NULL;
 	(void)xrtSpinUnlock(&g_xgeErrorSpin);
-	return XGE_OK;
+	return __xgeCallbackNodeRelease(old);
 }
 
 int xgeReportError(const xge_error_info_t* pError)
@@ -667,6 +675,8 @@ int xgeReportError(const xge_error_info_t* pError)
 	xge_error_proc onError;
 	void* pUser;
 	xge_error_info_t tError;
+	xge_callback_node_t* node;
+	xge_callback_snapshot_t snapshot={0};
 
 	if ( (pError == NULL) || (pError->iSize < sizeof(*pError)) ||
 	     (pError->iCode == XGE_OK) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -677,15 +687,20 @@ int xgeReportError(const xge_error_info_t* pError)
 	}
 	onError = g_xgeErrorCallback;
 	pUser = g_xgeErrorUser;
+	node=g_xgeErrorOwner;
+	if(!__xgeCallbackNodePin(node)){
+		(void)xrtSpinUnlock(&g_xgeErrorSpin);return XGE_ERROR_INVALID_STATE;
+	}
 	g_xgeReportingError = 1;
 	(void)xrtSpinUnlock(&g_xgeErrorSpin);
+	int result=__xgeCallbackSnapshotBegin(node,true,&snapshot);
 	tError = *pError;
 	tError.iSize = sizeof(tError);
-	onError(&tError, pUser);
+	if(result==XGE_OK){onError(&tError,pUser);result=__xgeCallbackSnapshotEnd(&snapshot);}
 	(void)xrtSpinLock(&g_xgeErrorSpin);
 	g_xgeReportingError = 0;
 	(void)xrtSpinUnlock(&g_xgeErrorSpin);
-	return XGE_OK;
+	return result;
 }
 
 static void __xgeReportErrorInternal(int iCode, int bRecoverable, const char* sSubsystem,

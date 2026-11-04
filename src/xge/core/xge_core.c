@@ -6,10 +6,16 @@ static void __xgeRenderCommandReset(void);
 static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
 static int __xgeFrameWithDelta(float fDelta);
+static xspinlock g_xgeQuitSpin=XRT_SPIN_INIT;
+static xge_quit_request_proc g_xgeQuitProc;
+static void* g_xgeQuitUser;
+static xge_callback_node_t* g_xgeQuitOwner;
+static bool g_xgeQuitDispatching;
 
 int xgeInit(const xge_desc_t* pDesc)
 {
 	xge_desc_t objDesc;
+	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
 
 	if ( g_xge.bInitialized ) {
 		return XGE_ERROR_ALREADY_INITIALIZED;
@@ -87,44 +93,60 @@ int xgeInit(const xge_desc_t* pDesc)
 
 void xgeUnit(void)
 {
-	int i;
+	int result=xgeUnitChecked();
+	if(result!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+}
 
-	if ( g_xge.bInitialized == 0 ) {
-		return;
+int xgeUnitChecked(void)
+{
+	int i;
+	uint32 expected=0;
+	if(!xrtAtomic32CompareExchange(&g_xgeCallbackShutdown,&expected,1,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	if(xrtAtomic64Load(&g_xgeCallbackActivity,XMEMORY_ACQUIRE)){
+		xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);return XGE_ERROR_INVALID_STATE;
 	}
-	__xgeDragDropUnit();
-	g_xge.bInitialized = 0;
+	bool initialized=g_xge.bInitialized!=0;
+	xerror* previous=xrtTakeError();xerror* first=NULL;int result=XGE_OK;
+#define XGE_UNIT_STEP(Operation) do{(void)(Operation);__xgeCallbackOutcome(XGE_OK,&result,&first);}while(0)
+	/* Clear pre-init registrations as well, without starting a graphics backend.
+	 * Ending admission prevents arbitrary owner Drop from reinitializing the
+	 * engine or republishing quit/drag callbacks halfway through teardown. */
+	g_xge.bInitialized=0;
+	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
+	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
+	if(!initialized)goto finish;
+	XGE_UNIT_STEP(__xgeDragDropUnit());
 	g_xge.bRunning = 0;
-	__xgeSceneClear();
+	XGE_UNIT_STEP(__xgeSceneClear());
 #if XGE_ENABLE_2D
-	__xgeRenderThreadJoin();
+	XGE_UNIT_STEP(__xgeRenderThreadJoin());
 #endif
 #if XGE_ENABLE_2D
-	__xgeRenderCommandUnit();
+	XGE_UNIT_STEP(__xgeRenderCommandUnit());
 #endif
 #if XGE_ENABLE_2D
-	__xgeShapeAutoBatchReset();
+	XGE_UNIT_STEP(__xgeShapeAutoBatchReset());
 #endif
-	__xgeBuiltinRenderersReset();
-	__xgeTextureUploadQueueFree();
+	XGE_UNIT_STEP(__xgeBuiltinRenderersReset());
+	XGE_UNIT_STEP(__xgeTextureUploadQueueFree());
 #if XGE_ENABLE_EMOJI
-	__xgeEmojiGlobalClear();
+	XGE_UNIT_STEP(__xgeEmojiGlobalClear());
 #endif
 #if XGE_ENABLE_SVG
-	xgeSvgCacheClear();
+	XGE_UNIT_STEP(xgeSvgCacheClear());
 #endif
-	xgeTextureFallbackClear();
+	XGE_UNIT_STEP(xgeTextureFallbackClear());
 #if XGE_ENABLE_TEXT
-	xgeFontFallbackClear();
+	XGE_UNIT_STEP(xgeFontFallbackClear());
 #endif
 #if XGE_ENABLE_AUDIO
-	xgeSoundFallbackClear();
+	XGE_UNIT_STEP(xgeSoundFallbackClear());
 #endif
 #if XGE_ENABLE_AUDIO
-	xgeAudioUnit();
+	XGE_UNIT_STEP(xgeAudioUnit());
 #endif
 	#if defined(_WIN32) || defined(_WIN64)
-		__xgeWin32ClipboardOwnerRelease();
+		XGE_UNIT_STEP(__xgeWin32ClipboardOwnerRelease());
 	#endif
 	if ( g_xge.sClipboardText != NULL ) {
 		xrtFree(g_xge.sClipboardText);
@@ -146,8 +168,15 @@ void xgeUnit(void)
 		xrtFree(g_xge.sImeEventText);
 		g_xge.sImeEventText = NULL;
 	}
-	__xgeInputEventQueueUnit();
-	(void)xgeLogFlush();
+	XGE_UNIT_STEP(__xgeInputEventQueueUnit());
+	__xgeCallbackOutcome(xgeLogFlush(),&result,&first);
+	__xgeCallbackOutcome(XGE_OK,&result,&first);
+finish:
+	xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
+	if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
+	else xrtSetErrorTake(previous);
+	#undef XGE_UNIT_STEP
+	return result;
 }
 
 void xgeMemoryFree(void* pData)
@@ -193,19 +222,56 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 
 void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser)
 {
-	g_xge.procQuitRequest = proc;
-	g_xge.pQuitRequestUser = pUser;
+	int result=xgeSetQuitRequestCallbackOwned(proc,pUser,NULL);
+	if(result!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+}
+
+int xgeSetQuitRequestCallbackOwned(xge_quit_request_proc proc,void* pUser,const xge_callback_owner_t* owner)
+{
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	xge_callback_node_t* next=NULL;int result=__xgeCallbackNodePrepare(proc!=NULL,false,owner,&next);
+	if(result!=XGE_OK)return result;
+	(void)xrtSpinLock(&g_xgeQuitSpin);
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+		(void)xrtSpinUnlock(&g_xgeQuitSpin);(void)__xgeCallbackNodeRelease(next);return XGE_ERROR_INVALID_STATE;
+	}
+	xge_callback_node_t* old=g_xgeQuitOwner;g_xgeQuitOwner=next;
+	g_xgeQuitProc=proc;g_xgeQuitUser=proc ? pUser:NULL;
+	(void)xrtSpinUnlock(&g_xgeQuitSpin);return __xgeCallbackNodeRelease(old);
+}
+
+int xgeQuitRequestDispatch(int* output)
+{
+	if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	(void)xrtSpinLock(&g_xgeQuitSpin);
+	if(g_xgeQuitDispatching){(void)xrtSpinUnlock(&g_xgeQuitSpin);*output=0;return XGE_OK;}
+	xge_quit_request_proc proc=g_xgeQuitProc;void* user=g_xgeQuitUser;xge_callback_node_t* node=g_xgeQuitOwner;
+	if(!__xgeCallbackNodePin(node)){(void)xrtSpinUnlock(&g_xgeQuitSpin);return XGE_ERROR_INVALID_STATE;}
+	g_xgeQuitDispatching=true;(void)xrtSpinUnlock(&g_xgeQuitSpin);
+	xge_callback_snapshot_t snapshot={0};int result=__xgeCallbackSnapshotBegin(node,false,&snapshot);int allow=1;
+	if(result==XGE_OK){if(proc)allow=proc(user)!=0;result=__xgeCallbackSnapshotEnd(&snapshot);}
+	(void)xrtSpinLock(&g_xgeQuitSpin);g_xgeQuitDispatching=false;(void)xrtSpinUnlock(&g_xgeQuitSpin);
+	if(result==XGE_OK)*output=allow;
+	return result;
+}
+
+int xgeRequestQuitChecked(int* output)
+{
+	if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+	if(!g_xge.bInitialized)return XGE_ERROR_INVALID_STATE;
+	int allow=0;int result=xgeQuitRequestDispatch(&allow);
+	if(result!=XGE_OK)return result;
+	if(allow)xgeQuit();
+	*output=allow;return XGE_OK;
 }
 
 int xgeRequestQuit(void)
 {
-	int allow = 1;
-	if ( !g_xge.bInitialized || g_xge.bQuitRequestDispatching ) return 0;
-	g_xge.bQuitRequestDispatching = 1;
-	if ( g_xge.procQuitRequest != NULL ) allow = g_xge.procQuitRequest(g_xge.pQuitRequestUser);
-	g_xge.bQuitRequestDispatching = 0;
-	if ( allow ) xgeQuit();
-	return allow != 0;
+	if(!g_xge.bInitialized)return 0;
+	int allow=0;int result=xgeRequestQuitChecked(&allow);
+	if(result!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+	return result==XGE_OK ? allow:0;
 }
 
 void xgeQuit(void)

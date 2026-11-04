@@ -609,6 +609,19 @@ typedef struct xge_error_info_t {
 
 typedef void (*xge_error_proc)(const xge_error_info_t* pError, void* pUser);
 
+/* A native registration retains one real owner reference. Each invocation
+ * retains an independent snapshot through the callback's complete C return.
+ * Hold/Drop run outside publisher locks; false is a checked failure, even
+ * without an allocated diagnostic. Global registrations are external roots
+ * until explicitly cleared, not implicitly cycle-collected module fields.
+ * Failed Hold acquires nothing. Drop consumes its one acquired reference on
+ * both success and failure; a failed Drop must not be retried on that reference. */
+typedef struct xge_callback_owner_t {
+	xrtownershipref tReference;
+	bool (*onHold)(const void*);
+	bool (*onDrop)(const void*);
+} xge_callback_owner_t;
+
 typedef struct xge_desc_t {
 /* 窗口客户区初始宽度（像素）。 */
 	int iWidth;
@@ -1765,6 +1778,11 @@ XGE_API int xgeGetBuildInfo(xge_build_info_t *out);
 XGE_API int xgeCheckBuildCompatibility(uint64_t fingerprint, uint32_t features);
 /* 关闭引擎并释放全局资源（主循环结束后调用）。 */
 XGE_API void xgeUnit(void);
+/* Retires quit/drag registrations and engine resources. Reports cleanup
+ * failure independently of a diagnostic allocation, and rejects reentry. The
+ * error callback remains available for shutdown logging until explicitly cleared.
+ * Owned callbacks/owner admission in progress return INVALID_STATE for retry. */
+XGE_API int xgeUnitChecked(void);
 /* 释放引擎 API 输出的堆块（如 xgeFontBuildXRFMemory 的产物）。 */
 XGE_API void xgeMemoryFree(void* pData);
 /* 创建窗口并进入主循环；每帧回调 onProc，直到退出。 */
@@ -1777,6 +1795,12 @@ XGE_API void xgeQuit(void);
 typedef int (*xge_quit_request_proc)(void* pUser);
 /* 注册退出请求回调：返回 0 阻止退出，返回非 0 允许退出。xgeQuit 不经过此回调。 */
 XGE_API void xgeSetQuitRequestCallback(xge_quit_request_proc proc, void* pUser);
+XGE_API int xgeSetQuitRequestCallbackOwned(xge_quit_request_proc proc, void* pUser,
+	const xge_callback_owner_t* pOwner);
+/* Evaluate a native close request without stopping the engine. Output is
+ * written only on success; reentrant dispatch vetoes with a successful zero. */
+XGE_API int xgeQuitRequestDispatch(int* pAllowed);
+XGE_API int xgeRequestQuitChecked(int* pAllowed);
 /* 请求退出主循环（触发退出请求回调）。 */
 XGE_API int xgeRequestQuit(void);
 /* 请求渲染下一帧（on-demand 模式下唤醒帧循环）。 */
@@ -1809,6 +1833,8 @@ XGE_API int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage);
 XGE_API int xgeLogFlush(void);
 /* 注册错误回调（带重入保护）。 */
 XGE_API int xgeSetErrorCallback(xge_error_proc onError, void* pUser);
+XGE_API int xgeSetErrorCallbackOwned(xge_error_proc onError, void* pUser,
+	const xge_callback_owner_t* pOwner);
 /* 主动上报一条错误（走错误回调链）。 */
 XGE_API int xgeReportError(const xge_error_info_t* pError);
 /* 取默认平台后端描述（Sokol）。 */
@@ -1858,6 +1884,11 @@ XGE_API int xgeDataObjectGet(xge_data_object pData, const char* sFormat,
 	void* pOutput, size_t iCapacity, size_t* pOutputSize);
 /* 注册拖放事件回调（进入/悬停/放下/离开）。 */
 XGE_API int xgeDragEventCallbackSet(xge_drag_event_proc onEvent, void* pUser);
+XGE_API int xgeDragEventCallbackSetOwned(xge_drag_event_proc onEvent, void* pUser,
+	const xge_callback_owner_t* pOwner);
+/* Status and negotiated effect are independent; output is unchanged on
+ * invalid input or owner Hold/Drop failure. */
+XGE_API int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent, uint32_t* pEffect);
 /* Dispatches a platform drag event synchronously. Custom window backends use
  * this entry point so effect negotiation completes before returning to the OS. */
 XGE_API uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent);

@@ -19,6 +19,8 @@ struct xge_data_object_t {
 
 static xge_drag_event_proc g_xgeDragEventProc;
 static void* g_xgeDragEventUser;
+static xspinlock g_xgeDragCallbackSpin=XRT_SPIN_INIT;
+static xge_callback_node_t* g_xgeDragEventOwner;
 static int g_xgeDragActive;
 static xge_data_object g_xgeDragData;
 static uint32_t g_xgeDragAllowedEffects;
@@ -41,8 +43,7 @@ static void __xgeDragDropUnit(void)
 	__xgeDragDropPlatformUnit();
 	__xgeDragSessionClear();
 	g_xgeDragSequence = 0u;
-	g_xgeDragEventProc = NULL;
-	g_xgeDragEventUser = NULL;
+	(void)xgeDragEventCallbackSetOwned(NULL,NULL,NULL);
 }
 
 static int __xgeDataObjectValid(xge_data_object pData)
@@ -272,23 +273,36 @@ int xgeDragDropCapsGet(xge_drag_drop_caps_t* pCaps)
 
 int xgeDragEventCallbackSet(xge_drag_event_proc onEvent, void* pUser)
 {
-	g_xgeDragEventProc = onEvent;
-	g_xgeDragEventUser = pUser;
-	return XGE_OK;
+	return xgeDragEventCallbackSetOwned(onEvent,pUser,NULL);
 }
 
-uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent)
+int xgeDragEventCallbackSetOwned(xge_drag_event_proc proc,void* user,const xge_callback_owner_t* owner)
+{
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	xge_callback_node_t* next=NULL;int result=__xgeCallbackNodePrepare(proc!=NULL,false,owner,&next);
+	if(result!=XGE_OK)return result;
+	(void)xrtSpinLock(&g_xgeDragCallbackSpin);
+	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+		(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);(void)__xgeCallbackNodeRelease(next);return XGE_ERROR_INVALID_STATE;
+	}
+	xge_callback_node_t* old=g_xgeDragEventOwner;g_xgeDragEventOwner=next;
+	g_xgeDragEventProc=proc;g_xgeDragEventUser=proc ? user:NULL;
+	(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);return __xgeCallbackNodeRelease(old);
+}
+
+int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent,uint32_t* output)
 {
 	xge_drag_event_t tEvent;
 	uint32_t iAllowed;
 	uint32_t iEffect;
 	uint32_t iMask;
+	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
 
-	if ( pEvent == NULL || (pEvent->iSize != 0u &&
+	if ( output==NULL || pEvent == NULL || (pEvent->iSize != 0u &&
 		pEvent->iSize < sizeof(*pEvent)) ||
 		pEvent->iType < XGE_DRAG_EVENT_ENTER ||
 		pEvent->iType > XGE_DRAG_EVENT_CANCEL ) {
-		return XGE_DRAG_EFFECT_NONE;
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iMask = XGE_DRAG_EFFECT_COPY | XGE_DRAG_EFFECT_MOVE | XGE_DRAG_EFFECT_LINK;
 	tEvent = *pEvent;
@@ -303,11 +317,29 @@ uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent)
 		 (tEvent.iSuggestedEffect & (tEvent.iSuggestedEffect - 1u)) != 0u) ) {
 		tEvent.iSuggestedEffect = 0u;
 	}
-	if ( g_xgeDragEventProc == NULL ) return XGE_DRAG_EFFECT_NONE;
-	iEffect = g_xgeDragEventProc(&tEvent, g_xgeDragEventUser);
+	(void)xrtSpinLock(&g_xgeDragCallbackSpin);
+	xge_drag_event_proc proc=g_xgeDragEventProc;void* user=g_xgeDragEventUser;xge_callback_node_t* node=g_xgeDragEventOwner;
+	if(!__xgeCallbackNodePin(node)){(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);return XGE_ERROR_INVALID_STATE;}
+	(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);
+	xge_callback_snapshot_t snapshot={0};int result=__xgeCallbackSnapshotBegin(node,false,&snapshot);
+	if(result!=XGE_OK)return result;
+	iEffect=proc ? proc(&tEvent,user):XGE_DRAG_EFFECT_NONE;
+	result=__xgeCallbackSnapshotEnd(&snapshot);if(result!=XGE_OK)return result;
 	if ( iEffect == 0u || (iEffect & ~iAllowed) != 0u ||
-		(iEffect & (iEffect - 1u)) != 0u ) return XGE_DRAG_EFFECT_NONE;
-	return iEffect;
+		(iEffect & (iEffect - 1u)) != 0u )iEffect=XGE_DRAG_EFFECT_NONE;
+	*output=iEffect;return XGE_OK;
+}
+
+uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent)
+{
+	/* Preserve the raw API's ordinary no-effect cases. Managed declarations
+	 * use the checked entry to distinguish invalid input and lifecycle refusal. */
+	if(!pEvent || (pEvent->iSize!=0u && pEvent->iSize<sizeof(*pEvent)) ||
+		pEvent->iType<XGE_DRAG_EVENT_ENTER || pEvent->iType>XGE_DRAG_EVENT_CANCEL ||
+		xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_DRAG_EFFECT_NONE;
+	uint32_t effect=XGE_DRAG_EFFECT_NONE;int result=xgeDragEventDispatchChecked(pEvent,&effect);
+	if(result!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+	return result==XGE_OK ? effect:XGE_DRAG_EFFECT_NONE;
 }
 
 int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
