@@ -1095,7 +1095,7 @@ static void xuiInternalContextMenuPoint(const xui_event_t* pEvent, xui_rect_t tK
                 xui_callback_snapshot_t xui_selected_snapshot = {0}; \
                 if ( xuiInternalCallbackSnapshotBegin(xui_selected_widget, xui_selected_slot, &xui_selected_user, &xui_selected_snapshot) == XUI_OK ) { \
                     (output) = xui_selected_proc(__VA_ARGS__, xui_selected_user); \
-                    (void)xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK); \
+                    if ( xuiInternalCallbackSnapshotEnd(&xui_selected_snapshot, XUI_OK) != XUI_OK ) (output) = (failure); \
                 } \
             } \
         } \

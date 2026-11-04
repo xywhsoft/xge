@@ -80,7 +80,9 @@ Current implementation status: Native Cell and TableView consumers pass Windows
 GCC O0/O2 clients against the O2 host engine. The existing TableView suite and
 996-case provider-lifetime suite also pass. Evidence: native-callback-table-win-r7
 and native-callback-table-cell-win-r1 under the task validation directory.
-Linux, managed language/domain integration, and TableGrid remain pending. Raw
+Linux Native Cell/TableView and the existing regression suites also pass under
+native-callback-table-linux-r1 and native-callback-table-cell-linux-r1.
+Managed language/domain integration and TableGrid remain pending. Raw
 column/global/merge renderer callbacks still require their separate Owned slots;
 the old raw C provider ABI does not become a managed callback automatically.
 

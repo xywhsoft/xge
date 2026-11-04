@@ -39,6 +39,23 @@ typedef struct xui_toolbar_data_t {
 	xui_surface_dependency_t arrIconDependencies[XUI_TOOLBAR_ITEM_CAPACITY];
 } xui_toolbar_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiToolbarSetContextMenu(xui_widget widget,xui_toolbar_data_t* data,xui_toolbar_context_proc selected,void* user,int iIndex,int iValue,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iIndex,iValue,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iIndex,iValue,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 typedef struct xui_toolbar_resolved_t {
 	xui_toolbar_metrics_t tMetrics;
 	xui_toolbar_colors_t tColors;
@@ -1371,9 +1388,7 @@ static int __xuiToolbarEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-		return pData->onContext(pWidget, iIndex,
-			(iIndex >= 0) ? pData->arrItems[iIndex].iValue : 0,
-			fX, fY, pData->pContextUser);
+		return __xuiOwnedInvoke_xuiToolbarSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,iIndex,(iIndex >= 0) ? pData->arrItems[iIndex].iValue : 0,fX,fY);
 	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( pEvent->pTarget != pWidget || xuiGetFocusWidget(pContext) != pWidget ) return XUI_OK;
@@ -1857,11 +1872,25 @@ XUI_API int xuiToolbarSetSelect(xui_widget pWidget, xui_toolbar_select_proc onSe
 	return XUI_OK;
 }
 
+XUI_API int xuiToolbarSetContextMenuOwned(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiToolbarSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

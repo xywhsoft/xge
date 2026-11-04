@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--case',choices=('remaining','groups','tree','cell','table'),default='remaining')
+    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())

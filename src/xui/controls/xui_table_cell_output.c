@@ -135,13 +135,20 @@ XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* cell)
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     return XUI_OK;
 }
-XUI_API int xuiTableViewCellOutputReleaseChecked(xui_table_view_cell_output_t* cell)
+XUI_API int xuiTableViewCellOutputReleaseOwnerChecked(xui_table_view_cell_output_t* cell,bool* consumed)
 {
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
     if(!__xuiCellValid(cell) || !cell->_bHeap || !cell->_iExternalReferences)return XUI_ERROR_INVALID_ARGUMENT;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     --cell->_iExternalReferences;bool destroy=--cell->_iReferences==0;if(destroy)cell->_bRetiring=1;
+    *consumed=true;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     return destroy ? __xuiCellDestroy(cell):XUI_OK;
+}
+XUI_API int xuiTableViewCellOutputReleaseChecked(xui_table_view_cell_output_t* cell)
+{
+    bool consumed=false;return xuiTableViewCellOutputReleaseOwnerChecked(cell,&consumed);
 }
 XUI_API int xuiTableViewCellOutputDisposeChecked(xui_table_view_cell_output_t* cell)
 {
@@ -388,6 +395,19 @@ static const xrtownershipadapterv1 __xuiCellAdapter={
     sizeof(xrtownershipadapterv1),__xuiCellAdapterHold,__xuiCellAdapterDrop,
     __xuiCellAdapterClaim,__xuiCellAdapterRestore,NULL,__xuiCellAdapterClear,__xuiCellAdapterFinish
 };
+static bool __xuiCellPreparationReady(const void* data)
+{return !xuiTableViewCellOutputBusy(data);}
+static xrtownershipprepareresult __xuiCellPreparationPrepare(const void* data,const void* token)
+{
+    const xui_table_view_cell_output_t* cell=data;
+    if(!token || !__xuiCellValid(cell) || cell->_pOwnershipClaim!=token || cell->_bOwnershipCleared)return XRT_OWNERSHIP_PREPARE_FAILED;
+    return xuiTableViewCellOutputBusy(cell) ? XRT_OWNERSHIP_PREPARE_BUSY:XRT_OWNERSHIP_PREPARE_READY;
+}
+static const xrtownershippreparationv1 __xuiCellPreparation={
+    sizeof(xrtownershippreparationv1),&__xuiCellAdapter,__xuiCellPreparationReady,__xuiCellPreparationPrepare
+};
+XUI_API const xrtownershippreparationv1* xuiTableViewCellOutputOwnershipPreparationV1(xrtownershipref ref)
+{return ref.Ops==&__xuiCellOps && __xuiCellValid(ref.Data) ? &__xuiCellPreparation:NULL;}
 static bool __xuiCellQuiescenceBusy(const void* data)
 {return xuiTableViewCellOutputBusy(data);}
 static const xrtownershipquiescencev1 __xuiCellQuiescence={sizeof(xrtownershipquiescencev1),&__xuiCellOps,__xuiCellQuiescenceBusy};

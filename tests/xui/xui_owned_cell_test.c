@@ -21,6 +21,7 @@ typedef struct CellOwner {
     size_t refs,holds,drops;
     int action;
     bool failHold,failDrop;
+    bool* consumed;
     xui_table_view_cell_output_t* cell;
     xui_table_view_cell_output_t* cache;
 } CellOwner;
@@ -37,7 +38,7 @@ static bool cell_hold(const void* raw)
 }
 static bool cell_drop(const void* raw)
 {
-    CellOwner* o=(CellOwner*)raw;assert(o->refs);++o->drops;
+    CellOwner* o=(CellOwner*)raw;assert(o->refs);if(o->consumed)assert(*o->consumed);++o->drops;
     if(!--o->refs && o->cell)assert(xuiTableViewCellOutputReleaseChecked(o->cell)==XUI_OK);
     return !o->failDrop;
 }
@@ -134,11 +135,58 @@ static void native_adapter(void)
     assert(adapter->Finish(ref.Data,&token) && adapter->Finish(ref.Data,&token));assert(owner.refs==0);
     adapter->Drop(ref.Data);
 }
+
+static void consumed_release(void)
+{
+    bool consumed=true;
+    assert(xuiTableViewCellOutputReleaseOwnerChecked(NULL,&consumed)==XUI_ERROR_INVALID_ARGUMENT && !consumed);
+    xui_table_view_cell_output_t automatic;xuiTableViewCellOutputInit(&automatic);
+    consumed=true;assert(xuiTableViewCellOutputReleaseOwnerChecked(&automatic,&consumed)==XUI_ERROR_INVALID_ARGUMENT && !consumed);
+    assert(xuiTableViewCellOutputDisposeChecked(&automatic)==XUI_OK);
+    for(int deferred=0;deferred<2;++deferred){
+        xui_table_view_cell_output_t* cell=NULL;assert(xuiTableViewCellOutputCreate(&cell)==XUI_OK);
+        consumed=false;unsigned invalid=0;xui_lifetime_link_t watch={0};assert(xuiTableViewCellOutputLifetimeWatch(cell,&watch,invalidated,&invalid)==XUI_OK);
+        CellOwner owner={.refs=1};xui_callback_owner_t ref=cell_ref(&owner);
+        assert(xuiTableViewCellOutputSetFormatterOwned(cell,cell_text,&owner,&ref)==XUI_OK && cell_drop(&owner));
+        owner.failDrop=true;owner.consumed=&consumed;
+        assert(xuiTableViewCellOutputReleaseOwnerChecked(cell,NULL)==XUI_ERROR_INVALID_ARGUMENT);
+        xui_table_view_cell_output_t output;xuiTableViewCellOutputInit(&output);
+        if(deferred)assert(xuiTableViewCellOutputUse(&output,cell)==XUI_OK);
+        int result=xuiTableViewCellOutputReleaseOwnerChecked(cell,&consumed);
+        assert(consumed && result==(deferred ? XUI_OK:XUI_ERROR_CALLBACK_FAILED) && !xrtGetError());
+        if(deferred){assert(!invalid && owner.refs==1);assert(xuiTableViewCellOutputReset(&output)==XUI_ERROR_CALLBACK_FAILED);}
+        assert(invalid==1 && owner.refs==0 && !xrtGetError());
+        assert(xuiTableViewCellOutputDisposeChecked(&output)==XUI_OK);
+    }
+}
+static void preparation_and_use_cycle(void)
+{
+    xui_table_view_cell_output_t *a=NULL,*b=NULL;assert(xuiTableViewCellOutputCreate(&a)==XUI_OK && xuiTableViewCellOutputCreate(&b)==XUI_OK);
+    xrtownershipref ar=xuiTableViewCellOutputOwnership(a),br=xuiTableViewCellOutputOwnership(b);
+    const xrtownershipadapterv1 *aa=xuiTableViewCellOutputOwnershipAdapterV1(ar),*ba=xuiTableViewCellOutputOwnershipAdapterV1(br);
+    const xrtownershippreparationv1* prep=xuiTableViewCellOutputOwnershipPreparationV1(ar);assert(prep && prep->Adapter==aa && prep->Ready(a));
+    xui_table_cell_scope_t scope={0};assert(xuiTableViewCellOutputCallScopeBegin(a,&scope)==XUI_OK && !prep->Ready(a));
+    assert(xuiTableViewCellOutputOwnershipAdapterV1(ar)==aa && xuiTableViewCellOutputOwnershipPreparationV1(ar)==prep);
+    int token=0;xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));assert(!aa->Claim(a,&token));assert(xrtOwnershipScopeEnd(&freeze));assert(xuiTableViewCellOutputCallScopeEnd(&scope)==XUI_OK);
+    /* A owns a callback which really owns B; B owns a persistent Use pin on A.
+     * All application owners are removed before the native collector protocol. */
+    CellOwner owner={.refs=1,.cell=b};assert(xuiTableViewCellOutputAddRef(b)==XUI_OK);xui_callback_owner_t binding=cell_ref(&owner);
+    assert(xuiTableViewCellOutputSetFormatterOwned(a,cell_text,&owner,&binding)==XUI_OK && cell_drop(&owner));
+    assert(xuiTableViewCellOutputUse(b,a)==XUI_OK);
+    assert(xuiTableViewCellOutputReleaseChecked(a)==XUI_OK && xuiTableViewCellOutputReleaseChecked(b)==XUI_OK);
+    assert(!xuiTableViewCellOutputBusy(a) && prep->Ready(a));
+    assert(aa->Hold(a) && ba->Hold(b));assert(xrtOwnershipFreezeTryBegin(&freeze));
+    assert(aa->Claim(a,&token) && ba->Claim(b,&token));assert(xrtOwnershipScopeEnd(&freeze));
+    assert(prep->Prepare(a,&token)==XRT_OWNERSHIP_PREPARE_READY);
+    assert(xrtOwnershipFreezeTryBegin(&freeze));aa->Clear(a,&token);ba->Clear(b,&token);assert(xrtOwnershipScopeEnd(&freeze));
+    assert(aa->Finish(a,&token) && ba->Finish(b,&token) && owner.refs==0);
+    aa->Drop(a);ba->Drop(b);
+}
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    simple_values();cache_pin();callbacks_and_trace();native_adapter();xrtClearError();xrtMemDebugSnapshot(&after);
+    simple_values();cache_pin();callbacks_and_trace();native_adapter();consumed_release();preparation_and_use_cycle();xrtClearError();xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes && before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     puts("owned Cell: actual native RC/trace/adapter, safe text/value, callback reentry, Use read pins and zero-allocation cache reuse passed");return 0;
 }

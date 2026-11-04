@@ -12,6 +12,23 @@ typedef struct xui_workflow_widget_data_t {
 	void* pContextUser;
 } xui_workflow_widget_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiWorkflowWidgetSetContextMenu(xui_widget widget,xui_workflow_widget_data_t* data,xui_flow_context_proc selected,void* user,const xui_flow_hit_t* pHit,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,pHit,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,pHit,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_workflow_widget_data_t* __xuiWorkflowWidgetGetData(xui_widget pWidget);
 
 static int __xuiWorkflowWidgetContext(xui_widget pCanvas, const xui_flow_hit_t* pHit,
@@ -21,7 +38,7 @@ static int __xuiWorkflowWidgetContext(xui_widget pCanvas, const xui_flow_hit_t* 
 	xui_workflow_widget_data_t* pData = __xuiWorkflowWidgetGetData(pWidget);
 	(void)pCanvas;
 	if ( pData == NULL || pData->onContext == NULL ) return XUI_OK;
-	return pData->onContext(pWidget, pHit, fX, fY, pData->pContextUser);
+	return __xuiOwnedInvoke_xuiWorkflowWidgetSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,pHit,fX,fY);
 }
 
 static int __xuiWorkflowWidgetDescValid(const xui_workflow_desc_t* pDesc)
@@ -226,11 +243,25 @@ XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkf
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiWorkflowWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_workflow_widget_data_t* pData = __xuiWorkflowWidgetGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiWorkflowWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser)
 {
 	xui_workflow_widget_data_t* pData = __xuiWorkflowWidgetGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiWorkflowWidgetSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

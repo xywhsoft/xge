@@ -65,6 +65,23 @@ typedef struct xui_list_view_data_t {
 	char sAccessibleName[256];
 } xui_list_view_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiListViewSetContextMenu(xui_widget widget,xui_list_view_data_t* data,xui_list_view_context_proc selected,void* user,int iIndex,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iIndex,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iIndex,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_list_view_data_t* __xuiListViewGetData(xui_widget pWidget);
 static int __xuiListViewSelectionModeValid(int iMode);
 static int __xuiListViewScrollbarModeValid(int iMode);
@@ -1084,7 +1101,7 @@ static int __xuiListViewContextMenu(xui_widget pWidget, xui_list_view_data_t* pD
 	}
 	onContext = pData->onContext;
 	pContextUser = pData->pContextUser;
-	if ( onContext != NULL ) return onContext(pWidget, iIndex, fX, fY, pContextUser);
+	if ( onContext != NULL ) return __xuiOwnedInvoke_xuiListViewSetContextMenu(pWidget,pData,onContext,pContextUser ,iIndex,fX,fY);
 	return XUI_OK;
 }
 
@@ -2033,11 +2050,25 @@ XUI_API int xuiListViewSetActivate(xui_widget pWidget, xui_list_view_activate_pr
 	return XUI_OK;
 }
 
+XUI_API int xuiListViewSetContextMenuOwned(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiListViewSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

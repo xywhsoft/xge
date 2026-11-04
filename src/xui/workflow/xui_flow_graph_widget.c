@@ -188,6 +188,23 @@ typedef struct xui_flow_graph_widget_data_t {
 	int iEdgeLayerHoverEdge;
 } xui_flow_graph_widget_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiFlowGraphWidgetSetContextMenu(xui_widget widget,xui_flow_graph_widget_data_t* data,xui_flow_context_proc selected,void* user,const xui_flow_hit_t* pHit,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,pHit,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,pHit,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static int __xuiFlowGraphWidgetDescValid(const xui_flow_graph_desc_t* pDesc)
 {
 	return (pDesc == NULL) || (pDesc->iSize == 0u) || (pDesc->iSize >= sizeof(*pDesc));
@@ -2106,11 +2123,25 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiFlowGraphWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_flow_graph_widget_data_t* pData = __xuiFlowGraphWidgetGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiFlowGraphWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser)
 {
 	xui_flow_graph_widget_data_t* pData = __xuiFlowGraphWidgetGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiFlowGraphWidgetSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }
@@ -3088,7 +3119,7 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->onContext != NULL ) {
-			return pData->onContext(pWidget, &tHit, fMenuX, fMenuY, pData->pContextUser);
+			return __xuiOwnedInvoke_xuiFlowGraphWidgetSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,&tHit,fMenuX,fMenuY);
 		}
 		return XUI_OK;
 	}

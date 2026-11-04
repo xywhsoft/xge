@@ -81,6 +81,23 @@ typedef struct xui_tabs_data_t {
 	uint32_t iChromeStyleVersion;
 } xui_tabs_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTabsSetContextMenu(xui_widget widget,xui_tabs_data_t* data,xui_tabs_context_proc selected,void* user,int iIndex,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iIndex,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iIndex,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 #define XUI_TABS_TAB_START		3.0f
 #define XUI_TABS_TAB_END		4.0f
 #define XUI_TABS_TAB_OVERLAP		1.0f
@@ -1174,7 +1191,7 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		iRet = xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiTabsWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-		if ( pData->onContext != NULL ) return pData->onContext(pWidget, iIndex, fX, fY, pData->pContextUser);
+		if ( pData->onContext != NULL ) return __xuiOwnedInvoke_xuiTabsSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,iIndex,fX,fY);
 		return XUI_OK;
 	case XUI_EVENT_KEY_DOWN:
 		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ) {
@@ -2969,11 +2986,25 @@ XUI_API int xuiTabsGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t
 	return XUI_OK;
 }
 
+XUI_API int xuiTabsSetContextMenuOwned(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiTabsSetContextMenu(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser)
 {
 	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiTabsSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

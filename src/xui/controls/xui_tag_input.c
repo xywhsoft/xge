@@ -63,6 +63,23 @@ typedef struct xui_tag_input_data_t {
 	xui_rect_t tInputRect;
 } xui_tag_input_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTagInputSetContextMenu(xui_widget widget,xui_tag_input_data_t* data,xui_tag_input_context_proc selected,void* user,int iIndex,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iIndex,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iIndex,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_tag_input_data_t* __xuiTagInputGetData(xui_widget pWidget);
 static int __xuiTagInputSyncInputStyle(xui_widget pWidget, xui_tag_input_data_t* pData);
 static int __xuiTagInputCommitTextEx(xui_widget pWidget, xui_tag_input_data_t* pData,
@@ -1082,7 +1099,7 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			iHit = __xuiTagInputTagHit(pWidget, pData, pEvent->fX, pEvent->fY);
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-		return pData->onContext(pWidget, iHit, fX, fY, pData->pContextUser);
+		return __xuiOwnedInvoke_xuiTagInputSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,iHit,fX,fY);
 	}
 	default:
 		break;
@@ -1650,11 +1667,25 @@ XUI_API int xuiTagInputSetChange(xui_widget pWidget, xui_tag_input_change_proc o
 	return XUI_OK;
 }
 
+XUI_API int xuiTagInputSetContextMenuOwned(xui_widget pWidget, xui_tag_input_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tag_input_data_t* pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiTagInputSetContextMenu(xui_widget pWidget, xui_tag_input_context_proc onContext, void* pUser)
 {
 	xui_tag_input_data_t* pData = __xuiTagInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiTagInputSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

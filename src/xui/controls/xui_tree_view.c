@@ -103,6 +103,23 @@ typedef struct xui_tree_view_data_t {
 	char sAccessibleName[256];
 } xui_tree_view_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTreeViewSetContextMenu(xui_widget widget,xui_tree_view_data_t* data,xui_tree_view_context_proc selected,void* user,int iNodeId,int iVisibleIndex,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iNodeId,iVisibleIndex,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iNodeId,iVisibleIndex,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_tree_view_data_t* __xuiTreeViewGetData(xui_widget pWidget);
 static void __xuiTreeViewCancelPointer(xui_widget pWidget,
 	xui_tree_view_data_t* pData, int bReleaseCapture);
@@ -1537,9 +1554,7 @@ static int __xuiTreeViewContextMenu(xui_widget pWidget, xui_tree_view_data_t* pD
 	onContext = pData->onContext;
 	pContextUser = pData->pContextUser;
 	if ( onContext != NULL ) {
-		return onContext(pWidget,
-			iNode >= 0 ? pData->arrNodes[iNode].iId : -1,
-			iVisible, fX, fY, pContextUser);
+		return __xuiOwnedInvoke_xuiTreeViewSetContextMenu(pWidget,pData,onContext,pContextUser ,iNode >= 0 ? pData->arrNodes[iNode].iId : -1,iVisible,fX,fY);
 	}
 	return XUI_OK;
 }
@@ -2665,11 +2680,25 @@ XUI_API int xuiTreeViewSetSelect(xui_widget pWidget, xui_tree_view_select_proc o
 	return XUI_OK;
 }
 
+XUI_API int xuiTreeViewSetContextMenuOwned(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiTreeViewSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }
@@ -2749,7 +2778,7 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
     iRet=xuiInternalCallbackSnapshotBegin(pWidget,&pData->onCount,&countUser,&countSnapshot);
     if(iRet!=XUI_OK)goto cleanup;
     iCount=countCallback(pWidget,countUser);
-    iRet=xuiInternalCallbackSnapshotEnd(&countSnapshot,XUI_OK);
+    iRet=xuiInternalCallbackSnapshotEnd(&countSnapshot,pData->onNodeOwned && iCount<0 ? iCount:XUI_OK);
     if(iRet!=XUI_OK)goto cleanup;
 	if ( !__xuiTreeViewAdapterCurrent(pWidget, pData, iChange) ) {
 		iRet = XUI_ERROR_INVALID_STATE;

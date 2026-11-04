@@ -8142,6 +8142,7 @@ XUI_API int xuiTagInputSetChange(xui_widget pWidget, xui_tag_input_change_proc o
 XUI_API int xuiTagInputSetChangeOwned(xui_widget pWidget, xui_tag_input_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键回调；同步调用，回调可销毁控件或上下文。 */
 XUI_API int xuiTagInputSetContextMenu(xui_widget pWidget, xui_tag_input_context_proc onContext, void* pUser);
+XUI_API int xuiTagInputSetContextMenuOwned(xui_widget pWidget, xui_tag_input_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 追加一个标签。 */
 XUI_API int xuiTagInputAddTag(xui_widget pWidget, const char* sText);
 /* 按索引移除标签。 */
@@ -9556,6 +9557,7 @@ XUI_API int xuiTabsSetSelectOwned(xui_widget pWidget, xui_tabs_select_proc onSel
 XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int bCloseButtons, void* pUser);
 /* 注册页签右键回调。 */
 XUI_API int xuiTabsSetContextMenu(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser);
+XUI_API int xuiTabsSetContextMenuOwned(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 添加页面（标题会复制）；*ppPage 可空输出借用的页面容器。 */
 XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* ppPage);
 /* 修改指定页签标题；标题按 UTF-8 字素边界复制。 */
@@ -9746,6 +9748,7 @@ XUI_API int xuiWindowSetClose(xui_widget pWidget, xui_window_close_proc onClose,
 XUI_API int xuiWindowSetCloseOwned(xui_widget pWidget, xui_window_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册标题栏右键回调。 */
 XUI_API int xuiWindowSetContextMenu(xui_widget pWidget, xui_window_context_proc onContext, void* pUser);
+XUI_API int xuiWindowSetContextMenuOwned(xui_widget pWidget, xui_window_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取内容容器控件。 */
 XUI_API xui_widget xuiWindowGetClientWidget(xui_widget pWidget);
 /* 取折叠按钮控件。 */
@@ -9987,6 +9990,7 @@ XUI_API int xuiDockPanelSetWindowClose(xui_widget pWidget, xui_dock_window_close
 XUI_API int xuiDockPanelSetWindowCloseOwned(xui_widget pWidget, xui_dock_window_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册窗口右键回调。 */
 XUI_API int xuiDockPanelSetContextMenu(xui_widget pWidget, xui_dock_context_proc onContext, void* pUser);
+XUI_API int xuiDockPanelSetContextMenuOwned(xui_widget pWidget, xui_dock_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 坐标命中测试（窗格/标签/拖拽指示）。 */
 XUI_API int xuiDockPanelHitTest(xui_widget pWidget, float fX, float fY, xui_dock_hit_t* pHit);
 /* 按拖拽位置求停放目标。 */
@@ -10608,6 +10612,7 @@ XUI_API int xuiListViewSetSelectOwned(xui_widget pWidget, xui_list_view_select_p
 XUI_API int xuiListViewSetActivate(xui_widget pWidget, xui_list_view_activate_proc onActivate, void* pUser);
 /* 注册条目右键回调；回调可销毁 ListView 或其 Context。 */
 XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser);
+XUI_API int xuiListViewSetContextMenuOwned(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册条目自绘回调（覆盖默认绘制）；允许回调销毁控件，修改列表会终止当前绘制批次。 */
 XUI_API int xuiListViewSetItemRenderer(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser);
 /* 以字符串数组批量设置条目。 */
@@ -10801,6 +10806,7 @@ XUI_API int xuiTreeViewSetSelect(xui_widget pWidget, xui_tree_view_select_proc o
 XUI_API int xuiTreeViewSetSelectOwned(xui_widget pWidget, xui_tree_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册节点右键回调。 */
 XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser);
+XUI_API int xuiTreeViewSetContextMenuOwned(xui_widget pWidget, xui_tree_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册行自绘回调。 */
 XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_proc onRender, void* pUser);
 /* 设置数据适配器（总节点数 + 按索引读取节点描述）。回调绑定成功后立即刷新；
@@ -10940,6 +10946,9 @@ XUI_API void xuiTableViewCellOutputInit(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** ppCell);
 XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputReleaseChecked(xui_table_view_cell_output_t* pCell);
+/* pConsumed is independent caller storage; true means one owner was consumed,
+ * including final cleanup failure without a diagnostic. False is retryable. */
+XUI_API int xuiTableViewCellOutputReleaseOwnerChecked(xui_table_view_cell_output_t* pCell, bool* pConsumed);
 XUI_API int xuiTableViewCellOutputDisposeChecked(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputReset(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputUse(xui_table_view_cell_output_t* pCell, xui_table_view_cell_output_t* pCached);
@@ -10953,6 +10962,7 @@ XUI_API int xuiTableViewCellOutputSetFormatterOwned(xui_table_view_cell_output_t
 XUI_API int xuiTableViewCellOutputSetRendererOwned(xui_table_view_cell_output_t* pCell, xui_table_view_cell_render_owned_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API xrtownershipref xuiTableViewCellOutputOwnership(const xui_table_view_cell_output_t* pCell);
 XUI_API const xrtownershipadapterv1* xuiTableViewCellOutputOwnershipAdapterV1(xrtownershipref tReference);
+XUI_API const xrtownershippreparationv1* xuiTableViewCellOutputOwnershipPreparationV1(xrtownershipref tReference);
 XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenceV1(xrtownershipref tReference);
 XUI_API bool xuiTableViewCellOutputBusy(const xui_table_view_cell_output_t* pCell);
 XUI_API bool xuiTableViewCellOutputCanRetire(const xui_table_view_cell_output_t* pCell);
@@ -10994,8 +11004,10 @@ XUI_API int xuiTableViewSetHover(xui_widget pWidget, xui_table_view_hover_proc o
 XUI_API int xuiTableViewSetHoverOwned(xui_widget pWidget, xui_table_view_hover_proc onHover, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键回调；回调可销毁控件或上下文。 */
 XUI_API int xuiTableViewSetContextMenu(xui_widget pWidget, xui_table_view_context_proc onContext, void* pUser);
+XUI_API int xuiTableViewSetContextMenuOwned(xui_widget pWidget, xui_table_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册单元格合并判定回调；同步调用，允许重入修改/销毁并中止当前外层读取。 */
 XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser);
+XUI_API int xuiTableViewSetMergeProviderOwned(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册表头自绘回调；传入列描述仅在回调期间有效，回调可销毁控件或上下文。 */
 XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser);
 /* 注册单元格自绘回调（覆盖默认文本绘制）；传入单元格仅在回调期间有效，回调可销毁控件或上下文。 */
@@ -11119,6 +11131,7 @@ XUI_API int xuiTableGridSetEditor(xui_widget pWidget, xui_table_grid_editor_proc
 XUI_API int xuiTableGridSetEditorConfig(xui_widget pWidget, xui_table_grid_editor_config_proc onConfig, void* pUser);
 /* 注册右键回调。 */
 XUI_API int xuiTableGridSetContextMenu(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser);
+XUI_API int xuiTableGridSetContextMenuOwned(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置编辑模式：DISPLAY 双击进入，QUICK 在单击抬起时进入，IMMEDIATE 在单击按下时进入；键盘 Enter/Space/F2 均可进入。 */
 XUI_API int xuiTableGridSetEditMode(xui_widget pWidget, int iMode);
 /* 读取编辑模式。 */
@@ -11450,6 +11463,7 @@ XUI_API int xuiPropertyGridSetGlobalAction(xui_widget pWidget, xui_property_grid
 XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_grid_render_proc onRender, void* pUser);
 /* 注册右键回调。 */
 XUI_API int xuiPropertyGridSetContextMenu(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser);
+XUI_API int xuiPropertyGridSetContextMenuOwned(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 以结构体设置样式组。 */
 XUI_API int xuiPropertyGridSetStyle(xui_widget pWidget, const xui_property_grid_style_t* pStyle);
 /* 输出样式组。 */
@@ -11712,6 +11726,7 @@ XUI_API int xuiToolbarSetSelect(xui_widget pWidget, xui_toolbar_select_proc onSe
 XUI_API int xuiToolbarSetSelectOwned(xui_widget pWidget, xui_toolbar_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键回调。 */
 XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser);
+XUI_API int xuiToolbarSetContextMenuOwned(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 启用溢出收纳（窄空间折叠进菜单）；回调可销毁 Toolbar 或其 Context。 */
 XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser);
 /* 读取溢出开关。 */
@@ -11802,6 +11817,7 @@ XUI_API int xuiStatusBarSetSelect(xui_widget pWidget, xui_statusbar_select_proc 
 XUI_API int xuiStatusBarSetSelectOwned(xui_widget pWidget, xui_statusbar_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册条目右键回调。 */
 XUI_API int xuiStatusBarSetContextMenu(xui_widget pWidget, xui_statusbar_context_proc onContext, void* pUser);
+XUI_API int xuiStatusBarSetContextMenuOwned(xui_widget pWidget, xui_statusbar_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 批量设置条目。条目文本会被复制；pUser 等非文本指针仍由调用方管理。
  * 输入条目的 tRect 会被忽略并由布局重新计算。 */
 XUI_API int xuiStatusBarSetItems(xui_widget pWidget, const xui_statusbar_item_t* pItems, int iCount);
@@ -13076,6 +13092,7 @@ XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget);
 XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph);
 /* 注册画布右键回调。 */
 XUI_API int xuiFlowGraphWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser);
+XUI_API int xuiFlowGraphWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 坐标命中测试（节点/端口/连线/画布）。 */
 XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit);
 /* 输出当前悬停命中。 */
@@ -13095,6 +13112,7 @@ XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget);
 XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkflow, int bOwnWorkflow);
 /* 注册画布右键回调。 */
 XUI_API int xuiWorkflowWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser);
+XUI_API int xuiWorkflowWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取内部流程图画布控件。 */
 XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
 

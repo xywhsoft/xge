@@ -76,6 +76,23 @@ typedef struct xui_window_data_t {
 	xui_surface_dependency_t tIconDependency;
 } xui_window_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiWindowSetContextMenu(xui_widget widget,xui_window_data_t* data,xui_window_context_proc selected,void* user,int iPart,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iPart,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 typedef struct xui_window_resolved_t {
 	uint32_t iCloseIconColor;
 	uint32_t iTopMostColor;
@@ -1450,8 +1467,7 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU &&
 		     !__xuiWindowRectContains(tTitle, pEvent->fX, pEvent->fY) ) break;
 		xuiInternalContextMenuPoint(pEvent, tTitle, &fX, &fY);
-		return pData->onContext(pWidget, XUI_WINDOW_PART_TITLE_BAR,
-			fX, fY, pData->pContextUser);
+		return __xuiOwnedInvoke_xuiWindowSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,XUI_WINDOW_PART_TITLE_BAR,fX,fY);
 	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( pData->bActive && pData->bShowClose &&
@@ -1948,11 +1964,25 @@ XUI_API int xuiWindowSetClose(xui_widget pWidget, xui_window_close_proc onClose,
 	return XUI_OK;
 }
 
+XUI_API int xuiWindowSetContextMenuOwned(xui_widget pWidget, xui_window_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiWindowSetContextMenu(xui_widget pWidget, xui_window_context_proc onContext, void* pUser)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiWindowSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

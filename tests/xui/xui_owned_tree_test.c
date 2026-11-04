@@ -42,7 +42,7 @@ static void mutate(TreeState* s)
 static TreeOwner* check_user(void* raw,unsigned marker)
 {TreeUser* u=raw;assert(u && u->marker==marker && u->owner->refs && !u->owner->released);++u->owner->calls;return u->owner;}
 static int count_rows(xui_widget w,void* raw)
-{TreeOwner* o=check_user(raw,0xAA01);assert(w==o->state->tree);if(!o->state->atNode)mutate(o->state);return 2;}
+{TreeOwner* o=check_user(raw,0xAA01);assert(w==o->state->tree);if(!o->state->atNode)mutate(o->state);return o->state->mode==6 ? XUI_ERROR_CALLBACK_FAILED:2;}
 static int owned_node(xui_widget w,int index,xui_tree_view_node_output_t* output,void* raw)
 {
     TreeOwner* o=check_user(raw,0xBB02);TreeState* s=o->state;assert(w==s->tree);o->output=output;
@@ -99,7 +99,8 @@ static void allocation_failures(void)
 }
 static void ownership_failures(void)
 {
-    TreeState s;make_tree(&s);s.nodeOwner.failHold=true;assert(install_tree(&s)==XUI_ERROR_CALLBACK_FAILED && s.countOwner.refs==1 && s.nodeOwner.refs==1 && xuiTreeViewGetNodeById(s.tree,50));s.nodeOwner.failHold=false;assert(install_tree(&s)==XUI_OK);
+    TreeState s;make_tree(&s);s.mode=6;assert(install_tree(&s)==XUI_ERROR_CALLBACK_FAILED && xuiTreeViewGetNodeById(s.tree,50));s.mode=0;s.done=false;assert(xuiTreeViewRefreshAdapter(s.tree)==XUI_OK);dispose_tree(&s,false);
+    make_tree(&s);s.nodeOwner.failHold=true;assert(install_tree(&s)==XUI_ERROR_CALLBACK_FAILED && s.countOwner.refs==1 && s.nodeOwner.refs==1 && xuiTreeViewGetNodeById(s.tree,50));s.nodeOwner.failHold=false;assert(install_tree(&s)==XUI_OK);
     xrtownershipscope freeze={0};unsigned edges=0;assert(xrtOwnershipFreezeTryBegin(&freeze));assert(xuiContextTraceOwnership(s.context,tree_visit,&edges) && edges==2);assert(xrtOwnershipScopeEnd(&freeze));
     s.countOwner.failHold=true;assert(xuiTreeViewRefreshAdapter(s.tree)==XUI_ERROR_CALLBACK_FAILED && xuiTreeViewGetNodeById(s.tree,100));s.countOwner.failHold=false;
     s.nodeOwner.failHold=true;assert(xuiTreeViewRefreshAdapter(s.tree)==XUI_ERROR_CALLBACK_FAILED && xuiTreeViewGetNodeById(s.tree,100));s.nodeOwner.failHold=false;

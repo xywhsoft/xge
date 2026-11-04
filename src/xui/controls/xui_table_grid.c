@@ -68,6 +68,23 @@ typedef struct xui_table_grid_data_t {
 	char sOriginalValue[XUI_TABLE_GRID_VALUE_CAPACITY];
 } xui_table_grid_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTableGridSetContextMenu(xui_widget widget,xui_table_grid_data_t* data,xui_table_grid_context_proc selected,void* user,int iPart,int iRow,int iColumn,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,iRow,iColumn,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iPart,iRow,iColumn,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_table_grid_data_t* __xuiTableGridGetData(xui_widget pWidget);
 static int __xuiTableGridEditModeValid(int iMode);
 static int __xuiTableGridEndEditOperation(xui_widget pWidget, int bCommit);
@@ -166,7 +183,7 @@ static int __xuiTableGridTableContext(xui_widget pTable, int iPart, int iRow, in
 	xui_table_grid_data_t* pData = (xui_table_grid_data_t*)pUser;
 	xui_widget pWidget = (pTable != NULL) ? xuiWidgetGetParent(pTable) : NULL;
 	if ( pData == NULL || pWidget == NULL || pData->onContext == NULL ) return XUI_OK;
-	return pData->onContext(pWidget, iPart, iRow, iColumn, fX, fY, pData->pContextUser);
+	return __xuiOwnedInvoke_xuiTableGridSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,iPart,iRow,iColumn,fX,fY);
 }
 
 static int __xuiTableGridTextEqualNoCase(const char* sA, const char* sB)
@@ -2134,11 +2151,25 @@ XUI_API int xuiTableGridSetEditorConfig(xui_widget pWidget, xui_table_grid_edito
 	return XUI_OK;
 }
 
+XUI_API int xuiTableGridSetContextMenuOwned(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiTableGridSetContextMenu(xui_widget pWidget, xui_table_grid_context_proc onContext, void* pUser)
 {
 	xui_table_grid_data_t* pData = __xuiTableGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiTableGridSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

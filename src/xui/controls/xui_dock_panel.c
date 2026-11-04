@@ -209,6 +209,23 @@ static void __xuiDockSyncDragOverlay(xui_widget pWidget, xui_dock_panel_data_t* 
 static float __xuiDockNodeMinimumAxis(xui_dock_panel_data_t* pData, int iNode, int iOrientation);
 static int __xuiDockWidgetIsDescendantOf(xui_widget pWidget, xui_widget pAncestor);
 
+
+
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiDockPanelSetContextMenu(xui_widget widget,xui_dock_panel_data_t* data,xui_dock_context_proc selected,void* user,const xui_dock_hit_t* pHit,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,pHit,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,pHit,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
 static float __xuiDockMin(float a, float b) { return (a < b) ? a : b; }
 static float __xuiDockMax(float a, float b) { return (a > b) ? a : b; }
 static float __xuiDockAbs(float a) { return (a < 0.0f) ? -a : a; }
@@ -4724,7 +4741,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			xui_dock_context_proc onContext = pData->onContext;
 			void* pContextUser = pData->pContextUser;
 			uint64_t iGeneration = pData->iModelGeneration;
-			iRet = onContext(pWidget, &hit, fMenuX, fMenuY, pContextUser);
+			iRet = __xuiOwnedInvoke_xuiDockPanelSetContextMenu(pWidget,pData,onContext,pContextUser ,&hit,fMenuX,fMenuY);
 			if ( (iRet & XUI_EVENT_DISPATCH_STOP) != 0 || iRet != XUI_OK ) return iRet;
 			if ( !__xuiDockPanelWidgetAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 			if ( pData->iModelGeneration != iGeneration ) return XUI_EVENT_DISPATCH_STOP;
@@ -5250,7 +5267,7 @@ static int __xuiDockHostEvent(xui_widget pHost, const xui_event_t* pEvent, void*
 			pContextUser = pData->pContextUser;
 			iGeneration = pData->iModelGeneration;
 			if ( onContext != NULL ) {
-				iRet = onContext(pPanelWidget, &tHit, fMenuX, fMenuY, pContextUser);
+				iRet = __xuiOwnedInvoke_xuiDockPanelSetContextMenu(pPanelWidget,pData,onContext,pContextUser ,&tHit,fMenuX,fMenuY);
 				if ( iRet != XUI_OK ) return iRet;
 				if ( !__xuiDockPanelWidgetAlive(pPanelWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 				if ( pData->iModelGeneration != iGeneration ) return XUI_EVENT_DISPATCH_STOP;
@@ -7442,11 +7459,25 @@ XUI_API int xuiDockPanelSetWindowClose(xui_widget pWidget, xui_dock_window_close
 	return XUI_OK;
 }
 
+XUI_API int xuiDockPanelSetContextMenuOwned(xui_widget pWidget, xui_dock_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiDockPanelSetContextMenu(xui_widget pWidget, xui_dock_context_proc onContext, void* pUser)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiDockPanelSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

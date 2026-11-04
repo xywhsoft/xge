@@ -74,6 +74,23 @@ typedef struct xui_property_grid_data_t {
 	int bColumnSyncPending;
 } xui_property_grid_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiPropertyGridSetContextMenu(xui_widget widget,xui_property_grid_data_t* data,xui_property_grid_context_proc selected,void* user,int iPart,int iCategory,int iProperty,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,iCategory,iProperty,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iPart,iCategory,iProperty,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_property_grid_data_t* __xuiPropertyGridGetData(xui_widget pWidget);
 static int __xuiPropertyGridCellBackground(xui_widget, int, int, const xui_table_view_cell_t*, xui_draw_context_t*, xui_rect_t, int, void*);
 static int __xuiPropertyGridCellDecorations(xui_widget, int, int, const xui_table_view_cell_t*, xui_draw_context_t*, xui_rect_t, int, void*);
@@ -1668,8 +1685,7 @@ static int __xuiPropertyGridContextProc(xui_widget pWidget, int iPart, int iRow,
 			iTargetPart = (iColumn == 1) ? XUI_CONTEXT_TARGET_VALUE : XUI_CONTEXT_TARGET_ITEM;
 		}
 	}
-	return pData->onContext(pData->pWidget, iTargetPart, iCategory, iProperty,
-		fX, fY, pData->pContextUser);
+	return __xuiOwnedInvoke_xuiPropertyGridSetContextMenu(pData->pWidget,pData,pData->onContext,pData->pContextUser ,iTargetPart,iCategory,iProperty,fX,fY);
 }
 
 static int __xuiPropertyGridLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
@@ -2888,11 +2904,25 @@ XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_gr
 	return XUI_OK;
 }
 
+XUI_API int xuiPropertyGridSetContextMenuOwned(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiPropertyGridSetContextMenu(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiPropertyGridSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }

@@ -177,6 +177,40 @@ typedef struct xui_table_view_data_t {
 	xui_table_view_paint_adapter_t tPaintAdapter;
 } xui_table_view_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTableViewSetMergeProvider(xui_widget widget,xui_table_view_data_t* data,xui_table_view_merge_proc selected,void* user,int iRow,int iColumn,int* pRowSpan,int* pColSpan)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iRow,iColumn,pRowSpan,pColSpan,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onMerge,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iRow,iColumn,pRowSpan,pColSpan,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiTableViewSetContextMenu(xui_widget widget,xui_table_view_data_t* data,xui_table_view_context_proc selected,void* user,int iPart,int iRow,int iColumn,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iPart,iRow,iColumn,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iPart,iRow,iColumn,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 static xui_table_view_data_t* __xuiTableViewGetData(xui_widget pWidget);
 static void __xuiTableViewCancelPointer(xui_widget pWidget,
 	xui_table_view_data_t* pData, int bReleaseCapture);
@@ -1021,8 +1055,9 @@ static int __xuiTableViewGetCell(xui_widget pWidget,xui_table_view_data_t* pData
     }
     if(pData->onMerge){
         iRowSpan=pCell->iRowSpan;iColSpan=pCell->iColSpan;
-        iHandled=pData->onMerge(pWidget,iRow,iColumn,&iRowSpan,&iColSpan,pData->pMergeUser);
+        iHandled=__xuiOwnedInvoke_xuiTableViewSetMergeProvider(pWidget,pData,pData->onMerge,pData->pMergeUser ,iRow,iColumn,&iRowSpan,&iColSpan);
         if(!__xuiTableViewCallbackCurrent(pWidget,pData,generation)){result=XUI_ERROR_INVALID_STATE;goto failed;}
+        if(iHandled<0){result=iHandled;goto failed;}
         if(iHandled){pCell->iRowSpan=iRowSpan;pCell->iColSpan=iColSpan;}
     }
     pData->pCellRead=tRead.pPrevious;
@@ -2249,7 +2284,7 @@ static int __xuiTableViewContextMenu(xui_widget pWidget, xui_table_view_data_t* 
 		}
 	}
 	if ( pData->onContext != NULL ) {
-		return pData->onContext(pWidget, iPart, iRow, iColumn, fX, fY, pData->pContextUser);
+		return __xuiOwnedInvoke_xuiTableViewSetContextMenu(pWidget,pData,pData->onContext,pData->pContextUser ,iPart,iRow,iColumn,fX,fY);
 	}
 	return XUI_OK;
 }
@@ -3904,13 +3939,47 @@ XUI_API int xuiTableViewSetHover(xui_widget pWidget, xui_table_view_hover_proc o
 	return XUI_OK;
 }
 
+XUI_API int xuiTableViewSetContextMenuOwned(xui_widget pWidget, xui_table_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiTableViewSetContextMenu(xui_widget pWidget, xui_table_view_context_proc onContext, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiTableViewSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetMergeProviderOwned(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTableViewInvalidate(pWidget, pData,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onMerge,onMerge!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onMerge = onMerge;
+	pData->pMergeUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	__xuiTableViewInvalidateMerges(pData);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
 }
 
 XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser)
@@ -3921,7 +3990,8 @@ XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merg
 	iRet = __xuiTableViewInvalidate(pWidget, pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
-	pData->onMerge = onMerge;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onMerge))return xuiTableViewSetMergeProviderOwned(pWidget,onMerge,pUser,NULL);
+    pData->onMerge = onMerge;
 	pData->pMergeUser = pUser;
 	__xuiTableViewInvalidateMerges(pData);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);

@@ -27,6 +27,23 @@ typedef struct xui_statusbar_data_t {
 	int iChangeCount;
 } xui_statusbar_data_t;
 
+/* Typed native snapshot, retained through the callback's physical return.
+ * Scalar arguments and caller-owned hit snapshots precede reentrant Hold. */
+static int __xuiOwnedInvoke_xuiStatusBarSetContextMenu(xui_widget widget,xui_statusbar_data_t* data,xui_statusbar_context_proc selected,void* user,int iIndex,int iValue,float fX,float fY)
+{
+    if(!widget->pEventOwners || !widget->pEventOwners->pBindings)return selected(widget,iIndex,iValue,fX,fY,user);
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalCallbackSnapshotBegin(widget,&data->onContext,&user,&snapshot);
+    if(status!=XUI_OK)return status;
+    int value=selected(widget,iIndex,iValue,fX,fY,user);
+    status=value<0 ? value:XUI_OK;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    int ended=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+    if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+    return ended!=XUI_OK ? ended:value;
+}
+
+
 typedef struct xui_statusbar_resolved_t {
 	uint32_t iActiveTextColor;
 	xui_statusbar_metrics_t tMetrics;
@@ -1171,7 +1188,7 @@ static int __xuiStatusBarEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		onContext = pData->onContext;
 		pContextUser = pData->pContextUser;
 		iValue = iContextIndex >= 0 ? pData->arrItems[iContextIndex].iValue : 0;
-		return onContext(pWidget, iContextIndex, iValue, fX, fY, pContextUser);
+		return __xuiOwnedInvoke_xuiStatusBarSetContextMenu(pWidget,pData,onContext,pContextUser ,iContextIndex,iValue,fX,fY);
 	}
 	case XUI_EVENT_KEY_DOWN:
 		if ( pEvent->pTarget != pWidget || !__xuiStatusBarCanInteract(pWidget) ||
@@ -1813,11 +1830,25 @@ XUI_API int xuiStatusBarGetItemCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iItemCount : 0;
 }
 
+XUI_API int xuiStatusBarSetContextMenuOwned(xui_widget pWidget, xui_statusbar_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t ownedUpdate={0};
+    int ownedStatus=xuiInternalCallbackUpdateBegin(pWidget,&pData->onContext,onContext!=NULL,pUser,pOwner,&ownedUpdate);
+    if(ownedStatus!=XUI_OK)return ownedStatus;
+    pData->onContext = onContext;
+	pData->pContextUser = pUser;
+    xuiInternalCallbackUpdatePublish(&ownedUpdate);
+	return xuiInternalCallbackUpdateEnd(&ownedUpdate,XUI_OK);
+}
+
 XUI_API int xuiStatusBarSetContextMenu(xui_widget pWidget, xui_statusbar_context_proc onContext, void* pUser)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->onContext = onContext;
+	if(xuiInternalCallbackSlotOwned(pWidget,&pData->onContext))return xuiStatusBarSetContextMenuOwned(pWidget,onContext,pUser,NULL);
+    pData->onContext = onContext;
 	pData->pContextUser = pUser;
 	return XUI_OK;
 }
