@@ -4,8 +4,8 @@
   "source_commit": "93347eb5ae6beba8cf7ee3558708cc4f628fdd07",
   "source_worktree_dirty": false,
   "source_snapshot_sha256": "637ec2268d16418eaae78a600e210667e7dd67dd957a8e715f5bea95ee851f3d",
-  "header_sha256": "20b781e898c38a79a602024530313acfff2e558826e0039a89bbf974896eee06",
-  "declaration_header_sha256": "c519d9af13dad826810c01026cec3f6353f1f0dafad9793f477bcac792d5af9d",
+  "header_sha256": "1125d38fe544d6b4ddfd25b8a9c5a638bb6409a811997ab7239ffb1e0c1ef80b",
+  "declaration_header_sha256": "daa2184b9ada9a56a240625d050ffadc7f89aa9dbe8ce1122ff6e32e086dca4a",
   "generation": "tools/amalgamate.py in isolated source snapshot",
   "text_eol": "lf",
   "snapshot_mode": "immutable_base_with_explicit_overlays",
@@ -14,5 +14,17 @@
     "xllm",
     "xllm-session",
     "xwork"
+  ],
+  "local_patches": [
+    {
+      "commit": "50bd79a5be18922fdf4f31daf763981ce3654a7b",
+      "kind": "C++ linkage guards only",
+      "modules": [
+        "include/xrt/http1_net.h",
+        "include/xrt/http1_tls.h",
+        "include/xrt/websocket_upgrade.h"
+      ],
+      "abiChanged": false
+    }
   ]
 }
