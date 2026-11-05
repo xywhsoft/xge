@@ -25,7 +25,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--object-overlay", type=Path)
     parser.add_argument("--fixture-root", type=Path)
-    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction"))
+    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer"))
     args = parser.parse_args()
     source, engine, runtime, out = [value.resolve() for value in (args.source, args.engine, args.runtime, args.out)]
     out.mkdir(parents=True, exist_ok=False)

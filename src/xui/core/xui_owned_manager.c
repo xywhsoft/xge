@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_owned_manager.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -104,8 +105,7 @@ int xuiInternalManagerCallbackUpdateBegin(xui_owned_manager_t* manager,xui_callb
        !xuiInternalCallbackOwnerValid(incoming) || (!hasCallback && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
     xui_callback_owner_t candidate=incoming ? *incoming:(xui_callback_owner_t){0};
     int status=xuiInternalManagerScopeBegin(manager,&update->scope);if(status!=XUI_OK)return status;
-    status=xuiInternalCallbackOwnerHold(&candidate);bool held=status==XUI_OK;
-    if(status==XUI_OK && xrtGetError())status=XUI_ERROR_CALLBACK_FAILED;
+    bool held=false;status=xuiInternalCallbackHoldFresh(&candidate,&held);
     if(status==XUI_OK && (!xuiInternalManagerAlive(manager) || manager->context->bCloseRequested || manager->context->bDestroyPending || manager->context->bDestroying))status=XUI_ERROR_INVALID_STATE;
     if(status==XUI_OK && !xrtOwnershipMutationBegin(&update->mutation))status=XUI_ERROR_INVALID_STATE;
     if(status==XUI_OK){update->previous=*slot;*slot=candidate;return XUI_OK;}
@@ -139,8 +139,7 @@ int xuiInternalManagerCallbackSnapshotBegin(xui_owned_manager_t* manager,const x
     }
     if(!incoming || !incoming->onHold)return XUI_OK;
     xui_callback_owner_t owner=*incoming;xui_context context=manager->context;
-    int status=xuiInternalCallbackOwnerHold(&owner);bool held=status==XUI_OK;
-    if(status==XUI_OK && xrtGetError())status=XUI_ERROR_CALLBACK_FAILED;
+    bool held=false;int status=xuiInternalCallbackHoldIsolated(&owner,&held);
     if(status==XUI_OK && (!xuiInternalManagerAlive(manager) || context->bCloseRequested || context->bDestroyPending || context->bDestroying))status=XUI_ERROR_INVALID_STATE;
     if(status!=XUI_OK){
         xerror* first=xrtTakeError();

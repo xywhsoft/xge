@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_MSGBOX
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_text_internal.h"
 #include "xui_owned_manager.h"
 
@@ -1513,8 +1514,8 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	if ( iRet == XUI_OK ) iRet = xuiWidgetGetEventCallback(pBox->pWindow, &pBox->onWindowEvent, &pBox->pWindowEventUser);
     if(iRet==XUI_OK && pBox->pWindow->pEventOwners && pBox->pWindow->pEventOwners->tPrimary.onHold){
         xui_callback_owner_t previous=pBox->pWindow->pEventOwners->tPrimary;
-        iRet=xuiInternalCallbackOwnerHold(&previous);
-        if(iRet==XUI_OK)pBox->tWindowEventOwner=previous;
+        bool held=false;iRet=xuiInternalCallbackHoldFresh(&previous,&held);
+        if(held)pBox->tWindowEventOwner=previous;
         if(iRet==XUI_OK && !__xuiMsgBoxValid(pBox))iRet=XUI_ERROR_INVALID_STATE;
     }
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventCallback(pBox->pWindow, __xuiMsgBoxWindowEvent, pBox);

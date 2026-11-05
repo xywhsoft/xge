@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_native_accessibility_internal.h"
 
 #include <limits.h>
@@ -5903,10 +5904,11 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 		pNewHandlers = xrtCalloc(XUI_WIDGET_EVENT_SLOT_COUNT, sizeof(*pNewHandlers));
 		if ( pNewHandlers == NULL ) { xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_OUT_OF_MEMORY,xrtGetError()); xrtFree(pNew); return xuiCallScopeEnd(&tScope); }
 	}
-	iResult = xuiInternalCallbackOwnerHold(pOwner);
-	if ( iResult != XUI_OK ) { xuiInternalCallScopeRecordOutcome(&tScope,iResult,xrtGetError()); xrtFree(pNewHandlers); xrtFree(pNew); return xuiCallScopeEnd(&tScope); }
-	if ( !__xuiWidgetValid(pWidget) || pContext->bDestroyPending || pContext->bDestroying ) {
-        xuiInternalCallScopeRecordOutcome(&tScope,XUI_ERROR_INVALID_STATE,xrtGetError());
+    bool bHeld=false;iResult=xuiInternalCallbackHoldFresh(pOwner,&bHeld);
+    if(iResult!=XUI_OK && !bHeld){xuiInternalCallScopeRecordOutcome(&tScope,iResult,xrtGetError());xrtFree(pNewHandlers);xrtFree(pNew);return xuiCallScopeEnd(&tScope);}
+    if(iResult!=XUI_OK || !__xuiWidgetValid(pWidget) || pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying){
+        if(iResult==XUI_OK)iResult=XUI_ERROR_INVALID_STATE;
+        xuiInternalCallScopeRecordOutcome(&tScope,iResult,xrtGetError());
 		xrtFree(pNewHandlers); xrtFree(pNew);
 		(void)xuiInternalCallbackOwnerDrop(pContext, pOwner);
         return xuiCallScopeEnd(&tScope);

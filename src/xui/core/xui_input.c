@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 
 #include <string.h>
 
@@ -715,18 +716,36 @@ static int __xuiInputSetPointer(xui_context pContext, int fX, int fY, uint32_t i
 	return XUI_OK;
 }
 
+static int __xuiInputInvokeEvent(xui_widget widget,xui_event_t* event,xui_widget_event_proc callback,
+    void* user,const xui_callback_owner_t* owner)
+{
+    if(!owner->onHold)return callback(widget,event,user);
+    xui_context context=widget->pContext;bool held=false;
+    int result=xuiInternalCallbackHoldIsolated(owner,&held);
+    if(result==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying))result=XUI_ERROR_INVALID_STATE;
+    if(result!=XUI_OK){
+        xerror* first=xrtTakeError();
+        if(held){int cleanup=xuiInternalCallbackOwnerDropOutcome(context,owner,result,first);xuiInternalContextCleanupOutcome(context,cleanup,&result,&first);}
+        xrtSetErrorTake(first);return result;
+    }
+    result=callback(widget,event,user);
+    xerror* first=xrtTakeError();if(result>=0 && first)result=XUI_ERROR_CALLBACK_FAILED;
+    int primary=result<0 ? result:XUI_OK;
+    int cleanup=xuiInternalCallbackOwnerDropOutcome(context,owner,primary,first);
+    xuiInternalContextCleanupOutcome(context,cleanup,&primary,&first);
+    if(result>=0 && primary<0)result=primary;
+    xrtSetErrorTake(first);return result;
+}
 static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 {
 	int iRet;
 	xui_widget_event_proc onHandler;
 	void* pHandlerUser;
 	xui_callback_owner_t tOwner = {0};
-	xui_context pContext;
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) {
 		return XUI_OK;
 	}
-	pContext = pWidget->pContext;
 	pEvent->pCurrentTarget = pWidget;
 	if ( (pEvent->iType >= 0) && (pEvent->iType < XUI_WIDGET_EVENT_SLOT_COUNT) ) {
 		onHandler = pWidget->arrEventHandlers[pEvent->iType];
@@ -734,11 +753,7 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 		if ( pWidget->pEventOwners != NULL && pWidget->pEventOwners->pHandlers != NULL )
 			tOwner = pWidget->pEventOwners->pHandlers[pEvent->iType];
 		if ( onHandler != NULL ) {
-			iRet = tOwner.onHold == NULL ? XUI_OK : xuiInternalCallbackOwnerHold(&tOwner);
-			if ( iRet != XUI_OK ) return iRet;
-			iRet = onHandler(pWidget, pEvent, pHandlerUser);
-			int iDrop = tOwner.onDrop == NULL ? XUI_OK : xuiInternalCallbackOwnerDrop(pContext, &tOwner);
-			if ( iRet >= 0 && iDrop != XUI_OK ) iRet = iDrop;
+			iRet=__xuiInputInvokeEvent(pWidget,pEvent,onHandler,pHandlerUser,&tOwner);
 			if ( iRet < 0 ) {
 				return iRet;
 			}
@@ -755,11 +770,7 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 		onHandler = pWidget->onEvent;
 		pHandlerUser = pWidget->pEventUser;
 		tOwner = pWidget->pEventOwners == NULL ? (xui_callback_owner_t){0} : pWidget->pEventOwners->tPrimary;
-		iRet = tOwner.onHold == NULL ? XUI_OK : xuiInternalCallbackOwnerHold(&tOwner);
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = onHandler(pWidget, pEvent, pHandlerUser);
-		int iDrop = tOwner.onDrop == NULL ? XUI_OK : xuiInternalCallbackOwnerDrop(pContext, &tOwner);
-		if ( iRet >= 0 && iDrop != XUI_OK ) iRet = iDrop;
+		iRet=__xuiInputInvokeEvent(pWidget,pEvent,onHandler,pHandlerUser,&tOwner);
 		if ( iRet < 0 ) {
 			return iRet;
 		}

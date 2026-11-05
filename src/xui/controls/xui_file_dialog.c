@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_FILE_DIALOG
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_owned_manager.h"
 
 #include <ctype.h>
@@ -2753,8 +2754,8 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	XUI_FILE_DIALOG_SETUP(xuiWindowSetClose(pDialog->pWindow, __xuiFileDialogWindowClose, pDialog));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetGetEventCallback(pDialog->pWindow, &pDialog->onWindowEvent, &pDialog->pWindowEventUser));
     if(iRet==XUI_OK && pDialog->pWindow->pEventOwners && pDialog->pWindow->pEventOwners->tPrimary.onHold){
-        xui_callback_owner_t old=pDialog->pWindow->pEventOwners->tPrimary;iRet=xuiInternalCallbackOwnerHold(&old);
-        if(iRet==XUI_OK)pDialog->tWindowEventOwner=old;
+        xui_callback_owner_t old=pDialog->pWindow->pEventOwners->tPrimary;bool held=false;iRet=xuiInternalCallbackHoldFresh(&old,&held);
+        if(held)pDialog->tWindowEventOwner=old;
         if(iRet==XUI_OK && (!__xuiFileDialogValid(pDialog) || pContext->bCloseRequested))iRet=XUI_ERROR_INVALID_STATE;
     }
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetEventCallback(pDialog->pWindow, __xuiFileDialogWindowEvent, pDialog));
@@ -2855,8 +2856,8 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetCancelAction(pDialog->pPathInput, __xuiFileDialogCancelAction, pDialog));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetGetEventHandler(pDialog->pPathInput, XUI_EVENT_BLUR, &pDialog->onPathInputBlur, &pDialog->pPathInputBlurUser));
     if(iRet==XUI_OK && pDialog->pPathInput->pEventOwners && pDialog->pPathInput->pEventOwners->pHandlers && pDialog->pPathInput->pEventOwners->pHandlers[XUI_EVENT_BLUR].onHold){
-        xui_callback_owner_t old=pDialog->pPathInput->pEventOwners->pHandlers[XUI_EVENT_BLUR];iRet=xuiInternalCallbackOwnerHold(&old);
-        if(iRet==XUI_OK)pDialog->tPathBlurOwner=old;
+        xui_callback_owner_t old=pDialog->pPathInput->pEventOwners->pHandlers[XUI_EVENT_BLUR];bool held=false;iRet=xuiInternalCallbackHoldFresh(&old,&held);
+        if(held)pDialog->tPathBlurOwner=old;
         if(iRet==XUI_OK && (!__xuiFileDialogValid(pDialog) || pContext->bCloseRequested))iRet=XUI_ERROR_INVALID_STATE;
     }
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetEventHandler(pDialog->pPathInput, XUI_EVENT_BLUR, __xuiFileDialogPathInputBlurEvent, pDialog));

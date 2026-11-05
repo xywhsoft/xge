@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_TOAST
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_text_internal.h"
 #include "xui_owned_manager.h"
 
@@ -1589,11 +1590,14 @@ XUI_API int xuiToastShowOwned(xui_toast pOwner,int iType,const char* sTitle,cons
 	}
     memset(&tItem,0,sizeof(tItem));
     xui_callback_owner_t candidate=incoming ? *incoming:(xui_callback_owner_t){0};
-    iRet=xuiInternalCallbackOwnerHold(&candidate);
-    if(iRet!=XUI_OK)XUI_TOAST_STATUS_RETURN(iRet);
-    tItem.tClickOwner=candidate;
-    if(xrtGetError() || !__xuiToastValid(pToast) || pToast->pContext->bCloseRequested){
-        iRet=xrtGetError() ? XUI_ERROR_CALLBACK_FAILED:XUI_ERROR_INVALID_STATE;
+    bool held=false;iRet=xuiInternalCallbackHoldFresh(&candidate,&held);
+    if(held)tItem.tClickOwner=candidate;
+    if(iRet!=XUI_OK){
+        if(held)XUI_TOAST_STATUS_RETURN(__xuiToastItemRetire(pToast,&tItem,iRet));
+        XUI_TOAST_STATUS_RETURN(iRet);
+    }
+    if(!__xuiToastValid(pToast) || pToast->pContext->bCloseRequested){
+        iRet=XUI_ERROR_INVALID_STATE;
         XUI_TOAST_STATUS_RETURN(__xuiToastItemRetire(pToast,&tItem,iRet));
     }
 	tItem.sTitle = xrtStrDup(sTitle);

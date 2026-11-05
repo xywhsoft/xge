@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_TABLE_VIEW
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_table_view_paint.h"
 
 #include <ctype.h>
@@ -1342,8 +1343,12 @@ static int __xuiTableViewOwnedRender(xui_widget widget,xui_table_view_data_t* da
     if(!source || !source->_onRender)return 0;
     xui_table_view_cell_render_owned_proc selected=source->_onRender;void* user=source->_pRenderUser;
     xui_callback_owner_t owner=source->_tRenderOwner;uint64_t generation=data->iCallbackGeneration;
-    int result=xuiInternalCallbackOwnerHold(&owner);
-    if(result!=XUI_OK)return result;
+    bool held=false;int result=xuiInternalCallbackHoldIsolated(&owner,&held);
+    if(result!=XUI_OK){
+        xerror* first=xrtTakeError();
+        if(held)__xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(lease->context,&owner,result,first),&result,&first);
+        xrtSetErrorTake(first);return result;
+    }
     int handled=0;
     if(!__xuiTableViewCallbackCurrent(widget,data,generation))result=XUI_ERROR_INVALID_STATE;
     else{handled=selected(widget,row,column,&lease->output,draw,rect,state,user);if(handled<0)result=handled;}

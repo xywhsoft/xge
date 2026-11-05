@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_TABLE_VIEW
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -309,9 +310,8 @@ static int __xuiCellSetCallback(xui_table_view_cell_output_t* cell,
     if(!xuiInternalCallbackOwnerValid(incoming) || (!(formatter ? text!=NULL:render!=NULL) && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
     xui_callback_owner_t owner=incoming ? *incoming:(xui_callback_owner_t){0};
     xui_table_cell_scope_t scope={0};result=xuiTableViewCellOutputCallScopeBegin(cell,&scope);if(result!=XUI_OK)return result;
-    result=xuiInternalCallbackOwnerHold(&owner);
-    bool held=result==XUI_OK;
-    if(held)result=__xuiCellMutable(cell,true);
+    bool held=false;result=xuiInternalCallbackHoldFresh(&owner,&held);
+    if(result==XUI_OK)result=__xuiCellMutable(cell,true);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     __xuiCellRecordOwnOutcome(&scope,result,first);
     if(result!=XUI_OK){
@@ -498,9 +498,8 @@ int xuiInternalTableCellFormatBegin(xui_widget widget,int row,int column,
     if(source->_tText.Size || !source->_onText){format->text=source->_tText;return XUI_OK;}
     xui_table_view_cell_text_owned_proc selected=source->_onText;void* user=source->_pTextUser;
     format->owner=source->_tTextOwner;
-    int result=xuiInternalCallbackOwnerHold(&format->owner);
+    int result=xuiInternalCallbackHoldIsolated(&format->owner,&format->held);
     if(result!=XUI_OK)return result;
-    format->held=true;
     if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
     format->text=selected(widget,row,column,cell,user);format->owned=true;
     if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;

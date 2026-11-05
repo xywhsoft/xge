@@ -3,6 +3,7 @@
 #include "xui_document_layout_internal.h"
 #include "xui_text_internal.h"
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include <math.h>
 #include <float.h>
 #include <stdio.h>
@@ -67,7 +68,7 @@ static int doc_renderer_set_callback(xui_document_renderer renderer,unsigned slo
         return doc_renderer_call_end(&call,XUI_ERROR_INVALID_STATE);
     uint64 generation=renderer->callback_generation[slot];
     xui_callback_owner_t candidate=owner ? *owner:(xui_callback_owner_t){0};
-    status=xuiInternalCallbackOwnerHold(&candidate);
+    bool held=false;status=xuiInternalCallbackHoldFresh(&candidate,&held);
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
     if(status==XUI_OK && (renderer->callback_generation[slot]!=generation ||
         renderer->context!=call.context || call.context->bCloseRequested || call.context->bDestroyPending || call.context->bDestroying))
@@ -82,7 +83,7 @@ static int doc_renderer_set_callback(xui_document_renderer renderer,unsigned slo
         ++renderer->callback_generation[slot];
         status=xuiInternalCallbackOwnerDropOutcome(call.context,&previous,receipt.status,receipt.error);
         xuiInternalCleanupAdd(&receipt,status);
-    }else if(status==XUI_OK){
+    }else if(held){
         status=xuiInternalCallbackOwnerDropOutcome(call.context,&candidate,receipt.status,receipt.error);
         xuiInternalCleanupAdd(&receipt,status);
     }
@@ -104,7 +105,12 @@ XUI_API int xuiDocumentRendererSetObjectDrawOwned(xui_document_renderer renderer
 static int doc_renderer_snapshot(xui_document_renderer root,unsigned slot,xui_callback_snapshot_t* snapshot)
 {
     xui_callback_owner_t owner=root->callback_owners[slot];
-    int status=xuiInternalCallbackOwnerHold(&owner);if(status!=XUI_OK)return status;
+    bool held=false;int status=xuiInternalCallbackHoldIsolated(&owner,&held);
+    if(status!=XUI_OK){
+        if(!held)return status;
+        snapshot->pContext=root->context;snapshot->tOwner=owner;
+        return xuiInternalCallbackSnapshotEnd(snapshot,status);
+    }
     snapshot->pContext=root->context;snapshot->tOwner=owner;
     if(!root->context || root->context->bCloseRequested || root->context->bDestroyPending || root->context->bDestroying)
         return xuiInternalCallbackSnapshotEnd(snapshot,XUI_ERROR_INVALID_STATE);
