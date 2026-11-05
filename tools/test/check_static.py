@@ -1,15 +1,55 @@
 """CPU-only whole-profile link and direct single-XRT static archive checks."""
 from pathlib import Path
-import argparse,hashlib,json,os,re,shutil,subprocess,time
+import argparse,hashlib,json,os,re,shutil,subprocess,sys,time
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','build','xlang-root','out'):p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--import-kinds-only',action='store_true',help='Read-only real System32 export kind/forwarder and unknown-admission tests')
     a=p.parse_args();root,build,xlang,out=[v.resolve()for v in(a.root,a.build,a.xlang_root,a.out)]
     if out.exists():p.error('Use a new evidence directory')
     out.mkdir(parents=True);metadata=json.loads((build/'build-report.json').read_text());assert metadata['passed']and metadata['complete']
     archive=build/metadata['archive'];assert sha(archive)==metadata['archive_sha256']
+    if a.import_kinds_only:
+        assert os.name=='nt'
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'build'))
+        import static_support
+        classifier=static_support.WindowsExportKinds();checks=[]
+        for symbol,expected in [('_fpreset','function'),('_HUGE','data'),('_iob','data'),('labs','function')]:
+            actual=classifier.classify('msvcrt.dll',symbol)
+            assert actual['known']and actual['kind']==expected,(symbol,actual)
+            checks.append(dict(name=symbol,expected=expected,evidence=actual))
+        image=classifier.image('msvcrt.dll')
+        ordinal=image['base']+image['names']['_HUGE']
+        actual=classifier.classify('msvcrt.dll',None,ordinal)
+        assert actual['known']and actual['kind']=='data'
+        checks.append(dict(name='real-ordinal',ordinal=ordinal,evidence=actual))
+        image=classifier.image('kernel32.dll');forward=None
+        for symbol,index in image['names'].items():
+            rva=image['table'][index]
+            if image['export']<=rva<image['export']+image['exportSize']:
+                result=classifier.classify('kernel32.dll',symbol)
+                if result['known']and len(result['chain'])>1:forward=result;break
+        assert forward,'No resolved real forwarder was tested'
+        checks.append(dict(name='real-forwarder',evidence=forward))
+        for name,value in [('missing-export',classifier.classify('msvcrt.dll','__absent_static_kind_test')),
+            ('invalid-path',classifier.classify('../kernel32.dll','Sleep')),
+            ('cycle',classifier.classify('msvcrt.dll','labs',seen=(('msvcrt.dll','labs',None),)))]:
+            assert not value['known']and value['kind']=='unknown'
+            checks.append(dict(name=name,evidence=value))
+        classification=metadata['compiler_support']['importClassification']
+        assert not classification['unknownInventory']
+        changed=[]
+        for library in metadata['compiler_support']['archives']:
+            for row in library['importMembers']:
+                assert row['kindKnown']and row['kind']in('function','data')
+                if row['name']=='_fpreset':assert row['kind']=='function';changed.append(row)
+        assert changed
+        (out/'results.json').write_text(json.dumps(dict(passed=True,scope='Read-only System32 PE kind proof; no LoadLibrary, callbacks, generated PE or Native recompilation.',checks=checks,
+            importInventoryKnown=True,fpresetProof=changed,dllInputs=classifier.files,
+            inputs={str(Path(static_support.__file__)):sha(static_support.__file__),str(Path(__file__)):sha(__file__)}),indent=2)+'\n')
+        print(out/'results.json');return
     mapping={}
     for name,module in re.findall(r'XL6_ARTIFACT_NATIVE_SYMBOL\("([^"\n]+)",\s*(NULL|"[^"\n]+")\)',(xlang/'src/compile/xl6_artifact_native_symbols.inc').read_text()):
         mapping.setdefault(name,set())
