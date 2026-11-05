@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import host_xrt
+from relink import QualifiedRelink, check_locations, image_names
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_CONFIG = json.loads((ROOT / "config/profiles.json").read_text(encoding="utf-8"))
@@ -62,7 +63,11 @@ def main():
     parser.add_argument("--source-group", help="print a named source group from config/modules.json")
     parser.add_argument("--debug", action="store_true", help="build the xgedbg library with debug APIs enabled")
     parser.add_argument("--host-xrt", action="store_true", help="omit XRT implementation and bind the host's pinned runtime before use")
+    parser.add_argument("--relink-from", type=Path, help="reuse only exact qualified objects from this build, with no compilation fallback")
+    parser.add_argument("--relink-source", type=Path, help="explicit immutable source root of --relink-from")
     args = parser.parse_args()
+    if bool(args.relink_from) != bool(args.relink_source) or (args.relink_from and not args.host_xrt):
+        parser.error("--relink-from and --relink-source are required together, with --host-xrt")
     os.chdir(ROOT)
     manifest = json.loads((ROOT / "config/modules.json").read_text(encoding="utf-8"))
     if args.source_group:
@@ -79,6 +84,8 @@ def main():
     version = run([cc, "--version"], text=True, capture_output=True).stdout
     identity = [cc, stamp(cc), version]
     out = Path(args.output or ("build/ide" if args.profile == "ide" else "build" if args.profile == "default" else f"build/{args.profile}"))
+    if args.relink_from:
+        check_locations(ROOT, out, args.relink_from, args.relink_source)
     out.mkdir(parents=True, exist_ok=True)
     objects = out / ("obj-debug" if args.debug else "obj")
     objects.mkdir(exist_ok=True)
@@ -163,8 +170,14 @@ def main():
     compiled = []
     reused = []
     link_objects = []
+    relink = QualifiedRelink(ROOT, out, args.relink_from, args.relink_source, identity, flags,
+                            args.profile, args.define, api_major, features, args.debug, digest, stamp) if args.relink_from else None
 
     def compile_object(source, compiler, options, shared=False):
+        if relink:
+            link_objects.append(relink.object(source, compiler, options, shared))
+            reused.append(source)
+            return
         object_dir = ROOT / "build/shared/obj" if shared else objects
         object_dir.mkdir(parents=True, exist_ok=True)
         obj = object_dir / (source.replace("/", "_").replace("\\", "_") + ".o")
@@ -207,7 +220,9 @@ def main():
         if not windres:
             raise RuntimeError("windres not found")
         resource_key = digest([windres, stamp(windres), stamp("platform/windows/xge.rc"), stamp("res/xge/icons/xx_dll.ico")])
-        if not resource.exists() or not resource_record.exists() or resource_record.read_text() != resource_key:
+        if relink:
+            resource = relink.resource(windres)
+        elif not resource.exists() or not resource_record.exists() or resource_record.read_text() != resource_key:
             run([windres, "-O", "coff", "-i", "platform/windows/xge.rc", "-o", resource])
             resource_record.write_text(resource_key)
         link_objects.append(resource)
@@ -221,18 +236,15 @@ def main():
         host_xrt.write_slots(host_generated, host_imports)
         compile_object("src/xge/core/xge_host_xrt.c", cc, flags)
         sources.append("src/xge/core/xge_host_xrt.c")
-    library = out / ("xgedbg.dll" if args.debug and windows else
-                     "libxgedbg.so" if args.debug else
-                     "xge.dll" if windows else "libxge.so")
-    unstripped = out / ("xgedbg.unstripped.dll" if args.debug and windows else
-                        "libxgedbg.unstripped.so" if args.debug else
-                        "xge.unstripped.dll" if windows else "libxge.unstripped.so")
-    import_library = out / ("xgedbg.lib" if args.debug else "xge.lib")
+    artifacts = image_names(api_major, args.host_xrt, args.debug, windows)
+    library = out / artifacts["runtime_image"]
+    unstripped = out / artifacts["unstripped_image"]
+    import_library = out / artifacts["import_library"] if windows else None
     link_args = [cc, "-shared", "-o", str(library), *map(str, link_objects), *libs]
     if windows:
         link_args += [f"-Wl,--out-implib,{import_library}"]
     else:
-        link_args += ["-Wl,--no-undefined"]
+        link_args += ["-Wl,--no-undefined", "-Wl,-soname," + artifacts["runtime_soname"]]
     link_key = digest([identity, link_args, {str(p): stamp(p) for p in link_objects}, {p: stamp(p) for p in libs if Path(p).is_file()}])
     link_record = out / "link.key"
     linked = not (library.is_file() and unstripped.is_file() and (not windows or import_library.is_file()) and link_record.is_file() and link_record.read_text() == link_key)
@@ -263,7 +275,9 @@ def main():
             raise RuntimeError(f"Runtime dependency could not be packaged: {dependency.name}")
         packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
                                  "sha256": expected, "bytes": target.stat().st_size})
+    qualification = relink.finish() if relink else None
     report = {"api_major": api_major, "public_abi_schema": 2, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
+              "source_root": str(ROOT), **artifacts, "qualified_object_build": qualification,
               "xrt_mode": "host" if args.host_xrt else "embedded", "xrt_host_imports": host_imports,
               "xrt_host_header_sha256": host_metadata["headerSha256"] if host_metadata else None,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,

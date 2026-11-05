@@ -1,0 +1,123 @@
+{
+  "format": "native-acceptance-1",
+  "complete": true,
+  "passed": true,
+  "shippingDelivery": false,
+  "baseHEAD": "2da0d85742dbdda6e360c9e6ddf78944c470fb51",
+  "scope": "API3 host image identity fix only: no Native C/ABI changes; normal strict relink of original R3 objects, no fallback compilation. Embedded IDE images and historical R3 artifacts/reports are unchanged.",
+  "source": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-source-r2\\source-freeze.json",
+    "sha256": "0f017810f3b3868ee8420f38e52aba3d403adc87db34d1873c0c689defd7a293"
+  },
+  "files": [
+    {
+      "path": "tools/build/build.py",
+      "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-final-r2\\files\\tools\\build\\build.py",
+      "sha256": "1551517f571de706486351db35b279344c7c190474d854ec722ed51879da1925"
+    },
+    {
+      "path": "tools/build/relink.py",
+      "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-final-r2\\files\\tools\\build\\relink.py",
+      "sha256": "ca3fc2316eeae0c1a08bb5d16b1eca38818bfb9b1f3314d3bf4cac824a55d283"
+    },
+    {
+      "path": "tools/test/check_host_image_names.py",
+      "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-final-r2\\files\\tools\\test\\check_host_image_names.py",
+      "sha256": "946d2bb65af7fce8843d89bd111f93067aace4085d8e8fed282e93ae8ffdec70"
+    },
+    {
+      "path": "docs/host-runtime-image.md",
+      "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-final-r2\\files\\docs\\host-runtime-image.md",
+      "sha256": "3a9277de5a611a139410e97e2d7be9236d72f5a2763d46b98b366d7e7044809b"
+    }
+  ],
+  "platforms": {
+    "win": {
+      "build": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-win-r2\\build-report.json",
+        "sha256": "dda6d611fbe9ecbb919d23e2223da5710bb8e26b3faa41871cd8f40a286e77fb"
+      },
+      "acceptance": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-accept-win-r2\\results.json",
+        "sha256": "d1a2ddacd4674682a7c2e20e0a70392f48331b6eda1c699350da0f6151cd46a1"
+      },
+      "runtime": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-win-r2\\xge3_host.dll",
+        "sha256": "b60bab3050fb8523cc46acb769cf32b15a81896abfbb6cbe47b5e74073ee139c"
+      },
+      "config": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-win-r2\\xge_build_config.h",
+        "sha256": "f288418bedcc5eeed9559ec294dd9091fbbb8283487258b7910b018d45997d03"
+      },
+      "qualifiedOriginal": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-host-win-r3\\build-report.json",
+        "sha256": "36890356982fc4b1653cbf237fab43d15782730fd033aa65a528e7bc955207a2"
+      },
+      "compiled": 0,
+      "reused": 145,
+      "checks": 35,
+      "seconds": 8.878494000004139,
+      "runtimeImage": "xge3_host.dll",
+      "importLibrary": "xge3_host.lib",
+      "soname": null,
+      "importLibraryArtifact": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-host-image-win-r2\\xge3_host.lib",
+        "sha256": "fa973dcfde66580de7a01b80f1ccd42f0ded7d9ab8747b203887699da7dd4e21"
+      }
+    },
+    "linux": {
+      "build": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-host-image-linux-r2\\build-report.json",
+        "sha256": "a7b874492b6c75d7ad26342520ec66fdc3fa737f3901fda7f6b2c4462dba8e42"
+      },
+      "acceptance": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-host-image-accept-linux-r2\\results.json",
+        "sha256": "2589a36e693fb2579b775821ea1f2f91320688ff017c84c0dac38f59325f0476"
+      },
+      "runtime": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-host-image-linux-r2\\libxge3_host.so",
+        "sha256": "ffa77a906c0d630613a97304fa0faeaab7e656e9dba64b74628056321ffa3723"
+      },
+      "config": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-host-image-linux-r2\\xge_build_config.h",
+        "sha256": "989d23b4f4e0f75d9fbab4a1847fc45b42bdff6fbc386c92839bd7818e30b873"
+      },
+      "qualifiedOriginal": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-host-linux-r3\\build-report.json",
+        "sha256": "f81b75b3d0581c9efd3bc37d95cac1f956f7bd5ae16471d3a912553d034c4c9f"
+      },
+      "compiled": 0,
+      "reused": 145,
+      "checks": 38,
+      "seconds": 2.9456523959999856,
+      "runtimeImage": "libxge3_host.so",
+      "importLibrary": null,
+      "soname": "libxge3_host.so"
+    }
+  },
+  "checks": 73,
+  "boundaries": "GCC-only CPU fake collision and ELF build-feature query; no TinyCC PE, window, GPU, browser, network or real clipboard activity.",
+  "notes": [
+    "Initial R1 relink and loader proofs are preserved. Final R2 adds pre-write qualified-tree isolation, exact .d/cache inventory checks and post-link cache/dependency stability checks.",
+    "PE direct-DLL and import-library IAT both name xge3_host.dll; export sets match old R3. ELF SONAME and client DT_NEEDED name libxge3_host.so, with no absolute source path.",
+    "Debug/embedded naming is exercised by all eight API3 naming combinations."
+  ],
+  "committedSources": [
+    {
+      "path": "tools/build/build.py",
+      "canonicalLfSha256": "fedfcac8068f7e0106bdc924b3877dbe04c8ee39b2cfaa5a4b302c56cd152ad6"
+    },
+    {
+      "path": "tools/build/relink.py",
+      "canonicalLfSha256": "ca3fc2316eeae0c1a08bb5d16b1eca38818bfb9b1f3314d3bf4cac824a55d283"
+    },
+    {
+      "path": "tools/test/check_host_image_names.py",
+      "canonicalLfSha256": "946d2bb65af7fce8843d89bd111f93067aace4085d8e8fed282e93ae8ffdec70"
+    },
+    {
+      "path": "docs/host-runtime-image.md",
+      "canonicalLfSha256": "3a9277de5a611a139410e97e2d7be9236d72f5a2763d46b98b366d7e7044809b"
+    }
+  ]
+}
