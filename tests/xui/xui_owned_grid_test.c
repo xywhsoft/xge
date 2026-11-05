@@ -140,6 +140,12 @@ static void publication_preflight(void)
 static void config_record(void)
 {
     xui_table_grid_editor_config_output_t c;xuiTableGridEditorConfigOutputInit(&c);
+    const int invalidCounts[]={-1,XUI_COMBOBOX_ITEM_CAPACITY+1,1};
+    for(size_t i=0;i<sizeof(invalidCounts)/sizeof(*invalidCounts);++i){
+        c._iEnumCount=invalidCounts[i];assert(xrtMemDebugFailAfter(0));
+        assert(xuiTableGridEditorConfigOutputSetEnumCount(&c,1)==XUI_ERROR_INVALID_STATE && !xrtMemDebugFailTriggered());
+        assert(xrtMemDebugFailAfter(-1));c._iEnumCount=0;
+    }
     assert(xuiTableGridEditorConfigOutputSetEnumCount(&c,1)==XUI_OK && xuiTableGridEditorConfigOutputSetEnumItem(&c,0,(xstrview){"old",3},3,1,0,0)==XUI_OK);
     xstrview text;int value,enabled,separator,icon;
     assert(xuiTableGridEditorConfigOutputGetEnumItem(&c,0,&text,&value,&enabled,&separator,&icon)==XUI_OK);
@@ -148,6 +154,12 @@ static void config_record(void)
     assert(xuiTableGridEditorConfigOutputSetEnumItem(&c,0,text,5,1,0,0)==XUI_OK);
     assert(xuiTableGridEditorConfigOutputSetActionText(&c,(xstrview){"a\0b",3})==XUI_ERROR_INVALID_ARGUMENT);
     assert(xuiTableGridEditorConfigOutputGetEnumItem(&c,1,&text,&value,&enabled,&separator,&icon)==XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiTableGridEditorConfigOutputGetEnumItem(&c,0,&kept,&value,&enabled,&separator,&icon)==XUI_OK && value==5);
+    const char* stable=kept.Data;
+    assert(xuiTableGridEditorConfigOutputSetEnumCount(&c,XUI_COMBOBOX_ITEM_CAPACITY)==XUI_OK);
+    assert(xuiTableGridEditorConfigOutputGetEnumItem(&c,0,&kept,&value,&enabled,&separator,&icon)==XUI_OK && kept.Data==stable && value==5);
+    assert(xuiTableGridEditorConfigOutputSetEnumCount(&c,1)==XUI_OK);
+    assert(xuiTableGridEditorConfigOutputSetEnumCount(&c,0)==XUI_OK && !c._pEnumItems && !c._iEnumCount);
     xuiTableGridEditorConfigOutputDispose(&c);
 }
 static void validation_failures(void)

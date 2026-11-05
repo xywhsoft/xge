@@ -30,13 +30,14 @@ XUI_API void xuiTableGridEditorConfigOutputDispose(xui_table_grid_editor_config_
 XUI_API int xuiTableGridEditorConfigOutputSetEnumCount(xui_table_grid_editor_config_output_t* output,int count)
 {
     if(!output || count<0 || count>XUI_COMBOBOX_ITEM_CAPACITY)return XUI_ERROR_INVALID_ARGUMENT;
-    if(count==output->_iEnumCount)return XUI_OK;
+    int oldCount=output->_iEnumCount;xui_combobox_item_t* old=output->_pEnumItems;
+    if(oldCount<0 || oldCount>XUI_COMBOBOX_ITEM_CAPACITY || (oldCount && !old))return XUI_ERROR_INVALID_STATE;
+    if(count==oldCount)return XUI_OK;
     xui_combobox_item_t* next=count ? xrtCalloc((size_t)count,sizeof(*next)):NULL;
     if(count && !next)return XUI_ERROR_OUT_OF_MEMORY;
-    int keep=count<output->_iEnumCount ? count:output->_iEnumCount;
-    if(keep)memcpy(next,output->_pEnumItems,(size_t)keep*sizeof(*next));
+    int keep=count<oldCount ? count:oldCount;
+    if(keep)memcpy(next,old,(size_t)keep*sizeof(*next));
     for(int i=keep;i<count;++i)next[i].bEnabled=1;
-    xui_combobox_item_t* old=output->_pEnumItems;int oldCount=output->_iEnumCount;
     output->_pEnumItems=next;output->_iEnumCount=count;
     for(int i=keep;i<oldCount;++i)xrtFree((void*)old[i].sText);
     xrtFree(old);return XUI_OK;

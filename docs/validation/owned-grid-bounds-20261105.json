@@ -1,0 +1,57 @@
+{
+  "format": "xge-acceptance-1",
+  "complete": true,
+  "passed": true,
+  "scope": "Bounded enum configuration copy and Windows-only wakeup local. Three exact source files; no new warning suppression.",
+  "productionFiles": 2,
+  "testFiles": 1,
+  "files": [
+    {
+      "path": "src/xge/core/xge_impl.c",
+      "sha256": "514d363c9f1a0b2455851c80a19dc967278efac2b80950a934a3ef90cfb40c36"
+    },
+    {
+      "path": "src/xui/controls/xui_table_grid_config_output.c",
+      "sha256": "e262e5dbae850d28e1905c7bf02cb265a38c5658e2037d3a38624097119eef9a"
+    },
+    {
+      "path": "tests/xui/xui_owned_grid_test.c",
+      "sha256": "68f87a0650edd6c1752976056f2bc79bde7079408e6e82475c84d2d3ab8712ca"
+    }
+  ],
+  "compilation": {
+    "optimizations": [
+      "O2"
+    ],
+    "warningAsError": true,
+    "translationUnits": [
+      "single/xge.c",
+      "src/xui/controls/xui_table_grid_config_output.c"
+    ],
+    "overlay": "F:\\xlang-validation\\foreign-completion-20261103\\native-warning-host-win-r2\\overlay.json",
+    "overlaySha256": "676cef0903f4b8110f0077a037c7f8b056a67860f446b1ea07db30fa8a5c10aa"
+  },
+  "reports": [
+    {
+      "platform": "win_x64",
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-warning-grid-win-r2\\results.json",
+      "sha256": "d21e4d2cca643cff3d27f31992aca59d042fa8304b9eec5f088c066a025c52b0",
+      "steps": 8
+    },
+    {
+      "platform": "linux_x64",
+      "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-warning-grid-linux-r2\\results.json",
+      "sha256": "6ba91af364cdcde11babebd9ea4b959c133f523bdf52996f33c274fa7403f222",
+      "steps": 8
+    }
+  ],
+  "assertions": [
+    "Reject negative/oversized count and positive count with no backing array before allocation",
+    "Growth to capacity, shrink and clear preserve/release exact owned strings",
+    "Existing owned grid and table grid checks pass at client O0/O2"
+  ],
+  "limitations": [
+    "Two-TU overlay over an explicitly frozen matching native cohort; not final shipping delivery",
+    "No GPU, window, browser or network tests"
+  ]
+}

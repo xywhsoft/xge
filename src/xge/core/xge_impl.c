@@ -419,7 +419,9 @@ static void __xgeImeUninstallWin32(void);
 static void __xgeRenderRequestInternal(void)
 {
 	if ( g_xge.bInitialized != 0 ) {
+		#if defined(_WIN32)
 		int bWasRequested = g_xge.bRenderRequested;
+		#endif
 		g_xge.bRenderRequested = 1;
 		if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0 ) {
 			if ( g_xge.iOnDemandRenderBurst < 3 ) {
