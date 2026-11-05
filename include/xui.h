@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "extlibs/xrt/xrt_config.h"
 #include "extlibs/xrt/xrt.h"
+#include "xnative_transfer.h"
 
 #ifndef TRUE
 #define TRUE 1
@@ -5664,6 +5665,18 @@ typedef int (*xui_data_provider_proc)(const char* sFormat, void* pOutput,
 	size_t iCapacity, size_t* pOutputSize, void* pUser);
 typedef void (*xui_data_provider_free_proc)(void* pUser);
 
+/* Callback-period bounded output; underscore fields are private and the
+ * size fields are readonly in safe bindings. Never retain this stack view. */
+typedef struct xui_data_output_t {
+    const void* _pSelf;
+    void* _pDestination;
+    size_t iCapacity;
+    size_t iRequired;
+} xui_data_output_t;
+typedef int (*xui_data_provider_owned_proc)(const xstrview* pFormat,
+    xui_data_output_t* pOutput,void* pUser);
+
+
 typedef struct xui_drag_event_data_t {
 	uint32_t iSize;
 	xui_data_object pData;
@@ -6359,6 +6372,27 @@ XUI_API int xuiDataObjectSet(xui_data_object pData, const char* sFormat,
 XUI_API int xuiDataObjectSetProvider(xui_data_object pData,
 	const char* sFormat, xui_data_provider_proc onRead,
 	xui_data_provider_free_proc onFree, void* pUser);
+/* Owned origin is sticky. Raw providers cannot enter an Owned object.
+ * References are real native RC. Semantic calls/cleanup are creator-affine.
+ * Capture owner Drop is checked and consumes one acquired reference on every
+ * result, including false with no diagnostic. No second cleanup closure. */
+XUI_API int xuiDataObjectCreateOwned(xui_data_object* pOutput);
+XUI_API int xuiDataObjectShareOwned(xui_data_object source,xui_data_object* pOutput);
+XUI_API bool xuiDataObjectIsOwned(xui_data_object data);
+XUI_API int xuiDataObjectReleaseOwnerChecked(xui_data_object data,bool* pConsumed);
+XUI_API int xuiDataObjectReleaseChecked(xui_data_object data);
+XUI_API int xuiDataObjectSetProviderOwned(xui_data_object data,const char* sFormat,
+    xui_data_provider_owned_proc proc,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiDataOutputSet(xui_data_output_t* output,const void* data,size_t size);
+XUI_API int xuiDataOutputWrite(xui_data_output_t* output,size_t offset,const void* data,size_t size);
+XUI_API xrtownershipref xuiDataObjectOwnership(xui_data_object data);
+XUI_API const xrtownershipadapterv1* xuiDataObjectOwnershipAdapterV1(xrtownershipref ref);
+XUI_API const xrtownershippreparationv1* xuiDataObjectOwnershipPreparationV1(xrtownershipref ref);
+XUI_API const xrtownershipquiescencev1* xuiDataObjectOwnershipQuiescenceV1(xrtownershipref ref);
+XUI_API const xrtownershipfinishv2* xuiDataObjectOwnershipCompletionV2(xrtownershipref ref);
+XUI_API const xrtownershipfinalizationv1* xuiDataObjectOwnershipFinalizationV1(xrtownershipref ref);
+XUI_API bool xuiDataObjectOwnershipReadReady(xrtownershipref ref);
+
 /* 读取格式数量。 */
 XUI_API int xuiDataObjectFormatCount(xui_data_object pData);
 /* 按索引取格式名。 */

@@ -1,0 +1,68 @@
+{
+  "passed": true,
+  "shippingDelivery": false,
+  "candidate": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-owned-overlay-r1\\manifest.json",
+    "sha256": "5a0843a1bba16e4e73a4c11931a8bc2516f458f7922f1283bbacae5ffeea0c01"
+  },
+  "scope": "Exact standalone Native DataObject owned/raw C subset and public C11/C++11/C++17 headers only. Full engine/SDK, private FV policy, resident COM, clipboard and language binding remain unqualified here.",
+  "postAcceptanceWhitespaceOnly": "Remove empty macro trailing space and redundant EOF blank line; tokens unchanged.",
+  "files": [
+    {
+      "path": "include/xge.h",
+      "committedSha256": "7c3f80544ef278b38eb917eb5f4b7a6ecbc55a65f1c022bebcd053d19c18df96"
+    },
+    {
+      "path": "include/xui.h",
+      "committedSha256": "0b107185894c67b7d8f768655b0ede762c6d492d69517a656a8be0aa0f67ea89"
+    },
+    {
+      "path": "include/xnative_transfer.h",
+      "committedSha256": "620fe84af1c7c5f40006a65a4ca4435a5d62f2fd500b345514829e27c08dff6f"
+    },
+    {
+      "path": "src/xge/input/xge_data_object.c",
+      "committedSha256": "4a27a5e0b77816b54af072617138d07060ef329d572e229e10385762cf9b66a5"
+    },
+    {
+      "path": "src/xui/core/xui_data_object.c",
+      "committedSha256": "17ab49c3660f03de7dbb0764a778d927b469ddc6d3f8a2e06ac555440849862d"
+    },
+    {
+      "path": "src/xge/core/xge_data_lifetime_internal.h",
+      "committedSha256": "99d5b90d742633790f5ee9c0d66decdae2b60158716e63b19b481ec4576ede97"
+    },
+    {
+      "path": "src/xge/core/xge_data_lifetime.inl",
+      "committedSha256": "1647e7bab44f55d2e46f6fea15d7675071ae566efb37d4b90706773b9b435b75"
+    },
+    {
+      "path": "tests/xui/xui_owned_data_object_test.c",
+      "committedSha256": "d17c4bef357c4260d81964cf36bda1e794e12f756760cba8e91d8a4c6d694309"
+    },
+    {
+      "path": "tests/xui/xui_data_object_generation_test.c",
+      "committedSha256": "cb3294c32a7948af3486db90aa90f170769f872f2e8f94686ca046818abebe73"
+    },
+    {
+      "path": "tools/test/check_dataobject_owned.py",
+      "committedSha256": "0810a793b8aacad9d50745ed7b3c71590f7492466e3d64d67b07b9c904b45c89"
+    },
+    {
+      "path": "src/xge/input/xge_drag_drop.c",
+      "committedSha256": "9ebbc862b18a828ba0c4cd1a03e623ce21fa4955e2524e537167ce0cb579e171"
+    },
+    {
+      "path": "src/xui/core/xui_drag_drop.c",
+      "committedSha256": "aa31bd8b24903a56dbbce0a827fdeb5a7d46792d0658950659a15e24fad22b42"
+    },
+    {
+      "path": "docs/native-dataobject-owned.md",
+      "committedSha256": "cde2f139bd9ed8457fceca06564386c123f8904a211e2e7d1a3dda5e66ea0a1d"
+    },
+    {
+      "path": "docs/validation/native-dataobject-owned-r1.json",
+      "committedSha256": "45b1cd3e459bfdc18d84f7db742024554632e64466e38dbd46eb3484162db240"
+    }
+  ]
+}

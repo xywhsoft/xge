@@ -39,9 +39,10 @@ static int P##_generation_read(const char* format,void* output,size_t capacity,s
 } \
 static void P##_generation_run(void) { \
     for(int action=1;action<=5;++action){ \
-        P##_generation_test state={0};state.action=action;state.releaseOwner=action==2;state.secondary=action==5; \
+        P##_generation_test state={0},tail={0};state.action=action;state.releaseOwner=action==2 || action==5;state.secondary=action==5; \
         assert(P##DataObjectCreate(&state.object)==U##_OK); \
         assert(P##DataObjectSetProvider(state.object,"application/test",P##_generation_read,P##_generation_free,&state)==U##_OK); \
+        if(action==5){tail.secondary=1;assert(P##DataObjectSetProvider(state.object,"tail",P##_generation_read,P##_generation_free,&tail)==U##_OK);} \
         if(action==3){ \
             assert(P##DataObjectSet(state.object,"application/test","outer",5u)==U##_OK); \
             assert(state.freed==1);char value[10]={0};size_t size=0; \
@@ -53,7 +54,7 @@ static void P##_generation_run(void) { \
             char value[8]={0};size_t size=0;int status=P##DataObjectGet(state.object,"application/test",value,sizeof(value),&size); \
             assert(status==(action==5 ? U##_ERROR_BACKEND_FAILED:U##_OK)); \
             assert(size==3u && memcmp(value,"old",3u)==0 && state.freed==1); \
-            if(action==5)assert(xrtGetError()==NULL); \
+            if(action==5)assert(xrtGetError()==NULL && tail.freed==1); \
         } \
         if(!state.releaseOwner)P##DataObjectRelease(state.object); \
     } \

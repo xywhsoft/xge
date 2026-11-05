@@ -9,6 +9,7 @@ extern "C" {
 #include "xge_config.h"
 #include "extlibs/xrt/xrt_config.h"
 #include "extlibs/xrt/xrt.h"
+#include "xnative_transfer.h"
 
 #ifndef TRUE
 #define TRUE 1
@@ -566,6 +567,8 @@ typedef struct xge_texture_storage_info_t {
 typedef enum xge_result_t {
 /* 成功。 */
 	XGE_OK = 0,
+/* Pure lifecycle wait; never a callback failure. */
+	XGE_STATUS_DEFERRED = 1,
 /* 通用失败。 */
 	XGE_ERROR = -1,
 /* 参数非法（空指针/越界/零尺寸）。 */
@@ -597,7 +600,9 @@ typedef enum xge_result_t {
 /* 当前状态不允许该操作。 */
 	XGE_ERROR_INVALID_STATE = -15,
 /* A retained callback reported failure, including unavailable diagnostics. */
-	XGE_ERROR_CALLBACK_FAILED = -16
+	XGE_ERROR_CALLBACK_FAILED = -16,
+/* Active operation, collector claim or creator-thread admission blocks work. */
+	XGE_ERROR_BUSY = -17
 } xge_result_t;
 
 typedef struct xge_error_info_t {
@@ -1610,6 +1615,18 @@ typedef int (*xge_data_provider_proc)(const char* sFormat, void* pOutput,
 	size_t iCapacity, size_t* pOutputSize, void* pUser);
 typedef void (*xge_data_provider_free_proc)(void* pUser);
 
+/* Callback-period bounded output; underscore fields are private and the
+ * size fields are readonly in safe bindings. Never retain this stack view. */
+typedef struct xge_data_output_t {
+    const void* _pSelf;
+    void* _pDestination;
+    size_t iCapacity;
+    size_t iRequired;
+} xge_data_output_t;
+typedef int (*xge_data_provider_owned_proc)(const xstrview* pFormat,
+    xge_data_output_t* pOutput,void* pUser);
+
+
 typedef struct xge_drag_drop_caps_t {
 	uint32_t iSize;
 	int bNativeDragIn;
@@ -1893,6 +1910,27 @@ XGE_API int xgeDataObjectSet(xge_data_object pData, const char* sFormat,
 XGE_API int xgeDataObjectSetProvider(xge_data_object pData,
 	const char* sFormat, xge_data_provider_proc onRead,
 	xge_data_provider_free_proc onFree, void* pUser);
+/* Owned origin is sticky. Raw providers cannot enter an Owned object.
+ * References are real native RC. Semantic calls/cleanup are creator-affine.
+ * Capture owner Drop is checked and consumes one acquired reference on every
+ * result, including false with no diagnostic. No second cleanup closure. */
+XGE_API int xgeDataObjectCreateOwned(xge_data_object* pOutput);
+XGE_API int xgeDataObjectShareOwned(xge_data_object source,xge_data_object* pOutput);
+XGE_API bool xgeDataObjectIsOwned(xge_data_object data);
+XGE_API int xgeDataObjectReleaseOwnerChecked(xge_data_object data,bool* pConsumed);
+XGE_API int xgeDataObjectReleaseChecked(xge_data_object data);
+XGE_API int xgeDataObjectSetProviderOwned(xge_data_object data,const char* sFormat,
+    xge_data_provider_owned_proc proc,void* pUser,const xge_callback_owner_t* pOwner);
+XGE_API int xgeDataOutputSet(xge_data_output_t* output,const void* data,size_t size);
+XGE_API int xgeDataOutputWrite(xge_data_output_t* output,size_t offset,const void* data,size_t size);
+XGE_API xrtownershipref xgeDataObjectOwnership(xge_data_object data);
+XGE_API const xrtownershipadapterv1* xgeDataObjectOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeDataObjectOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeDataObjectOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeDataObjectOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeDataObjectOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeDataObjectOwnershipReadReady(xrtownershipref ref);
+
 /* 读取格式数量。 */
 XGE_API int xgeDataObjectFormatCount(xge_data_object pData);
 /* 按索引取格式名。 */

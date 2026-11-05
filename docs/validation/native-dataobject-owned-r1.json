@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "scope": "Exact standalone Native DataObject owned/raw C subset and public C11/C++11/C++17 headers only. Full engine/SDK, private FV policy, resident COM, clipboard and language binding remain unqualified here.",
+  "leafRows": 22,
+  "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-owned-source-r2",
+  "sourceManifestSHA256": "de015db282036b1d7d4ee5d27b7b3c4912c697762643facaf70a4bc45a66e55b",
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-owned-cpu-win-r2\\results.json",
+      "sha256": "ad769820ff7445bdf71c08512b50a558bdb74e8e5521fb27a7ed69da0ef236c2",
+      "rows": 11
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-owned-cpu-linux-r2.results.json",
+      "sha256": "14faa23847cddbf6561c2ca0cc110318601b659e8355b8f5612ecbd6e0d81d0d",
+      "rows": 11
+    }
+  ],
+  "excludedPassWip": true,
+  "proxyVersion": 17,
+  "networkTests": false,
+  "desktopTests": false
+}
