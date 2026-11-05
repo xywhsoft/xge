@@ -12,7 +12,9 @@ typedef struct DocUiTest {LayoutProvider base;xui_font font;xui_document documen
 static void docUiSetup(DocUiTest* t,int kind)
 {
     memset(t,0,sizeof(*t));t->kind=kind;layoutSetup(&t->base,&t->font);
-    assert(xuiDocumentCreate(NULL,&t->document)==XUI_OK);xui_document_transaction txn=NULL;
+    /* This fixture checks the complete Native ownership graph. A legacy raw
+     * Document intentionally has no managed provenance or leaf shortcut. */
+    assert(xuiDocumentCreateOwned(NULL,&t->document)==XUI_OK);xui_document_transaction txn=NULL;
     assert(xuiDocumentBeginTransaction(t->document,NULL,&txn)==XUI_OK);
     xui_doc_node_id para=0; xui_doc_node_desc_t desc={.iSize=sizeof(desc),.iKind=XUI_DOC_PARAGRAPH};
     assert(xuiDocumentTxnInsertNode(txn,1,XUI_DOCUMENT_APPEND,&desc,&para)==XUI_OK);
@@ -201,6 +203,7 @@ static void snapshotHoldOutcomes(int kind)
     assert(xuiCallScopeEnd(&outer)==(kind==1 ? XUI_ERROR_CALLBACK_FAILED:XUI_OK) && !xrtGetError());owner.failHold=false;
     docUiFinish(&t);assert(owner.refs==1 && docUiDrop(&owner));
 }
+#ifndef XUI_OWNED_DOC_UI_HELPERS
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
@@ -210,3 +213,4 @@ int main(void)
     xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     puts("R13 four actual Doc UI Owned families: consumer snapshots / Body pins / close / first NULL / independent Context edges balanced");return 0;
 }
+#endif

@@ -27,7 +27,7 @@ static xui_document rendererDocument(void)
 {
     xui_document document=NULL;xui_doc_desc_t desc={.iSize=sizeof(desc),.iProfile=XUI_DOCUMENT_MARKDOWN};
     const char source[]="ordinary text\n\nsecond paragraph\n";
-    assert(xuiDocumentCreate(&desc,&document)==XUI_OK && xuiDocumentLoadMarkdown(document,source,sizeof(source)-1)==XUI_OK);
+    assert(xuiDocumentCreateOwned(&desc,&document)==XUI_OK && xuiDocumentLoadMarkdown(document,source,sizeof(source)-1)==XUI_OK);
     return document;
 }
 static void rendererOwnedLifetime(void)

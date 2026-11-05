@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -25,7 +26,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--object-overlay", type=Path)
     parser.add_argument("--fixture-root", type=Path)
-    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer", "doc_ui_callbacks", "doc_editor_regression"))
+    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer", "doc_ui_callbacks", "doc_editor_regression", "doc_model_worker", "document_model", "document_model_fault", "doc_model_ui"))
     args = parser.parse_args()
     source, engine, runtime, out = [value.resolve() for value in (args.source, args.engine, args.runtime, args.out)]
     out.mkdir(parents=True, exist_ok=False)
@@ -85,21 +86,35 @@ def main():
         env["LD_LIBRARY_PATH"] = str(runtime.parent) + ":" + env.get("LD_LIBRARY_PATH", "")
     save()
     for case, test in zip(cases, tests):
-        case_objects = objects
-        if case == "doc_ui_callbacks":
-            # The fixture calls private consumers in these exact production
-            # TUs. Include each once, without its duplicate compiled object.
-            # All other production objects and their normal imports are used.
-            included = {"src_xui_document_xui_document_view.c.o", "src_xui_document_xui_document_editor.c.o",
-                        "src_xui_document_xui_document_edit_adapter.c.o", "src_xui_controls_xui_message_list.c.o"}
-            case_objects = [path for path in objects if path.name not in included]
-            report["docUiIncludedProductionTUs"] = sorted(included)
+        # Ask the actual preprocessor which production C TUs this fixture
+        # directly includes. Several old cache fixtures intentionally call
+        # private consumers; linking their normal object a second time is a
+        # harness error. Verify the included bytes against the matched source,
+        # exclude exactly those objects, and retain an explicit record.
+        if not run(case+"-dependencies",[build["compiler"][0],*flags,"-MM","-MT","owned_fixture",test]):
+            continue
+        dependency_text=(out/(case+"-dependencies.log")).read_text(encoding="utf-8").replace("\\\n"," ")
+        dependency_text=re.split(r":\s",dependency_text,maxsplit=1)[1]
+        dependencies=[re.sub(r"\\(.)",r"\1",value) for value in re.findall(r"(?:\\.|[^\s])+",dependency_text)]
+        included=set();included_rows=[]
+        for value in dependencies:
+            dependency=Path(value);normalized=dependency.as_posix().replace("\\","/")
+            for name in build["sources"]:
+                if normalized==name or normalized.endswith("/"+name):
+                    actual=dependency if dependency.is_absolute() else source/dependency
+                    assert actual.is_file() and digest(actual)==digest(source/name),(case,"unmatched included production TU",actual)
+                    included.add(name.replace("/","_")+".o")
+                    included_rows.append({"source":name,"includedPath":str(actual),"sha256":digest(actual)})
+        report.setdefault("directlyIncludedProductionTUs",{})[case]=included_rows
+        case_objects=[path for path in objects if path.name not in included]
         if case == "doc_editor_regression":
             # The pre-existing CPU fixture saves local files in this directory.
             (source / "build/document").mkdir(parents=True, exist_ok=True)
         for opt in ("O0", "O2"):
             executable = out / (case + "-" + opt + (".exe" if windows else ""))
             command = [build["compiler"][0], *flags, "-" + opt, test, source / "tests/xui/xui_test_proxy.c", *case_objects, runtime, *libraries, "-o", executable]
+            if case=="document_model_fault":
+                command.insert(1,"-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
             if run(case + "-" + opt + "-build", command):
                 run(case + "-" + opt + "-run", [executable], env)
     report["inputsUnchanged"] = all(Path(name).is_file() and digest(Path(name)) == value for name, value in inputs.items())

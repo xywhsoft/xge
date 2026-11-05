@@ -290,13 +290,14 @@ static int doc_read_node(xui_document d, const xvalue* value, uint64_t version)
     if (result == XUI_OK && id >= atomic_load(&d->allocator->next_node_id)) atomic_store(&d->allocator->next_node_id, id + 1);
     return result;
 }
-XUI_API int xuiDocumentDeserialize(const xui_doc_desc_t* desc, const char* data, uint64_t bytes, xui_document* out)
+static int doc_document_deserialize(const xui_doc_desc_t* desc,const char* data,uint64_t bytes,xui_document* out,bool owned)
 {
     xjsonreadconfig config; xvalue* json; const xvalue* nodes;
     xui_doc_desc_t options = {0}; xui_document d = NULL;
     xstrview format, source; uint64_t version, profile, max_string; size_t i, count; int result;
     if (out) *out = NULL;
     if (!out || (!data && bytes) || bytes > SIZE_MAX || (desc && desc->iSize != sizeof(*desc))) return XUI_ERROR_INVALID_ARGUMENT;
+    if(owned && desc && (desc->onAlloc || desc->onFree || desc->pAllocatorUser))return XUI_ERROR_INVALID_ARGUMENT;
     if (desc) options = *desc;
     options.iSize = sizeof(options);
     if (bytes > UINT64_C(1024) * 1024 * 1024) return XUI_DOC_ERROR_LIMIT;
@@ -323,7 +324,7 @@ XUI_API int xuiDocumentDeserialize(const xui_doc_desc_t* desc, const char* data,
         if (!doc_json_u64(doc_json_get(json, "dialect"), &dialect) || dialect < XUI_MD_COMMONMARK || dialect > XUI_MD_EXTENDED) { xrtValueRelease(json); return XUI_DOC_ERROR_FORMAT; }
         options.iMarkdownDialect = (uint32_t)dialect;
     }
-    result = xuiDocumentCreate(&options, &d);
+    result = owned ? xuiDocumentCreateOwned(&options,&d):xuiDocumentCreate(&options,&d);
     if (result != XUI_OK) { xrtValueRelease(json); return result; }
     /* Import builds a private, unpublished state in place. Classify its final
      * roots only after construction, including cleanup of an invalid import. */
@@ -372,5 +373,10 @@ imported:
     d->state->content_id = d->saved_state = d->next_state = 1;
     *out = d; return XUI_OK;
 }
+
+XUI_API int xuiDocumentDeserialize(const xui_doc_desc_t* desc,const char* data,uint64_t bytes,xui_document* out)
+{return doc_document_deserialize(desc,data,bytes,out,false);}
+XUI_API int xuiDocumentDeserializeOwned(const xui_doc_desc_t* desc,const char* data,uint64_t bytes,xui_document* out)
+{return doc_document_deserialize(desc,data,bytes,out,true);}
 
 #endif

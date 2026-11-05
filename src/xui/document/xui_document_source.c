@@ -980,12 +980,14 @@ typedef struct doc_si_event32 { uint32_t offset, annotation_phase; } doc_si_even
 typedef struct doc_si_interval { uint64_t start, end, record, maximum; } doc_si_interval;
 struct xui_doc_source_index_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     xui_document_snapshot snapshot;
     xui_doc_source_index_info_t info;
     doc_si_record_value* records;
     doc_si_token_value* tokens;
     doc_si_binding_value* bindings;
 };
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_source_index_t);
 typedef struct doc_si_builder {
     xui_document_source_index index;
     doc_si_annotation* annotations;
@@ -1689,16 +1691,24 @@ static void doc_si_work_free(doc_si_builder* b, void** memory, uint64_t* capacit
     *memory = NULL; *capacity = 0;
 }
 XUI_API void xuiDocumentSourceIndexRetain(xui_document_source_index index)
-{ if (index) atomic_fetch_add(&index->refs, 1); }
+{if(index){if(doc_model_owned(&index->owned)){if(doc_model_add_ref(&index->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&index->refs,1);}}
+XUI_API int xuiDocumentSourceIndexAddRef(xui_document_source_index index){return index && doc_model_typed(&index->owned,&doc_model_index_type) ? doc_model_add_ref(&index->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentSourceIndexShareOwned,xui_document_source_index,doc_model_index_type)
+XUI_API int xuiDocumentSourceIndexReleaseOwnerChecked(xui_document_source_index index,bool* consumed)
+{if(!index || !doc_model_typed(&index->owned,&doc_model_index_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&index->owned,consumed);}
+XUI_API int xuiDocumentSourceIndexReleaseChecked(xui_document_source_index index){bool consumed=false;return xuiDocumentSourceIndexReleaseOwnerChecked(index,&consumed);}
+XUI_API xrtownershipref xuiDocumentSourceIndexOwnership(xui_document_source_index index){return index && doc_model_typed(&index->owned,&doc_model_index_type) ? doc_model_reference(&index->owned):(xrtownershipref){0};}
 XUI_API void xuiDocumentSourceIndexRelease(xui_document_source_index index)
 {
     xui_document_snapshot snapshot;
-    if (!index || atomic_fetch_sub(&index->refs, 1) != 1) return;
+    if(!index)return;
+    if(doc_model_owned(&index->owned)){(void)xuiDocumentSourceIndexReleaseChecked(index);return;}
+    if(atomic_fetch_sub(&index->refs, 1) != 1) return;
     snapshot = index->snapshot; doc_free(index->records); doc_free(index->tokens);
     doc_free(index->bindings); doc_free(index);
     xuiDocumentSnapshotRelease(snapshot);
 }
-XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,
+static int doc_snapshot_create_source_index(xui_document_snapshot snapshot,
     const xui_doc_source_index_desc_t* desc, xui_document_source_index* out)
 {
     doc_si_builder b = {0}; xui_doc_source_info_t info = {0}; uint64_t i, child;
@@ -1714,7 +1724,7 @@ XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,
     if (b.used > b.limit) return XUI_DOC_ERROR_LIMIT;
     b.index = doc_alloc(snapshot->state->allocator, sizeof(*b.index));
     if (!b.index) return XUI_ERROR_OUT_OF_MEMORY;
-    atomic_init(&b.index->refs, 1); b.index->snapshot = snapshot; xuiDocumentSnapshotRetain(snapshot);
+    atomic_init(&b.index->refs, 1);doc_model_init(&b.index->owned,&doc_model_index_type,snapshot->state->allocator); b.index->snapshot = snapshot; xuiDocumentSnapshotRetain(snapshot);
     b.index->info.iSize = sizeof(b.index->info);
     b.index->info.iDocumentId = snapshot->identity; b.index->info.iRevision = snapshot->revision;
     b.index->info.iSourceBytes = doc_seq_size(snapshot->state->source);
@@ -1761,6 +1771,26 @@ XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,
         (b.binding_capacity ? b.binding_capacity * sizeof(*b.index->bindings) + sizeof(doc_allocation) : 0);
     *out = b.index; return XUI_OK;
 }
+XUI_API int xuiDocumentSnapshotCreateSourceIndex(xui_document_snapshot snapshot,const xui_doc_source_index_desc_t* desc,xui_document_source_index* out)
+{
+    if(!snapshot || !doc_model_owned(&snapshot->owned))return doc_snapshot_create_source_index(snapshot,desc,out);
+    if(out)*out=NULL;
+    doc_model_call call={0};int status=doc_model_call_begin(&snapshot->owned,&call);if(status!=XUI_OK)return status;
+    status=doc_snapshot_create_source_index(snapshot,desc,out);return doc_model_call_end(&call,status);
+}
+static bool doc_owned_index_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_doc_source_index_t* index=raw;if(!index->snapshot)return true;
+    xrtownershipref ref=xuiDocumentSnapshotOwnership(index->snapshot);return ref.Data && visit(ref,user);
+}
+static int doc_owned_index_finish(void* raw)
+{
+    xui_document_source_index index=raw;xui_document_snapshot snapshot=index->snapshot;index->snapshot=NULL;
+    doc_free(index->records);doc_free(index->tokens);doc_free(index->bindings);
+    index->records=NULL;index->tokens=NULL;index->bindings=NULL;
+    return snapshot ? xuiDocumentSnapshotReleaseChecked(snapshot):XUI_OK;
+}
+const doc_model_type doc_model_index_type={DOC_MODEL_ALLOCATED,doc_owned_index_trace,NULL,NULL,doc_owned_index_finish};
 XUI_API int xuiDocumentSourceIndexGetInfo(xui_document_source_index index, xui_doc_source_index_info_t* out)
 {
     if (!out || out->iSize != sizeof(*out)) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1947,6 +1977,12 @@ XUI_API int xuiDocumentSourceIndexVisitBindings(xui_document_source_index index,
     uint64_t count = 0; int result;
     if (visited) *visited = 0;
     if (!index || !onBinding || start > end || end > index->info.iSourceBytes) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&index->owned)){
+        doc_model_call call={0};result=doc_model_call_begin(&index->owned,&call);if(result!=XUI_OK)return result;
+        result=doc_si_visit(index,0,index->info.iBindingCount,start,end,onBinding,user,&count);
+        if(visited)*visited=count;
+        return doc_model_call_end(&call,result);
+    }
     xuiDocumentSourceIndexRetain(index);
     result = doc_si_visit(index, 0, index->info.iBindingCount, start, end, onBinding, user, &count);
     if (visited) *visited = count;

@@ -1,0 +1,184 @@
+{
+  "scope": "Default-origin Model A Native CPU acceptance only. Public/private xlang declarations, resident collector/domain V2 and delivery are separate qualifications. DataObject B and capturing custom allocators are not claimed complete.",
+  "sourceWindows": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-source-r5",
+  "engineWindows": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-host-win-r5",
+  "sourceLinux": "/home/ubuntu/xlang-validation/native-model-a-native-source-r6",
+  "engineLinux": "/home/ubuntu/xlang-validation/native-model-a-native-host-linux-r6",
+  "nativeHostImports": {
+    "win": 194,
+    "linux": 192
+  },
+  "normalFullBaseline": {
+    "win": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-host-win-r1",
+    "linux": "/home/ubuntu/xlang-validation/native-model-a-native-host-linux-r2",
+    "compiledPerPlatform": 145,
+    "reused": 0
+  },
+  "incrementalLayers": [
+    {
+      "name": "compact checked observer",
+      "winCompiled": 36,
+      "winInherited": 108,
+      "linuxCompiled": 37,
+      "linuxInherited": 107
+    },
+    {
+      "name": "actual notification Error edge",
+      "compiledPerPlatform": 2,
+      "inherited": 142
+    },
+    {
+      "name": "unique Txn semantic duty",
+      "compiledPerPlatform": 2,
+      "inherited": 142
+    }
+  ],
+  "runtimeWindows": "F:\\xlang-validation\\foreign-completion-20261103\\native-font-slots-runtime-pin-r1\\xl.dll",
+  "runtimeWindowsSHA": "cf89bbe9757b18d56f15c10b60eecb61f51390bb4fd5b8a8667b25bdae86c930",
+  "runtimeLinux": "/mnt/f/xlang-validation/foreign-completion-20261103/native-font-slots-runtime-pin-r1/libxl.so",
+  "focusedReports": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-win-r8\\results.json",
+      "rows": 70,
+      "families": 14,
+      "passed": true,
+      "sha256": "e64a9790ca11433f06fa2e5ea43902b818e0c0407e33db0f68cb48ebc9469234"
+    },
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-win-r9\\results.json",
+      "rows": 5,
+      "families": 1,
+      "passed": true,
+      "sha256": "a75b11810e48486cf4a09a55c5ff2e6a318187ea2380fea08079f027b68b5c49"
+    },
+    {
+      "platform": "linux",
+      "path": "/home/ubuntu/xlang-validation/native-model-a-native-linux-r8/results.json",
+      "rows": 70,
+      "families": 14,
+      "passed": true,
+      "sha256": "ea3613742bfa64333cec1b12adf7fd6d0484a5b21862d5a8672372283525c50d"
+    },
+    {
+      "platform": "linux",
+      "path": "/home/ubuntu/xlang-validation/native-model-a-native-linux-r9/results.json",
+      "rows": 5,
+      "families": 1,
+      "passed": true,
+      "sha256": "3607c45dc7c9dfb955945675501a820b9d081336dda5a280ab52a6367b166b1f"
+    }
+  ],
+  "publicSuites": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-public-size-win-r4\\results.json",
+      "rows": 24,
+      "passed": true,
+      "measurements": {
+        "before": {
+          "Document": 168,
+          "Snapshot": 48,
+          "ChangeSet": 120,
+          "Txn": 136,
+          "Allocator": 2296,
+          "Observer": 40,
+          "Context": 143424,
+          "Widget": 2040,
+          "Type": 408,
+          "Prepare": 384,
+          "Fragment": 24,
+          "SourceIndex": 152
+        },
+        "after": {
+          "Document": 232,
+          "Snapshot": 80,
+          "ChangeSet": 152,
+          "Txn": 176,
+          "Allocator": 2304,
+          "Observer": 40,
+          "Context": 143432,
+          "Widget": 2040,
+          "Type": 408,
+          "OwnedObserver": 72,
+          "Lifetime": 32,
+          "Prepare": 464,
+          "Fragment": 56,
+          "SourceIndex": 184
+        }
+      }
+    },
+    {
+      "platform": "linux",
+      "path": "/home/ubuntu/xlang-validation/native-model-a-public-size-linux-r2/results.json",
+      "rows": 24,
+      "passed": true,
+      "measurements": {
+        "before": {
+          "Document": 168,
+          "Snapshot": 48,
+          "ChangeSet": 120,
+          "Txn": 136,
+          "Allocator": 2296,
+          "Observer": 40,
+          "Context": 143424,
+          "Widget": 2040,
+          "Type": 408,
+          "Prepare": 384,
+          "Fragment": 24,
+          "SourceIndex": 152
+        },
+        "after": {
+          "Document": 232,
+          "Snapshot": 80,
+          "ChangeSet": 152,
+          "Txn": 176,
+          "Allocator": 2304,
+          "Observer": 40,
+          "Context": 143432,
+          "Widget": 2040,
+          "Type": 408,
+          "OwnedObserver": 72,
+          "Lifetime": 32,
+          "Prepare": 464,
+          "Fragment": 56,
+          "SourceIndex": 184
+        }
+      }
+    }
+  ],
+  "finalExports": [
+    {
+      "platform": "win",
+      "library": "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-host-win-r5\\xge.dll",
+      "verifiedNativeApiCount": 51,
+      "embeddedXrtDefinitions": false
+    },
+    {
+      "platform": "linux",
+      "library": "/home/ubuntu/xlang-validation/native-model-a-native-host-linux-r6/libxge.so",
+      "verifiedNativeApiCount": 51,
+      "embeddedXrtDefinitions": false
+    }
+  ],
+  "focusedLeafRows": 150,
+  "publicLeafRows": 48,
+  "actualFaultSitesPerOptimization": 145,
+  "concurrentShareReleasePairsPerOptimization": 48000,
+  "notRun": [
+    "GPU/window/device/browser initialization",
+    "network/security tests",
+    "arbitrary custom allocator owned protocol",
+    "DataObject/clipboard B",
+    "final shipping language/provider qualification"
+  ],
+  "preservedFailures": [
+    "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-linux-r1",
+    "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-native-win-r4",
+    "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-observer-tail-repro-win-r1",
+    "F:\\xlang-validation\\foreign-completion-20261103\\native-model-a-public-size-win-r1"
+  ],
+  "complete": true,
+  "passed": true
+}

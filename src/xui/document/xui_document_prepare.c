@@ -6,6 +6,7 @@
  * no live Document pointer, observers, saved state or private undo history. */
 struct xui_doc_prepare_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     atomic_int state, cancellation, result;
     atomic_uint_fast64_t committed_revision;
     doc_allocator* allocator;
@@ -26,8 +27,15 @@ struct xui_doc_prepare_t {
     unsigned utf8_bytes;
     char utf8[3]; /* A validated, incomplete final code point; never source/tree. */
 };
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_prepare_t);
 static int doc_prepare_lineage_append(xui_document_prepare);
 static atomic_uint_fast64_t doc_prepare_sequence = 0;
+static void doc_prepare_set_publication(xui_document_prepare prepare,doc_publish_plan* publication)
+{
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&prepare->owned,&mutation))abort();
+    doc_publish_plan* previous=prepare->publication;prepare->publication=publication;
+    doc_model_mutation_end(&mutation);doc_publish_plan_release(previous);
+}
 static uint64_t doc_prepare_generation(void)
 {
     uint_fast64_t value = atomic_load(&doc_prepare_sequence);
@@ -37,12 +45,20 @@ static uint64_t doc_prepare_generation(void)
 
 XUI_API void xuiDocumentPrepareRetain(xui_document_prepare p)
 {
-    if (p) atomic_fetch_add(&p->refs, 1);
+    if(p){if(doc_model_owned(&p->owned)){if(doc_model_add_ref(&p->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&p->refs,1);}
 }
+XUI_API int xuiDocumentPrepareAddRef(xui_document_prepare p){return p && doc_model_typed(&p->owned,&doc_model_prepare_type) ? doc_model_add_ref(&p->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentPrepareShareOwned,xui_document_prepare,doc_model_prepare_type)
+XUI_API int xuiDocumentPrepareReleaseOwnerChecked(xui_document_prepare p,bool* consumed)
+{if(!p || !doc_model_typed(&p->owned,&doc_model_prepare_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&p->owned,consumed);}
+XUI_API int xuiDocumentPrepareReleaseChecked(xui_document_prepare p){bool consumed=false;return xuiDocumentPrepareReleaseOwnerChecked(p,&consumed);}
+XUI_API xrtownershipref xuiDocumentPrepareOwnership(xui_document_prepare p){return p && doc_model_typed(&p->owned,&doc_model_prepare_type) ? doc_model_reference(&p->owned):(xrtownershipref){0};}
 XUI_API void xuiDocumentPrepareRelease(xui_document_prepare p)
 {
     doc_allocator* a;
-    if (!p || atomic_fetch_sub(&p->refs, 1) != 1) return;
+    if(!p)return;
+    if(doc_model_owned(&p->owned)){(void)xuiDocumentPrepareReleaseChecked(p);return;}
+    if(atomic_fetch_sub(&p->refs, 1) != 1) return;
     a = p->allocator;
     doc_publish_plan_release(p->publication);
     doc_state_release(p->transaction.base); doc_state_release(p->transaction.draft);
@@ -64,14 +80,17 @@ XUI_API void xuiDocumentPrepareCancel(xui_document_prepare p)
 }
 void doc_prepare_invalidate(xui_document d, xui_document_prepare except, int reason)
 {
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
     xui_document_prepare p = d->pending;
     d->pending = NULL;
+    doc_model_mutation_end(&mutation);
     if (p != except) doc_prepare_cancel(p, reason);
     xuiDocumentPrepareRelease(p);
 }
 XUI_API int xuiDocumentCancelPrepare(xui_document d)
 {
     if (!d) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     doc_prepare_invalidate(d, NULL, XUI_DOC_ERROR_CANCELLED); return XUI_OK;
 }
@@ -88,6 +107,7 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
     *out = NULL;
     if (!d || (!patches && count) || count > SIZE_MAX / sizeof(*patches) ||
         (desc && (desc->iSize != sizeof(*desc) || desc->iDomain != XUI_DOC_SOURCE))) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){result=doc_model_admit(&d->owned);if(result!=XUI_OK)return result;}
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     if (d->state->profile != XUI_DOCUMENT_MARKDOWN) return XUI_ERROR_UNSUPPORTED;
     if (desc && desc->iBaseRevision && desc->iBaseRevision != d->revision) return XUI_DOC_ERROR_STALE;
@@ -105,7 +125,7 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
     atomic_init(&p->refs, 1); atomic_init(&p->state, XUI_DOC_PREPARE_QUEUED);
     atomic_init(&p->cancellation, 0); atomic_init(&p->result, XUI_DOC_ERROR_BUSY);
     atomic_init(&p->committed_revision, 0);
-    p->allocator = d->allocator; doc_allocator_retain(p->allocator);
+    p->allocator = d->allocator; doc_allocator_retain(p->allocator);doc_model_init(&p->owned,&doc_model_prepare_type,p->allocator);
     p->identity = d->identity; p->patch_count = count;
     p->previous_generation = previous ? previous->generation : 0;
     p->single_patch = count <= 1;
@@ -165,7 +185,7 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
      * sequence paths, not all preceding operations or the complete source. */
     doc_free(t->ops); t->ops = NULL; t->count = t->capacity = 0;
     if (p->operations && attach) {
-        p->publication = doc_publish_plan_capture(d);
+        doc_prepare_set_publication(p,doc_publish_plan_capture(d));
         if (!p->publication) { xuiDocumentPrepareRelease(p); return XUI_ERROR_OUT_OF_MEMORY; }
     }
     p->source = t->draft->source; doc_seq_retain(p->source);
@@ -179,7 +199,8 @@ static int doc_prepare_source(xui_document d, xui_document_prepare previous, con
     /* Failed creation cannot supersede the current candidate. */
     if (attach) {
         d->next_prepare = p->generation; doc_prepare_invalidate(d, NULL, XUI_DOC_ERROR_STALE);
-        d->pending = p; xuiDocumentPrepareRetain(p);
+        xuiDocumentPrepareRetain(p);xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+        d->pending = p;doc_model_mutation_end(&mutation);
     }
     *out = p;
     return XUI_OK;
@@ -289,7 +310,9 @@ static int doc_prepare_visual_record(xui_document_prepare p, xui_document_prepar
         shadow->ops, shadow->count, shadow->flags, XUI_DOC_SEMANTIC, p->transaction.origin, 0);
     if (!change) { doc_seq_release(operations); return XUI_ERROR_OUT_OF_MEMORY; }
     change->after_revision = change->before_revision;
-    p->visual_operations = operations; p->visual_change = change; return XUI_OK;
+    p->visual_operations = operations;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&p->owned,&mutation))abort();
+    p->visual_change = change;doc_model_mutation_end(&mutation);return XUI_OK;
 }
 xui_document_change_set doc_prepare_visual_change(xui_document_prepare p)
 { return p ? p->visual_change : NULL; }
@@ -530,7 +553,7 @@ int doc_prepare_visual_text(xui_document d, const xui_doc_txn_desc_t* desc,
             *source_caret = from + used;
             result = doc_prepare_visual_record(*out, NULL, &shadow);
             if (result == XUI_OK) {
-                (*out)->publication = doc_publish_plan_capture(d);
+                doc_prepare_set_publication(*out,doc_publish_plan_capture(d));
                 if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
             }
         }
@@ -679,7 +702,7 @@ int doc_prepare_visual_span(xui_document d, const xui_doc_txn_desc_t* desc,
             (*out)->visual_parent = parent->id;
             result = doc_prepare_visual_record(*out, NULL, &shadow);
             if (result == XUI_OK) {
-                (*out)->publication = doc_publish_plan_capture(d);
+                doc_prepare_set_publication(*out,doc_publish_plan_capture(d));
                 if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
             }
         }
@@ -803,7 +826,7 @@ int doc_prepare_visual_continue(xui_document d, xui_document_prepare previous,
             *next_source_caret = from + used;
             result = doc_prepare_visual_record(*out, previous, &shadow);
             if (result == XUI_OK) {
-                (*out)->publication = doc_publish_plan_capture(d);
+                doc_prepare_set_publication(*out,doc_publish_plan_capture(d));
                 if (!(*out)->publication) result = XUI_ERROR_OUT_OF_MEMORY;
             }
         }
@@ -825,7 +848,8 @@ int doc_prepare_visual_attach(xui_document d, xui_document_prepare previous,
         return XUI_DOC_ERROR_STALE;
     d->next_prepare = p->generation;
     doc_prepare_invalidate(d, NULL, XUI_DOC_ERROR_STALE);
-    d->pending = p; xuiDocumentPrepareRetain(p);
+    xuiDocumentPrepareRetain(p);xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+    d->pending = p;doc_model_mutation_end(&mutation);
     return XUI_OK;
 }
 XUI_API int xuiDocumentPrepareContinueSource(xui_document d, xui_document_prepare previous,
@@ -911,6 +935,7 @@ XUI_API int xuiDocumentPrepareRun(xui_document_prepare p)
 {
     int expected = XUI_DOC_PREPARE_QUEUED, result;
     if (!p) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&p->owned)){result=doc_model_admit(&p->owned);if(result!=XUI_OK)return result;}
     if (p->utf8_bytes && !atomic_load(&p->cancellation)) return XUI_DOC_ERROR_BUSY;
     if (!atomic_compare_exchange_strong(&p->state, &expected, XUI_DOC_PREPARE_RUNNING)) return XUI_ERROR_INVALID_STATE;
     xuiDocumentPrepareRetain(p);
@@ -1006,6 +1031,8 @@ XUI_API int xuiDocumentPreparePublish(xui_document d, xui_document_prepare p, xu
     int expected = XUI_DOC_PREPARE_READY, result;
     if (out) *out = NULL;
     if (!d || !p) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){result=doc_model_admit(&d->owned);if(result!=XUI_OK)return result;}
+    if(doc_model_owned(&p->owned)){result=doc_model_admit(&p->owned);if(result!=XUI_OK)return result;}
     if (d->identity != p->identity) return XUI_DOC_ERROR_STALE;
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     if (!atomic_compare_exchange_strong(&p->state, &expected, XUI_DOC_PREPARE_PUBLISHING)) {
@@ -1022,10 +1049,11 @@ XUI_API int xuiDocumentPreparePublish(xui_document d, xui_document_prepare p, xu
     result = atomic_load(&p->cancellation);
     if (!result && (d->revision != p->transaction.base_revision || d->pending != p || d->next_prepare != p->generation)) result = XUI_DOC_ERROR_STALE;
     if (!result) {
-        t = p->transaction; t.document = d; t.preparation = p;
+        doc_txn_copy_builder(&t,&p->transaction);t.document = d; t.preparation = p;
         /* Publication has claimed the candidate. Late cancellation cannot
          * interrupt callbacks or undo an already-published revision. */
-        t.cancellation = NULL; d->writer = &t;
+        t.cancellation = NULL;xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+        d->writer = &t;doc_model_mutation_end(&mutation);
         result = xuiDocumentTxnCommit(&t, out);
         xuiDocumentTxnAbort(&t);
     }
@@ -1035,5 +1063,35 @@ XUI_API int xuiDocumentPreparePublish(xui_document d, xui_document_prepare p, xu
     atomic_store(&p->state, result == XUI_OK ? XUI_DOC_PREPARE_COMMITTED : XUI_DOC_PREPARE_FAILED);
     xuiDocumentPrepareRelease(p); xuiDocumentRelease(d); return result;
 }
+
+static bool doc_owned_prepare_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_doc_prepare_t* prepare=raw;
+    if(prepare->visual_change){xrtownershipref ref=xuiDocumentChangeSetOwnership(prepare->visual_change);if(!ref.Data || !visit(ref,user))return false;}
+    return doc_publish_plan_trace(prepare->publication,visit,user);
+}
+static int doc_owned_prepare_ready(const void* raw)
+{
+    const struct xui_doc_prepare_t* prepare=raw;int state=atomic_load_explicit(&prepare->state,memory_order_acquire);
+    return state==XUI_DOC_PREPARE_RUNNING || state==XUI_DOC_PREPARE_PUBLISHING ? XUI_ERROR_BUSY:XUI_OK;
+}
+static int doc_owned_prepare_finalize(void* raw,bool* complete)
+{xuiDocumentPrepareCancel(raw);*complete=true;return XUI_OK;}
+static int doc_owned_prepare_finish(void* raw)
+{
+    xui_document_prepare prepare=raw;doc_model_outcome result={0};doc_model_outcome_begin(&result,XUI_OK);
+    doc_publish_plan_release(prepare->publication);prepare->publication=NULL;doc_model_outcome_add(&result,XUI_OK);
+    doc_state_release(prepare->transaction.base);doc_state_release(prepare->transaction.draft);
+    prepare->transaction.base=prepare->transaction.draft=NULL;
+    doc_state_release(prepare->visual_expected);prepare->visual_expected=NULL;
+    doc_free(prepare->transaction.ops);prepare->transaction.ops=NULL;
+    doc_seq_release(prepare->source);doc_seq_release(prepare->operations);doc_seq_release(prepare->input_lineage);
+    prepare->source=prepare->operations=prepare->input_lineage=NULL;
+    doc_seq_release(prepare->visual_edits);doc_seq_release(prepare->visual_text);doc_seq_release(prepare->visual_operations);
+    prepare->visual_edits=prepare->visual_text=prepare->visual_operations=NULL;
+    if(prepare->visual_change){xui_document_change_set change=prepare->visual_change;prepare->visual_change=NULL;doc_model_outcome_add(&result,xuiDocumentChangeSetReleaseChecked(change));}
+    return doc_model_outcome_end(&result);
+}
+const doc_model_type doc_model_prepare_type={DOC_MODEL_ALLOCATED|DOC_MODEL_ALLOCATOR_OWNER,doc_owned_prepare_trace,doc_owned_prepare_ready,doc_owned_prepare_finalize,doc_owned_prepare_finish};
 
 #endif

@@ -498,17 +498,17 @@ static void __xuiMessageDocumentChangedImpl(xui_document pDocument, xui_document
 		xuiInternalAccessibilityQueue(pBinding->pList, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 }
 
-static void __xuiMessageDocumentChanged(xui_document document,xui_document_change_set changes,void* raw)
+static int __xuiMessageDocumentChanged(xui_document document,xui_document_change_set changes,void* raw)
 {
     xui_message_document_binding_t* binding=raw;
-    if(!binding || !binding->pList)return;
+    if(!binding || !binding->pList)return XUI_OK;
     xui_message_list_data_t* data=__xuiMessageListGetData(binding->pList);
-    if(!data)return;
-    xui_call_scope_t scope={0};if(xuiCallScopeBegin(binding->pList->pContext,&scope)!=XUI_OK)return;
+    if(!data)return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(binding->pList->pContext,&scope);if(result!=XUI_OK)return result;
     int previous=data->iCacheActivity;bool defer=previous!=0 || binding->bRetiring;
     if(!previous)data->iCacheActivity=2;
     __xuiMessageDocumentChangedImpl(document,changes,raw,defer);
-    data->iCacheActivity=previous;(void)xuiCallScopeEnd(&scope);
+    data->iCacheActivity=previous;return xuiCallScopeEnd(&scope);
 }
 
 static void __xuiMessageDocumentRendererDesc(xui_message_document_binding_t* pBinding,
@@ -845,8 +845,8 @@ static int __xuiMessageFreeDocumentBinding(xui_message_document_binding_t** slot
     if(!xrtOwnershipScopeEnd(&mutation)){abort();}
     xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&activate,receipt.status,receipt.error));
     xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&task,receipt.status,receipt.error));
-    if(binding->iSubscription)xuiDocumentUnsubscribe(binding->pDocument,binding->iSubscription);
-    __xuiMessageAccessibleFreeDocumentNodes(binding);xuiDocumentRelease(binding->pDocument);xuiInternalCleanupAdd(&receipt,XUI_OK);
+    if(binding->iSubscription)doc_unsubscribe_native(binding->pDocument,binding->iSubscription);
+    __xuiMessageAccessibleFreeDocumentNodes(binding);xuiInternalCleanupAdd(&receipt,doc_document_release(binding->pDocument));
     if(!xrtOwnershipMutationBegin(&mutation)){abort();}
     --binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
     free(binding);*slot=NULL;return xuiInternalCleanupEnd(context,&receipt);
@@ -4365,6 +4365,7 @@ static bool __xuiMessageTraceOwnership(xui_widget widget,const void* raw,xrtowne
         if(node->pTitleLayout && !xuiTextLayoutTraceOwnership(node->pTitleLayout,visit,user))return false;
         xui_message_document_binding_t* bindings[]={node->pWorkBinding,node->pDocumentBinding};
         for(unsigned k=0;k<2;++k)if(bindings[k]) {
+            if(bindings[k]->pDocument){xrtownershipref ref=xuiDocumentOwnership(bindings[k]->pDocument);if(!ref.Data || !visit(ref,user))return false;}
             if(bindings[k]->tActivateOwner.tReference.Data && !visit(bindings[k]->tActivateOwner.tReference,user))return false;
             if(bindings[k]->tTaskOwner.tReference.Data && !visit(bindings[k]->tTaskOwner.tReference,user))return false;
             if(bindings[k]->pRenderer && !xuiDocumentRendererTraceOwnership(bindings[k]->pRenderer,visit,user))return false;
@@ -4676,9 +4677,9 @@ static int xuiMessageListSetNodeDocumentImpl(xui_widget pWidget, const char* sId
         node->pWorkBinding=pBinding;
 		pBinding->pList = pWidget;
 		pBinding->iIndex = iIndex;
+		iRet=doc_document_hold(pDesc->pDocument);if(iRet!=XUI_OK)return iRet;
 		pBinding->pDocument = pDesc->pDocument;
 		pBinding->tDesc = *pDesc;
-		xuiDocumentRetain(pBinding->pDocument);
 		__xuiMessageDocumentRendererDesc(pBinding, pData, &tRendererDesc);
 		pBinding->pResolvedFont = tRendererDesc.tFonts.normal;
 		pBinding->iResolvedTextColor = tRendererDesc.iTextColor;
@@ -4686,7 +4687,7 @@ static int xuiMessageListSetNodeDocumentImpl(xui_widget pWidget, const char* sId
 		if ( iRet == XUI_OK ) iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
 		if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pBinding->pRenderer, pSnapshot, NULL);
 		if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
-		if ( iRet == XUI_OK ) iRet = xuiDocumentSubscribe(pBinding->pDocument,
+        if ( iRet == XUI_OK ) iRet = doc_subscribe_native(pBinding->pDocument,
 			__xuiMessageDocumentChanged, pBinding, &pBinding->iSubscription);
         if(iRet!=XUI_OK)return iRet;
 	}

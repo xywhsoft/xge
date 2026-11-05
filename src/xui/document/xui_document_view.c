@@ -218,7 +218,7 @@ int doc_view_refresh_resources(doc_view_data* v)
     return generation != v->renderer->resource_registry_generation ?
         xuiDocumentViewInvalidateObjects(v->widget) : XUI_OK;
 }
-static void doc_view_changed(xui_document document, xui_document_change_set changes, void* user)
+static void doc_view_changed_impl(xui_document document, xui_document_change_set changes, void* user)
 {
     doc_view_data* v = user; xui_document_snapshot snapshot = NULL; xui_doc_position_t p; int mapping;
     xui_doc_position_t visible = {0}, mapped_visible = {0};
@@ -303,30 +303,61 @@ static void doc_view_changed(xui_document document, xui_document_change_set chan
     xuiInternalAccessibilityQueue(v->widget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
     xuiWidgetInvalidate(v->widget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
-XUI_API int xuiDocumentViewSetDocument(xui_widget widget, xui_document document)
+static int doc_view_changed(xui_document document,xui_document_change_set changes,void* user)
+{
+    doc_view_data* view=user;if(!view || !view->widget)return XUI_OK;
+    if(!xuiInternalWidgetIsValid(view->widget) || view->widget->pContext->bCloseRequested)return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(view->widget->pContext,&scope);if(result!=XUI_OK)return result;
+    doc_view_changed_impl(document,changes,user);
+    /* Renderer/backend callbacks may have requested the parent Context close.
+     * Do not touch view after this physical native tail. */
+    return xuiCallScopeEnd(&scope);
+}
+static int doc_view_drop_document_candidate(xui_context context,xui_document document,int primary)
+{
+    xerror* first=xrtTakeError();xui_cleanup_prefix_t prefix={0};
+    (void)xuiInternalCleanupPrefixBegin(context,&prefix,primary,first);
+    int cleanup=doc_document_release(document);xerror* error=xrtTakeError();
+    if(cleanup!=XUI_OK || error)xuiInternalContextRecordOutcome(context,cleanup!=XUI_OK ? cleanup:XUI_ERROR_CALLBACK_FAILED,first);
+    xrtErrorFree(error);if(prefix.self)(void)xuiInternalCleanupPrefixEnd(&prefix);
+    xrtSetErrorTake(first);return primary;
+}
+static int doc_view_set_document(xui_widget widget, xui_document document)
 {
     doc_view_data* v = doc_view_get(widget); xui_document_snapshot snapshot = NULL; uint64_t subscription; int result;
     if (!v || !document) return XUI_ERROR_INVALID_ARGUMENT;
     if (v->document == document) return XUI_OK;
     if (v->onBeforeTransition && (result = v->onBeforeTransition(widget)) != XUI_OK) return result;
     if (!xuiInternalWidgetIsValid(widget)) return XUI_ERROR_INVALID_STATE;
+    result=doc_document_hold(document);if(result!=XUI_OK)return result;
     result = xuiDocumentAcquireSnapshot(document, &snapshot);
-    if (result != XUI_OK) return result;
-    result = xuiDocumentSubscribe(document, doc_view_changed, v, &subscription);
+    if (result != XUI_OK) return doc_view_drop_document_candidate(widget->pContext,document,result);
+    result = doc_subscribe_native(document, doc_view_changed, v, &subscription);
     if (result == XUI_OK) {
         doc_view_cancel_pointer(v, !v->replaying_input);
         if (!doc_view_data_alive(widget, v)) result = XUI_ERROR_INVALID_STATE;
         else result = xuiDocumentRendererSetSnapshot(v->renderer, snapshot, NULL);
-        if (result != XUI_OK) xuiDocumentUnsubscribe(document, subscription);
+        if (result != XUI_OK) doc_unsubscribe_native(document, subscription);
     }
     xuiDocumentSnapshotRelease(snapshot);
-    if (result != XUI_OK) return result;
-    xuiDocumentRetain(document);
+    if (result != XUI_OK) return doc_view_drop_document_candidate(widget->pContext,document,result);
     doc_view_text_ranges_clear(v);
     doc_view_find_clear(v);
     doc_view_accessible_clear(v);
-    if (v->document) { xuiDocumentUnsubscribe(v->document, v->subscription); xuiDocumentRelease(v->document); }
+    if(!doc_view_data_alive(widget,v)){
+        doc_unsubscribe_native(document,subscription);
+        return doc_view_drop_document_candidate(widget->pContext,document,XUI_ERROR_INVALID_STATE);
+    }
+    xui_document old=v->document;uint64_t oldSubscription=v->subscription;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
     v->document = document; v->subscription = subscription; v->scroll_x = v->scroll_y = 0; v->needs_sync = 0;
+    doc_model_mutation_end(&mutation);
+    if(old){
+        doc_unsubscribe_native(old,oldSubscription);
+        result=doc_document_release(old);
+        if(result!=XUI_OK)xuiInternalContextRecordFailure(widget->pContext,result);
+        if(result!=XUI_OK || !doc_view_data_alive(widget,v) || v->document!=document)return result;
+    }
     /* A different Document can reuse semantic ids. Disconnect its old OS
      * providers before publishing any new selection or callback. */
     xuiInternalNativeAccessibilityResetWidget(widget);
@@ -335,6 +366,13 @@ XUI_API int xuiDocumentViewSetDocument(xui_widget widget, xui_document document)
     if (v->onChanged) v->onChanged(document, NULL, v);
     xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
     return xuiWidgetInvalidate(widget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+XUI_API int xuiDocumentViewSetDocument(xui_widget widget,xui_document document)
+{
+    doc_view_data* view=doc_view_get(widget);if(!view || !document)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(widget->pContext,&scope);if(result!=XUI_OK)return result;
+    result=doc_view_set_document(widget,document);xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
 XUI_API xui_document xuiDocumentViewGetDocument(xui_widget widget)
 {
@@ -1398,7 +1436,11 @@ void doc_view_destroy(xui_widget widget, void* data, void* user)
 {
     doc_view_data* v = data; (void)widget; (void)user;
     doc_view_text_ranges_clear(v);
-    if (v->document) { xuiDocumentUnsubscribe(v->document, v->subscription); xuiDocumentRelease(v->document); }
+    if (v->document) {
+        xui_document document=v->document;v->document=NULL;
+        doc_unsubscribe_native(document,v->subscription);
+        xuiInternalContextRecordFailure(widget->pContext,doc_document_release(document));
+    }
     doc_view_accessible_clear(v);
     doc_view_invalidate_edit(v);
     doc_view_find_clear(v);
@@ -1419,6 +1461,8 @@ static int doc_view_destroy_ready(xui_widget widget,const void* raw)
 static bool doc_view_trace_ownership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
 {
     (void)widget;const doc_view_data* view=raw;
+    if(view->document){xrtownershipref ref=xuiDocumentOwnership(view->document);if(!ref.Data || !visit(ref,user))return false;}
+    if(view->edit_snapshot){xrtownershipref ref=xuiDocumentSnapshotOwnership(view->edit_snapshot);if(!ref.Data || !visit(ref,user))return false;}
     return !view->renderer || xuiDocumentRendererTraceOwnership(view->renderer,visit,user);
 }
 int doc_view_activate(doc_view_data* view,xui_document_snapshot retained,xui_doc_node_id id)

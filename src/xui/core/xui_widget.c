@@ -22,21 +22,16 @@ static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
 static int __xuiWidgetDestroyPrepareClosure(xui_widget,bool*);
 static int __xuiWidgetDestroyReadySelf(xui_widget);
 static int __xuiWidgetDestroyPrepareSelf(xui_widget,bool*);
+static int __xuiWidgetDestroyInMode(xui_widget,xui_internal_destroy_mode_t);
 
 int xuiInternalCallbackOwnerValid(const xui_callback_owner_t* pOwner)
 {
-	return pOwner == NULL ||
-		((pOwner->tReference.Data == NULL && pOwner->tReference.Ops == NULL &&
-		  pOwner->onHold == NULL && pOwner->onDrop == NULL) ||
-		 (pOwner->tReference.Data != NULL && pOwner->tReference.Ops != NULL &&
-		  pOwner->onHold != NULL && pOwner->onDrop != NULL));
+	return xuiInternalCallbackOwnerRawValid(pOwner);
 }
 
 int xuiInternalCallbackOwnerHold(const xui_callback_owner_t* pOwner)
 {
-	if ( !xuiInternalCallbackOwnerValid(pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return pOwner == NULL || pOwner->onHold == NULL || pOwner->onHold(pOwner->tReference.Data)
-		? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
+	return xuiInternalCallbackOwnerRawHold(pOwner);
 }
 
 int xuiInternalCallbackOwnerDropOutcome(xui_context context,const xui_callback_owner_t* owner,int primaryStatus,const xerror* primaryError)
@@ -3916,7 +3911,8 @@ static int __xuiDragAdornerEnsure(xui_context pContext)
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiOverlayAttach(pContext, NULL, pWidget, XUI_LAYER_DRAG, 100);
 	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(pWidget);
+		int cleanup=__xuiWidgetDestroyInMode(pWidget,xuiInternalDestroyModeInherited(pContext));
+        if(cleanup!=XUI_OK && !xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",cleanup,"internal widget is owned by its composite");
 		return iRet;
 	}
 	pContext->pDragAdornerWidget = pWidget;
@@ -4214,7 +4210,7 @@ int xuiInternalWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority)
 	if ( bDestroying ) xuiInternalWidgetDestroyFlush(pContext);
     return XUI_OK;
 }
-XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
+static int __xuiWidgetDestroy(xui_widget widget)
 {
     if(!__xuiWidgetValid(widget))return XUI_OK;
     if(widget->pInternalOwner)return XUI_ERROR_INVALID_STATE;
@@ -4226,9 +4222,18 @@ XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
     result=xuiInternalCallScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
 }
+static int __xuiWidgetDestroyInMode(xui_widget widget,xui_internal_destroy_mode_t mode)
+{
+    if(!__xuiWidgetValid(widget))return XUI_OK;
+    xui_internal_destroy_scope_t scope={0};xuiInternalDestroyScopeBegin(widget->pContext,mode,&scope);
+    int result=__xuiWidgetDestroy(widget);
+    xuiInternalDestroyScopeEnd(&scope);return result;
+}
+XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
+{return __xuiWidgetDestroyInMode(widget,XUI_DESTROY_NONBLOCKING);}
 XUI_API void xuiWidgetDestroy(xui_widget widget)
 {
-    int result=xuiWidgetDestroyChecked(widget);
+    int result=__xuiWidgetDestroyInMode(widget,XUI_DESTROY_SYNC_WORKER);
     if(result!=XUI_OK && !xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",result,"internal widget is owned by its composite");
 }
 int xuiInternalWidgetClaimPart(xui_widget owner,xui_widget part)
@@ -6012,9 +6017,15 @@ static int __xuiWidgetDestroyPrepareSelf(xui_widget widget,bool* complete)
     for(xui_widget_type type=widget->pInitializedType;type;type=type->pParent){
         /* Pure readiness refuses only this layer's cache. Another layer may
          * own the topmost session which makes the first one ready next pass. */
-        if(type->onDestroyReady && type->onDestroyReady(widget,widget->pTypeData)!=XUI_OK){all=false;continue;}
-        if(!type->onDestroyPrepare)continue;
+        if(!type->onDestroyReady && !type->onDestroyPrepare)continue;
+        xui_internal_destroy_scope_t mode={0};
+        xuiInternalDestroyScopeBegin(widget->pContext,xuiInternalDestroyModeInherited(widget->pContext),&mode);
+        if(type->onDestroyReady && type->onDestroyReady(widget,widget->pTypeData)!=XUI_OK){
+            xuiInternalDestroyScopeEnd(&mode);all=false;continue;
+        }
+        if(!type->onDestroyPrepare){xuiInternalDestroyScopeEnd(&mode);continue;}
         bool done=false;int next=type->onDestroyPrepare(widget,widget->pTypeData,&done);
+        xuiInternalDestroyScopeEnd(&mode);
         xerror* error=xrtTakeError();
         if(next<0 || error){
             if(next>=0)next=XUI_ERROR_CALLBACK_FAILED;

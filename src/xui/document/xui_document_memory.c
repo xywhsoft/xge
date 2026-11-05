@@ -146,7 +146,7 @@ int doc_snapshot_create(doc_state* state, uint64_t identity, uint64_t revision, 
     doc_allocator* a = state->allocator; xui_document_snapshot s = doc_alloc(a, sizeof(*s));
     *out = NULL;
     if (!s) return XUI_ERROR_OUT_OF_MEMORY;
-    atomic_init(&s->refs, 1); s->state = state; doc_state_retain(state); s->identity = identity; s->revision = revision;
+    atomic_init(&s->refs, 1);doc_model_init(&s->owned,&doc_model_snapshot_type,a); s->state = state; doc_state_retain(state); s->identity = identity; s->revision = revision;
     doc_memory_lock(a); s->memory_next = a->snapshots;
     if (a->snapshots) a->snapshots->memory_previous = s;
     a->snapshots = s; a->snapshot_count++; a->snapshot_handle_bytes += doc_memory_bytes(s); doc_memory_unlock(a);

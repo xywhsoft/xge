@@ -257,6 +257,12 @@ int doc_render_destroy_ready(xui_document_renderer renderer)
 XUI_API bool xuiDocumentRendererTraceOwnership(xui_document_renderer r,xrtownershipvisitor visit,void* user)
 {
     if(!r || r->lifecycle!=r || !visit || r->destroying || r->calls)return false;
+    if(r->creator_thread!=xrtThreadCurrentId())return false;
+    /* Raw descriptor callbacks remain C interoperability, never hidden
+     * language-owning leaves. Safe declarations use the three Owned setters. */
+    if(r->desc.onFont || r->desc.onObjectMeasure || r->desc.onObjectDraw)return false;
+    if(r->snapshot){xrtownershipref ref=xuiDocumentSnapshotOwnership(r->snapshot);if(!ref.Data || !visit(ref,user))return false;}
+    if(r->input){xrtownershipref ref=xuiDocumentPrepareOwnership(r->input);if(!ref.Data || !visit(ref,user))return false;}
     if(!doc_render_work_trace(r,visit,user))return false;
     if(r->owned_proxy && !visit(xuiProxyOwnership(r->owned_proxy),user))return false;
     for(unsigned i=0;i<3;++i)if(r->callback_owners[i].tReference.Ops &&

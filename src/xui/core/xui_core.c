@@ -223,6 +223,7 @@ static int __xuiContextValid(xui_context pContext)
 }
 
 static void __xuiContextDestroyNow(xui_context pContext);
+static int __xuiContextDestroyOwnerInMode(xui_context,bool*,xui_internal_destroy_mode_t);
 
 static int __xuiResourceValid(xui_resource pResource)
 {
@@ -1057,7 +1058,8 @@ void xuiInternalOperationLeave(xui_context pContext)
             /* Void native close relinquished its unique owner. The Context
              * itself keeps that exact responsibility until true preparation
              * finishes; no raw handle or code observation is discarded. */
-            bool consumed=false;(void)xuiDestroyOwnerChecked(pContext,&consumed);
+            bool consumed=false;(void)__xuiContextDestroyOwnerInMode(pContext,&consumed,
+                xuiInternalDestroyModeInherited(pContext));
             return; /* It may have freed the Context; never inspect it again. */
         }
 		if ( pContext->pStateChangeHead != NULL && !pContext->bCloseRequested ) {
@@ -1077,6 +1079,39 @@ void xuiInternalOperationLeave(xui_context pContext)
         }
 		break;
 	}
+}
+
+xui_internal_destroy_mode_t xuiInternalDestroyModeInherited(xui_context context)
+{
+    if(!__xuiContextValid(context) ||
+       (context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy)))return XUI_DESTROY_NONBLOCKING;
+    return context->pDestroyScopes ? context->pDestroyScopes->iMode:context->iPendingDestroyMode;
+}
+void xuiInternalDestroyScopeBegin(xui_context context,xui_internal_destroy_mode_t mode,
+    xui_internal_destroy_scope_t* scope)
+{
+    memset(scope,0,sizeof(*scope));
+    if(!__xuiContextValid(context) ||
+       (context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy)))return;
+    scope->pContext=context;scope->pPrevious=context->pDestroyScopes;scope->iMode=mode;
+    context->pDestroyScopes=scope;
+}
+void xuiInternalDestroyScopeEnd(xui_internal_destroy_scope_t* scope)
+{
+    xui_context context=scope->pContext;
+    if(context){
+        if(context->pDestroyScopes!=scope)abort();
+        context->pDestroyScopes=scope->pPrevious;
+    }
+    memset(scope,0,sizeof(*scope));
+}
+bool xuiInternalDestroyWaitAllowed(xui_context context)
+{
+    /* A pending void owner alone must not relax an unrelated pure Busy query.
+     * Only a real destroy-call frame can authorize a synchronous worker wait. */
+    return __xuiContextValid(context) &&
+        (!context->pOwnedProxy || xuiInternalProxyCreator(context->pOwnedProxy)) && context->pDestroyScopes &&
+        context->pDestroyScopes->iMode==XUI_DESTROY_SYNC_WORKER;
 }
 
 int xuiInternalContextDestroyPending(xui_context pContext)
@@ -1925,11 +1960,11 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	xuiInternalDragTransferShutdown(pContext);
     xuiInternalContextDestroyManagers(pContext);
 	if ( pContext->pRoot != NULL ) {
-		xuiWidgetDestroy(pContext->pRoot);
+		(void)xuiInternalWidgetRequestDestroy(pContext->pRoot,NULL);
 		pContext->pRoot = NULL;
 	}
 	if ( pContext->pOverlayRoot != NULL ) {
-		xuiWidgetDestroy(pContext->pOverlayRoot);
+		(void)xuiInternalWidgetRequestDestroy(pContext->pOverlayRoot,NULL);
 		pContext->pOverlayRoot = NULL;
 	}
 	xuiInternalWidgetDestroyFlush(pContext);
@@ -1960,11 +1995,16 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	pContext->iMagic = 0;
 	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
 		pScope->pContext = NULL;
+    while(pContext->pDestroyScopes){
+        xui_internal_destroy_scope_t* scope=pContext->pDestroyScopes;
+        pContext->pDestroyScopes=scope->pPrevious;
+        scope->pContext=NULL;scope->pPrevious=NULL;
+    }
 	xrtFree(pContext);
     if(receipt.iResult!=XUI_OK)xrtSetErrorTake(receipt._pFirstError);
 }
 
-XUI_API int xuiDestroyOwnerChecked(xui_context context,bool* consumed)
+static int __xuiContextDestroyOwner(xui_context context,bool* consumed)
 {
     if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
     *consumed=false;
@@ -1996,9 +2036,17 @@ XUI_API int xuiDestroyOwnerChecked(xui_context context,bool* consumed)
     xrtSetErrorTake(first);
     return ended==XUI_OK && !complete ? XUI_STATUS_DEFERRED:ended;
 }
+static int __xuiContextDestroyOwnerInMode(xui_context context,bool* consumed,xui_internal_destroy_mode_t mode)
+{
+    xui_internal_destroy_scope_t scope={0};xuiInternalDestroyScopeBegin(context,mode,&scope);
+    int result=__xuiContextDestroyOwner(context,consumed);
+    xuiInternalDestroyScopeEnd(&scope);return result;
+}
+XUI_API int xuiDestroyOwnerChecked(xui_context context,bool* consumed)
+{return __xuiContextDestroyOwnerInMode(context,consumed,XUI_DESTROY_NONBLOCKING);}
 XUI_API int xuiDestroyChecked(xui_context pContext)
-{bool consumed=false;return xuiDestroyOwnerChecked(pContext,&consumed);}
-XUI_API void xuiDestroy(xui_context context)
+{bool consumed=false;return __xuiContextDestroyOwnerInMode(pContext,&consumed,XUI_DESTROY_NONBLOCKING);}
+static void __xuiContextDestroyVoid(xui_context context)
 {
     if(!__xuiContextValid(context) || context->bDestroying || context->bDestroyPending || context->iDestroyOwnership==2)return;
     int status=xuiRequestClose(context);
@@ -2007,9 +2055,16 @@ XUI_API void xuiDestroy(xui_context context)
         return;
     }
     context->iDestroyOwnership=1;
+    context->iPendingDestroyMode=XUI_DESTROY_SYNC_WORKER;
     if(!context->iOperationDepth && !context->iWidgetCallbackDepth && !context->iDestroyFlushDepth){
-        bool consumed=false;(void)xuiDestroyOwnerChecked(context,&consumed);
+        bool consumed=false;(void)__xuiContextDestroyOwner(context,&consumed);
     }
+}
+XUI_API void xuiDestroy(xui_context context)
+{
+    xui_internal_destroy_scope_t scope={0};xuiInternalDestroyScopeBegin(context,XUI_DESTROY_SYNC_WORKER,&scope);
+    __xuiContextDestroyVoid(context);
+    xuiInternalDestroyScopeEnd(&scope);
 }
 
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))

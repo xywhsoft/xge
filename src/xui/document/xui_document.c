@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_DOCUMENT
 #include "xui_document_internal.h"
+#include "xui_callback_hold_internal.h"
 #include <assert.h>
 
 static atomic_uint_fast64_t doc_identity = 1;
@@ -45,6 +46,7 @@ static void doc_history_trim(xui_document d)
 XUI_API int xuiDocumentSetHistoryLimits(xui_document d, uint32_t max_steps, uint64_t max_bytes)
 {
     if (!d) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     d->history_limit = max_steps ? max_steps : 256;
     d->history_max_bytes = max_bytes ? max_bytes : DOC_DEFAULT_HISTORY_BYTES;
@@ -57,6 +59,7 @@ XUI_API int xuiDocumentSetHistoryLimits(xui_document d, uint32_t max_steps, uint
 XUI_API int xuiDocumentClearHistory(xui_document d)
 {
     if (!d) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     if (!d->disable_history && !d->standby_history) {
         doc_memory_standby(d->state, 1); d->standby_history = 1;
@@ -65,7 +68,7 @@ XUI_API int xuiDocumentClearHistory(xui_document d)
     return XUI_OK;
 }
 
-XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc, xui_document* out)
+static int doc_document_create(const xui_doc_desc_t* desc, xui_document* out,bool owned)
 {
     xui_document d;
     doc_allocator* a;
@@ -75,10 +78,12 @@ XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc, xui_document* out)
     if ((desc && desc->iSize != sizeof(*desc)) ||
         (profile != XUI_DOCUMENT_RICH && profile != XUI_DOCUMENT_MARKDOWN) ||
         (desc && desc->iMarkdownDialect > XUI_MD_EXTENDED) ||
-        (desc && (!!desc->onAlloc != !!desc->onFree))) return XUI_ERROR_INVALID_ARGUMENT;
+        (desc && (!!desc->onAlloc != !!desc->onFree)) ||
+        (owned && desc && (desc->onAlloc || desc->onFree || desc->pAllocatorUser))) return XUI_ERROR_INVALID_ARGUMENT;
     a = calloc(1, sizeof(*a));
     if (!a) return XUI_ERROR_OUT_OF_MEMORY;
-    atomic_init(&a->refs, 1); atomic_init(&a->live, 0); atomic_init(&a->peak, 0);
+    atomic_init(&a->refs, 1);a->managed=owned;a->creator=owned ? xrtThreadCurrentId():0;
+    atomic_init(&a->live, 0); atomic_init(&a->peak, 0);
     atomic_init(&a->allocations, 0); atomic_init(&a->sequence, 1);
     atomic_init(&a->markdown_parses, 0); atomic_init(&a->markdown_parsed_bytes, 0);
     atomic_init(&a->markdown_incremental_parses, 0);
@@ -91,7 +96,7 @@ XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc, xui_document* out)
     a->user = desc ? desc->pAllocatorUser : NULL;
     d = doc_alloc(a, sizeof(*d));
     if (!d) { doc_allocator_release(a); return XUI_ERROR_OUT_OF_MEMORY; }
-    atomic_init(&d->refs, 1); d->allocator = a;
+    atomic_init(&d->refs, 1); d->allocator = a;doc_model_init(&d->owned,&doc_model_document_type,a);
     d->identity = atomic_fetch_add(&doc_identity, 1);
     d->revision = d->next_state = d->saved_state = 1;
     d->history_limit = desc && desc->iHistoryLimit ? desc->iHistoryLimit : 256;
@@ -108,12 +113,26 @@ XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc, xui_document* out)
     if (!d->disable_history) { doc_memory_standby(d->state, 1); d->standby_history = 1; }
     *out = d; return XUI_OK;
 }
-XUI_API void xuiDocumentRetain(xui_document d) { if (d) atomic_fetch_add(&d->refs, 1); }
+XUI_API int xuiDocumentCreate(const xui_doc_desc_t* desc,xui_document* out)
+{return doc_document_create(desc,out,false);}
+XUI_API int xuiDocumentCreateOwned(const xui_doc_desc_t* desc,xui_document* out)
+{return doc_document_create(desc,out,true);}
+XUI_API bool xuiDocumentIsOwned(xui_document d){return d && doc_model_typed(&d->owned,&doc_model_document_type);}
+XUI_API int xuiDocumentAddRef(xui_document d){return xuiDocumentIsOwned(d) ? doc_model_add_ref(&d->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentShareOwned,xui_document,doc_model_document_type)
+XUI_API int xuiDocumentReleaseOwnerChecked(xui_document d,bool* consumed)
+{if(!xuiDocumentIsOwned(d)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&d->owned,consumed);}
+XUI_API int xuiDocumentReleaseChecked(xui_document d){bool consumed=false;return xuiDocumentReleaseOwnerChecked(d,&consumed);}
+XUI_API xrtownershipref xuiDocumentOwnership(xui_document d){return xuiDocumentIsOwned(d) ? doc_model_reference(&d->owned):(xrtownershipref){0};}
+XUI_API void xuiDocumentRetain(xui_document d)
+{if(d){if(doc_model_owned(&d->owned)){if(doc_model_add_ref(&d->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&d->refs,1);}}
 XUI_API void xuiDocumentRelease(xui_document d)
 {
     doc_allocator* a;
     doc_observer* o;
-    if (!d || atomic_fetch_sub(&d->refs, 1) != 1) return;
+    if(!d)return;
+    if(doc_model_owned(&d->owned)){(void)xuiDocumentReleaseChecked(d);return;}
+    if (atomic_fetch_sub(&d->refs, 1) != 1) return;
     a = d->allocator;
     doc_prepare_invalidate(d, NULL, XUI_DOC_ERROR_CANCELLED);
     if (d->standby_history) doc_memory_standby(d->state, 0);
@@ -132,13 +151,23 @@ XUI_API int xuiDocumentAcquireSnapshot(xui_document d, xui_document_snapshot* ou
     if (!out) return XUI_ERROR_INVALID_ARGUMENT;
     *out = NULL;
     if (!d) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     return doc_snapshot_create(d->state, d->identity, d->revision, out);
 }
-XUI_API void xuiDocumentSnapshotRetain(xui_document_snapshot s) { if (s) atomic_fetch_add(&s->refs, 1); }
+XUI_API int xuiDocumentSnapshotAddRef(xui_document_snapshot s){return s && doc_model_typed(&s->owned,&doc_model_snapshot_type) ? doc_model_add_ref(&s->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentSnapshotShareOwned,xui_document_snapshot,doc_model_snapshot_type)
+XUI_API int xuiDocumentSnapshotReleaseOwnerChecked(xui_document_snapshot s,bool* consumed)
+{if(!s || !doc_model_typed(&s->owned,&doc_model_snapshot_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&s->owned,consumed);}
+XUI_API int xuiDocumentSnapshotReleaseChecked(xui_document_snapshot s){bool consumed=false;return xuiDocumentSnapshotReleaseOwnerChecked(s,&consumed);}
+XUI_API xrtownershipref xuiDocumentSnapshotOwnership(xui_document_snapshot s){return s && doc_model_typed(&s->owned,&doc_model_snapshot_type) ? doc_model_reference(&s->owned):(xrtownershipref){0};}
+XUI_API void xuiDocumentSnapshotRetain(xui_document_snapshot s)
+{if(s){if(doc_model_owned(&s->owned)){if(doc_model_add_ref(&s->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&s->refs,1);}}
 XUI_API void xuiDocumentSnapshotRelease(xui_document_snapshot s)
 {
     doc_state* state;
-    if (!s || atomic_fetch_sub(&s->refs, 1) != 1) return;
+    if(!s)return;
+    if(doc_model_owned(&s->owned)){(void)xuiDocumentSnapshotReleaseChecked(s);return;}
+    if(atomic_fetch_sub(&s->refs, 1) != 1) return;
     doc_snapshot_unregister(s);
     state = s->state; doc_free(s); doc_state_release(state);
 }
@@ -208,41 +237,169 @@ XUI_API int xuiDocumentSnapshotReadSource(xui_document_snapshot s, uint64_t offs
     if (!s || s->state->profile != XUI_DOCUMENT_MARKDOWN) return XUI_ERROR_INVALID_ARGUMENT;
     return doc_seq_read(s->state->source, offset, buffer, bytes);
 }
-XUI_API int xuiDocumentSubscribe(xui_document d, xui_doc_change_proc callback, void* user, uint64_t* token)
+static int doc_subscribe_raw(xui_document d,xui_doc_change_proc callback,xui_doc_change_owned_proc checked,void* user,uint64_t* token,bool native)
 {
     doc_observer* o;
-    if (!d || !callback || !token) return XUI_ERROR_INVALID_ARGUMENT;
+    if (!d || (!callback && !checked) || (callback && checked) || !token) return XUI_ERROR_INVALID_ARGUMENT;
     *token = 0;
+    if(doc_model_owned(&d->owned)){
+        if(!native)return XUI_ERROR_INVALID_STATE;
+        int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;
+    }
     if (d->notifying) return XUI_DOC_ERROR_BUSY;
+    if(d->next_observer==UINT64_MAX)return XUI_DOC_ERROR_LIMIT;
     o = doc_alloc(d->allocator, sizeof(*o));
     if (!o) return XUI_ERROR_OUT_OF_MEMORY;
-    o->token = ++d->next_observer; o->callback = callback; o->user = user;
+    if(native){o->callback.checked=checked;o->flags=DOC_OBSERVER_NATIVE;}else o->callback.raw=callback;
+    o->user = user;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation)){doc_free(o);return XUI_ERROR_INVALID_STATE;}
+    o->token = ++d->next_observer;
     o->next = d->observers; d->observers = o; *token = o->token;
+    doc_model_mutation_end(&mutation);
     return XUI_OK;
 }
-static void doc_observers_collect(xui_document d)
+XUI_API int xuiDocumentSubscribe(xui_document d,xui_doc_change_proc callback,void* user,uint64_t* token)
+{return doc_subscribe_raw(d,callback,NULL,user,token,false);}
+int doc_subscribe_native(xui_document d,xui_doc_change_owned_proc callback,void* user,uint64_t* token)
+{return doc_subscribe_raw(d,NULL,callback,user,token,true);}
+void doc_unsubscribe_native(xui_document document,uint64_t token)
 {
-    doc_observer** it = &d->observers;
-    while (*it) {
-        if ((*it)->removed) { doc_observer* dead = *it; *it = dead->next; doc_free(dead); }
-        else it = &(*it)->next;
+    if(!document || !token)return;
+    /* This is only cancellation of a tagged, non-owning Native backlink. It
+     * remains legal after Claim: no new owner is acquired and no language
+     * callback is installed or dropped. Keep an in-flight observer node until
+     * notify's stable traversal ends. Never collect unrelated owner records. */
+    doc_observer* retired=NULL;xrtownershipscope mutation={0};
+    if(!doc_model_mutation_begin(&document->owned,&mutation))abort();
+    for(doc_observer** slot=&document->observers;*slot;slot=&(*slot)->next){
+        doc_observer* observer=*slot;
+        if(observer->token!=token || !(observer->flags&DOC_OBSERVER_NATIVE))continue;
+        observer->flags|=DOC_OBSERVER_REMOVED;
+        if(!document->notifying){*slot=observer->next;retired=observer;}
+        break;
     }
+    doc_model_mutation_end(&mutation);doc_free(retired);
 }
-XUI_API void xuiDocumentUnsubscribe(xui_document d, uint64_t token)
+XUI_API int xuiDocumentSubscribeOwned(xui_document d,xui_doc_change_owned_proc callback,void* user,const xui_callback_owner_t* incoming,uint64_t* token)
 {
-    doc_observer* o;
-    if (!d) return;
-    for (o = d->observers; o; o = o->next) if (o->token == token) o->removed = 1;
-    if (!d->notifying) doc_observers_collect(d);
+    if(token)*token=0;
+    if(!d || !callback || !token || !incoming || !incoming->onHold || !xuiInternalCallbackOwnerRawValid(incoming) || !doc_model_owned(&d->owned))return XUI_ERROR_INVALID_ARGUMENT;
+    if(d->notifying)return XUI_DOC_ERROR_BUSY;
+    doc_model_call call={0};int status=doc_model_call_begin(&d->owned,&call);if(status!=XUI_OK)return status;
+    doc_owned_observer* record=doc_alloc(d->allocator,sizeof(*record));
+    if(!record)return doc_model_call_end(&call,XUI_ERROR_OUT_OF_MEMORY);
+    doc_observer* observer=&record->base;
+    xui_callback_owner_t candidate=*incoming;bool held=false;
+    status=xuiInternalCallbackHoldFresh(&candidate,&held);
+    if(status==XUI_OK)status=doc_model_admit(&d->owned);
+    if(status==XUI_OK && d->notifying)status=XUI_DOC_ERROR_BUSY;
+    if(status==XUI_OK && d->next_observer==UINT64_MAX)status=XUI_DOC_ERROR_LIMIT;
+    if(status!=XUI_OK){
+        doc_model_outcome result={0};doc_model_outcome_begin(&result,status);
+        if(held)doc_model_outcome_add(&result,doc_model_owner_drop(&candidate));
+        doc_free(observer);status=doc_model_outcome_end(&result);return doc_model_call_end(&call,status);
+    }
+    observer->callback.checked=callback;observer->flags=DOC_OBSERVER_OWNED;observer->user=user;record->owner=candidate;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
+    observer->token=++d->next_observer;observer->next=d->observers;d->observers=observer;*token=observer->token;
+    doc_model_mutation_end(&mutation);return doc_model_call_end(&call,XUI_OK);
 }
-static void doc_notify(xui_document d, xui_document_change_set change)
+static int doc_observers_collect(xui_document d)
 {
-    doc_observer* o;
-    xuiDocumentRetain(d); xuiDocumentChangeSetRetain(change);
-    d->notifying = 1;
-    for (o = d->observers; o; o = o->next) if (!o->removed) o->callback(d, change, o->user);
-    d->notifying = 0; doc_observers_collect(d);
-    xuiDocumentChangeSetRelease(change); xuiDocumentRelease(d);
+    doc_observer* retired=NULL;doc_observer** tail=&retired;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))return XUI_ERROR_INVALID_STATE;
+    doc_observer** it=&d->observers;
+    while(*it){
+        if((*it)->flags&DOC_OBSERVER_REMOVED){doc_observer* dead=*it;*it=dead->next;dead->next=NULL;*tail=dead;tail=&dead->next;}
+        else it=&(*it)->next;
+    }
+    doc_model_mutation_end(&mutation);
+    doc_model_outcome result={0};doc_model_outcome_begin(&result,XUI_OK);
+    while(retired){doc_observer* dead=retired;retired=dead->next;doc_model_outcome_add(&result,doc_model_owner_drop(doc_observer_owner(dead)));doc_free(dead);}
+    return doc_model_outcome_end(&result);
+}
+XUI_API int xuiDocumentUnsubscribeChecked(xui_document d,uint64_t token)
+{
+    if(!d || !token)return XUI_ERROR_INVALID_ARGUMENT;
+    doc_model_call call={0};int status=XUI_OK;
+    if(doc_model_owned(&d->owned)){status=doc_model_call_begin(&d->owned,&call);if(status!=XUI_OK)return status;}
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))return XUI_ERROR_INVALID_STATE;
+    for(doc_observer* observer=d->observers;observer;observer=observer->next)if(observer->token==token)observer->flags|=DOC_OBSERVER_REMOVED;
+    doc_model_mutation_end(&mutation);
+    if(!d->notifying)status=doc_observers_collect(d);
+    return call.self ? doc_model_call_end(&call,status):status;
+}
+XUI_API void xuiDocumentUnsubscribe(xui_document d,uint64_t token)
+{if(d && token)(void)xuiDocumentUnsubscribeChecked(d,token);}
+static void doc_notification_failure(xui_document d,uint64_t revision,int status,const xerror* error)
+{
+    if(status==XUI_OK && !error)return;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+    if(!d->notification_failures){d->notification_status=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;d->notification_error=xrtErrorRef(error);}
+    if(d->notification_failures!=UINT64_MAX)++d->notification_failures;
+    d->notification_revision=revision;doc_model_mutation_end(&mutation);
+}
+XUI_API uint64_t xuiDocumentGetNotificationFailureCount(xui_document d)
+{return d && doc_model_readable(&d->owned) ? d->notification_failures:0;}
+XUI_API uint64_t xuiDocumentGetNotificationFailureRevision(xui_document d)
+{return d && doc_model_readable(&d->owned) ? d->notification_revision:0;}
+XUI_API int xuiDocumentGetNotificationFailureStatus(xui_document d)
+{return d && doc_model_readable(&d->owned) && d->notification_failures ? d->notification_status:XUI_OK;}
+XUI_API int xuiDocumentCheckNotifications(xui_document d,bool clear)
+{
+    if(!d)return XUI_ERROR_INVALID_ARGUMENT;
+    doc_model_call call={0};int status=doc_model_call_begin(&d->owned,&call);if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
+    status=d->notification_failures ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+    xerror* error=d->notification_failures ? xrtErrorRef(d->notification_error):NULL;
+    xerror* retired=NULL;
+    if(clear && d->notification_failures){
+        retired=d->notification_error;d->notification_error=NULL;d->notification_status=XUI_OK;
+        d->notification_failures=d->notification_revision=0;
+    }
+    doc_model_mutation_end(&mutation);xrtErrorFree(retired);xrtSetErrorTake(error);
+    return doc_model_call_end(&call,status);
+}
+static void doc_notify(xui_document d,xui_document_change_set change)
+{
+    xuiDocumentRetain(d);xuiDocumentChangeSetRetain(change);
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+    d->notifying=1;doc_model_mutation_end(&mutation);
+    xerror* ambient=doc_model_owned(&d->owned) ? xrtTakeError():NULL;
+    doc_model_outcome notification={0};
+    for(doc_observer* observer=d->observers;observer;observer=observer->next){
+        if(observer->flags&DOC_OBSERVER_REMOVED)continue;
+        bool checked=(observer->flags&(DOC_OBSERVER_NATIVE|DOC_OBSERVER_OWNED))!=0;
+        if(!doc_model_owned(&d->owned)){
+            if(checked)(void)observer->callback.checked(d,change,observer->user);
+            else observer->callback.raw(d,change,observer->user);
+            continue; /* Public raw C notification keeps its legacy void ABI. */
+        }
+        xui_doc_change_owned_proc owned=checked ? observer->callback.checked:NULL;
+        xui_doc_change_proc raw=checked ? NULL:observer->callback.raw;
+        const xui_callback_owner_t* captures=doc_observer_owner(observer);
+        void* user=observer->user;xui_callback_owner_t owner=captures ? *captures:(xui_callback_owner_t){0};bool held=false;
+        int status=xuiInternalCallbackHoldIsolated(&owner,&held);
+        doc_model_outcome selected={0};doc_model_outcome_begin(&selected,status);
+        if(status==XUI_OK){
+            status=owned ? owned(d,change,user):XUI_OK;
+            if(raw)raw(d,change,user);
+            doc_model_outcome_add(&selected,status);
+        }
+        if(held)doc_model_outcome_add(&selected,doc_model_owner_drop(&owner));
+        doc_notification_failure(d,change->after_revision,selected.status,selected.error);
+        status=doc_model_outcome_end(&selected);doc_model_outcome_add(&notification,status);
+    }
+    if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+    d->notifying=0;doc_model_mutation_end(&mutation);
+    if(doc_model_owned(&d->owned)){
+        int status=doc_observers_collect(d);
+        doc_notification_failure(d,change->after_revision,status,xrtGetError());
+        doc_model_outcome_add(&notification,status);
+        if(notification.status==XUI_OK){notification.error=ambient;ambient=NULL;}
+        xrtErrorFree(ambient);(void)doc_model_outcome_end(&notification);
+    }else (void)doc_observers_collect(d);
+    xuiDocumentChangeSetRelease(change);xuiDocumentRelease(d);
 }
 XUI_API int xuiDocumentGetStats(xui_document d, xui_doc_stats_t* out)
 {
@@ -264,6 +421,7 @@ XUI_API int xuiDocumentIsDirty(xui_document d) { return d && d->state->content_i
 XUI_API int xuiDocumentMarkSaved(xui_document d, xui_document_snapshot saved)
 {
     if (!d || !saved || d->identity != saved->identity) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     d->saved_state = saved->state->content_id; return XUI_OK;
 }
 
@@ -276,6 +434,8 @@ int doc_txn_check(xui_document_transaction t, int domain)
 {
     int cancelled;
     if (!t || t->closed) return XUI_ERROR_INVALID_STATE;
+    if(doc_model_owned(&t->owned)){int status=doc_model_admit(&t->owned);if(status!=XUI_OK)return status;}
+    if(t->document && doc_model_owned(&t->document->owned)){int status=doc_model_admit(&t->document->owned);if(status!=XUI_OK)return status;}
     if (t->error) return t->error;
     if (t->cancellation && (cancelled = atomic_load(t->cancellation)) != 0) return doc_txn_fail(t, cancelled);
     if (domain && t->domain != (uint32_t)domain && !t->parsing) return doc_txn_fail(t, XUI_DOC_ERROR_DOMAIN);
@@ -303,6 +463,7 @@ XUI_API int xuiDocumentBeginTransaction(xui_document d, const xui_doc_txn_desc_t
     if (!d || (desc && (desc->iSize != sizeof(*desc) ||
         (desc->iDomain != XUI_DOC_SOURCE && desc->iDomain != XUI_DOC_SEMANTIC)))) return XUI_ERROR_INVALID_ARGUMENT;
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     if (desc && desc->iBaseRevision && desc->iBaseRevision != d->revision) return XUI_DOC_ERROR_STALE;
     if (desc && desc->iDomain == XUI_DOC_SOURCE && d->state->profile != XUI_DOCUMENT_MARKDOWN) return XUI_ERROR_UNSUPPORTED;
     t = doc_alloc(d->allocator, sizeof(*t));
@@ -310,10 +471,12 @@ XUI_API int xuiDocumentBeginTransaction(xui_document d, const xui_doc_txn_desc_t
     t->draft = doc_state_clone(d->state);
     if (!t->draft) { doc_free(t); return XUI_ERROR_OUT_OF_MEMORY; }
     t->document = d; xuiDocumentRetain(d);
+    atomic_init(&t->refs,1);doc_model_init(&t->owned,&doc_model_transaction_type,d->allocator);
     t->base = d->state; doc_state_retain(t->base); t->base_revision = d->revision;
     t->domain = desc ? desc->iDomain : XUI_DOC_SEMANTIC;
     t->origin = desc ? desc->iOrigin : 0; t->group = desc ? desc->iGroup : 0;
-    d->writer = t; *out = t; return XUI_OK;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&d->owned,&mutation))abort();
+    d->writer = t;doc_model_mutation_end(&mutation); *out = t; return XUI_OK;
 }
 XUI_API int xuiDocumentTxnGetNode(xui_document_transaction t, uint64_t id, xui_doc_node_info_t* out)
 {
@@ -628,7 +791,7 @@ xui_document_change_set doc_change_create(doc_allocator* allocator, uint64_t ide
 {
     xui_document_change_set c = doc_alloc(allocator, sizeof(*c));
     if (!c) return NULL;
-    atomic_init(&c->refs, 1); c->before = before; c->after = after;
+    atomic_init(&c->refs, 1);doc_model_init(&c->owned,&doc_model_change_type,allocator); c->before = before; c->after = after;
     doc_state_retain(before); doc_state_retain(after);
     c->identity = identity; c->before_revision = revision; c->after_revision = revision + 1;
     c->origin = origin; c->flags = flags; c->domain = domain; c->undo = undo; c->count = count; c->input_generation = 0;
@@ -640,11 +803,20 @@ xui_document_change_set doc_change_create(doc_allocator* allocator, uint64_t ide
     }
     return c;
 }
-XUI_API void xuiDocumentChangeSetRetain(xui_document_change_set c) { if (c) atomic_fetch_add(&c->refs, 1); }
+XUI_API int xuiDocumentChangeSetAddRef(xui_document_change_set c){return c && doc_model_typed(&c->owned,&doc_model_change_type) ? doc_model_add_ref(&c->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentChangeSetShareOwned,xui_document_change_set,doc_model_change_type)
+XUI_API int xuiDocumentChangeSetReleaseOwnerChecked(xui_document_change_set c,bool* consumed)
+{if(!c || !doc_model_typed(&c->owned,&doc_model_change_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&c->owned,consumed);}
+XUI_API int xuiDocumentChangeSetReleaseChecked(xui_document_change_set c){bool consumed=false;return xuiDocumentChangeSetReleaseOwnerChecked(c,&consumed);}
+XUI_API xrtownershipref xuiDocumentChangeSetOwnership(xui_document_change_set c){return c && doc_model_typed(&c->owned,&doc_model_change_type) ? doc_model_reference(&c->owned):(xrtownershipref){0};}
+XUI_API void xuiDocumentChangeSetRetain(xui_document_change_set c)
+{if(c){if(doc_model_owned(&c->owned)){if(doc_model_add_ref(&c->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&c->refs,1);}}
 XUI_API void xuiDocumentChangeSetRelease(xui_document_change_set c)
 {
     doc_state *before, *after, *input;
-    if (!c || atomic_fetch_sub(&c->refs, 1) != 1) return;
+    if(!c)return;
+    if(doc_model_owned(&c->owned)){(void)xuiDocumentChangeSetReleaseChecked(c);return;}
+    if(atomic_fetch_sub(&c->refs, 1) != 1) return;
     before = c->before; after = c->after; input = c->input_state; doc_free(c->ops); doc_free(c);
     doc_state_release(before); doc_state_release(after); doc_state_release(input);
 }
@@ -735,13 +907,20 @@ XUI_API int xuiDocumentTxnCommit(xui_document_transaction t, xui_document_change
 XUI_API void xuiDocumentTxnAbort(xui_document_transaction t)
 {
     if (!t || t->closed) return;
+    xrtownershipscope mutation={0};if(!doc_model_mutation_begin(&t->owned,&mutation))return;
     t->closed = 1;
     if (t->document->writer == t) t->document->writer = NULL;
+    doc_model_mutation_end(&mutation);
 }
+XUI_API int xuiDocumentTxnReleaseOwnerChecked(xui_document_transaction t,bool* consumed)
+{if(!t || !doc_model_typed(&t->owned,&doc_model_transaction_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&t->owned,consumed);}
+XUI_API int xuiDocumentTxnReleaseChecked(xui_document_transaction t){bool consumed=false;return xuiDocumentTxnReleaseOwnerChecked(t,&consumed);}
+XUI_API xrtownershipref xuiDocumentTxnOwnership(xui_document_transaction t){return t && doc_model_typed(&t->owned,&doc_model_transaction_type) ? doc_model_reference(&t->owned):(xrtownershipref){0};}
 XUI_API void xuiDocumentTxnRelease(xui_document_transaction t)
 {
     xui_document d;
     if (!t) return;
+    if(doc_model_owned(&t->owned)){(void)xuiDocumentTxnReleaseChecked(t);return;}
     xuiDocumentTxnAbort(t); d = t->document;
     doc_state_release(t->base); doc_state_release(t->draft); doc_free(t->ops); doc_free(t);
     xuiDocumentRelease(d);
@@ -753,6 +932,7 @@ static int doc_history_apply(xui_document d, int undo, xui_document_change_set* 
     xui_document_change_set c;
     if (out) *out = NULL;
     if (!d) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&d->owned)){int status=doc_model_admit(&d->owned);if(status!=XUI_OK)return status;}
     if (d->writer || d->notifying) return XUI_DOC_ERROR_BUSY;
     from = undo ? &d->undo : &d->redo; to = undo ? &d->redo : &d->undo;
     h = *from;
@@ -775,6 +955,77 @@ XUI_API int xuiDocumentRedo(xui_document d, xui_document_change_set* out) { retu
 XUI_API int xuiDocumentCanUndo(xui_document d) { return d && !d->writer && !d->notifying && d->undo != NULL; }
 XUI_API int xuiDocumentCanRedo(xui_document d) { return d && !d->writer && !d->notifying && d->redo != NULL; }
 XUI_API void xuiDocumentFreeBuffer(void* p) { free(p); }
+
+static bool doc_owned_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_document_t* document=raw;
+    xrtownershipref notificationError=xrtErrorOwnership(document->notification_error);
+    if(notificationError.Data && !visit(notificationError,user))return false;
+    if(document->pending){xrtownershipref ref=xuiDocumentPrepareOwnership(document->pending);if(!ref.Data || !visit(ref,user))return false;}
+    for(const doc_observer* observer=document->observers;observer;observer=observer->next){
+        if(!(observer->flags&(DOC_OBSERVER_NATIVE|DOC_OBSERVER_OWNED)))return false;
+        const xui_callback_owner_t* owner=doc_observer_owner(observer);
+        if(owner && owner->tReference.Data && !visit(owner->tReference,user))return false;
+    }
+    return true;
+}
+static int doc_owned_ready(const void* raw)
+{return ((const struct xui_document_t*)raw)->notifying ? XUI_ERROR_BUSY:XUI_OK;}
+static int doc_owned_finalize(void* raw,bool* complete)
+{
+    xui_document document=raw;*complete=false;
+    /* A unique writer owns this Document; let that participant unregister its
+     * actual backlink before this semantic duty. No hidden abort of a peer. */
+    if(document->writer)return XUI_STATUS_DEFERRED;
+    if(document->pending)xuiDocumentPrepareCancel(document->pending);
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    int status=document->notification_failures ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+    xerror* error=document->notification_error;document->notification_error=NULL;
+    document->notification_status=XUI_OK;document->notification_failures=document->notification_revision=0;
+    doc_model_mutation_end(&mutation);*complete=true;xrtSetErrorTake(error);return status;
+}
+static int doc_owned_finish(void* raw)
+{
+    xui_document document=raw;doc_model_outcome result={0};doc_model_outcome_begin(&result,XUI_OK);
+    doc_prepare_invalidate(document,NULL,XUI_DOC_ERROR_CANCELLED);doc_model_outcome_add(&result,XUI_OK);
+    if(document->standby_history){doc_memory_standby(document->state,0);document->standby_history=0;}
+    doc_history_clear(&document->undo);doc_history_clear(&document->redo);
+    doc_memory_current(document->state,NULL);doc_state* state=document->state;document->state=NULL;doc_state_release(state);
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
+    for(doc_observer* observer=document->observers;observer;observer=observer->next)observer->flags|=DOC_OBSERVER_REMOVED;
+    doc_model_mutation_end(&mutation);doc_model_outcome_add(&result,doc_observers_collect(document));
+    return doc_model_outcome_end(&result);
+}
+static int doc_owned_snapshot_finish(void* raw)
+{
+    xui_document_snapshot snapshot=raw;doc_snapshot_unregister(snapshot);doc_state* state=snapshot->state;snapshot->state=NULL;
+    doc_state_release(state);return XUI_OK;
+}
+static int doc_owned_change_finish(void* raw)
+{
+    xui_document_change_set change=raw;doc_state *before=change->before,*after=change->after,*input=change->input_state;
+    change->before=change->after=change->input_state=NULL;doc_free(change->ops);change->ops=NULL;
+    doc_state_release(before);doc_state_release(after);doc_state_release(input);return XUI_OK;
+}
+static bool doc_owned_txn_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_doc_transaction_t* transaction=raw;
+    if(!transaction->document)return true;
+    xrtownershipref ref=xuiDocumentOwnership(transaction->document);return ref.Data && visit(ref,user);
+}
+static int doc_owned_txn_finalize(void* raw,bool* complete)
+{xuiDocumentTxnAbort(raw);*complete=true;return XUI_OK;}
+static int doc_owned_txn_finish(void* raw)
+{
+    xui_document_transaction transaction=raw;xui_document document=transaction->document;transaction->document=NULL;
+    doc_state *base=transaction->base,*draft=transaction->draft;transaction->base=transaction->draft=NULL;
+    doc_state_release(base);doc_state_release(draft);doc_free(transaction->ops);transaction->ops=NULL;
+    return document ? xuiDocumentReleaseChecked(document):XUI_OK;
+}
+const doc_model_type doc_model_document_type={DOC_MODEL_ALLOCATED|DOC_MODEL_ALLOCATOR_OWNER|DOC_MODEL_CREATOR,doc_owned_trace,doc_owned_ready,doc_owned_finalize,doc_owned_finish};
+const doc_model_type doc_model_snapshot_type={DOC_MODEL_ALLOCATED,NULL,NULL,NULL,doc_owned_snapshot_finish};
+const doc_model_type doc_model_change_type={DOC_MODEL_ALLOCATED,NULL,NULL,NULL,doc_owned_change_finish};
+const doc_model_type doc_model_transaction_type={DOC_MODEL_ALLOCATED|DOC_MODEL_CREATOR|DOC_MODEL_UNIQUE,doc_owned_txn_trace,NULL,doc_owned_txn_finalize,doc_owned_txn_finish};
 
 int doc_split_text(xui_document_transaction t, uint64_t id, uint64_t at, uint64_t* right_id)
 {

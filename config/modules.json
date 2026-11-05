@@ -3,6 +3,7 @@
     "document-core": [
       "src/xui/document/xui_document_store.c",
       "src/xui/document/xui_document.c",
+      "src/xui/document/xui_document_owned.c",
       "src/xui/document/xui_document_schema.c",
       "src/xui/document/xui_document_position.c",
       "src/xui/document/xui_document_range.c",
@@ -147,6 +148,7 @@
     "src/xui/document/xui_webview.c": "XUI_ENABLE_WEBVIEW",
     "src/xui/document/xui_document_store.c": "XUI_ENABLE_DOCUMENT",
     "src/xui/document/xui_document.c": "XUI_ENABLE_DOCUMENT",
+    "src/xui/document/xui_document_owned.c": "XUI_ENABLE_DOCUMENT",
     "src/xui/document/xui_document_schema.c": "XUI_ENABLE_DOCUMENT",
     "src/xui/document/xui_document_position.c": "XUI_ENABLE_DOCUMENT",
     "src/xui/document/xui_document_range.c": "XUI_ENABLE_DOCUMENT",

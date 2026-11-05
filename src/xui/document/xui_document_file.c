@@ -44,21 +44,22 @@ XUI_API int xuiDocumentSaveFile(xui_document document, const char* path, uint32_
     if (result == XUI_OK) result = xuiDocumentMarkSaved(document, snapshot);
     xuiDocumentSnapshotRelease(snapshot); return result;
 }
-XUI_API int xuiDocumentOpenFile(const char* path, uint32_t format, const xui_doc_desc_t* desc, uint64_t max_bytes, xui_document* out)
+static int doc_document_open_file(const char* path,uint32_t format,const xui_doc_desc_t* desc,uint64_t max_bytes,xui_document* out,bool owned)
 {
     unsigned char* data; size_t length; xui_document document = NULL; xui_doc_desc_t options = {0}; int result;
     if (out) *out = NULL;
     if (!out || !path || !*path || !doc_utf8(path, strlen(path)) || (desc && desc->iSize != sizeof(*desc)) ||
         (format != XUI_DOC_FILE_NATIVE && format != XUI_DOC_FILE_MARKDOWN)) return XUI_ERROR_INVALID_ARGUMENT;
+    if(owned && desc && (desc->onAlloc || desc->onFree || desc->pAllocatorUser))return XUI_ERROR_INVALID_ARGUMENT;
     if (!max_bytes) max_bytes = UINT64_C(256) * 1024 * 1024;
     if (max_bytes >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
     data = xrtFileReadAllLimit(path, (size_t)max_bytes, &length);
     if (!data) return __xuiDocumentFileReadError();
-    if (format == XUI_DOC_FILE_NATIVE) result = xuiDocumentDeserialize(desc, (const char*)data, length, &document);
+    if (format == XUI_DOC_FILE_NATIVE) result = owned ? xuiDocumentDeserializeOwned(desc,(const char*)data,length,&document):xuiDocumentDeserialize(desc, (const char*)data, length, &document);
     else {
         if (desc) options = *desc;
         options.iSize = sizeof(options); options.iProfile = XUI_DOCUMENT_MARKDOWN; options.bDisableHistory = 1;
-        result = xuiDocumentCreate(&options, &document);
+        result = owned ? xuiDocumentCreateOwned(&options,&document):xuiDocumentCreate(&options,&document);
         if (result == XUI_OK) result = xuiDocumentLoadMarkdown(document, (const char*)data, length);
         if (result == XUI_OK) {
             document->disable_history = desc ? desc->bDisableHistory : 0;
@@ -72,5 +73,9 @@ XUI_API int xuiDocumentOpenFile(const char* path, uint32_t format, const xui_doc
     if (result != XUI_OK) xuiDocumentRelease(document); else *out = document;
     return result;
 }
+XUI_API int xuiDocumentOpenFile(const char* path,uint32_t format,const xui_doc_desc_t* desc,uint64_t max_bytes,xui_document* out)
+{return doc_document_open_file(path,format,desc,max_bytes,out,false);}
+XUI_API int xuiDocumentOpenFileOwned(const char* path,uint32_t format,const xui_doc_desc_t* desc,uint64_t max_bytes,xui_document* out)
+{return doc_document_open_file(path,format,desc,max_bytes,out,true);}
 
 #endif

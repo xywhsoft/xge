@@ -98,7 +98,7 @@ static void actualOwnedRenderer(int result,bool failedDrop)
 static xui_document messageDocument(const char* source)
 {
     xui_document document=NULL;xui_doc_desc_t desc={.iSize=sizeof(desc),.iProfile=XUI_DOCUMENT_MARKDOWN};
-    assert(xuiDocumentCreate(&desc,&document)==XUI_OK);
+    assert(xuiDocumentCreateOwned(&desc,&document)==XUI_OK);
     assert(xuiDocumentLoadMarkdown(document,source,strlen(source))==XUI_OK);return document;
 }
 static xui_message_document_desc_t messageDocumentDesc(xui_document document,xui_font font)

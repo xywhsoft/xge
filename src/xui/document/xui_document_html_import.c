@@ -1788,7 +1788,7 @@ static int doc_html_parse_blocks(doc_html_input* p, uint64_t parent,
 }
 
 int doc_html_import_document(const char* html, uint64_t bytes,
-    xui_document* out, unsigned* depth)
+    xui_document* out, unsigned* depth,bool owned)
 {
     xui_doc_desc_t desc = {0};
     xui_document document = NULL;
@@ -1803,7 +1803,7 @@ int doc_html_import_document(const char* html, uint64_t bytes,
         return XUI_DOC_ERROR_UTF8;
     desc.iSize = sizeof(desc); desc.iProfile = XUI_DOCUMENT_RICH;
     desc.bDisableHistory = 1;
-    result = xuiDocumentCreate(&desc, &document);
+    result = owned ? xuiDocumentCreateOwned(&desc,&document):xuiDocumentCreate(&desc,&document);
     if (result == XUI_OK) result = xuiDocumentBeginTransaction(document,
         NULL, &transaction);
     if (result == XUI_OK) {

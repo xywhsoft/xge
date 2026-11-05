@@ -268,9 +268,11 @@ XUI_API int xuiDocumentTxnCopyRange(xui_document_transaction t,
 
 struct xui_doc_fragment_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     xui_document_snapshot snapshot;
     unsigned depth; /* Root, one wrapper, or List -> ListItem. */
 };
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_fragment_t);
 
 static doc_node* doc_fragment_container(xui_document_snapshot snapshot,
     unsigned depth)
@@ -326,10 +328,12 @@ static int doc_fragment_create(xui_document_snapshot snapshot,
     unsigned depth, xui_document_fragment* out)
 {
     xui_document_fragment fragment;
+    if(doc_model_owned(&snapshot->owned)){int status=doc_model_admit(&snapshot->owned);if(status!=XUI_OK)return status;}
     if (!doc_fragment_container(snapshot, depth)) return XUI_DOC_ERROR_FORMAT;
     fragment = malloc(sizeof(*fragment));
     if (!fragment) return XUI_ERROR_OUT_OF_MEMORY;
     atomic_init(&fragment->refs, 1);
+    doc_model_init(&fragment->owned,&doc_model_fragment_type,snapshot->state->allocator);
     fragment->snapshot = snapshot; fragment->depth = depth;
     xuiDocumentSnapshotRetain(snapshot);
     *out = fragment;
@@ -350,6 +354,7 @@ XUI_API int xuiDocumentFragmentCreateRange(xui_document_snapshot source,
     int order, result;
     if (out) *out = NULL;
     if (!source || !range || !out) return XUI_ERROR_INVALID_ARGUMENT;
+    if(doc_model_owned(&source->owned)){int status=doc_model_admit(&source->owned);if(status!=XUI_OK)return status;}
     result = xuiDocumentSnapshotComparePositions(source,
         &range->tAnchor, &range->tCaret, &order);
     if (result != XUI_OK) return result;
@@ -376,7 +381,7 @@ XUI_API int xuiDocumentFragmentCreateRange(xui_document_snapshot source,
     desc.bDisableHistory = 1;
     desc.iMaxTextBytes = source->state->allocator->max_bytes;
     desc.iMaxNodes = source->state->allocator->max_nodes + 3;
-    result = xuiDocumentCreate(&desc, &temporary);
+    result = doc_model_owned(&source->owned) ? xuiDocumentCreateOwned(&desc,&temporary):xuiDocumentCreate(&desc,&temporary);
     if (result != XUI_OK) return result;
     result = xuiDocumentBeginTransaction(temporary, NULL, &t);
     if (result == XUI_OK && container->kind == XUI_DOC_LIST_ITEM) {
@@ -412,15 +417,34 @@ XUI_API int xuiDocumentFragmentCreateRange(xui_document_snapshot source,
 
 XUI_API void xuiDocumentFragmentRetain(xui_document_fragment fragment)
 {
-    if (fragment) atomic_fetch_add(&fragment->refs, 1);
+    if(fragment){if(doc_model_owned(&fragment->owned)){if(doc_model_add_ref(&fragment->owned)!=XUI_OK)xrtSetErrorKind(XERR_STATE);}else atomic_fetch_add(&fragment->refs,1);}
 }
+XUI_API int xuiDocumentFragmentAddRef(xui_document_fragment f){return f && doc_model_typed(&f->owned,&doc_model_fragment_type) ? doc_model_add_ref(&f->owned):XUI_ERROR_INVALID_ARGUMENT;}
+DOC_MODEL_SHARE_FUNCTION(xuiDocumentFragmentShareOwned,xui_document_fragment,doc_model_fragment_type)
+XUI_API int xuiDocumentFragmentReleaseOwnerChecked(xui_document_fragment f,bool* consumed)
+{if(!f || !doc_model_typed(&f->owned,&doc_model_fragment_type)){if(consumed)*consumed=false;return XUI_ERROR_INVALID_ARGUMENT;}return doc_model_release(&f->owned,consumed);}
+XUI_API int xuiDocumentFragmentReleaseChecked(xui_document_fragment f){bool consumed=false;return xuiDocumentFragmentReleaseOwnerChecked(f,&consumed);}
+XUI_API xrtownershipref xuiDocumentFragmentOwnership(xui_document_fragment f){return f && doc_model_typed(&f->owned,&doc_model_fragment_type) ? doc_model_reference(&f->owned):(xrtownershipref){0};}
 
 XUI_API void xuiDocumentFragmentRelease(xui_document_fragment fragment)
 {
-    if (!fragment || atomic_fetch_sub(&fragment->refs, 1) != 1) return;
+    if(!fragment)return;
+    if(doc_model_owned(&fragment->owned)){(void)xuiDocumentFragmentReleaseChecked(fragment);return;}
+    if(atomic_fetch_sub(&fragment->refs, 1) != 1) return;
     xuiDocumentSnapshotRelease(fragment->snapshot);
     free(fragment);
 }
+static bool doc_owned_fragment_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_doc_fragment_t* fragment=raw;if(!fragment->snapshot)return true;
+    xrtownershipref ref=xuiDocumentSnapshotOwnership(fragment->snapshot);return ref.Data && visit(ref,user);
+}
+static int doc_owned_fragment_finish(void* raw)
+{
+    xui_document_fragment fragment=raw;xui_document_snapshot snapshot=fragment->snapshot;fragment->snapshot=NULL;
+    return snapshot ? xuiDocumentSnapshotReleaseChecked(snapshot):XUI_OK;
+}
+const doc_model_type doc_model_fragment_type={0,doc_owned_fragment_trace,NULL,NULL,doc_owned_fragment_finish};
 
 XUI_API int xuiDocumentFragmentExportHtml(xui_document_fragment fragment,
     char** out, uint64_t* bytes)
@@ -435,8 +459,7 @@ XUI_API int xuiDocumentFragmentExportHtml(xui_document_fragment fragment,
         out, bytes);
 }
 
-XUI_API int xuiDocumentFragmentImportHtml(const char* html, uint64_t bytes,
-    xui_document_fragment* out)
+static int doc_fragment_import_html(const char* html,uint64_t bytes,xui_document_fragment* out,bool owned)
 {
     xui_document document = NULL;
     xui_document_snapshot snapshot = NULL;
@@ -444,7 +467,7 @@ XUI_API int xuiDocumentFragmentImportHtml(const char* html, uint64_t bytes,
     int result;
     if (out) *out = NULL;
     if (!html || !out) return XUI_ERROR_INVALID_ARGUMENT;
-    result = doc_html_import_document(html, bytes, &document, &depth);
+    result = doc_html_import_document(html, bytes, &document, &depth,owned);
     if (result != XUI_OK) return result;
     result = xuiDocumentAcquireSnapshot(document, &snapshot);
     if (result == XUI_OK) result = doc_fragment_create(snapshot, depth, out);
@@ -452,6 +475,10 @@ XUI_API int xuiDocumentFragmentImportHtml(const char* html, uint64_t bytes,
     xuiDocumentRelease(document);
     return result;
 }
+XUI_API int xuiDocumentFragmentImportHtml(const char* html,uint64_t bytes,xui_document_fragment* out)
+{return doc_fragment_import_html(html,bytes,out,false);}
+XUI_API int xuiDocumentFragmentImportHtmlOwned(const char* html,uint64_t bytes,xui_document_fragment* out)
+{return doc_fragment_import_html(html,bytes,out,true);}
 
 XUI_API int xuiDocumentFragmentSerialize(xui_document_fragment fragment,
     char** out, uint64_t* bytes)
@@ -481,8 +508,7 @@ XUI_API int xuiDocumentFragmentSerialize(xui_document_fragment fragment,
     return XUI_OK;
 }
 
-XUI_API int xuiDocumentFragmentDeserialize(const char* data,
-    uint64_t bytes, xui_document_fragment* out)
+static int doc_fragment_deserialize(const char* data,uint64_t bytes,xui_document_fragment* out,bool owned)
 {
     static const char magic[8] = {'X','U','I','F','R','A','G','1'};
     xui_document document = NULL;
@@ -495,7 +521,7 @@ XUI_API int xuiDocumentFragmentDeserialize(const char* data,
         memcmp(data + 9, "\0\0\0\0\0\0\0", 7))
         return XUI_ERROR_INVALID_ARGUMENT;
     depth = (unsigned char)data[8];
-    result = xuiDocumentDeserialize(NULL, data + 16, bytes - 16, &document);
+    result = owned ? xuiDocumentDeserializeOwned(NULL,data+16,bytes-16,&document):xuiDocumentDeserialize(NULL, data + 16, bytes - 16, &document);
     if (result != XUI_OK) return result;
     if (document->state->profile != XUI_DOCUMENT_RICH)
         result = XUI_DOC_ERROR_FORMAT;
@@ -505,6 +531,10 @@ XUI_API int xuiDocumentFragmentDeserialize(const char* data,
     xuiDocumentRelease(document);
     return result;
 }
+XUI_API int xuiDocumentFragmentDeserialize(const char* data,uint64_t bytes,xui_document_fragment* out)
+{return doc_fragment_deserialize(data,bytes,out,false);}
+XUI_API int xuiDocumentFragmentDeserializeOwned(const char* data,uint64_t bytes,xui_document_fragment* out)
+{return doc_fragment_deserialize(data,bytes,out,true);}
 
 static int doc_fragment_insert_apply(xui_document_transaction t,
     xui_document_fragment fragment, uint64_t parent, uint64_t index,

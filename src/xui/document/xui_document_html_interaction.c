@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_WEBVIEW
 #include "xui_document_ui.h"
+#include "xui_document_owned_internal.h"
 #include "xui_internal.h"
 #include "xui_webview_internal.h"
 #include <stdint.h>
@@ -241,6 +242,7 @@ static bool doc_html_trace(const void* raw,xrtownershipvisitor visit,void* user)
 {
     const struct xui_doc_html_interaction_t* panel=raw;
     if(panel->working)return false;
+    if(panel->document){xrtownershipref ref=xuiDocumentOwnership(panel->document);if(!ref.Data || !visit(ref,user))return false;}
     return !panel->open_link_owner.tReference.Data || visit(panel->open_link_owner.tReference,user);
 }
 static int doc_html_ready(const void* raw)
@@ -266,7 +268,7 @@ static int doc_html_finalize(void* raw)
     xui_doc_html_interaction panel=raw;xui_context context=panel->context;
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
     xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&panel->open_link_owner,receipt.status,receipt.error));
-    xuiDocumentRelease(panel->document);xuiInternalCleanupAdd(&receipt,XUI_OK);
+    xuiInternalCleanupAdd(&receipt,doc_document_release(panel->document));
     free(panel->html);free(panel);
     return xuiInternalCleanupEnd(context,&receipt);
 }
@@ -314,11 +316,11 @@ XUI_API int xuiDocumentHtmlInteractionCreate(
     if(result!=XUI_OK){free(panel);xerror* first=xrtTakeError();result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;}
     bool alive=true;xui_lifetime_link_t watch={0};
     if(xuiInternalManagerWatch(&panel->owned,&watch,doc_html_construct_gone,&alive)!=XUI_OK)abort();
+    result=doc_document_hold(desc->pDocument);if(result!=XUI_OK)goto fail;
     panel->document = desc->pDocument;
     panel->node = desc->iNodeId;
     panel->on_open_link = desc->onOpenLink;
     panel->user = desc->pUser;
-    xuiDocumentRetain(panel->document);
     result = doc_html_interaction_read(panel, &panel->html,
         &panel->html_bytes, &panel->seen_revision);
     if (result != XUI_OK) goto fail;

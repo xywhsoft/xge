@@ -1,6 +1,7 @@
 #ifndef XUI_DOCUMENT_INTERNAL_H
 #define XUI_DOCUMENT_INTERNAL_H
 #include "xui_document.h"
+#include "xui_document_owned_internal.h"
 #include <stdatomic.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -46,6 +47,7 @@ typedef struct doc_attribute {
 
 typedef struct doc_allocator {
     atomic_uint refs;
+    bool managed; /* Immutable native provenance; only the Owned constructor sets it. */
     xui_doc_alloc_proc alloc;
     xui_doc_free_proc free;
     void* user;
@@ -62,6 +64,7 @@ typedef struct doc_allocator {
     uint64_t snapshot_count, snapshot_handle_bytes;
     struct xui_doc_snapshot_t* snapshots;
     uint64_t max_syntax_records; /* Immutable per-input grammar budget, separate from semantic nodes. */
+    uint64_t creator;
 } doc_allocator;
 typedef struct doc_find_expansion {
     char* text;
@@ -259,11 +262,21 @@ typedef struct doc_range_branch_plan {
 } doc_range_branch_plan;
 typedef struct doc_observer {
     uint64_t token;
-    xui_doc_change_proc callback;
+    union {xui_doc_change_proc raw;xui_doc_change_owned_proc checked;} callback;
     void* user;
     struct doc_observer* next;
-    int removed;
+    unsigned flags;
 } doc_observer;
+enum {DOC_OBSERVER_NATIVE=1u,DOC_OBSERVER_OWNED=2u,DOC_OBSERVER_REMOVED=4u};
+typedef struct doc_owned_observer {
+    doc_observer base;
+    xui_callback_owner_t owner;
+} doc_owned_observer;
+_Static_assert(offsetof(doc_owned_observer,base)==0,"observer base is its actual allocation prefix");
+_Static_assert(offsetof(doc_owned_observer,owner)==sizeof(doc_observer),"owned observer tail has no extra allocation/padding");
+_Static_assert(offsetof(doc_owned_observer,owner)%_Alignof(xui_callback_owner_t)==0,"owned observer tail alignment");
+static inline const xui_callback_owner_t* doc_observer_owner(const doc_observer* observer)
+{return observer && (observer->flags&DOC_OBSERVER_OWNED) ? &((const doc_owned_observer*)observer)->owner:NULL;}
 typedef struct doc_history {
     atomic_uint refs;
     doc_state *before, *after;
@@ -274,9 +287,11 @@ typedef struct doc_history {
     struct doc_history* next;
 } doc_history;
 typedef struct doc_publish_plan doc_publish_plan;
+bool doc_publish_plan_trace(const doc_publish_plan*,xrtownershipvisitor,void*);
 typedef struct doc_memory_delta { doc_allocation* allocation; uint64_t current, history; } doc_memory_delta;
 struct xui_document_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     doc_allocator* allocator;
     doc_state* state;
     uint64_t identity, revision, next_state, next_observer, saved_state, next_prepare;
@@ -288,14 +303,20 @@ struct xui_document_t {
     uint64_t input_barrier; /* Owner token for accepted, ordered Editor events. */
     doc_history *undo, *redo;
     doc_observer* observers;
+    int notification_status;
+    xerror* notification_error;
+    uint64_t notification_failures,notification_revision;
 };
 struct xui_doc_snapshot_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     doc_state* state;
     uint64_t identity, revision;
     struct xui_doc_snapshot_t *memory_previous, *memory_next;
 };
 struct xui_doc_transaction_t {
+    atomic_uint refs; /* One unique owner duty; other refs are actual call/collector pins. */
+    doc_model_lifetime owned;
     xui_document document;
     doc_state *base, *draft;
     uint64_t base_revision, origin, group, input_generation;
@@ -309,6 +330,7 @@ struct xui_doc_transaction_t {
 };
 struct xui_doc_change_set_t {
     atomic_uint refs;
+    doc_model_lifetime owned;
     doc_state *before, *after;
     doc_state* input_state; /* Retained semantic input accepted by publication. */
     uint64_t identity, before_revision, after_revision, origin, input_generation;
@@ -319,6 +341,18 @@ struct xui_doc_change_set_t {
     uint64_t packed_op_start;
     int undo;
 };
+DOC_MODEL_ASSERT_LAYOUT(struct xui_document_t);
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_snapshot_t);
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_transaction_t);
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_change_set_t);
+/* Parser/publication builders borrow only the original transaction payload.
+ * They never copy a unique owner's lifetime duty, claim or atomic counter. */
+static inline void doc_txn_copy_builder(struct xui_doc_transaction_t* target,const struct xui_doc_transaction_t* source)
+{
+    atomic_init(&target->refs,0);doc_model_init(&target->owned,NULL,NULL);
+    size_t start=offsetof(struct xui_doc_transaction_t,document);
+    memcpy((char*)target+start,(const char*)source+start,sizeof(*target)-start);
+}
 
 void* doc_alloc(doc_allocator*, size_t);
 void* doc_realloc(doc_allocator*, void*, size_t);
@@ -585,7 +619,7 @@ int doc_copy_subtree_apply(xui_document_transaction, doc_state*, uint64_t,
     uint64_t, uint64_t, uint64_t*);
 int doc_html_export_children(xui_document_snapshot, uint64_t, char**, uint64_t*);
 int doc_html_safe_url(const char*, int);
-int doc_html_import_document(const char*, uint64_t, xui_document*, unsigned*);
+int doc_html_import_document(const char*, uint64_t, xui_document*, unsigned*,bool);
 const char* doc_fragment_single_image_resource(xui_document_fragment);
 #if defined(__linux__)
 int doc_fragment_has_opaque_objects(xui_document_fragment);

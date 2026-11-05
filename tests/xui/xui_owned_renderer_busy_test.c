@@ -8,7 +8,7 @@ static void rendererBusyPayload(bool oom,bool lateFailure)
     assert(xuiDocumentRendererCreate(p.context,&desc,&renderer)==XUI_OK);
     xui_document document=NULL;xui_doc_desc_t dd={.iSize=sizeof(dd),.iProfile=XUI_DOCUMENT_MARKDOWN};
     const char source[]="one **two** and *three* different fragments and words\n\nsecond paragraph\n";
-    assert(xuiDocumentCreate(&dd,&document)==XUI_OK && xuiDocumentLoadMarkdown(document,source,sizeof(source)-1)==XUI_OK);
+    assert(xuiDocumentCreateOwned(&dd,&document)==XUI_OK && xuiDocumentLoadMarkdown(document,source,sizeof(source)-1)==XUI_OK);
     xui_document_snapshot snapshot=NULL;assert(xuiDocumentAcquireSnapshot(document,&snapshot)==XUI_OK);
     assert(xuiDocumentRendererSetSnapshot(renderer,snapshot,NULL)==XUI_OK);
     if(!lateFailure){p.busyNextShape=true;p.oomAfterShape=oom;}

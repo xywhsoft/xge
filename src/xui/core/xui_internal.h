@@ -7,6 +7,24 @@
 #include "xui_owned_manager.h"
 #include "../modules/xlayout/xlayout.h"
 
+/* Private destroy-call policy, independent of native owner consumption.
+ * Checked entry points never wait for a worker; legacy void destruction may.
+ * Frames belong to a single creator-thread Context and are invalidated before
+ * that Context is physically freed. They are not public call-scope ABI. */
+typedef enum xui_internal_destroy_mode_t {
+    XUI_DESTROY_NONBLOCKING = 0,
+    XUI_DESTROY_SYNC_WORKER = 1
+} xui_internal_destroy_mode_t;
+typedef struct xui_internal_destroy_scope_t {
+    xui_context pContext;
+    struct xui_internal_destroy_scope_t* pPrevious;
+    xui_internal_destroy_mode_t iMode;
+} xui_internal_destroy_scope_t;
+void xuiInternalDestroyScopeBegin(xui_context,xui_internal_destroy_mode_t,xui_internal_destroy_scope_t*);
+void xuiInternalDestroyScopeEnd(xui_internal_destroy_scope_t*);
+xui_internal_destroy_mode_t xuiInternalDestroyModeInherited(xui_context);
+bool xuiInternalDestroyWaitAllowed(xui_context);
+
 /* Private composite ownership. A live child retains its identity across
  * internal moves, including parent-change callbacks. No thread/global bypass. */
 int xuiInternalWidgetRequestDestroy(xui_widget,const void* authority);
@@ -401,6 +419,7 @@ struct xui_context_t {
 	xlayout_context_t* pLayoutContext;
 	xlayout_track_t* pLayoutTrackScratch;
 	uint32_t iLayoutTrackScratchCapacity;
+    xui_internal_destroy_mode_t iPendingDestroyMode; /* Uses pointer-alignment padding. */
 	xui_proxy_t tProxy;
 	xui_proxy_caps_t tProxyCaps;
 	int bHasProxy;
@@ -572,6 +591,7 @@ struct xui_context_t {
     int bMeasureLayoutActive;
     int iDestroyOwnership; /* 0 caller-owned, 1 void-close pending, 2 preparing; uses padding. */
     xui_resource_slot_update_t* pActiveResourceUpdates; /* stack nodes, no allocation */
+    xui_internal_destroy_scope_t* pDestroyScopes; /* creator-thread stack, no allocation */
 	xui_font_entry_t arrInlineFonts[XUI_CONTEXT_FONT_INLINE];
 	xui_font_entry_t* pFonts;
 	int iFontCount;

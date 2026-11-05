@@ -265,9 +265,11 @@ int doc_publish_plan_build(doc_publish_plan* p, xui_document_transaction t, uint
         if (p->undo_count && p->next->before == p->history[0]->before && p->next->group &&
             p->next->group == p->history[0]->group && p->next->origin == p->history[0]->origin) skip = 1;
     }
-    p->change = doc_change_create(p->allocator, identity, p->revision, t->base, t->draft,
+    xui_document_change_set change = doc_change_create(p->allocator, identity, p->revision, t->base, t->draft,
         t->ops, t->count, t->flags, t->domain, t->origin, 0);
-    if (!p->change) return XUI_ERROR_OUT_OF_MEMORY;
+    if (!change) return XUI_ERROR_OUT_OF_MEMORY;
+    xrtownershipscope mutation={0};if(!doc_allocator_mutation_begin(p->allocator,&mutation))abort();
+    p->change=change;doc_model_mutation_end(&mutation);
     p->keep_undo = p->undo_count - skip + !!p->next;
     result = doc_charge_plan_fast(p, &map, t, skip);
     if (result == XUI_DOC_ERROR_STALE) {
@@ -336,6 +338,12 @@ void doc_publish_plan_release(doc_publish_plan* p)
     for (i = 0; i < p->undo_count + p->redo_count; i++) doc_history_release(p->history[i]);
     doc_history_release(p->next); xuiDocumentChangeSetRelease(p->change);
     doc_free(p->history); doc_free(p->deltas); doc_free(p);
+}
+bool doc_publish_plan_trace(const doc_publish_plan* plan,xrtownershipvisitor visit,void* user)
+{
+    if(!plan || !plan->change)return true;
+    xrtownershipref ref=xuiDocumentChangeSetOwnership(plan->change);
+    return ref.Data && visit(ref,user);
 }
 
 #endif

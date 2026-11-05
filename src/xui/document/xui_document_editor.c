@@ -441,18 +441,33 @@ static int doc_editor_commit(doc_editor_data* e, xui_document_transaction t, con
 }
 static void doc_editor_retire_inputs(doc_editor_data* e)
 {
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
     doc_input_job** link = &e->retired;
     while (*link) {
         doc_input_job* job = *link;
         if (job->prepare == e->view.renderer->input) { link = &job->next; continue; }
         *link = job->next; doc_input_retire(e->worker, job);
     }
+    doc_model_mutation_end(&mutation);
+}
+static void doc_editor_replace_input(doc_editor_data* editor,doc_input_job* replacement)
+{
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
+    if(editor->input){editor->input->next=editor->retired;editor->retired=editor->input;}
+    editor->input=replacement;doc_model_mutation_end(&mutation);
+}
+static int doc_editor_ensure_worker(doc_editor_data* editor)
+{
+    if(editor->worker)return XUI_OK;
+    doc_input_worker* worker=doc_input_worker_create();if(!worker)return XUI_ERROR_OUT_OF_MEMORY;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))abort();
+    editor->worker=worker;doc_model_mutation_end(&mutation);return XUI_OK;
 }
 static void doc_editor_forget_input(doc_editor_data* e)
 {
     if (e->view.input) doc_view_text_ranges_input(&e->view, e->view.input, NULL);
     if (e->view.visual_input) doc_view_text_ranges_visual(&e->view, e->view.visual_input, NULL);
-    if (e->input) { e->input->next = e->retired; e->retired = e->input; e->input = NULL; }
+    doc_editor_replace_input(e,NULL);
     if (e->visual_input) {
         e->visual_input = 0; e->view.needs_sync = 1;
         doc_view_find_invalidate(&e->view); doc_view_accessible_clear(&e->view);
@@ -466,9 +481,8 @@ static void doc_editor_forget_input(doc_editor_data* e)
 static void doc_editor_accept_input(doc_editor_data* e, doc_input_job* job)
 {
     doc_view_text_ranges_input(&e->view, e->view.input, job->prepare);
-    if (e->input) { e->input->next = e->retired; e->retired = e->input; }
-    else e->input_start = e->view.selection;
-    e->input = job; e->view.input = job->prepare; e->input_error = 0;
+    if (!e->input) e->input_start = e->view.selection;
+    doc_editor_replace_input(e,job);e->view.input = job->prepare; e->input_error = 0;
     doc_view_invalidate_edit(&e->view); e->view.pending_edit_events |= 3;
     e->view.error = doc_editor_sync(e);
     /* Creation accepted the input. Renderer OOM is retried by sync/update;
@@ -486,7 +500,7 @@ static int doc_editor_prepare_replace(doc_editor_data* e, const xui_doc_range_t*
         result = xuiDocumentRendererSetActivePosition(e->view.renderer, &range->tCaret);
         if (result != XUI_OK) return result;
     }
-    if (!e->worker) { e->worker = doc_input_worker_create(); if (!e->worker) return XUI_ERROR_OUT_OF_MEMORY; }
+    result=doc_editor_ensure_worker(e);if(result!=XUI_OK)return result;
     job = calloc(1, sizeof(*job)); if (!job) return XUI_ERROR_OUT_OF_MEMORY;
     patch.iSize = sizeof(patch); patch.iStart = (order < 0 ? range->tAnchor : range->tCaret).iOffset;
     patch.iEnd = (order < 0 ? range->tCaret : range->tAnchor).iOffset; patch.sText = text; patch.iTextBytes = bytes;
@@ -513,7 +527,7 @@ static int doc_editor_prepare_visual_text(doc_editor_data* e, const xui_doc_rang
     if (result != XUI_OK) return result;
     if (order > 0) { xui_doc_position_t swap = a; a = b; b = swap; }
     same_node = a.iNodeId == b.iNodeId;
-    if (!e->worker) { e->worker = doc_input_worker_create(); if (!e->worker) return XUI_ERROR_OUT_OF_MEMORY; }
+    result=doc_editor_ensure_worker(e);if(result!=XUI_OK)return result;
     job = calloc(1, sizeof(*job)); if (!job) return XUI_ERROR_OUT_OF_MEMORY;
     desc.iSize = sizeof(desc); desc.iDomain = XUI_DOC_SOURCE; desc.iOrigin = e->origin; desc.iGroup = group;
     if (same_node) {
@@ -535,7 +549,7 @@ static int doc_editor_prepare_visual_text(doc_editor_data* e, const xui_doc_rang
         doc_input_retire(e->worker, job); return result;
     }
     doc_view_text_ranges_visual(&e->view, NULL, job->prepare);
-    e->input_start = e->view.selection; e->input = job; e->visual_input = 1;
+    e->input_start = e->view.selection;doc_editor_replace_input(e,job);e->visual_input = 1;
     e->visual_source_caret = source_caret;
     e->view.input = NULL; e->view.visual_input = job->prepare; e->input_error = 0;
     e->view.selection.tAnchor = e->view.selection.tCaret = preview_caret;
@@ -578,7 +592,7 @@ static int doc_editor_continue_visual_text(doc_editor_data* e, const xui_doc_ran
     }
     doc_view_text_ranges_visual(&e->view, e->view.visual_input, job->prepare);
     e->view.visual_input = job->prepare;
-    e->input->next = e->retired; e->retired = e->input; e->input = job;
+    doc_editor_replace_input(e,job);
     e->visual_source_caret = source_caret; e->input_error = 0;
     e->view.selection.tAnchor = e->view.selection.tCaret = a;
     e->view.selection.tCaret.iOffset += bytes;
@@ -627,7 +641,7 @@ XUI_API int xuiDocumentEditorAppendStreamSource(xui_widget w,
         result = xuiDocumentRendererSetActivePosition(e->view.renderer, &tail);
         if (result != XUI_OK) return result;
     }
-    if (!e->worker) { e->worker = doc_input_worker_create(); if (!e->worker) return XUI_ERROR_OUT_OF_MEMORY; }
+    result=doc_editor_ensure_worker(e);if(result!=XUI_OK)return result;
     job = calloc(1, sizeof(*job)); if (!job) return XUI_ERROR_OUT_OF_MEMORY;
     group = e->stream_open ? e->stream_group : e->next_group + 1;
     desc.iSize = sizeof(desc); desc.iDomain = XUI_DOC_SOURCE;
@@ -816,8 +830,7 @@ XUI_API int xuiDocumentEditorRetryInput(xui_widget w)
     if (e->visual_input) {
         doc_view_text_ranges_visual(&e->view, e->view.visual_input, job->prepare);
         e->view.visual_input = job->prepare;
-        e->input->next = e->retired; e->retired = e->input;
-        e->input = job; e->input_error = 0;
+        doc_editor_replace_input(e,job);e->input_error = 0;
         doc_editor_retire_inputs(e);
         doc_input_schedule(e->worker, job); return XUI_OK;
     }
@@ -3928,20 +3941,36 @@ static void doc_editor_destroy(xui_widget w, void* data, void* user)
 }
 static int doc_editor_destroy_prepare(xui_widget widget,void* raw,bool* complete)
 {
-    (void)widget;doc_editor_data* data=raw;
+    doc_editor_data* data=raw;
     if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
-    if(!data->projection){*complete=true;return XUI_OK;}
-    return doc_render_destroy_prepare(data->projection,complete);
+    bool workerDone=false,projectionDone=!data->projection;
+    int result=doc_input_worker_prepare(data->worker,xuiInternalDestroyWaitAllowed(widget->pContext),&workerDone);
+    xerror* first=xrtTakeError();
+    if(data->projection){
+        int next=doc_render_destroy_prepare(data->projection,&projectionDone);xerror* error=xrtTakeError();
+        if(result>=0 && (next<0 || error)){result=next<0 ? next:XUI_ERROR_CALLBACK_FAILED;xrtErrorFree(first);first=error;}
+        else xrtErrorFree(error);
+    }
+    *complete=workerDone && projectionDone;
+    xrtSetErrorTake(first);return result<0 ? result:*complete ? XUI_OK:XUI_STATUS_DEFERRED;
 }
 static int doc_editor_destroy_ready(xui_widget widget,const void* raw)
 {
     (void)widget;const doc_editor_data* editor=raw;
+    /* Before the first Prepare the worker must be allowed to receive its stop
+     * request. Afterwards its real proc tail, not just a cancelled job, is the
+     * necessary module/data lifetime barrier. */
+    if(editor->worker && editor->worker->stopping && !doc_input_worker_finished(editor->worker))return XUI_ERROR_BUSY;
     return editor->projection ? doc_render_destroy_ready(editor->projection):XUI_OK;
 }
 static bool doc_editor_trace_ownership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
 {
     (void)widget;const doc_editor_data* editor=raw;
-    /* The inherited DocumentView layer traces view.renderer exactly once. */
+    /* The inherited DocumentView layer traces view.renderer exactly once.
+     * queued/active worker pointers normally borrow these same owning jobs. */
+    if(editor->input){xrtownershipref ref=xuiDocumentPrepareOwnership(editor->input->prepare);if(!ref.Data || !visit(ref,user))return false;}
+    for(const doc_input_job* job=editor->retired;job;job=job->next){xrtownershipref ref=xuiDocumentPrepareOwnership(job->prepare);if(!ref.Data || !visit(ref,user))return false;}
+    if(!doc_input_worker_trace(editor->worker,visit,user))return false;
     return !editor->projection || xuiDocumentRendererTraceOwnership(editor->projection,visit,user);
 }
 XUI_API xui_widget_type xuiDocumentEditorGetType(xui_context context)

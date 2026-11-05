@@ -59,7 +59,7 @@ static void htmlSetup(HtmlTest* test,bool create)
     assert(xuiSetDefaultFont(test->base.context,test->font)==XUI_OK);
     xui_widget root=NULL;assert(xuiWidgetCreate(test->base.context,&root)==XUI_OK && xuiSetRootWidget(test->base.context,root)==XUI_OK);
     assert(xuiSetViewportSize(test->base.context,800,600)==XUI_OK);
-    assert(xuiDocumentCreate(NULL,&test->document)==XUI_OK);
+    assert(xuiDocumentCreateOwned(NULL,&test->document)==XUI_OK);
     xui_document_transaction txn=NULL;assert(xuiDocumentBeginTransaction(test->document,NULL,&txn)==XUI_OK);
     const char text[]="<p>CPU-only panel</p>";
     xui_doc_node_desc_t node={.iSize=sizeof(node),.iKind=XUI_DOC_HTML,.sText=text,.iTextBytes=sizeof(text)-1};
@@ -122,7 +122,8 @@ static void htmlOwned(bool close)
     assert(xuiWidgetDestroyChecked(test.panel->webview)==XUI_ERROR_INVALID_STATE);
     assert(xuiDocumentHtmlInteractionGetWebView(test.panel)==test.panel->webview);
     xrtownershipscope frozen={0};unsigned edges=0;assert(xrtOwnershipFreezeTryBegin(&frozen));
-    assert(doc_html_trace(test.panel,layoutVisit,&edges) && edges==1);assert(xrtOwnershipScopeEnd(&frozen));
+    /* Actual Document owner plus the independent open-link closure. */
+    assert(doc_html_trace(test.panel,layoutVisit,&edges) && edges==2);assert(xrtOwnershipScopeEnd(&frozen));
     xrtClearError();htmlSend(&test);assert(owner.calls==1 && owner.refs==1 && !owner.current && owner.holds==2 && owner.drops==2);
     if(close)assert(gone==1 && !watch.ppPrevious);else{
         assert(!gone && xuiDocumentHtmlInteractionGetContext(test.panel)==test.base.context);
