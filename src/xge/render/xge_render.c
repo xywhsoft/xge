@@ -956,9 +956,9 @@ static HGLOBAL __xgeWin32ClipboardMemory(const void* pData, size_t iSize, int bT
 	unsigned char* pTarget;
 	size_t iTotal = iSize + (bTerminate ? 1u : 0u);
 	if ( iTotal < iSize ) return NULL;
-	if ( iTotal == 0u ) iTotal = 1u;
 	hMemory = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)iTotal);
 	if ( hMemory == NULL ) return NULL;
+	if(iTotal==0u)return hMemory; /* Valid discarded handle: exact empty bytes. */
 	pTarget = (unsigned char*)GlobalLock(hMemory);
 	if ( pTarget == NULL ) { GlobalFree(hMemory); return NULL; }
 	if ( iSize > 0u ) memcpy(pTarget, pData, iSize);
@@ -1003,7 +1003,7 @@ static HGLOBAL __xgeWin32ClipboardUtf8Text(const void* pData, size_t iSize)
 	WCHAR* sWide;
 	int iWideCount;
 	if ( iSize > (size_t)INT_MAX ) return NULL;
-	iWideCount = MultiByteToWideChar(CP_UTF8, 0, (const char*)pData, (int)iSize, NULL, 0);
+	iWideCount = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*)pData, (int)iSize, NULL, 0);
 	if ( iWideCount <= 0 && iSize != 0u ) return NULL;
 	hMemory = GlobalAlloc(GMEM_MOVEABLE, ((SIZE_T)iWideCount + 1u) * sizeof(WCHAR));
 	if ( hMemory == NULL ) return NULL;
@@ -1122,64 +1122,62 @@ static UINT __xgeWin32ClipboardFormat(const char* sFormat)
 	return RegisterClipboardFormatA(sFormat);
 }
 
-static int __xgeWin32ClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount)
+/* All representation allocation precedes the one OLE publication. A prepared
+ * object never calls a lazy provider, and GetData returns only independent
+ * HGLOBAL media (pUnkForRelease=NULL), as required by transfer protocol v1. */
+static int __xgeWin32ClipboardSetItems(const xge_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
 {
-	xge_win32_clipboard_item_t* pNative;
-	const char* sText = NULL;
-	size_t iTextSize = 0u;
-	DWORD iSequence;
-	int i;
-	int iNativeCount = iItemCount;
-	int iPngIndex = -1;
-	int bSuccess;
-	pNative = (xge_win32_clipboard_item_t*)xrtCalloc((size_t)iItemCount + 1u, sizeof(*pNative));
-	if ( pNative == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	for ( i = 0; i < iItemCount; i++ ) {
-		pNative[i].iFormat = __xgeWin32ClipboardFormat(pItems[i].sFormat);
-		if ( pNative[i].iFormat == 0u ) break;
-		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ) iPngIndex = i;
-		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
-			pNative[i].hMemory = __xgeWin32ClipboardUtf8Text(pItems[i].pData, pItems[i].iDataSize);
-			sText = (const char*)pItems[i].pData; iTextSize = pItems[i].iDataSize;
-		} else if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_HTML) == 0 )
-			pNative[i].hMemory = __xgeWin32ClipboardHtml(pItems[i].pData, pItems[i].iDataSize);
-		else pNative[i].hMemory = __xgeWin32ClipboardMemory(pItems[i].pData, pItems[i].iDataSize, 0);
-		if ( pNative[i].hMemory == NULL ) break;
-	}
-	if ( i == iItemCount && iPngIndex >= 0 ) {
-		HGLOBAL dib = __xgeWin32ClipboardPngDibV5(
-			pItems[iPngIndex].pData, pItems[iPngIndex].iDataSize);
-		if ( dib != NULL ) {
-			pNative[iNativeCount].iFormat = CF_DIBV5;
-			pNative[iNativeCount].hMemory = dib;
-			iNativeCount++;
-		}
-	}
-	if ( i != iItemCount || !__xgeWin32ClipboardOpen() ) {
-		for ( i = 0; i < iNativeCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
-		xrtFree(pNative);
-		return i != iItemCount ? XGE_ERROR_OUT_OF_MEMORY : XGE_ERROR_BACKEND_FAILED;
-	}
-	__xgeWin32ClipboardDibPngCacheClear();
-	bSuccess = EmptyClipboard() ? 1 : 0;
-	for ( i = 0; bSuccess && i < iNativeCount; i++ ) {
-		if ( SetClipboardData(pNative[i].iFormat, pNative[i].hMemory) == NULL ) {
-			if ( i < iItemCount ) bSuccess = 0;
-		}
-		else pNative[i].hMemory = NULL;
-	}
-	iSequence = bSuccess ? GetClipboardSequenceNumber() : 0u;
-	CloseClipboard();
-	for ( i = 0; i < iNativeCount; i++ ) if ( pNative[i].hMemory != NULL ) GlobalFree(pNative[i].hMemory);
-	xrtFree(pNative);
-	if ( !bSuccess ) { (void)__xgeWin32ClipboardCacheInvalidate(); return XGE_ERROR_BACKEND_FAILED; }
-	if ( sText != NULL && __xgeWin32ClipboardCacheReserve(iTextSize + 1u) ) {
-		if ( iTextSize > 0u ) memcpy(g_xge.sClipboardText, sText, iTextSize);
-		g_xge.sClipboardText[iTextSize] = 0;
-		g_xge.iClipboardSequence = (uint32_t)iSequence;
-		g_xge.iClipboardCacheValid = 1;
-	} else (void)__xgeWin32ClipboardCacheInvalidate();
-	return XGE_OK;
+    size_t slots=(size_t)count+1u;
+    xge_win32_data_object_t* native=xrtCalloc(1,sizeof(*native)+slots*(sizeof(FORMATETC)+sizeof(HGLOBAL)));
+    if(!native)return XGE_ERROR_OUT_OF_MEMORY;
+    native->iface.lpVtbl=(IDataObjectVtbl*)&g_xgeWin32DataVtbl;native->iRefs=1;native->iCreator=xrtThreadCurrentId();
+    native->pFormats=(FORMATETC*)(native+1);native->pPrepared=(HGLOBAL*)(native->pFormats+slots);
+    int status=XGE_OK,png=-1;bool localOle=false;IDataObject* data=&native->iface;
+    for(int i=0;status==XGE_OK && i<count;++i){
+        UINT format=__xgeWin32ClipboardFormat(items[i].sFormat);
+        if(!format){status=XGE_ERROR_BACKEND_FAILED;break;}
+        for(int j=0;j<i;++j)if(native->pFormats[j].cfFormat==format)status=XGE_ERROR_INVALID_ARGUMENT;
+        if(status!=XGE_OK)break;
+        HGLOBAL memory;
+        if(strcmp(items[i].sFormat,XGE_CLIPBOARD_FORMAT_TEXT_UTF8)==0){
+            if((items[i].iDataSize && memchr(items[i].pData,0,items[i].iDataSize)) || items[i].iDataSize>INT_MAX){status=XGE_ERROR_INVALID_ARGUMENT;break;}
+            memory=__xgeWin32ClipboardUtf8Text(items[i].pData,items[i].iDataSize);
+        }else if(strcmp(items[i].sFormat,XGE_CLIPBOARD_FORMAT_HTML)==0)
+            memory=__xgeWin32ClipboardHtml(items[i].pData,items[i].iDataSize);
+        else memory=__xgeWin32ClipboardMemory(items[i].pData,items[i].iDataSize,0);
+        if(!memory){status=XGE_ERROR_OUT_OF_MEMORY;break;}
+        FORMATETC* target=&native->pFormats[native->iCount];target->cfFormat=(CLIPFORMAT)format;
+        target->dwAspect=DVASPECT_CONTENT;target->lindex=-1;target->tymed=TYMED_HGLOBAL;
+        native->pPrepared[native->iCount++]=memory;
+        if(strcmp(items[i].sFormat,XGE_CLIPBOARD_FORMAT_IMAGE_PNG)==0)png=i;
+    }
+    if(status==XGE_OK && png>=0){
+        HGLOBAL dib=__xgeWin32ClipboardPngDibV5(items[png].pData,items[png].iDataSize);
+        if(dib){FORMATETC* target=&native->pFormats[native->iCount];target->cfFormat=CF_DIBV5;
+            target->dwAspect=DVASPECT_CONTENT;target->lindex=-1;target->tymed=TYMED_HGLOBAL;
+            native->pPrepared[native->iCount++]=dib;}
+    }
+    if(status==XGE_OK && !g_xgeWin32OleInitialized){
+        HRESULT hr=OleInitialize(NULL);if(SUCCEEDED(hr))localOle=true;
+        else status=XGE_ERROR_BACKEND_FAILED;
+    }
+    if(status==XGE_OK && services){
+        xn_transfer_native_owner_v1 owner=__xgeWin32DataOwner(native);void* wrapped=NULL;
+        int wrappedStatus=services->wrapDataObject(services,data,&owner,&wrapped);
+        if(wrappedStatus==0 && wrapped)data=(IDataObject*)wrapped;
+        if(wrappedStatus!=0 || !wrapped || xrtGetError())status=XGE_ERROR_BACKEND_FAILED;
+    }
+    if(status==XGE_OK){
+        if(FAILED(OleSetClipboard(data)))status=XGE_ERROR_BACKEND_FAILED;
+        else {
+            __xgeWin32ClipboardDibPngCacheClear();(void)__xgeWin32ClipboardCacheInvalidate();
+            if(localOle && FAILED(OleFlushClipboard()))status=XGE_ERROR_BACKEND_FAILED;
+        }
+    }
+    xerror* first=status!=XGE_OK ? xrtTakeError():NULL;int outcome=status;
+    data->lpVtbl->Release(data);__xgeCallbackOutcome(XGE_OK,&outcome,&first);
+    if(localOle){OleUninitialize();__xgeCallbackOutcome(XGE_OK,&outcome,&first);}
+    xrtSetErrorTake(first);return outcome;
 }
 
 typedef struct xge_win32_dib_channel_t {
@@ -1386,9 +1384,10 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 		return strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ?
 			__xgeWin32ClipboardGetPngFromDib(pData, iCapacity) : XGE_ERROR_FILE_NOT_FOUND;
 	}
+	iSize = GlobalSize(hData);
+	if(iSize==0u){CloseClipboard();return 0;}
 	pSource = (const unsigned char*)GlobalLock(hData);
 	if ( pSource == NULL ) { CloseClipboard(); return XGE_ERROR_BACKEND_FAILED; }
-	iSize = GlobalSize(hData);
 	iEnd = (size_t)iSize;
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_HTML) == 0 ) {
 		static const char sStartLabel[] = "StartFragment:";
@@ -1436,20 +1435,91 @@ static int __xgeX11ClipboardReserve(size_t bytes)
 	return XGE_OK;
 }
 
-static int __xgeX11ClipboardSetText(const char* text, size_t bytes)
+typedef struct xge_x11_clipboard_item_t {Atom target;const unsigned char* data;size_t bytes;} xge_x11_clipboard_item_t;
+typedef struct xge_x11_clipboard_snapshot_t {int count;xge_x11_clipboard_item_t items[65];} xge_x11_clipboard_snapshot_t;
+static xge_x11_clipboard_snapshot_t* g_xgeX11Clipboard;
+static bool __xgeX11ClipboardSelectionRequest(void* raw)
 {
-	long words = XExtendedMaxRequestSize(_sapp.x11.display);
-	if ( words == 0 ) words = XMaxRequestSize(_sapp.x11.display);
-	/* Sokol serves one XChangeProperty request and has no INCR sender.
-	 * Leave room for its header, BIG-REQUESTS length and padding. */
-	if ( words <= 8 || bytes > (size_t)(words - 8) * 4u ) return XGE_ERROR_BUFFER_TOO_SMALL;
-	int result = __xgeX11ClipboardReserve(bytes);
-	if ( result != XGE_OK ) return result;
-	XSetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD, _sapp.x11.window, CurrentTime);
-	if ( XGetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD) != _sapp.x11.window )
-		return XGE_ERROR_BACKEND_FAILED;
-	memcpy(_sapp.clipboard.buffer, text, bytes + 1u);
-	return XGE_OK;
+    XSelectionRequestEvent* request=&((XEvent*)raw)->xselectionrequest;
+    xge_x11_clipboard_snapshot_t* snapshot=g_xgeX11Clipboard;
+    if(!snapshot || request->selection!=_sapp.x11.CLIPBOARD || !_sapp.clipboard.enabled)return false;
+    XSelectionEvent reply={0};reply.type=SelectionNotify;reply.display=request->display;
+    reply.requestor=request->requestor;reply.selection=request->selection;reply.target=request->target;reply.time=request->time;
+    Atom property=request->property!=None ? request->property:request->target;
+    if(request->owner==_sapp.x11.window && XGetSelectionOwner(_sapp.x11.display,_sapp.x11.CLIPBOARD)==_sapp.x11.window){
+        if(request->target==_sapp.x11.TARGETS){
+            Atom targets[66];targets[0]=_sapp.x11.TARGETS;
+            for(int i=0;i<snapshot->count;++i)targets[i+1]=snapshot->items[i].target;
+            XChangeProperty(_sapp.x11.display,request->requestor,property,XA_ATOM,32,PropModeReplace,(unsigned char*)targets,snapshot->count+1);
+            reply.property=property;
+        }else for(int i=0;i<snapshot->count;++i)if(snapshot->items[i].target==request->target){
+            XChangeProperty(_sapp.x11.display,request->requestor,property,request->target,8,PropModeReplace,snapshot->items[i].data,(int)snapshot->items[i].bytes);
+            reply.property=property;break;
+        }
+    }
+    XSendEvent(_sapp.x11.display,request->requestor,False,0,(XEvent*)&reply);XFlush(_sapp.x11.display);return true;
+}
+static int __xgeX11ClipboardSetItems(const xge_clipboard_item_t* items,int count)
+{
+    if(!_sapp.clipboard.enabled || !_sapp.clipboard.buffer || !_sapp.x11.display)return XGE_ERROR_UNSUPPORTED;
+    long words=XExtendedMaxRequestSize(_sapp.x11.display);if(!words)words=XMaxRequestSize(_sapp.x11.display);
+    if(words<=8)return XGE_ERROR_BUFFER_TOO_SMALL;
+    size_t total=sizeof(xge_x11_clipboard_snapshot_t);int text=-1;
+    for(int i=0;i<count;++i){
+        if(items[i].iDataSize>INT_MAX || items[i].iDataSize>(size_t)(words-8)*4u || items[i].iDataSize>SIZE_MAX-total)return XGE_ERROR_BUFFER_TOO_SMALL;
+        total+=items[i].iDataSize;
+        if(strcmp(items[i].sFormat,XGE_CLIPBOARD_FORMAT_TEXT_UTF8)==0){
+            text=i;if(items[i].iDataSize && memchr(items[i].pData,0,items[i].iDataSize))return XGE_ERROR_INVALID_ARGUMENT;
+        }
+    }
+    xge_x11_clipboard_snapshot_t* next=xrtCalloc(1,total);if(!next)return XGE_ERROR_OUT_OF_MEMORY;
+    unsigned char* output=(unsigned char*)(next+1);int status=XGE_OK;
+    for(int i=0;i<count;++i){
+        Atom atom=XInternAtom(_sapp.x11.display,items[i].sFormat,False);
+        if(atom==None){status=XGE_ERROR_BACKEND_FAILED;break;}
+        for(int j=0;j<next->count;++j)if(next->items[j].target==atom)status=XGE_ERROR_INVALID_ARGUMENT;
+        if(status!=XGE_OK)break;
+        next->items[next->count++]=(xge_x11_clipboard_item_t){atom,output,items[i].iDataSize};
+        if(items[i].iDataSize)memcpy(output,items[i].pData,items[i].iDataSize);
+        if(i==text && atom!=_sapp.x11.UTF8_STRING)next->items[next->count++]=(xge_x11_clipboard_item_t){_sapp.x11.UTF8_STRING,output,items[i].iDataSize};
+        output+=items[i].iDataSize;
+    }
+    if(status==XGE_OK)status=__xgeX11ClipboardReserve(text>=0 ? items[text].iDataSize:0u);
+    if(status==XGE_OK){
+        XSetSelectionOwner(_sapp.x11.display,_sapp.x11.CLIPBOARD,_sapp.x11.window,CurrentTime);
+        if(XGetSelectionOwner(_sapp.x11.display,_sapp.x11.CLIPBOARD)!=_sapp.x11.window)status=XGE_ERROR_BACKEND_FAILED;
+    }
+    if(status!=XGE_OK){xrtFree(next);return status;}
+    xge_x11_clipboard_snapshot_t* old=g_xgeX11Clipboard;g_xgeX11Clipboard=next;
+    if(text>=0 && items[text].iDataSize)memcpy(_sapp.clipboard.buffer,items[text].pData,items[text].iDataSize);
+    _sapp.clipboard.buffer[text>=0 ? items[text].iDataSize:0u]=0;xrtFree(old);return XGE_OK;
+}
+static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capacity)
+{
+    if(!_sapp.clipboard.enabled || !_sapp.x11.display)return XGE_ERROR_UNSUPPORTED;
+    Atom target=XInternAtom(_sapp.x11.display,format,False);
+    Window owner=XGetSelectionOwner(_sapp.x11.display,_sapp.x11.CLIPBOARD);
+    if(owner==None)return XGE_ERROR_NOT_FOUND;
+    if(owner==_sapp.x11.window && g_xgeX11Clipboard){
+        for(int i=0;i<g_xgeX11Clipboard->count;++i)if(g_xgeX11Clipboard->items[i].target==target){
+            const xge_x11_clipboard_item_t* item=&g_xgeX11Clipboard->items[i];
+            if(output && capacity)memcpy(output,item->data,capacity<item->bytes ? capacity:item->bytes);
+            return (int)item->bytes;
+        }
+        return XGE_ERROR_NOT_FOUND;
+    }
+    Atom property=XInternAtom(_sapp.x11.display,"XGE_SELECTION",False),actual;XEvent event;
+    XConvertSelection(_sapp.x11.display,_sapp.x11.CLIPBOARD,target,property,_sapp.x11.window,CurrentTime);
+    if(!_sapp_x11_wait_for_event(SelectionNotify,0.1,&event) || event.xselection.requestor!=_sapp.x11.window || event.xselection.selection!=_sapp.x11.CLIPBOARD || event.xselection.target!=target || event.xselection.property!=property)return XGE_ERROR_BACKEND_FAILED;
+    int bits;unsigned long count,remaining;unsigned char* data=NULL;
+    if(XGetWindowProperty(_sapp.x11.display,_sapp.x11.window,property,0,LONG_MAX,True,AnyPropertyType,&actual,&bits,&count,&remaining,&data)!=Success){if(data)XFree(data);return XGE_ERROR_BACKEND_FAILED;}
+    int result=XGE_ERROR_BACKEND_FAILED;
+    if(actual==target && bits==8 && !remaining && count<=INT_MAX && (!count || data)){
+        if(output && capacity)memcpy(output,data,capacity<(size_t)count ? capacity:(size_t)count);
+        result=(int)count;
+    }
+    if(data)XFree(data);
+    return result;
 }
 
 static int __xgeX11ClipboardGetText(const char** text)
@@ -1499,43 +1569,64 @@ static int __xgeX11ClipboardGetText(const char** text)
 }
 #endif
 
-int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount)
+static void __xgeClipboardPlatformCleanup(void)
 {
-	int i;
-	if ( pItems == NULL || iItemCount <= 0 || iItemCount > 64 ) return XGE_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < iItemCount; i++ ) {
-		if ( pItems[i].sFormat == NULL || pItems[i].sFormat[0] == 0 ||
-		     (pItems[i].pData == NULL && pItems[i].iDataSize != 0u) ||
-		     pItems[i].iDataSize == SIZE_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	#if defined(_WIN32) || defined(_WIN64)
-		if ( g_xge.bInitialized ) return __xgeWin32ClipboardSetItems(pItems, iItemCount);
-	#endif
-	if ( g_xge.bSokolRunning ) for ( i = 0; i < iItemCount; i++ ) {
-		int result;
-		char* sText;
-		if ( strcmp(pItems[i].sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) != 0 ) continue;
-		if ( pItems[i].iDataSize >= (size_t)INT_MAX ||
-			(pItems[i].iDataSize && memchr(pItems[i].pData, 0, pItems[i].iDataSize)) )
-			return XGE_ERROR_INVALID_ARGUMENT;
-		sText = (char*)xrtMalloc(pItems[i].iDataSize + 1u);
-		if ( sText == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-		if ( pItems[i].iDataSize > 0u ) memcpy(sText, pItems[i].pData, pItems[i].iDataSize);
-		sText[pItems[i].iDataSize] = 0;
-		#if defined(_SAPP_LINUX)
-			result = __xgeX11ClipboardSetText(sText, pItems[i].iDataSize);
-		#elif defined(_SAPP_MACOS) || defined(_SAPP_WIN32) || defined(_SAPP_EMSCRIPTEN)
-			if ( !_sapp.clipboard.enabled ) result = XGE_ERROR_UNSUPPORTED;
-			else if ( pItems[i].iDataSize >= (size_t)_sapp.clipboard.buf_size ) result = XGE_ERROR_BUFFER_TOO_SMALL;
-			else { sapp_set_clipboard_string(sText); result = XGE_OK; }
-		#else
-			result = XGE_ERROR_UNSUPPORTED;
-		#endif
-		xrtFree(sText);
-		return result;
-	}
-	return XGE_ERROR_UNSUPPORTED;
+#if defined(_SAPP_LINUX)
+    xrtFree(g_xgeX11Clipboard);g_xgeX11Clipboard=NULL;
+#endif
 }
+
+static int __xgeClipboardSetItems(const xge_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
+{
+    if(!items || count<=0 || count>64)return XGE_ERROR_INVALID_ARGUMENT;
+    if(services){int status=__xgeTransferValidate(services);if(status!=XGE_OK)return status;}
+    for(int i=0;i<count;++i){
+        if(!items[i].sFormat || !items[i].sFormat[0] || (!items[i].pData && items[i].iDataSize) || items[i].iDataSize==SIZE_MAX)return XGE_ERROR_INVALID_ARGUMENT;
+        for(int j=0;j<i;++j)if(strcmp(items[i].sFormat,items[j].sFormat)==0)return XGE_ERROR_INVALID_ARGUMENT;
+    }
+#if defined(_WIN32) || defined(_WIN64)
+    if(g_xge.bInitialized || services)return __xgeWin32ClipboardSetItems(items,count,services);
+#endif
+#if defined(_SAPP_LINUX)
+    if(g_xge.bSokolRunning)return __xgeX11ClipboardSetItems(items,count);
+#else
+    /* Other backends must reject the entire set before changing their old
+     * clipboard. A UTF8-only backend cannot silently discard rich formats. */
+    if(count!=1 || strcmp(items[0].sFormat,XGE_CLIPBOARD_FORMAT_TEXT_UTF8)!=0)return XGE_ERROR_UNSUPPORTED;
+    if(g_xge.bSokolRunning){
+        if(items[0].iDataSize>=INT_MAX || (items[0].iDataSize && memchr(items[0].pData,0,items[0].iDataSize)))return XGE_ERROR_INVALID_ARGUMENT;
+        char* text=xrtMalloc(items[0].iDataSize+1u);if(!text)return XGE_ERROR_OUT_OF_MEMORY;
+        if(items[0].iDataSize)memcpy(text,items[0].pData,items[0].iDataSize);
+        text[items[0].iDataSize]=0;
+        int status=XGE_ERROR_UNSUPPORTED;
+#if defined(_SAPP_MACOS) || defined(_SAPP_WIN32) || defined(_SAPP_EMSCRIPTEN)
+        if(!_sapp.clipboard.enabled)status=XGE_ERROR_UNSUPPORTED;
+        else if(items[0].iDataSize>=(size_t)_sapp.clipboard.buf_size)status=XGE_ERROR_BUFFER_TOO_SMALL;
+        else {sapp_set_clipboard_string(text);status=XGE_OK;}
+#endif
+        xrtFree(text);return status;
+    }
+#endif
+    return XGE_ERROR_UNSUPPORTED;
+}
+int xgeClipboardSetItems(const xge_clipboard_item_t* items,int count)
+{
+    xerror* ambient=xrtTakeError();xn_transfer_services_v1 services;
+    int status=__xgeClipboardSetItems(items,count,__xgeTransferCurrent(&services) ? &services:NULL);
+    xge_data_outcome_t outcome={0};__xgeDataOwnedOutcomeBegin(&outcome,status);
+    return __xgeDataOwnedOutcomeEnd(&outcome,ambient);
+}
+int xgeClipboardSetItemsWithTransfer(const xge_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
+{
+    xerror* ambient=xrtTakeError();int status=__xgeTransferValidate(services);
+    if(status==XGE_OK)status=__xgeClipboardSetItems(items,count,services);
+    xge_data_outcome_t outcome={0};__xgeDataOwnedOutcomeBegin(&outcome,status);
+    return __xgeDataOwnedOutcomeEnd(&outcome,ambient);
+}
+static int __xgeDataClipboardConsume(const xge_clipboard_item_t* items,int count,void* services)
+{return xgeClipboardSetItemsWithTransfer(items,count,services);}
+int xgeDataObjectCopyToClipboardWithTransfer(xge_data_object data,const xn_transfer_services_v1* services)
+{int status=__xgeTransferValidate(services);return status==XGE_OK ? __xgeDataSnapshotCopy(data,__xgeDataClipboardConsume,(void*)services):status;}
 
 int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
 {
@@ -1543,6 +1634,9 @@ int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
 	#if defined(_WIN32) || defined(_WIN64)
 		if ( g_xge.bInitialized ) return __xgeWin32ClipboardGetData(sFormat, pData, iCapacity);
 	#endif
+#if defined(_SAPP_LINUX)
+    if(g_xge.bSokolRunning)return __xgeX11ClipboardGetData(sFormat,pData,iCapacity);
+#endif
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 && g_xge.bSokolRunning ) {
 		const char* sText;
 		size_t iSize;

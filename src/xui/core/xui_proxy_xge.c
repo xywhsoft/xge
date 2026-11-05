@@ -5,6 +5,8 @@
 #include "xui_native_accessibility_internal.h"
 #include "xge.h"
 #include "xge_ime_owner_internal.h"
+#include "xge_data_lifetime_internal.h"
+#include "xge_transfer_internal_api.h"
 #include "xui_text_item_internal.h"
 #if XUI_ENABLE_DOCUMENT_EDITOR
 #include "xui_document_ui.h"
@@ -59,12 +61,17 @@ typedef struct xui_proxy_xge_input_transform_t {
 static xui_proxy_xge_input_transform_t g_xuiProxyXgeInputTransform;
 static xui_context g_xuiProxyXgeDragContext;
 static xui_data_object g_xuiProxyXgeDragData;
+static uint64_t g_xuiProxyXgeDragRevision;
 static uint32_t __xuiProxyXgeMapModifiers(uint32_t iModifiers);
 
 static int __xuiProxyXgeResult(int iRet)
 {
 	switch ( iRet ) {
 	case XGE_OK: return XUI_OK;
+	case XGE_STATUS_DEFERRED: return XUI_STATUS_DEFERRED;
+	case XGE_ERROR_BUSY: return XUI_ERROR_BUSY;
+	case XGE_ERROR_INVALID_STATE: return XUI_ERROR_INVALID_STATE;
+	case XGE_ERROR_CALLBACK_FAILED: return XUI_ERROR_CALLBACK_FAILED;
 	case XGE_ERROR_INVALID_ARGUMENT: return XUI_ERROR_INVALID_ARGUMENT;
 	case XGE_ERROR_OUT_OF_MEMORY: return XUI_ERROR_OUT_OF_MEMORY;
 	case XGE_ERROR_BUFFER_TOO_SMALL: return XUI_ERROR_BUFFER_TOO_SMALL;
@@ -86,6 +93,21 @@ static void __xuiProxyXgeDragRelease(void* pUser)
 	xgeDataObjectRelease((xge_data_object)pUser);
 }
 
+static xge_data_object __xuiProxyXgeDragSource(const void* reference)
+{const xge_data_lifetime_t* root=reference;return (xge_data_object)((char*)reference-root->pType->iBodyBytes);}
+static bool __xuiProxyXgeDragSourceHold(const void* reference)
+{xge_data_object shared=NULL;return xgeDataObjectShareOwned(__xuiProxyXgeDragSource(reference),&shared)==XGE_OK;}
+static bool __xuiProxyXgeDragSourceDrop(const void* reference)
+{bool consumed=false;int status=xgeDataObjectReleaseOwnerChecked(__xuiProxyXgeDragSource(reference),&consumed);return consumed && status==XGE_OK;}
+static int __xuiProxyXgeDragReadOwned(const xstrview* format,xui_data_output_t* output,void* source)
+{
+    size_t required=0;int status=xgeDataObjectGet(source,format->Data,output->_pDestination,output->iCapacity,&required);
+    output->iRequired=required;
+    /* Native Owned Get reserves this code for its checked capacity result;
+     * user callback nonzero status was already normalized CALLBACK_FAILED. */
+    if(status==XGE_ERROR_BUFFER_TOO_SMALL && output->_pDestination && required>output->iCapacity)return XUI_OK;
+    return __xuiProxyXgeResult(status);
+}
 static int __xuiProxyXgeDragDataWrap(xge_data_object pSource,
 	xui_data_object* ppData)
 {
@@ -97,23 +119,23 @@ static int __xuiProxyXgeDragDataWrap(xge_data_object pSource,
 
 	if ( pSource == NULL || ppData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppData = NULL;
-	iRet = xuiDataObjectCreate(&pData);
+	bool owned=xgeDataObjectIsOwned(pSource);
+	iRet=owned ? xuiDataObjectCreateOwned(&pData):xuiDataObjectCreate(&pData);
 	if ( iRet != XUI_OK ) return iRet;
 	iCount = xgeDataObjectFormatCount(pSource);
 	iRet = XUI_OK;
 	for ( i = 0; i < iCount; i++ ) {
 		sFormat = xgeDataObjectFormatAt(pSource, i);
 		if ( sFormat == NULL ) continue;
-		if ( xgeDataObjectAddRef(pSource) != XGE_OK ) {
-			iRet = XUI_ERROR_INVALID_ARGUMENT;
-			break;
-		}
-		iRet = xuiDataObjectSetProvider(pData, sFormat,
-			__xuiProxyXgeDragRead, __xuiProxyXgeDragRelease, pSource);
-		if ( iRet != XUI_OK ) {
-			xgeDataObjectRelease(pSource);
-			break;
-		}
+        if(owned){
+            xui_callback_owner_t owner={xgeDataObjectOwnership(pSource),__xuiProxyXgeDragSourceHold,__xuiProxyXgeDragSourceDrop};
+            iRet=xuiDataObjectSetProviderOwned(pData,sFormat,__xuiProxyXgeDragReadOwned,pSource,&owner);
+        }else{
+            if(xgeDataObjectAddRef(pSource)!=XGE_OK){iRet=XUI_ERROR_INVALID_ARGUMENT;break;}
+            iRet=xuiDataObjectSetProvider(pData,sFormat,__xuiProxyXgeDragRead,__xuiProxyXgeDragRelease,pSource);
+            if(iRet!=XUI_OK)xgeDataObjectRelease(pSource);
+        }
+        if(iRet!=XUI_OK)break;
 	}
 	if ( iRet != XUI_OK ) {
 		xuiDataObjectRelease(pData);
@@ -123,59 +145,64 @@ static int __xuiProxyXgeDragDataWrap(xge_data_object pSource,
 	return XUI_OK;
 }
 
-static uint32_t __xuiProxyXgeDragEvent(const xge_drag_event_t* pEvent,
-	void* pUser)
+static int __xuiProxyXgeDragDataClear(xui_context context,int status)
 {
-	xui_context pContext = (xui_context)pUser;
-	xui_proxy_xge_input_transform_t* pTransform = &g_xuiProxyXgeInputTransform;
-	uint32_t iEffect = XUI_DRAG_EFFECT_NONE;
-	int iX;
-	int iY;
-	int iType;
-	int iRet;
-
-	if ( pEvent == NULL || pContext == NULL ||
-		pTransform->pContext != pContext || !pTransform->bValid ) {
-		return XGE_DRAG_EFFECT_NONE;
-	}
-	iX = xuiInternalPixelFloor((pEvent->fX - (float)pTransform->tWindowRect.fX) *
-		(float)pTransform->tViewport.iW / (float)pTransform->tWindowRect.fW);
-	iY = xuiInternalPixelFloor((pEvent->fY - (float)pTransform->tWindowRect.fY) *
-		(float)pTransform->tViewport.iH / (float)pTransform->tWindowRect.fH);
-	if ( pEvent->iType == XGE_DRAG_EVENT_ENTER ) {
-		if ( g_xuiProxyXgeDragData != NULL ) {
-			xuiDataObjectRelease(g_xuiProxyXgeDragData);
-			g_xuiProxyXgeDragData = NULL;
-		}
-		iRet = __xuiProxyXgeDragDataWrap(pEvent->pData,
-			&g_xuiProxyXgeDragData);
-		if ( iRet != XUI_OK ) return XGE_DRAG_EFFECT_NONE;
-		iType = XUI_DRAG_EXTERNAL_ENTER;
-	} else if ( pEvent->iType == XGE_DRAG_EVENT_OVER ) {
-		iType = XUI_DRAG_EXTERNAL_OVER;
-	} else if ( pEvent->iType == XGE_DRAG_EVENT_LEAVE ) {
-		iType = XUI_DRAG_EXTERNAL_LEAVE;
-	} else if ( pEvent->iType == XGE_DRAG_EVENT_DROP ) {
-		iType = XUI_DRAG_EXTERNAL_DROP;
-	} else if ( pEvent->iType == XGE_DRAG_EVENT_CANCEL ) {
-		iType = XUI_DRAG_EXTERNAL_CANCEL;
-	} else {
-		return XGE_DRAG_EFFECT_NONE;
-	}
-	iRet = xuiDragExternalEvent(pContext, iType, iX, iY,
-		__xuiProxyXgeMapModifiers(pEvent->iModifiers),
-		(iType == XUI_DRAG_EXTERNAL_ENTER) ? g_xuiProxyXgeDragData : NULL,
-		pEvent->iAllowedEffects, pEvent->iSuggestedEffect, &iEffect);
-	if ( iType == XUI_DRAG_EXTERNAL_LEAVE ||
-		iType == XUI_DRAG_EXTERNAL_DROP ||
-		iType == XUI_DRAG_EXTERNAL_CANCEL ) {
-		if ( g_xuiProxyXgeDragData != NULL ) {
-			xuiDataObjectRelease(g_xuiProxyXgeDragData);
-			g_xuiProxyXgeDragData = NULL;
-		}
-	}
-	if ( iRet != XUI_OK ) return XGE_DRAG_EFFECT_NONE;
-	return iEffect;
+    xui_data_object previous=g_xuiProxyXgeDragData;g_xuiProxyXgeDragData=NULL;
+    if(!previous)return status;
+    if(g_xuiProxyXgeDragRevision!=UINT64_MAX)++g_xuiProxyXgeDragRevision;
+    xerror* first=xrtTakeError();if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    int dropped=XUI_OK;bool consumed=true;
+    if(xuiDataObjectIsOwned(previous))dropped=xuiDataObjectReleaseOwnerChecked(previous,&consumed);
+    else xuiDataObjectRelease(previous);
+    xuiInternalContextCleanupOutcome(context,dropped,&status,&first);xrtSetErrorTake(first);
+    /* Only caller-managed raw C misuse can violate creator/owner preflight.
+     * Keep that actual owner visible instead of silently losing its carrier. */
+    if(!consumed && !g_xuiProxyXgeDragData)g_xuiProxyXgeDragData=previous;
+    return status;
+}
+static int __xuiProxyXgeDragEvent(const xge_drag_event_t* event,uint32_t* effect,void* user)
+{
+    xui_context context=user;xui_proxy_xge_input_transform_t* transform=&g_xuiProxyXgeInputTransform;
+    if(!effect || !event)return XGE_ERROR_INVALID_ARGUMENT;
+    *effect=XGE_DRAG_EFFECT_NONE;
+    uint64_t uiThread=xgeInternalTransferThreadId();
+    if(uiThread && uiThread!=xrtThreadCurrentId())return XGE_ERROR_BUSY;
+    /* Default OS dispatch is creator-thread only. This non-owning native
+     * back-link is removed by Detach before physical Context destruction. */
+    if(!context || transform->pContext!=context || !transform->bValid ||
+       context->bCloseRequested || context->bDestroyPending || context->bDestroying)return XGE_OK;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    int x=xuiInternalPixelFloor((event->fX-(float)transform->tWindowRect.fX)*(float)transform->tViewport.iW/(float)transform->tWindowRect.fW);
+    int y=xuiInternalPixelFloor((event->fY-(float)transform->tWindowRect.fY)*(float)transform->tViewport.iH/(float)transform->tWindowRect.fH);
+    int type=0;uint32_t negotiated=0;
+    bool entering=event->iType==XGE_DRAG_EVENT_ENTER ||
+        (event->iType==XGE_DRAG_EVENT_OVER && (!context->bTransferActive || !context->bTransferExternal));
+    if(entering){
+        status=__xuiProxyXgeDragDataClear(context,XUI_OK);
+        if(status!=XUI_OK)goto finish;
+        if(g_xuiProxyXgeDragContext!=context)goto finish;
+        if(g_xuiProxyXgeDragRevision==UINT64_MAX){status=XUI_ERROR_INVALID_STATE;goto finish;}
+        xui_data_object incoming=NULL;status=__xuiProxyXgeDragDataWrap(event->pData,&incoming);
+        if(status!=XUI_OK)goto finish;
+        g_xuiProxyXgeDragData=incoming;++g_xuiProxyXgeDragRevision;type=XUI_DRAG_EXTERNAL_ENTER;
+    }else if(event->iType==XGE_DRAG_EVENT_OVER)type=XUI_DRAG_EXTERNAL_OVER;
+    else if(event->iType==XGE_DRAG_EVENT_LEAVE)type=XUI_DRAG_EXTERNAL_LEAVE;
+    else if(event->iType==XGE_DRAG_EVENT_DROP)type=XUI_DRAG_EXTERNAL_DROP;
+    else if(event->iType==XGE_DRAG_EVENT_CANCEL)type=XUI_DRAG_EXTERNAL_CANCEL;
+    else goto finish;
+    if((type==XUI_DRAG_EXTERNAL_LEAVE || type==XUI_DRAG_EXTERNAL_DROP || type==XUI_DRAG_EXTERNAL_CANCEL) &&
+       (!context->bTransferActive || !context->bTransferExternal)){
+        status=__xuiProxyXgeDragDataClear(context,XUI_OK);goto finish;
+    }
+    uint64_t revision=g_xuiProxyXgeDragRevision;
+    status=xuiDragExternalEvent(context,type,x,y,__xuiProxyXgeMapModifiers(event->iModifiers),
+        type==XUI_DRAG_EXTERNAL_ENTER ? g_xuiProxyXgeDragData:NULL,event->iAllowedEffects,event->iSuggestedEffect,&negotiated);
+    if((type==XUI_DRAG_EXTERNAL_LEAVE || type==XUI_DRAG_EXTERNAL_DROP || type==XUI_DRAG_EXTERNAL_CANCEL) &&
+       g_xuiProxyXgeDragContext==context && g_xuiProxyXgeDragRevision==revision)status=__xuiProxyXgeDragDataClear(context,status);
+finish:
+    {xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);}
+    if(status==XUI_OK)*effect=negotiated;
+    return status>0 ? XGE_ERROR_CALLBACK_FAILED:status;
 }
 
 static double __xuiProxyXgeClockSeconds(xui_proxy pProxy)
@@ -847,43 +874,19 @@ static int __xuiProxyXgeClipboardGetText(xui_proxy pProxy, char* sText, int iCap
 	return iLength;
 }
 
-static int __xuiProxyXgeClipboardSetItems(xui_proxy pProxy,
-	const xui_clipboard_item_t* pItems, int iItemCount)
+static int __xuiProxyXgeClipboardPublish(xui_proxy proxy,const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
 {
-	xge_clipboard_item_t* pXgeItems;
-	int i;
-	int iRet;
-	if ( pProxy == NULL || pItems == NULL || iItemCount <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
-	#if defined(__linux__) && XUI_ENABLE_DOCUMENT
-		if ( iItemCount > 64 ) return XGE_ERROR_INVALID_ARGUMENT;
-		for ( i = 0; i < iItemCount; i++ ) {
-			xui_document_fragment fragment = NULL;
-			int result, hasObjects;
-			if ( pItems[i].sFormat == NULL || pItems[i].pData == NULL ||
-				pItems[i].iDataSize == 0u || strcmp(pItems[i].sFormat,
-					XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT) != 0 ) continue;
-			/* X11 currently publishes text only. A whole image paragraph can
-			 * project to a newline, so inspect its native structure rather than
-			 * treating a nonempty string as successful object preservation. */
-			result = xuiDocumentFragmentDeserialize(pItems[i].pData,
-				(uint64_t)pItems[i].iDataSize, &fragment);
-			hasObjects = result == XUI_OK && doc_fragment_has_opaque_objects(fragment);
-			xuiDocumentFragmentRelease(fragment);
-			if ( result == XUI_ERROR_OUT_OF_MEMORY || result == XUI_DOC_ERROR_LIMIT ) return result;
-			if ( hasObjects ) return XUI_ERROR_UNSUPPORTED;
-		}
-	#endif
-	pXgeItems = (xge_clipboard_item_t*)xrtMalloc((size_t)iItemCount * sizeof(*pXgeItems));
-	if ( pXgeItems == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	for ( i = 0; i < iItemCount; i++ ) {
-		pXgeItems[i].sFormat = pItems[i].sFormat;
-		pXgeItems[i].pData = pItems[i].pData;
-		pXgeItems[i].iDataSize = pItems[i].iDataSize;
-	}
-	iRet = xgeClipboardSetItems(pXgeItems, iItemCount);
-	xrtFree(pXgeItems);
-	return iRet;
+    if(!proxy || !items || count<=0 || count>64)return XUI_ERROR_INVALID_ARGUMENT;
+    /* Distinct public C record types are copied as typed fields. This bounded
+     * cold stack projection needs no per-copy heap adapter allocation. */
+    xge_clipboard_item_t native[64];
+    for(int i=0;i<count;++i){native[i].sFormat=items[i].sFormat;native[i].pData=items[i].pData;native[i].iDataSize=items[i].iDataSize;}
+    return __xuiProxyXgeResult(services ? xgeClipboardSetItemsWithTransfer(native,count,services):xgeClipboardSetItems(native,count));
 }
+static int __xuiProxyXgeClipboardSetItems(xui_proxy proxy,const xui_clipboard_item_t* items,int count)
+{return __xuiProxyXgeClipboardPublish(proxy,items,count,NULL);}
+static int __xuiProxyXgeClipboardSetItemsWithTransfer(xui_proxy proxy,const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
+{return __xuiProxyXgeClipboardPublish(proxy,items,count,services);}
 
 static int __xuiProxyXgeClipboardGetData(xui_proxy pProxy, const char* sFormat,
 	void* pData, size_t iCapacity)
@@ -2814,10 +2817,7 @@ static void __xuiProxyXgeDetachIme(xui_context pContext)
 	if ( g_xuiProxyXgeDragContext == pContext ) {
 		(void)xgeDragEventCallbackSet(NULL, NULL);
 		g_xuiProxyXgeDragContext = NULL;
-		if ( g_xuiProxyXgeDragData != NULL ) {
-			xuiDataObjectRelease(g_xuiProxyXgeDragData);
-			g_xuiProxyXgeDragData = NULL;
-		}
+        (void)__xuiProxyXgeDragDataClear(pContext,XUI_OK);
 	}
 	if ( g_xuiProxyXgeImeSnapshotText != NULL ) {
 		xrtFree(g_xuiProxyXgeImeSnapshotText);
@@ -3294,29 +3294,32 @@ XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext)
 	return xuiProxyXgePumpInput(pContext);
 }
 
-XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect)
+XUI_API int xuiProxyXgePumpInputRect(xui_context context,xui_rect_t window)
 {
-	xui_size_t tViewport;
-	int result;
-
-	if (!xuiInternalContextIsValid(pContext) || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f) return XUI_ERROR_INVALID_ARGUMENT;
-	xuiInternalOperationEnter(pContext);
-	tViewport = xuiGetViewportSize(pContext);
-	g_xuiProxyXgeInputTransform.pContext = pContext;
-	g_xuiProxyXgeInputTransform.tWindowRect = tWindowRect;
-	g_xuiProxyXgeInputTransform.tViewport = tViewport;
-	g_xuiProxyXgeInputTransform.bValid = 1;
-	/* Readscreen providers use the same viewport transform as input. Missing
-	 * platform support does not prevent the existing input pump from running. */
-	(void)xuiInternalNativeAccessibilityBind(pContext, xgePlatformNativeHandle(), tWindowRect);
-	if ( g_xuiProxyXgeDragContext != pContext ) {
-		g_xuiProxyXgeDragContext = pContext;
-		(void)xgeDragEventCallbackSet(__xuiProxyXgeDragEvent, pContext);
-	}
-	result = xuiInternalContextDestroyPending(pContext) ? XUI_OK :
-		__xuiProxyXgePumpQueuedInput(pContext, tWindowRect, tViewport);
-	xuiInternalOperationLeave(pContext);
-	return result;
+    if(window.fW<=0 || window.fH<=0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    uint64_t uiThread=xgeInternalTransferThreadId(),current=xrtThreadCurrentId();
+    /* Owned CPU contexts may measure/shape before a window exists, but must
+     * not install a raw GUI back-link before its dispatch thread is known.
+     * Legacy raw manual/offscreen callers keep their explicit same-thread C
+     * registration contract; they are not a safe cross-thread weak handle. */
+    if(uiThread && uiThread!=current){status=XUI_ERROR_BUSY;goto finish;}
+    if(context->pOwnedProxy && !uiThread){status=XUI_ERROR_NOT_INITIALIZED;goto finish;}
+    xui_size_t viewport=xuiGetViewportSize(context);
+    if(g_xuiProxyXgeDragContext!=context){
+        if(g_xuiProxyXgeDragRevision==UINT64_MAX){status=XUI_ERROR_INVALID_STATE;goto finish;}
+        status=__xuiProxyXgeDragDataClear(context,XUI_OK);if(status!=XUI_OK)goto finish;
+        if(context->bCloseRequested || context->bDestroyPending || context->bDestroying){status=XUI_ERROR_INVALID_STATE;goto finish;}
+        status=xgeDragEventCallbackSetCheckedOwned(__xuiProxyXgeDragEvent,context,NULL);if(status!=XGE_OK)goto finish;
+        g_xuiProxyXgeDragContext=context;++g_xuiProxyXgeDragRevision;
+    }
+    g_xuiProxyXgeInputTransform.pContext=context;g_xuiProxyXgeInputTransform.tWindowRect=window;
+    g_xuiProxyXgeInputTransform.tViewport=viewport;g_xuiProxyXgeInputTransform.bValid=1;
+    (void)xuiInternalNativeAccessibilityBind(context,xgePlatformNativeHandle(),window);
+    status=xuiInternalContextDestroyPending(context) ? XUI_OK:__xuiProxyXgePumpQueuedInput(context,window,viewport);
+finish:
+    {xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);}
+    return status;
 }
 
 XUI_API int xuiProxyXgePumpInput(xui_context pContext)
@@ -3343,6 +3346,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.clipboardSetText = __xuiProxyXgeClipboardSetText;
 	tProxy.clipboardGetText = __xuiProxyXgeClipboardGetText;
 	tProxy.clipboardSetItems = __xuiProxyXgeClipboardSetItems;
+	tProxy.clipboardSetItemsWithTransfer=__xuiProxyXgeClipboardSetItemsWithTransfer;
 	tProxy.clipboardGetData = __xuiProxyXgeClipboardGetData;
 	tProxy.imeGetEnabled = __xuiProxyXgeImeGetEnabled;
 	tProxy.imeSetEnabled = __xuiProxyXgeImeSetEnabled;

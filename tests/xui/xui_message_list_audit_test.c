@@ -1502,7 +1502,10 @@ cleanup:
 #include "xui_message_list_test.c"
 #undef main
 
-int main(int argc, char** argv)
+#ifndef XUI_MESSAGE_AUDIT_ENTRY
+#define XUI_MESSAGE_AUDIT_ENTRY main
+#endif
+int XUI_MESSAGE_AUDIT_ENTRY(int argc, char** argv)
 {
     if (argc < 2 || strcmp(argv[1], "Index") == 0) {
         if (auditNodeIndexKeyboardAndErrors()) return 1;

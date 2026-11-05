@@ -237,6 +237,8 @@ bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor vi
 {
     if(!context->pOwnedProxy)return true;
     if(!visit(xuiProxyOwnership(context->pOwnedProxy),user))return false;
+    if(context->pTransferData){xrtownershipref data=xuiDataObjectOwnership(context->pTransferData);
+        if(!data.Data || !visit(data,user))return false;}
     if(context->pDefaultFont && !visit(xuiFontOwnership(context->pDefaultFont),user))return false;
     for(int i=0;i<context->iFontCount;++i)
         if(context->pFonts[i].pFont && !visit(xuiFontOwnership(context->pFonts[i].pFont),user))return false;

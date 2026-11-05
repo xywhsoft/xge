@@ -26,6 +26,10 @@
 static int __xgeWin32PreTranslateMessage(const void* pMessage);
 #define SOKOL_WIN32_PRETRANSLATE_MESSAGE(pMessage) __xgeWin32PreTranslateMessage((const void*)(pMessage))
 #endif
+#if defined(__linux__) && !defined(__ANDROID__)
+static bool __xgeX11ClipboardSelectionRequest(void* event);
+#define SOKOL_X11_CLIPBOARD_SELECTION_REQUEST(event) __xgeX11ClipboardSelectionRequest((void*)(event))
+#endif
 #ifndef SOKOL_IMPL
 	#define SOKOL_IMPL
 #endif
@@ -75,14 +79,16 @@ static void __xgeWin32ApplyDllWindowIcon(void)
 	#define XGE_GL_IMPL
 #endif
 #include "src/xge/render/xge_gl.h"
+#include "xge_transfer_internal.h"
 
 static uint32_t __xgeDragDispatchNative(int iType, float fX, float fY,
 	uint32_t iModifiers, xge_data_object pData, uint32_t iAllowedEffects,
 	uint32_t iSuggestedEffect);
 static void __xgeDragDropSokolFiles(const sapp_event* pEvent);
+static void __xgeClipboardPlatformCleanup(void);
 static void __xgeDragDropPlatformInit(void);
 static void __xgeDragDropPlatformUnit(void);
-static int __xgeDragDropPlatformBegin(void);
+static int __xgeDragDropPlatformBegin(const xn_transfer_services_v1* services);
 
 #ifndef GL_DST_COLOR
 	#define GL_DST_COLOR 0x0306
@@ -1548,6 +1554,7 @@ static sapp_mouse_cursor __xgeSokolCursor(int iCursor);
 // Sokol 初始化回调
 static void __xgeSokolInit(void)
 {
+	xrtAtomic64Store(&g_xgeTransferUiThread,xrtThreadCurrentId(),XMEMORY_RELEASE);
 	g_xge.bSokolRunning = 1;
     /* Apply the cursor recorded before native window readiness exactly once. */
     sapp_set_mouse_cursor(__xgeSokolCursor(g_xge.iCursor));
@@ -1689,10 +1696,12 @@ static void __xgeSokolFrame(void)
 // Sokol 清理回调
 static void __xgeSokolCleanup(void)
 {
+	__xgeClipboardPlatformCleanup();
 	#if defined(_WIN32) || defined(_WIN64)
 		__xgeDragDropPlatformUnit();
 		__xgeImeUninstallWin32();
 	#endif
+	xrtAtomic64Store(&g_xgeTransferUiThread,0,XMEMORY_RELEASE);
 #if XGE_ENABLE_SHAPE_EX
 	__xgeShapeExRendererUnit();
 #endif
@@ -2303,7 +2312,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 
 static void __xgeEmojiGlobalClear(void);
-static void __xgeDragDropUnit(void);
+static int __xgeDragDropUnit(void);
 #if defined(_WIN32) || defined(_WIN64)
 static void __xgeWin32ClipboardOwnerRelease(void);
 #endif

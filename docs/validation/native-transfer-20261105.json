@@ -1,0 +1,2254 @@
+{
+  "format": "native-acceptance-1",
+  "shippingDelivery": false,
+  "complete": true,
+  "passed": true,
+  "scope": "Native R3 normal O2 full hosted engines, CPU clients O0/O2 and typed fake OLE/Xlib. Historical failures preserved and only failed/incomplete steps supplemented. Not shipping DSL/provider/IDE or real OS clipboard/window/GPU/browser/network acceptance.",
+  "sourceOverlay": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-final-r3\\source-overlay.json",
+    "sha256": "b4b87a67d32fbdd6d2c52585b478c1b4011bd9a6548d4a99653ec12209acd115"
+  },
+  "sourceManifest": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-source-r3\\source-freeze.json",
+    "sha256": "3e6e77f6c445225b0370cf2e638f6c664d442ca277b47156cbdd580c8563faf6"
+  },
+  "harnessManifest": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-harness-fix-r1\\manifest.json",
+    "sha256": "87b8b9bc56f024b657267114e40c678bf25c7f4c3601db980e27993b65387cdd"
+  },
+  "platforms": {
+    "win": {
+      "matrixFamilies": [
+        {
+          "name": "remaining",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\remaining\\results.json",
+                "sha256": "cfe0ed8cdccec45337d9f7adfe8b436d82f63d1bcc522a6a2dfe4ae2ec25797b"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "groups",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\groups\\results.json",
+                "sha256": "d2ec814439e6e879f2788db84be30a01a7c975837800f8608a6feb5b9ff760af"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "tree",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\tree\\results.json",
+                "sha256": "2e466b355c2d67dcf715d7f835b227c23613d64b11d69e08e5798bbb656d2c47"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_tree_view_test-O0-build",
+                "xui_tree_view_test-O0-run",
+                "xui_tree_view_test-O2-build",
+                "xui_tree_view_test-O2-run",
+                "xui_tree_adapter_lifetime_test-O0-build",
+                "xui_tree_adapter_lifetime_test-O0-run",
+                "xui_tree_adapter_lifetime_test-O2-build",
+                "xui_tree_adapter_lifetime_test-O2-run"
+              ],
+              "checks": 12
+            }
+          ],
+          "checks": 12
+        },
+        {
+          "name": "cell",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\cell\\results.json",
+                "sha256": "8723e5307d6cd29cd189116e165f7dd1b3eff0b81505d023f92866b286ed765c"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "table",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\table\\results.json",
+                "sha256": "ea08971d53a6f885581df2549becc7a4a4b331f28d4a6563c91cd57a4f1e80b9"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_table_view_test-O0-build",
+                "xui_table_view_test-O0-run",
+                "xui_table_view_test-O2-build",
+                "xui_table_view_test-O2-run",
+                "xui_table_provider_lifetime_test-O0-build",
+                "xui_table_provider_lifetime_test-O0-run",
+                "xui_table_provider_lifetime_test-O2-build",
+                "xui_table_provider_lifetime_test-O2-run"
+              ],
+              "checks": 12
+            }
+          ],
+          "checks": 12
+        },
+        {
+          "name": "context",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\context\\results.json",
+                "sha256": "425dd0afc2337add6f29ec2b3811bca7a6ec8e3a9bf88c76a7889a245d465e2e"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "parts",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\parts\\results.json",
+                "sha256": "d71a6601860566a5f08076492c6c7129d2b008f6599a2546f7b86c1863263222"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_widget_test-O0-build",
+                "xui_widget_test-O0-run",
+                "xui_widget_test-O2-build",
+                "xui_widget_test-O2-run",
+                "xui_widget_type_test-O0-build",
+                "xui_widget_type_test-O0-run",
+                "xui_widget_type_test-O2-build",
+                "xui_widget_type_test-O2-run",
+                "xui_panel_test-O0-build",
+                "xui_panel_test-O0-run",
+                "xui_panel_test-O2-build",
+                "xui_panel_test-O2-run",
+                "xui_popup_test-O0-build",
+                "xui_popup_test-O0-run",
+                "xui_popup_test-O2-build",
+                "xui_popup_test-O2-run",
+                "xui_menu_test-O0-build",
+                "xui_menu_test-O0-run",
+                "xui_menu_test-O2-build",
+                "xui_menu_test-O2-run",
+                "xui_scroll_frame_test-O0-build",
+                "xui_scroll_frame_test-O0-run",
+                "xui_scroll_frame_test-O2-build",
+                "xui_scroll_frame_test-O2-run",
+                "xui_scroll_view_test-O0-build",
+                "xui_scroll_view_test-O0-run",
+                "xui_scroll_view_test-O2-build",
+                "xui_scroll_view_test-O2-run",
+                "xui_tabs_test-O0-build",
+                "xui_tabs_test-O0-run",
+                "xui_tabs_test-O2-build",
+                "xui_tabs_test-O2-run",
+                "xui_split_layout_test-O0-build",
+                "xui_split_layout_test-O0-run",
+                "xui_split_layout_test-O2-build",
+                "xui_split_layout_test-O2-run",
+                "xui_carousel_test-O0-build",
+                "xui_carousel_test-O0-run",
+                "xui_carousel_test-O2-build",
+                "xui_carousel_test-O2-run",
+                "xui_accordion_test-O0-build",
+                "xui_accordion_test-O0-run",
+                "xui_accordion_test-O2-build",
+                "xui_accordion_test-O2-run",
+                "xui_table_grid_test-O0-build",
+                "xui_table_grid_test-O0-run",
+                "xui_table_grid_test-O2-build",
+                "xui_table_grid_test-O2-run",
+                "xui_window_test-O0-build",
+                "xui_window_test-O0-run",
+                "xui_window_test-O2-build",
+                "xui_window_test-O2-run",
+                "xui_combobox_test-O0-build",
+                "xui_combobox_test-O0-run",
+                "xui_combobox_test-O2-build",
+                "xui_combobox_test-O2-run",
+                "xui_numeric_input_test-O0-build",
+                "xui_numeric_input_test-O0-run",
+                "xui_numeric_input_test-O2-build",
+                "xui_numeric_input_test-O2-run"
+              ],
+              "checks": 64
+            }
+          ],
+          "checks": 64
+        },
+        {
+          "name": "grid",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\grid\\results.json",
+                "sha256": "69514a9baf73ce8143363fb674f6d93d3ece4fe6a90356a1f2fd27aeebfedd91"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_table_grid_test-O0-build",
+                "xui_table_grid_test-O0-run",
+                "xui_table_grid_test-O2-build",
+                "xui_table_grid_test-O2-run"
+              ],
+              "checks": 8
+            }
+          ],
+          "checks": 8
+        },
+        {
+          "name": "port",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\port\\results.json",
+                "sha256": "3e680a290a14ae844f993a6dcf4a626a2b31643d74a6aa2bf2b1ece9988dba06"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "fonts",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\fonts\\results.json",
+                "sha256": "6b28068b40f164acfd275ec7e8b59373853cf469f532f77648b7a13cfce41280"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "paint",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\paint\\results.json",
+                "sha256": "ca6651c167910ec67eaf5d82580c0015cd8abea6ac6b7a273f1688953e0dc5b2"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "receipt",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\receipt\\results.json",
+                "sha256": "24d629a9554412c30b6e910b1206a5ba52f8993d44ef738943ad93a5c1b05b51"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "surfaces",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\surfaces\\results.json",
+                "sha256": "c500629d2b88a21aa628b80eed97fa5b66fd2b07f661dca06237dda33fc9453f"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "managers",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\managers\\results.json",
+                "sha256": "8ddcc3c5981eb170fa18c765b64a2b27df2f3eb82052d7ac3cd95aeb79b640f0"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_msgbox_test-O0-build",
+                "xui_msgbox_test-O0-run",
+                "xui_msgbox_test-O2-build",
+                "xui_msgbox_test-O2-run",
+                "xui_toast_test-O0-build",
+                "xui_toast_test-O0-run",
+                "xui_toast_test-O2-build",
+                "xui_toast_test-O2-run",
+                "xui_msgtip_test-O0-build",
+                "xui_msgtip_test-O0-run",
+                "xui_msgtip_test-O2-build",
+                "xui_msgtip_test-O2-run"
+              ],
+              "checks": 16
+            }
+          ],
+          "checks": 16
+        },
+        {
+          "name": "file_dialog",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-harness-win-r1\\file_dialog\\results.json",
+                "sha256": "badb7b9a2b8d792c0f006935c9cb706981f02341f149b2edc426e0431e930728"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "file-dialog-test-native-build",
+                "xui_file_dialog_test-O0-build",
+                "xui_file_dialog_test-O0-run",
+                "xui_file_dialog_test-O2-build",
+                "xui_file_dialog_test-O2-run"
+              ],
+              "checks": 9
+            }
+          ],
+          "checks": 9
+        },
+        {
+          "name": "manager_getters",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-harness-win-r1\\manager_getters\\results.json",
+                "sha256": "ce505fd0fbb9fb00d8055c97257e54d7711a45a01a6a2ce49fd579ad5099cda7"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "layout",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\layout\\results.json",
+                "sha256": "a17bc8cf4c5474d13bd3915c6cf7ddc7cc864532d40c0bf60ed8d21c34fc14db"
+              },
+              "selectedRows": [
+                "layout-dependencies",
+                "layout-O0-build",
+                "layout-O0-run",
+                "layout-O2-build",
+                "layout-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "layout_draft",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\layout_draft\\results.json",
+                "sha256": "b6a3a7496b9d2ea75f2bb114cc16a9f1717959025348f443d931f4ebb5d2b32f"
+              },
+              "selectedRows": [
+                "layout_draft-dependencies",
+                "layout_draft-O0-build",
+                "layout_draft-O0-run",
+                "layout_draft-O2-build",
+                "layout_draft-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "chunk_edit",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\chunk_edit\\results.json",
+                "sha256": "aa1146f333fc2a9237cb67c490a8180a6e81e36a2a9b6ed760f5c458ffe20c1e"
+              },
+              "selectedRows": [
+                "chunk_edit-dependencies",
+                "chunk_edit-O0-build",
+                "chunk_edit-O0-run",
+                "chunk_edit-O2-build",
+                "chunk_edit-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "code_document",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\code_document\\results.json",
+                "sha256": "66c760abd869e875c7f230742c27c348720604b73255cfcb88a64656b43751c7"
+              },
+              "selectedRows": [
+                "code_document-dependencies",
+                "code_document-O0-build",
+                "code_document-O0-run",
+                "code_document-O2-build",
+                "code_document-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "renderer",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\renderer\\results.json",
+                "sha256": "3a4782ad2532095711fde7cbf876f37a68a4fa09c5b8f716702e2c74ea8a073a"
+              },
+              "selectedRows": [
+                "renderer-dependencies",
+                "renderer-O0-build",
+                "renderer-O0-run",
+                "renderer-O2-build",
+                "renderer-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "renderer_busy",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\renderer_busy\\results.json",
+                "sha256": "4c40eb208bd7a88f1d8a2e7455afe070ee73d6c680f38b738999f9bb35ae40c0"
+              },
+              "selectedRows": [
+                "renderer_busy-dependencies",
+                "renderer_busy-O0-build",
+                "renderer_busy-O0-run",
+                "renderer_busy-O2-build",
+                "renderer_busy-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "shape",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\shape\\results.json",
+                "sha256": "ae8ec2fe677b3ac42f5e46aeaebb68e78c66373d897c63153ed6f53e531159dd"
+              },
+              "selectedRows": [
+                "shape-dependencies",
+                "shape-O0-build",
+                "shape-O0-run",
+                "shape-O2-build",
+                "shape-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "simple_layout",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\simple_layout\\results.json",
+                "sha256": "cbead04a2a733e6ca583f3a1899b71520fcffa556cb0beee605044f8eba925b4"
+              },
+              "selectedRows": [
+                "simple_layout-dependencies",
+                "simple_layout-O0-build",
+                "simple_layout-O0-run",
+                "simple_layout-O2-build",
+                "simple_layout-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "requested_callbacks",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\requested_callbacks\\results.json",
+                "sha256": "14f4f4adda57ed0fca0002a8459edf1c774e1707aa688fbb93d158298ce0e9d1"
+              },
+              "selectedRows": [
+                "requested_callbacks-dependencies",
+                "requested_callbacks-O0-build",
+                "requested_callbacks-O0-run",
+                "requested_callbacks-O2-build",
+                "requested_callbacks-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "textedit_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\textedit_cache\\results.json",
+                "sha256": "416a7ff15f1307601c8e52cc8e7ad4cbaabe74fb74f49266981892feb1697168"
+              },
+              "selectedRows": [
+                "textedit_cache-dependencies",
+                "textedit_cache-O0-build",
+                "textedit_cache-O0-run",
+                "textedit_cache-O2-build",
+                "textedit_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "textedit_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\textedit_regression\\results.json",
+                "sha256": "faec9e6eebe242ee4caca392b42b92c2f7debf724d682614dc47b4c72fdf6fc9"
+              },
+              "selectedRows": [
+                "textedit_regression-dependencies",
+                "textedit_regression-O0-build",
+                "textedit_regression-O0-run",
+                "textedit_regression-O2-build",
+                "textedit_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\message_cache\\results.json",
+                "sha256": "935d7c6522622334c492f6d179bc966bf0788449e756ec61fe50ba86ed4ac780"
+              },
+              "selectedRows": [
+                "message_cache-dependencies",
+                "message_cache-O0-build",
+                "message_cache-O0-run",
+                "message_cache-O2-build",
+                "message_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\message_regression\\results.json",
+                "sha256": "17892a482578062dc45bf07ac0534000d15bf72baf2a13805ddc08b9a35e13af"
+              },
+              "selectedRows": [
+                "message_regression-dependencies",
+                "message_regression-O0-build",
+                "message_regression-O0-run",
+                "message_regression-O2-build",
+                "message_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_display",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-harness-win-r1\\message_display\\results.json",
+                "sha256": "0e717d938b15bdd7dd36c9e2d53b1f98034e103aff493170a4ce5e1709817796"
+              },
+              "selectedRows": [
+                "message_display-dependencies",
+                "message_display-O0-build",
+                "message_display-O0-run",
+                "message_display-O2-build",
+                "message_display-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "codeedit_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\codeedit_cache\\results.json",
+                "sha256": "e2dae033ed78b94c4075eb3a6f68372f7d39f17ffce96d3a3d2f799a9ec8651a"
+              },
+              "selectedRows": [
+                "codeedit_cache-dependencies",
+                "codeedit_cache-O0-build",
+                "codeedit_cache-O0-run",
+                "codeedit_cache-O2-build",
+                "codeedit_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "codeedit_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\codeedit_regression\\results.json",
+                "sha256": "daf1cc2a46aabf635980cfb834db8eb9a093a7aa714a1fa8920255dcec02cf93"
+              },
+              "selectedRows": [
+                "codeedit_regression-dependencies",
+                "codeedit_regression-O0-build",
+                "codeedit_regression-O0-run",
+                "codeedit_regression-O2-build",
+                "codeedit_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "webview_callbacks",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\webview_callbacks\\results.json",
+                "sha256": "e4271557c0fe9bacb008f3014118bdd61404d7cf537b72466ed74019188d3976"
+              },
+              "selectedRows": [
+                "webview_callbacks-dependencies",
+                "webview_callbacks-O0-build",
+                "webview_callbacks-O0-run",
+                "webview_callbacks-O2-build",
+                "webview_callbacks-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "web_provider",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\web_provider\\results.json",
+                "sha256": "89a7a28ce42f10f73e2b3b57c089e60c4640c86d06335ace6efe9f8ede65e801"
+              },
+              "selectedRows": [
+                "web_provider-dependencies",
+                "web_provider-O0-build",
+                "web_provider-O0-run",
+                "web_provider-O2-build",
+                "web_provider-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "image_resource",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\image_resource\\results.json",
+                "sha256": "e67391f5bb630a92c98b36c7b8ed03240404c43e44eb613f3c93b8605ab03dbb"
+              },
+              "selectedRows": [
+                "image_resource-dependencies",
+                "image_resource-O0-build",
+                "image_resource-O0-run",
+                "image_resource-O2-build",
+                "image_resource-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "image_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\image_regression\\results.json",
+                "sha256": "fc5bf0a911ac82863495a962e1e574913b24a75266b1bcfb617281be68718fb5"
+              },
+              "selectedRows": [
+                "image_regression-dependencies",
+                "image_regression-O2-build",
+                "image_regression-O2-run"
+              ],
+              "checks": 3
+            },
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-harness-win-r1\\image_regression\\results.json",
+                "sha256": "d32d91a96a5549633bc2234cc9ee2be8a9728476be0b79ff5dd81912988f68ce"
+              },
+              "selectedRows": [
+                "image_regression-O0-build",
+                "image_regression-O0-run"
+              ],
+              "checks": 2
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "html_interaction",
+          "proof": [
+            {
+              "report": {
+                "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\html_interaction\\results.json",
+                "sha256": "cf68a56d50e8cd3e58f6d2c3ee0dac13ee25fa08ed6e0d671f22beb6bd9d561f"
+              },
+              "selectedRows": [
+                "html_interaction-dependencies",
+                "html_interaction-O0-build",
+                "html_interaction-O0-run",
+                "html_interaction-O2-build",
+                "html_interaction-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        }
+      ],
+      "matrixFamiliesPassed": 37,
+      "matrixChecks": 266,
+      "focused": [
+        {
+          "name": "global_owned",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\global_owned\\results.json",
+              "sha256": "b055cda53dcc3c8c84b2d5309d6d700aea4093e1b915e43f4c4cf8c6463a4918"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "frame_owned",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\frame_owned\\results.json",
+              "sha256": "ed56a39310cb4e4d6db96eea4bae80339d8dbefa9df2db69b660aab298453861"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "cursor_readiness",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\cursor_readiness\\results.json",
+              "sha256": "36b9011698438471c4c29aa368f1357b70bedae0fc7ea987c48f2c487fa0e793"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "callback_receipts",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\callback_receipts\\results.json",
+              "sha256": "d0623a0fcfcc028cf02d247d33698755f45ca73d1c3008f0cb6ea1c791c9c734"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "data_owned",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\data_owned\\results.json",
+              "sha256": "126f2ffb0ce95a1101ee0716a80db7163ac7e82548e0a3a876a0f063a47b563a"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run",
+              "raw-O0-build",
+              "raw-O0-run",
+              "raw-O2-build",
+              "raw-O2-run",
+              "header-c11",
+              "header-c++11",
+              "header-c++17"
+            ],
+            "checks": 11
+          }
+        },
+        {
+          "name": "transfer_context",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\transfer_context\\results.json",
+              "sha256": "d56366c05fb455457bfa277886bfea5916b3f90d6ea4ce4b2b8d9713ae61e5b0"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "snapshot",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-remainders-win-r1\\results.json",
+              "sha256": "9201a572b66aab447b439f5989da591a1427afff738f53c0a5dae61e0675e170"
+            },
+            "selectedRows": [
+              "snapshot-O0-build",
+              "snapshot-O0-run",
+              "snapshot-O2-build",
+              "snapshot-O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "platform",
+          "proof": {
+            "report": {
+              "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\platform\\results.json",
+              "sha256": "f82b36acc661c5b74f8ff49d8b6887a3b87cf23df014cddcf6774ba38c5527c1"
+            },
+            "selectedRows": [
+              "platform-O0-build",
+              "platform-O0-run",
+              "platform-O2-build",
+              "platform-O2-run"
+            ],
+            "checks": 4
+          }
+        }
+      ],
+      "focusedChecks": 39,
+      "componentPrivatePolicy": {
+        "report": {
+          "path": "F:\\xlang-validation\\foreign-completion-20261103\\data-transfer-policy-win-dev-r1\\results.json",
+          "sha256": "71f94286a64c1199527da783af802bc2752c58d88ea134ad41e0421e52fd4607"
+        },
+        "selectedRows": [
+          "private-O0-compile",
+          "xge-data-O0-compile",
+          "xui-data-O0-compile",
+          "O0-build",
+          "O0-run",
+          "private-O2-compile",
+          "xge-data-O2-compile",
+          "xui-data-O2-compile",
+          "O2-build",
+          "O2-run",
+          "c++11-header",
+          "c++17-header",
+          "negative-policy-compile",
+          "negative-policy-build",
+          "negative-swallowed-null-failure",
+          "reachable-private-symbols"
+        ],
+        "checks": 16
+      },
+      "componentPolicyEquivalence": [
+        {
+          "path": "src/xge/input/xge_data_object.c",
+          "sha256": "be4c725faff9d5c2c5b2d533bb3d06ed0b02e2587f5e297d85013a820927586a"
+        },
+        {
+          "path": "src/xui/core/xui_data_object.c",
+          "sha256": "3b29775afd059b30bef840a25ea64f3b2e68a809a92991f11dd3d02bc8ddaa96"
+        },
+        {
+          "path": "include/xnative_transfer.h",
+          "sha256": "620fe84af1c7c5f40006a65a4ca4435a5d62f2fd500b345514829e27c08dff6f"
+        }
+      ],
+      "componentPolicyBoundary": "Reused exact production data components plus full private runtime TU/FV V8; not a whole-engine SDK qualification.",
+      "build": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-host-win-r3\\build-report.json",
+        "sha256": "36890356982fc4b1653cbf237fab43d15782730fd033aa65a528e7bc955207a2"
+      },
+      "buildConfig": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-host-win-r3\\xge_build_config.h",
+        "sha256": "f288418bedcc5eeed9559ec294dd9091fbbb8283487258b7910b018d45997d03"
+      },
+      "runtimeBinary": {
+        "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-host-win-r3\\xge.dll",
+        "sha256": "400009a705e9c21585f059dceb147a04d1b48726e67ed799f62582b156104835"
+      },
+      "compiled": 145,
+      "reused": 0,
+      "initialReportsPreserved": [
+        {
+          "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-matrix-win-r3\\results.json",
+          "sha256": "b5e1e2f1a66ce3b36b479202db566268a5d19c5dbe09d76ca4410656b1ee7dfa"
+        },
+        {
+          "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-focused-win-r3\\results.json",
+          "sha256": "d533f3808f6c13e8caadcb444abbba5940f2afdae3b98bcefecf9c7453345fa9"
+        }
+      ]
+    },
+    "linux": {
+      "matrixFamilies": [
+        {
+          "name": "remaining",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\remaining\\results.json",
+                "sha256": "53922efb8d7e07f84a7c9ae6526c00dc2afe009947f2055f4b7a6e8e1292ac64"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "groups",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\groups\\results.json",
+                "sha256": "98ba202d653033502241b2993131f5c5a76bb234612cc59e6b64533d9133fb08"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "tree",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\tree\\results.json",
+                "sha256": "a37c26182582a29098655b583152971cf4bb020051319e8fcc23a4b762f37431"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_tree_view_test-O0-build",
+                "xui_tree_view_test-O0-run",
+                "xui_tree_view_test-O2-build",
+                "xui_tree_view_test-O2-run",
+                "xui_tree_adapter_lifetime_test-O0-build",
+                "xui_tree_adapter_lifetime_test-O0-run",
+                "xui_tree_adapter_lifetime_test-O2-build",
+                "xui_tree_adapter_lifetime_test-O2-run"
+              ],
+              "checks": 12
+            }
+          ],
+          "checks": 12
+        },
+        {
+          "name": "cell",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\cell\\results.json",
+                "sha256": "69b95db4a979841eeb2c4e5218d095b47ad57748e0abe17e5242a19f8f175dad"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "table",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\table\\results.json",
+                "sha256": "a2d761aa33c29e0e21b0e324a4a2113a3445c3580001249c42f765fad93428ec"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_table_view_test-O0-build",
+                "xui_table_view_test-O0-run",
+                "xui_table_view_test-O2-build",
+                "xui_table_view_test-O2-run",
+                "xui_table_provider_lifetime_test-O0-build",
+                "xui_table_provider_lifetime_test-O0-run",
+                "xui_table_provider_lifetime_test-O2-build",
+                "xui_table_provider_lifetime_test-O2-run"
+              ],
+              "checks": 12
+            }
+          ],
+          "checks": 12
+        },
+        {
+          "name": "context",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\context\\results.json",
+                "sha256": "8fbad7f9c11a0af26571eaf599e2497a17ed4ce5fd66be7ddfce6f823d7197f9"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "parts",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\parts\\results.json",
+                "sha256": "2257f40295e8b081cf2693ffc9850bfcd3c4eb06550b988fe3e1a53c912e1b80"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_widget_test-O0-build",
+                "xui_widget_test-O0-run",
+                "xui_widget_test-O2-build",
+                "xui_widget_test-O2-run",
+                "xui_widget_type_test-O0-build",
+                "xui_widget_type_test-O0-run",
+                "xui_widget_type_test-O2-build",
+                "xui_widget_type_test-O2-run",
+                "xui_panel_test-O0-build",
+                "xui_panel_test-O0-run",
+                "xui_panel_test-O2-build",
+                "xui_panel_test-O2-run",
+                "xui_popup_test-O0-build",
+                "xui_popup_test-O0-run",
+                "xui_popup_test-O2-build",
+                "xui_popup_test-O2-run",
+                "xui_menu_test-O0-build",
+                "xui_menu_test-O0-run",
+                "xui_menu_test-O2-build",
+                "xui_menu_test-O2-run",
+                "xui_scroll_frame_test-O0-build",
+                "xui_scroll_frame_test-O0-run",
+                "xui_scroll_frame_test-O2-build",
+                "xui_scroll_frame_test-O2-run",
+                "xui_scroll_view_test-O0-build",
+                "xui_scroll_view_test-O0-run",
+                "xui_scroll_view_test-O2-build",
+                "xui_scroll_view_test-O2-run",
+                "xui_tabs_test-O0-build",
+                "xui_tabs_test-O0-run",
+                "xui_tabs_test-O2-build",
+                "xui_tabs_test-O2-run",
+                "xui_split_layout_test-O0-build",
+                "xui_split_layout_test-O0-run",
+                "xui_split_layout_test-O2-build",
+                "xui_split_layout_test-O2-run",
+                "xui_carousel_test-O0-build",
+                "xui_carousel_test-O0-run",
+                "xui_carousel_test-O2-build",
+                "xui_carousel_test-O2-run",
+                "xui_accordion_test-O0-build",
+                "xui_accordion_test-O0-run",
+                "xui_accordion_test-O2-build",
+                "xui_accordion_test-O2-run",
+                "xui_table_grid_test-O0-build",
+                "xui_table_grid_test-O0-run",
+                "xui_table_grid_test-O2-build",
+                "xui_table_grid_test-O2-run",
+                "xui_window_test-O0-build",
+                "xui_window_test-O0-run",
+                "xui_window_test-O2-build",
+                "xui_window_test-O2-run",
+                "xui_combobox_test-O0-build",
+                "xui_combobox_test-O0-run",
+                "xui_combobox_test-O2-build",
+                "xui_combobox_test-O2-run",
+                "xui_numeric_input_test-O0-build",
+                "xui_numeric_input_test-O0-run",
+                "xui_numeric_input_test-O2-build",
+                "xui_numeric_input_test-O2-run"
+              ],
+              "checks": 64
+            }
+          ],
+          "checks": 64
+        },
+        {
+          "name": "grid",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\grid\\results.json",
+                "sha256": "9530e423aff4a343bc54221347f574096262eae115dba8bc9cfc661ee5f6a536"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_table_grid_test-O0-build",
+                "xui_table_grid_test-O0-run",
+                "xui_table_grid_test-O2-build",
+                "xui_table_grid_test-O2-run"
+              ],
+              "checks": 8
+            }
+          ],
+          "checks": 8
+        },
+        {
+          "name": "port",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\port\\results.json",
+                "sha256": "80428faadf66c2111f56007dc621aa381a111cf5e8ee3cff36db769d090e5b02"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "fonts",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\fonts\\results.json",
+                "sha256": "e8195d0e5f5e3fd22d2e9737802dc86598e16fb2b78a5d97b5a83a4c45949ccd"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "paint",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\paint\\results.json",
+                "sha256": "77be8269e2f328dd6b7ebb2b4ec232aeb5d58cf3244fa92182ab8af4d6f1229c"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "receipt",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\receipt\\results.json",
+                "sha256": "05a027117034d29670ff04458afce65d1276f7ff63098d4e4a6321a322bd41ea"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "surfaces",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\surfaces\\results.json",
+                "sha256": "393cbf21c3765db5a85955bd188406c6e290457914d318a5bcc70587f99206c9"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "managers",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\managers\\results.json",
+                "sha256": "7c75c28895ec68f4a499ed0edb1858495d8b11a087617afdef90bcea4e259727"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "xui_msgbox_test-O0-build",
+                "xui_msgbox_test-O0-run",
+                "xui_msgbox_test-O2-build",
+                "xui_msgbox_test-O2-run",
+                "xui_toast_test-O0-build",
+                "xui_toast_test-O0-run",
+                "xui_toast_test-O2-build",
+                "xui_toast_test-O2-run",
+                "xui_msgtip_test-O0-build",
+                "xui_msgtip_test-O0-run",
+                "xui_msgtip_test-O2-build",
+                "xui_msgtip_test-O2-run"
+              ],
+              "checks": 16
+            }
+          ],
+          "checks": 16
+        },
+        {
+          "name": "file_dialog",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-harness-linux-r1\\file_dialog\\results.json",
+                "sha256": "1f9a171f8d39b983a08d7bee299b1e7e77ea27a5cdd4c0670336b60e5504908a"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run",
+                "file-dialog-test-native-build",
+                "xui_file_dialog_test-O0-build",
+                "xui_file_dialog_test-O0-run",
+                "xui_file_dialog_test-O2-build",
+                "xui_file_dialog_test-O2-run"
+              ],
+              "checks": 9
+            }
+          ],
+          "checks": 9
+        },
+        {
+          "name": "manager_getters",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-harness-linux-r1\\manager_getters\\results.json",
+                "sha256": "256786503362fecb00036f52ce8258963e57090f06d0039934523809fd78b7a4"
+              },
+              "selectedRows": [
+                "O0-build",
+                "O0-run",
+                "O2-build",
+                "O2-run"
+              ],
+              "checks": 4
+            }
+          ],
+          "checks": 4
+        },
+        {
+          "name": "layout",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\layout\\results.json",
+                "sha256": "3c005cdc11fda1f6b23c437f66e9a9c2a3796b8343c8463122243b1c59c05ea3"
+              },
+              "selectedRows": [
+                "layout-dependencies",
+                "layout-O0-build",
+                "layout-O0-run",
+                "layout-O2-build",
+                "layout-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "layout_draft",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\layout_draft\\results.json",
+                "sha256": "bb420b0627f5026f133f2bd0ca9201a46292465499d6d2bba611b68e7d10eb56"
+              },
+              "selectedRows": [
+                "layout_draft-dependencies",
+                "layout_draft-O0-build",
+                "layout_draft-O0-run",
+                "layout_draft-O2-build",
+                "layout_draft-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "chunk_edit",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\chunk_edit\\results.json",
+                "sha256": "53053e3de303345d27c0f809e39176edab0b122a3b2126ca1384eecc4cd45cb1"
+              },
+              "selectedRows": [
+                "chunk_edit-dependencies",
+                "chunk_edit-O0-build",
+                "chunk_edit-O0-run",
+                "chunk_edit-O2-build",
+                "chunk_edit-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "code_document",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\code_document\\results.json",
+                "sha256": "1434130caf409d324782f5f11acc141ea0abc7ad092f40250dda98cc8dfac458"
+              },
+              "selectedRows": [
+                "code_document-dependencies",
+                "code_document-O0-build",
+                "code_document-O0-run",
+                "code_document-O2-build",
+                "code_document-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "renderer",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\renderer\\results.json",
+                "sha256": "deffa8196d1db6d4f3fca8998b8e43852157e591ae991913dc8072b8cb617374"
+              },
+              "selectedRows": [
+                "renderer-dependencies",
+                "renderer-O0-build",
+                "renderer-O0-run",
+                "renderer-O2-build",
+                "renderer-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "renderer_busy",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\renderer_busy\\results.json",
+                "sha256": "1656bd29ed5cd19956634ad74407300dbc1d3c615cfde2764f44baf0b1ffb2b1"
+              },
+              "selectedRows": [
+                "renderer_busy-dependencies",
+                "renderer_busy-O0-build",
+                "renderer_busy-O0-run",
+                "renderer_busy-O2-build",
+                "renderer_busy-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "shape",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\shape\\results.json",
+                "sha256": "c0a052a77c7db19219fabd5774c699e9d3154d9741bd9ca700a045b30ad980de"
+              },
+              "selectedRows": [
+                "shape-dependencies",
+                "shape-O0-build",
+                "shape-O0-run",
+                "shape-O2-build",
+                "shape-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "simple_layout",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\simple_layout\\results.json",
+                "sha256": "737b27bfcac309667e826fc61c099aa35e19b2f750163579aa23c936d110a29b"
+              },
+              "selectedRows": [
+                "simple_layout-dependencies",
+                "simple_layout-O0-build",
+                "simple_layout-O0-run",
+                "simple_layout-O2-build",
+                "simple_layout-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "requested_callbacks",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\requested_callbacks\\results.json",
+                "sha256": "f7bbf396995ad5269c2c15949081575ac98772878709a53f7d783b31bc284a99"
+              },
+              "selectedRows": [
+                "requested_callbacks-dependencies",
+                "requested_callbacks-O0-build",
+                "requested_callbacks-O0-run",
+                "requested_callbacks-O2-build",
+                "requested_callbacks-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "textedit_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\textedit_cache\\results.json",
+                "sha256": "024e117ee7aef0dc20c612e8644cf71854645802fb653b8ed7335a66a86c8551"
+              },
+              "selectedRows": [
+                "textedit_cache-dependencies",
+                "textedit_cache-O0-build",
+                "textedit_cache-O0-run",
+                "textedit_cache-O2-build",
+                "textedit_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "textedit_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\textedit_regression\\results.json",
+                "sha256": "0a1e5eb004a1abcf03ed70f5a675dc13343d342b231c16176b417b7d41c7088b"
+              },
+              "selectedRows": [
+                "textedit_regression-dependencies",
+                "textedit_regression-O0-build",
+                "textedit_regression-O0-run",
+                "textedit_regression-O2-build",
+                "textedit_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\message_cache\\results.json",
+                "sha256": "7c8e3781a80fe0ad4f73b4d80061c605370c1711314ff30d4e859c38591dcfa5"
+              },
+              "selectedRows": [
+                "message_cache-dependencies",
+                "message_cache-O0-build",
+                "message_cache-O0-run",
+                "message_cache-O2-build",
+                "message_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\message_regression\\results.json",
+                "sha256": "f0e5b1118a5415d907dbbb4be82cd367d30615c1f30ffc95e8b3c7ddc2c19ba5"
+              },
+              "selectedRows": [
+                "message_regression-dependencies",
+                "message_regression-O0-build",
+                "message_regression-O0-run",
+                "message_regression-O2-build",
+                "message_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "message_display",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-harness-linux-r1\\message_display\\results.json",
+                "sha256": "f30830d7c7d6ac6e6022db9119fead55fc31a2c15a06f3e29422c1453890dd0d"
+              },
+              "selectedRows": [
+                "message_display-dependencies",
+                "message_display-O0-build",
+                "message_display-O0-run",
+                "message_display-O2-build",
+                "message_display-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "codeedit_cache",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\codeedit_cache\\results.json",
+                "sha256": "cc6e640b18d4e4081755fc2411174c6cebae83567c827a3f9b7b2bc62eb2d8c9"
+              },
+              "selectedRows": [
+                "codeedit_cache-dependencies",
+                "codeedit_cache-O0-build",
+                "codeedit_cache-O0-run",
+                "codeedit_cache-O2-build",
+                "codeedit_cache-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "codeedit_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\codeedit_regression\\results.json",
+                "sha256": "6b9c84dcf34a4cf27b9a49431f7e5e61ac927571600580968bf0ab3e49c59c77"
+              },
+              "selectedRows": [
+                "codeedit_regression-dependencies",
+                "codeedit_regression-O0-build",
+                "codeedit_regression-O0-run",
+                "codeedit_regression-O2-build",
+                "codeedit_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "webview_callbacks",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\webview_callbacks\\results.json",
+                "sha256": "353a9667b866381e745b1016a6482700a7e5d670cc3232d6205228dd75779c85"
+              },
+              "selectedRows": [
+                "webview_callbacks-dependencies",
+                "webview_callbacks-O0-build",
+                "webview_callbacks-O0-run",
+                "webview_callbacks-O2-build",
+                "webview_callbacks-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "web_provider",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\web_provider\\results.json",
+                "sha256": "44c1e5626dbe27845c114308280e5a492e4d5ed08b5d2b909dc6bc1b67751e7b"
+              },
+              "selectedRows": [
+                "web_provider-dependencies",
+                "web_provider-O0-build",
+                "web_provider-O0-run",
+                "web_provider-O2-build",
+                "web_provider-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "image_resource",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\image_resource\\results.json",
+                "sha256": "e58744cd0bfebe8c93bd0dd156785fbda9b523e11c409d0c300c4a1442b0a767"
+              },
+              "selectedRows": [
+                "image_resource-dependencies",
+                "image_resource-O0-build",
+                "image_resource-O0-run",
+                "image_resource-O2-build",
+                "image_resource-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "image_regression",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\image_regression\\results.json",
+                "sha256": "e7edbaf61dac7d712f274b94490241948c042e14204188c61053a5aead6837f2"
+              },
+              "selectedRows": [
+                "image_regression-dependencies",
+                "image_regression-O0-build",
+                "image_regression-O0-run",
+                "image_regression-O2-build",
+                "image_regression-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        },
+        {
+          "name": "html_interaction",
+          "proof": [
+            {
+              "report": {
+                "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\html_interaction\\results.json",
+                "sha256": "f66acacbc93f4ee5652c5be0f900db1dd1f4bb124f5a1333f48ef8d95e79aa78"
+              },
+              "selectedRows": [
+                "html_interaction-dependencies",
+                "html_interaction-O0-build",
+                "html_interaction-O0-run",
+                "html_interaction-O2-build",
+                "html_interaction-O2-run"
+              ],
+              "checks": 5
+            }
+          ],
+          "checks": 5
+        }
+      ],
+      "matrixFamiliesPassed": 37,
+      "matrixChecks": 266,
+      "focused": [
+        {
+          "name": "global_owned",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\global_owned\\results.json",
+              "sha256": "a3385bf47c1017e18f35254b5d481a493b5d5199fb10c78476a79e2c19ede5a2"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "frame_owned",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\frame_owned\\results.json",
+              "sha256": "591c6732b9482c6850ccc53957894364e0067a3e8319a07a4767f19ffce3b3b0"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "cursor_readiness",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\cursor_readiness\\results.json",
+              "sha256": "9297ab9d262d9704e0b963b054ca92e69e077a884f1497d473f7af297fc9b251"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "callback_receipts",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\callback_receipts\\results.json",
+              "sha256": "ed64c4bc54ea83d93e7406ace47ade643e48383aa3dfff169c71dbfdd0bcf633"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "data_owned",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\data_owned\\results.json",
+              "sha256": "5d61327dab4387a1c4a3a81a0eb1184a8abe7429ed9a72cd97e4cd530b815b8a"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run",
+              "raw-O0-build",
+              "raw-O0-run",
+              "raw-O2-build",
+              "raw-O2-run",
+              "header-c11",
+              "header-c++11",
+              "header-c++17"
+            ],
+            "checks": 11
+          }
+        },
+        {
+          "name": "transfer_context",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\transfer_context\\results.json",
+              "sha256": "e0a55230cf4c8059c0293b349a7b0b08f3e36c000d9815656bfed4609d58bbe9"
+            },
+            "selectedRows": [
+              "O0-build",
+              "O0-run",
+              "O2-build",
+              "O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "snapshot",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-remainders-linux-r1\\results.json",
+              "sha256": "23e4f5ffb4c1d8ce9c4cef60c12842c4dd81a93edd693d1e8d736d0d92a2d69b"
+            },
+            "selectedRows": [
+              "snapshot-O0-build",
+              "snapshot-O0-run",
+              "snapshot-O2-build",
+              "snapshot-O2-run"
+            ],
+            "checks": 4
+          }
+        },
+        {
+          "name": "platform",
+          "proof": {
+            "report": {
+              "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-remainders-linux-r1\\results.json",
+              "sha256": "23e4f5ffb4c1d8ce9c4cef60c12842c4dd81a93edd693d1e8d736d0d92a2d69b"
+            },
+            "selectedRows": [
+              "platform-O0-build",
+              "platform-O0-run",
+              "platform-O2-build",
+              "platform-O2-run"
+            ],
+            "checks": 4
+          }
+        }
+      ],
+      "focusedChecks": 39,
+      "componentPrivatePolicy": {
+        "report": {
+          "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\data-transfer-policy-linux-dev-r1\\results.json",
+          "sha256": "e9ee8c8cfac2cba51a15f28ff9a9f8400251b070d759b4c097fe2d15e3700602"
+        },
+        "selectedRows": [
+          "private-O0-compile",
+          "xge-data-O0-compile",
+          "xui-data-O0-compile",
+          "O0-build",
+          "O0-run",
+          "private-O2-compile",
+          "xge-data-O2-compile",
+          "xui-data-O2-compile",
+          "O2-build",
+          "O2-run",
+          "c++11-header",
+          "c++17-header",
+          "negative-policy-compile",
+          "negative-policy-build",
+          "negative-swallowed-null-failure",
+          "reachable-private-symbols"
+        ],
+        "checks": 16
+      },
+      "componentPolicyEquivalence": [
+        {
+          "path": "src/xge/input/xge_data_object.c",
+          "sha256": "be4c725faff9d5c2c5b2d533bb3d06ed0b02e2587f5e297d85013a820927586a"
+        },
+        {
+          "path": "src/xui/core/xui_data_object.c",
+          "sha256": "3b29775afd059b30bef840a25ea64f3b2e68a809a92991f11dd3d02bc8ddaa96"
+        },
+        {
+          "path": "include/xnative_transfer.h",
+          "sha256": "620fe84af1c7c5f40006a65a4ca4435a5d62f2fd500b345514829e27c08dff6f"
+        }
+      ],
+      "componentPolicyBoundary": "Reused exact production data components plus full private runtime TU/FV V8; not a whole-engine SDK qualification.",
+      "build": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-host-linux-r3\\build-report.json",
+        "sha256": "f81b75b3d0581c9efd3bc37d95cac1f956f7bd5ae16471d3a912553d034c4c9f"
+      },
+      "buildConfig": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-host-linux-r3\\xge_build_config.h",
+        "sha256": "989d23b4f4e0f75d9fbab4a1847fc45b42bdff6fbc386c92839bd7818e30b873"
+      },
+      "runtimeBinary": {
+        "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-host-linux-r3\\libxge.so",
+        "sha256": "0a815b6f6b3819035840fa5a33cb9e54a86cbe0c444ed714bf07e83356aea7f2"
+      },
+      "compiled": 145,
+      "reused": 0,
+      "initialReportsPreserved": [
+        {
+          "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-matrix-linux-r3\\results.json",
+          "sha256": "a4e47e7001562ac1417034da6e313d2af70c6d8d175bdd7b6a92f9a71b8b1483"
+        },
+        {
+          "path": "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\xlang-validation\\native-transfer-focused-linux-r3\\results.json",
+          "sha256": "0f744a080b55be8d015c23d55abdc650e33d45f1c07922e8b347b57609be2e3c"
+        }
+      ]
+    }
+  },
+  "ideCandidate": {
+    "build": {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-ide-win-r3\\build-report.json",
+      "sha256": "c6acff776a02098580b00562ba98e89f3f26309f2db4b5cf58809c4587d77b3e"
+    },
+    "config": {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-ide-win-r3\\xge_build_config.h",
+      "sha256": "94a7864bf5d7f7897e1845b1abf9d50cd2e5115a343be4341ef60264fbca343b"
+    },
+    "binary": {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-ide-win-r3\\xge.dll",
+      "sha256": "edafbc3d3520f47cbb851365c98375b27f9a0f09404535dc7e03237e2ddc02fc"
+    },
+    "importLibrary": {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-ide-win-r3\\xge.lib",
+      "sha256": "6f6e8605b690f2112e5b06e45006fc1e50e919640ed88a6c4e11de7b31839173"
+    },
+    "compiled": 171,
+    "reused": 1,
+    "seconds": 330.6183071999985,
+    "runtimeBytes": 11125305,
+    "scope": "Normal IDE profile embedded XRT candidate; matched GUI rebuild/hidden diagnostics and release staging are handled separately by Root."
+  },
+  "totals": {
+    "matrixFamilies": 74,
+    "matrixChecks": 532,
+    "focusedChecks": 78,
+    "componentPrivatePolicyChecks": 32
+  },
+  "sourceCandidate": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-transfer-final-r3\\manifest.json",
+    "sha256": "f4007f4622a617a04e4c39cd0529e122a3f9d5495eb01b50848268d417e8fc2e"
+  },
+  "committedSources": [
+    {
+      "path": "docs/native-transfer-clipboard.md",
+      "qualifiedRawSha256": "1c800b44d0f30450cbc77f612b2549cacf80aaf70e20d926985d7e229406ff7e",
+      "committedCanonicalLfSha256": "1c800b44d0f30450cbc77f612b2549cacf80aaf70e20d926985d7e229406ff7e"
+    },
+    {
+      "path": "extlibs/sokol/sokol_app.h",
+      "qualifiedRawSha256": "42228272007c06ae5e7b256d536fb28a9bfd5ce4d16b94f74acf74fd7a948ee7",
+      "committedCanonicalLfSha256": "42228272007c06ae5e7b256d536fb28a9bfd5ce4d16b94f74acf74fd7a948ee7"
+    },
+    {
+      "path": "include/xge.h",
+      "qualifiedRawSha256": "c64dcc31d83634631697a316f4cae0d211041f51770629128474cc384c4d299b",
+      "committedCanonicalLfSha256": "c64dcc31d83634631697a316f4cae0d211041f51770629128474cc384c4d299b"
+    },
+    {
+      "path": "include/xui.h",
+      "qualifiedRawSha256": "b10940d61965e0d85e4481d9e6a157410bc6a308a0d7e69f49c0a500d3da56c0",
+      "committedCanonicalLfSha256": "b10940d61965e0d85e4481d9e6a157410bc6a308a0d7e69f49c0a500d3da56c0"
+    },
+    {
+      "path": "src/xge/core/xge_core.c",
+      "qualifiedRawSha256": "ede40c358da881943b2fc07281429eaa92dfe81f3dfce60687cf63e1ff7226f4",
+      "committedCanonicalLfSha256": "ede40c358da881943b2fc07281429eaa92dfe81f3dfce60687cf63e1ff7226f4"
+    },
+    {
+      "path": "src/xge/core/xge_data_snapshot.inl",
+      "qualifiedRawSha256": "b8d0360942610cf43025b53d2d06e73adb7dde0f27f611651945035cc68accf9",
+      "committedCanonicalLfSha256": "b8d0360942610cf43025b53d2d06e73adb7dde0f27f611651945035cc68accf9"
+    },
+    {
+      "path": "src/xge/core/xge_impl.c",
+      "qualifiedRawSha256": "7741c6e8ebc355991b06409f9d3e1f6576c1b451d38ad4455df609879f5f1dae",
+      "committedCanonicalLfSha256": "7741c6e8ebc355991b06409f9d3e1f6576c1b451d38ad4455df609879f5f1dae"
+    },
+    {
+      "path": "src/xge/core/xge_transfer_internal.h",
+      "qualifiedRawSha256": "3c2e7e0e544ee9e8a003c4d8810a6e16507fb9e6657f4f2d1b356db290da093c",
+      "committedCanonicalLfSha256": "3c2e7e0e544ee9e8a003c4d8810a6e16507fb9e6657f4f2d1b356db290da093c"
+    },
+    {
+      "path": "src/xge/core/xge_transfer_internal_api.h",
+      "qualifiedRawSha256": "843b763821ef74d44396e6bf2bed0f35e9312b17fc10c3f3367203bb4ad4708a",
+      "committedCanonicalLfSha256": "843b763821ef74d44396e6bf2bed0f35e9312b17fc10c3f3367203bb4ad4708a"
+    },
+    {
+      "path": "src/xge/input/xge_data_object.c",
+      "qualifiedRawSha256": "be4c725faff9d5c2c5b2d533bb3d06ed0b02e2587f5e297d85013a820927586a",
+      "committedCanonicalLfSha256": "e9a321adb713b29402c8edef213c0e76b9e99fb8faa9998bb2f897321e054c28",
+      "sourceNormalization": "Canonical LF plus removal of trailing whitespace after empty DO_API macro; preprocessing tokens unchanged."
+    },
+    {
+      "path": "src/xge/input/xge_drag_drop.c",
+      "qualifiedRawSha256": "da70d8754c50a43f93250432aa436f47879d0271a9f6baa18789183990c9aca4",
+      "committedCanonicalLfSha256": "da70d8754c50a43f93250432aa436f47879d0271a9f6baa18789183990c9aca4"
+    },
+    {
+      "path": "src/xge/render/xge_render.c",
+      "qualifiedRawSha256": "bdf1b6588be878380a7a5f78901c6886b70310c0b157331ac536236b92555354",
+      "committedCanonicalLfSha256": "bdf1b6588be878380a7a5f78901c6886b70310c0b157331ac536236b92555354"
+    },
+    {
+      "path": "src/xui/core/xui_data_object.c",
+      "qualifiedRawSha256": "3b29775afd059b30bef840a25ea64f3b2e68a809a92991f11dd3d02bc8ddaa96",
+      "committedCanonicalLfSha256": "3b29775afd059b30bef840a25ea64f3b2e68a809a92991f11dd3d02bc8ddaa96"
+    },
+    {
+      "path": "src/xui/core/xui_drag_drop.c",
+      "qualifiedRawSha256": "fd470da96ad10319e5239bcb4fcfaa691d67593c70102314e2bedfe1eb30cd70",
+      "committedCanonicalLfSha256": "fd470da96ad10319e5239bcb4fcfaa691d67593c70102314e2bedfe1eb30cd70"
+    },
+    {
+      "path": "src/xui/core/xui_owned_resource_slots.c",
+      "qualifiedRawSha256": "5c2c300e432d924c10a66cffa91ad7a619287895d7d6b707982f46f700626572",
+      "committedCanonicalLfSha256": "5c2c300e432d924c10a66cffa91ad7a619287895d7d6b707982f46f700626572"
+    },
+    {
+      "path": "src/xui/core/xui_proxy_xge.c",
+      "qualifiedRawSha256": "cdf098f63c499eb6e55ab8ffb7820bb4fd9d31d4c38ad321506192c45b7dcdaa",
+      "committedCanonicalLfSha256": "cdf098f63c499eb6e55ab8ffb7820bb4fd9d31d4c38ad321506192c45b7dcdaa"
+    },
+    {
+      "path": "tests/xge/xge_transfer_clipboard_cpu_test.c",
+      "qualifiedRawSha256": "f889a079f66f463347d4e12ece21c369470969a83be68fdda7e5331fe1d61a22",
+      "committedCanonicalLfSha256": "f889a079f66f463347d4e12ece21c369470969a83be68fdda7e5331fe1d61a22"
+    },
+    {
+      "path": "tests/xge/xge_transfer_x11_cpu_test.c",
+      "qualifiedRawSha256": "a59d09bbb0a3be819c94cf6ffb217d2846722d21104b80341036201d64b90975",
+      "committedCanonicalLfSha256": "a59d09bbb0a3be819c94cf6ffb217d2846722d21104b80341036201d64b90975"
+    },
+    {
+      "path": "tests/xui/xui_data_snapshot_test.c",
+      "qualifiedRawSha256": "367eed4283abe6d6db96846a76143f67b4281a83c77fdf3b222822f679059348",
+      "committedCanonicalLfSha256": "367eed4283abe6d6db96846a76143f67b4281a83c77fdf3b222822f679059348"
+    },
+    {
+      "path": "tests/xui/xui_message_list_audit_test.c",
+      "qualifiedRawSha256": "d3d45a374a6440f02a79b2aef91d0f52eafbe7889a12b61f40c978af363b40c3",
+      "committedCanonicalLfSha256": "d3d45a374a6440f02a79b2aef91d0f52eafbe7889a12b61f40c978af363b40c3"
+    },
+    {
+      "path": "tests/xui/xui_owned_message_display_test.c",
+      "qualifiedRawSha256": "f71e5d25488bfb8841a1ebbc8c5f76091284bc8a311201bdb9317d3785b20544",
+      "committedCanonicalLfSha256": "f71e5d25488bfb8841a1ebbc8c5f76091284bc8a311201bdb9317d3785b20544"
+    },
+    {
+      "path": "tests/xui/xui_transfer_context_test.c",
+      "qualifiedRawSha256": "d977a7dcab5a399e94b212f0965080a1225435f6ac512ed8e0ecfc70b051b5d1",
+      "committedCanonicalLfSha256": "d977a7dcab5a399e94b212f0965080a1225435f6ac512ed8e0ecfc70b051b5d1"
+    },
+    {
+      "path": "tools/test/check_data_transfer_cpu.py",
+      "qualifiedRawSha256": "12c9c53fed9f25e0c8cdb6afb7dba39c703664ddba97a58d332b14cdc594a734",
+      "committedCanonicalLfSha256": "12c9c53fed9f25e0c8cdb6afb7dba39c703664ddba97a58d332b14cdc594a734"
+    },
+    {
+      "path": "tools/test/check_transfer_context.py",
+      "qualifiedRawSha256": "00242f36e64c0d7326a844d24e196733388412a2cbdc9650a587e0ca43aa4761",
+      "committedCanonicalLfSha256": "00242f36e64c0d7326a844d24e196733388412a2cbdc9650a587e0ca43aa4761"
+    },
+    {
+      "path": "tools/test/check_xui_owned_cache.py",
+      "qualifiedRawSha256": "a6e30ecebfe94d612d44b32464eeb2b38fbb5c6983bf9d910a68bb2d1fb1468e",
+      "committedCanonicalLfSha256": "2cb4b33e6b9803be76c969c172371b3129a5fad0944644e5cc71c0d2d23b17e6"
+    },
+    {
+      "path": "tools/test/check_xui_owned_managers.py",
+      "qualifiedRawSha256": "20afaa8611d0c858354d307b24df790a5361b469620515d629346d26798fac1b",
+      "committedCanonicalLfSha256": "deec81c065c6982234f3ef020a77b745fcd8a70a13f57c2bd90a12c5be186b5d"
+    }
+  ]
+}

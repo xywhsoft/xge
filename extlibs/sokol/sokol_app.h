@@ -13560,6 +13560,9 @@ _SOKOL_PRIVATE void _sapp_x11_on_clientmessage(XEvent* event) {
 }
 
 _SOKOL_PRIVATE void _sapp_x11_on_selectionrequest(XEvent* event) {
+#if defined(SOKOL_X11_CLIPBOARD_SELECTION_REQUEST)
+    if (SOKOL_X11_CLIPBOARD_SELECTION_REQUEST(event)) return;
+#endif
     XSelectionRequestEvent* req = &event->xselectionrequest;
     if (req->selection != _sapp.x11.CLIPBOARD) {
         return;

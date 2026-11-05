@@ -32,6 +32,7 @@ struct xge_data_object_t {
 	int iCapacity;
 	atomic_uint iActivity;
 	atomic_uint bDestroying;
+	uint64_t iRevision; /* Nonwrapping snapshot publication identity. */
 };
 
 enum { XGE_DATA_MANAGED=2u,XGE_DATA_OWNED_PROVIDER=4u };
@@ -288,13 +289,14 @@ static int __xgeDataPublish(xge_data_object object,xge_data_generation_t* next,b
 {
     *published=false;xge_data_lifetime_t* root=__xgeDataObjectRoot(object);xrtownershipscope mutation={0};
     if(root){if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;int status=__xgeDataOwnedAdmit(root);if(status!=XGE_OK){__xgeDataOwnedMutationEnd(&mutation);return status;}}
+    if(object->iRevision==UINT64_MAX){if(root)__xgeDataOwnedMutationEnd(&mutation);return XGE_ERROR_INVALID_STATE;}
     int index=__xgeDataSlotFind(object,next->sFormat);xge_data_generation_t* old=NULL;int status=XGE_OK;
     if(index<0){
         if(object->iCount==INT_MAX)status=XGE_ERROR_OUT_OF_MEMORY;
         else status=__xgeDataSlotReserve(object,object->iCount+1);
         if(status==XGE_OK)index=object->iCount++;
     }else old=object->pSlots[index];
-    if(status==XGE_OK){object->pSlots[index]=next;*published=true;}
+    if(status==XGE_OK){object->pSlots[index]=next;object->iRevision++;*published=true;}
     if(root)__xgeDataOwnedMutationEnd(&mutation);
     if(status==XGE_OK)status=__xgeDataGenerationReleaseChecked(old);
     return status;
@@ -342,23 +344,9 @@ static int __xgeDataPublish(xge_data_object object,xge_data_generation_t* next,b
  int xgeDataObjectHas(xge_data_object object,const char* format)
 {return __xgeDataSlotFind(object,format)>=0;}
 
- int xgeDataObjectGet(xge_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+static int __xgeDataGenerationRead(xge_data_generation_t* generation,void* output,size_t capacity,size_t* outputSize)
 {
-    if(!outputSize || (capacity && !output))return XGE_ERROR_INVALID_ARGUMENT;
-    *outputSize=0u;int index=__xgeDataSlotFind(object,format);
-    xge_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
-    bool owned=__xgeDataObjectRoot(object)!=NULL;
-    bool provider=generation && ((generation->iFlags&XGE_DATA_OWNED_PROVIDER) || generation->tRead.raw!=NULL);
-    if(generation && !provider){
-        *outputSize=generation->tSize.valueBytes;
-        if(output && capacity<generation->tSize.valueBytes)return XGE_ERROR_BUFFER_TOO_SMALL;
-        if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
-        return XGE_OK;
-    }
-    xge_data_operation_t call={0};int status=__xgeDataOperationBegin(object,&call);if(status!=XGE_OK)return status;
-    if(!generation)status=XGE_ERROR_NOT_FOUND;
-    else if(!__xgeDataGenerationHold(generation))status=XGE_ERROR_INVALID_STATE;
-    else {
+    int status=XGE_OK;
         if(generation->iFlags&XGE_DATA_OWNED_PROVIDER){
             xge_callback_owner_t owner=*__xgeDataGenerationOwner(generation);bool held=false;
             status=__xgeDataOwnerHold(&owner,&held);xge_data_outcome_t result={0};__xgeDataOwnedOutcomeBegin(&result,status);
@@ -377,6 +365,27 @@ static int __xgeDataPublish(xge_data_object object,xge_data_generation_t* next,b
             *outputSize=generation->tSize.valueBytes;if(output && capacity<generation->tSize.valueBytes)status=XGE_ERROR_BUFFER_TOO_SMALL;
             else if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
         }
+    return status;
+}
+
+ int xgeDataObjectGet(xge_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+{
+    if(!outputSize || (capacity && !output))return XGE_ERROR_INVALID_ARGUMENT;
+    *outputSize=0u;int index=__xgeDataSlotFind(object,format);
+    xge_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
+    bool owned=__xgeDataObjectRoot(object)!=NULL;
+    bool provider=generation && ((generation->iFlags&XGE_DATA_OWNED_PROVIDER) || generation->tRead.raw!=NULL);
+    if(generation && !provider){
+        *outputSize=generation->tSize.valueBytes;
+        if(output && capacity<generation->tSize.valueBytes)return XGE_ERROR_BUFFER_TOO_SMALL;
+        if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
+        return XGE_OK;
+    }
+    xge_data_operation_t call={0};int status=__xgeDataOperationBegin(object,&call);if(status!=XGE_OK)return status;
+    if(!generation)status=XGE_ERROR_NOT_FOUND;
+    else if(!__xgeDataGenerationHold(generation))status=XGE_ERROR_INVALID_STATE;
+    else {
+        status=__xgeDataGenerationRead(generation,output,capacity,outputSize);
         if(owned){
             xge_data_outcome_t result={0};__xgeDataOwnedOutcomeBegin(&result,status);
             __xgeDataOwnedOutcomeAdd(&result,__xgeDataGenerationSnapshotEnd(generation));status=result.iStatus;xrtSetErrorTake(result.pError);
@@ -421,3 +430,24 @@ static int __xgeDataPublish(xge_data_object object,xge_data_generation_t* next,b
     }
     return __xgeDataOperationEnd(&call,status);
 }
+
+
+#define DS_FN(name) __xgeDataSnapshot##name
+#define DS_PREFIX(name) __xgeData##name
+#define DS_STATUS(name) XGE_##name
+#define DS_HANDLE xge_data_object
+#define DS_GENERATION xge_data_generation_t
+#define DS_OPERATION xge_data_operation_t
+#define DS_ITEM xge_clipboard_item_t
+#define DS_IS_OWNED xgeDataObjectIsOwned
+#define DS_PROVIDER XGE_DATA_OWNED_PROVIDER
+#include "xge_data_snapshot.inl"
+#undef DS_FN
+#undef DS_PREFIX
+#undef DS_STATUS
+#undef DS_HANDLE
+#undef DS_GENERATION
+#undef DS_OPERATION
+#undef DS_ITEM
+#undef DS_IS_OWNED
+#undef DS_PROVIDER

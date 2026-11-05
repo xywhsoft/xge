@@ -26,6 +26,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--object-overlay", type=Path)
     parser.add_argument("--fixture-root", type=Path)
+    parser.add_argument("--opt", action="append", choices=("O0","O2"),help="Run only a requested client optimization; default is both")
     parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer", "doc_ui_callbacks", "doc_editor_regression", "doc_model_worker", "document_model", "document_model_fault", "doc_model_ui"))
     args = parser.parse_args()
     source, engine, runtime, out = [value.resolve() for value in (args.source, args.engine, args.runtime, args.out)]
@@ -110,7 +111,7 @@ def main():
         if case == "doc_editor_regression":
             # The pre-existing CPU fixture saves local files in this directory.
             (source / "build/document").mkdir(parents=True, exist_ok=True)
-        for opt in ("O0", "O2"):
+        for opt in args.opt or ("O0", "O2"):
             executable = out / (case + "-" + opt + (".exe" if windows else ""))
             command = [build["compiler"][0], *flags, "-" + opt, test, source / "tests/xui/xui_test_proxy.c", *case_objects, runtime, *libraries, "-o", executable]
             if case=="document_model_fault":

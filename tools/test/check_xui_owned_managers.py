@@ -40,8 +40,11 @@ def main():
         nativeObjects=[native_object(name) for name in metadata['sources']]
         inherited=Path(metadata.get('incremental_native_overlay',{}).get('base',engine))
         if 'XGE_ENABLE_HARFBUZZ' in metadata['features']:
-            build=json.loads((engine/'overlay-build.json').read_text())
-            shared=[Path(name) for name in build['inputs'] if name.endswith('extlibs_harfbuzz_src_harfbuzz.cc.o')]
+            normal=root/'build/shared/obj/extlibs_harfbuzz_src_harfbuzz.cc.o'
+            if normal.is_file():shared=[normal]
+            else:
+                build=json.loads((engine/'overlay-build.json').read_text())
+                shared=[Path(name) for name in build['inputs'] if name.endswith('extlibs_harfbuzz_src_harfbuzz.cc.o')]
             assert len(shared)==1;nativeObjects+=shared
         if os.name=='nt':nativeObjects+=sorted((inherited/'obj').glob('*_res.o'))
         assert all(path.is_file() for path in nativeObjects)

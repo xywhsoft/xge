@@ -6,7 +6,9 @@
 #include "../../src/xui/document/xui_document_layout_internal.h"
 #undef xrtMalloc
 #undef xrtRealloc
+#define XUI_MESSAGE_AUDIT_ENTRY native_message_display_main
 #include "xui_message_list_audit_test.c"
+#undef XUI_MESSAGE_AUDIT_ENTRY
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;

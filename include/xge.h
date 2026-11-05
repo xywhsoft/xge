@@ -1651,6 +1651,11 @@ typedef struct xge_drag_event_t {
 
 typedef uint32_t (*xge_drag_event_proc)(const xge_drag_event_t* pEvent,
 	void* pUser);
+/* Checked delivery separates callback status from the negotiated effect.
+ * Zero succeeds; negative status fails; positive nonzero is CALLBACK_FAILED.
+ * The effect is published only after successful callback and owner cleanup. */
+typedef int (*xge_drag_event_checked_proc)(const xge_drag_event_t* pEvent,
+    uint32_t* pEffect,void* pUser);
 
 typedef struct xge_scene_t xge_scene_t;
 typedef xge_scene_t* xge_scene;
@@ -1824,6 +1829,9 @@ XGE_API int xgeFrameCallbackDispatchChecked(int* pFrameResult);
  * diagnostic). Positive callback stop values are successful completion.
  * Quit is allowed in a callback; Unit rejects an active owned snapshot. */
 XGE_API int xgeRunOwned(xge_scene_proc procFrame, void* pUser, const xge_callback_owner_t* pOwner);
+/* Borrowed services must cover external COM return tails before publication. */
+XGE_API int xgeRunOwnedWithTransfer(xge_scene_proc frame,void* user,
+    const xge_callback_owner_t* owner,const xn_transfer_services_v1* services);
 /* 立即退出主循环。 */
 XGE_API void xgeQuit(void);
 /* Native close and xgeRequestQuit call this on the UI thread. Return zero to
@@ -1937,13 +1945,18 @@ XGE_API int xgeDataObjectFormatCount(xge_data_object pData);
 XGE_API const char* xgeDataObjectFormatAt(xge_data_object pData, int iIndex);
 /* 是否包含指定格式。 */
 XGE_API int xgeDataObjectHas(xge_data_object pData, const char* sFormat);
-/* 读指定格式数据；iCapacity 不足时仅输出所需大小。 */
+/* NULL/0 queries the required byte count without copying. Immediate values
+ * do not write a short output. A lazy provider may have completed earlier
+ * Write commands before a later command makes the whole read too small;
+ * explicit caller buffers keep those bytes. Required size is still returned. */
 XGE_API int xgeDataObjectGet(xge_data_object pData, const char* sFormat,
 	void* pOutput, size_t iCapacity, size_t* pOutputSize);
 /* 注册拖放事件回调（进入/悬停/放下/离开）。 */
 XGE_API int xgeDragEventCallbackSet(xge_drag_event_proc onEvent, void* pUser);
 XGE_API int xgeDragEventCallbackSetOwned(xge_drag_event_proc onEvent, void* pUser,
 	const xge_callback_owner_t* pOwner);
+XGE_API int xgeDragEventCallbackSetCheckedOwned(xge_drag_event_checked_proc onEvent,
+    void* pUser,const xge_callback_owner_t* pOwner);
 /* Status and negotiated effect are independent; output is unchanged on
  * invalid input or owner Hold/Drop failure. */
 XGE_API int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent, uint32_t* pEffect);
@@ -1953,6 +1966,8 @@ XGE_API uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent);
 /* 发起拖出会话（完整 OLE 拖出仅 Windows；其他平台仅内部会话）。 */
 XGE_API int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
 	uint32_t iSuggestedEffect);
+XGE_API int xgeDragBeginWithTransfer(xge_data_object data,uint32_t allowedEffects,
+    uint32_t suggestedEffect,const xn_transfer_services_v1* services);
 /* 取消当前拖放会话。 */
 XGE_API int xgeDragCancel(void);
 /* 是否有拖放会话进行中。 */
@@ -3304,9 +3319,22 @@ typedef struct xge_clipboard_item_t {
 #define XGE_CLIPBOARD_FORMAT_HTML "text/html"
 #define XGE_CLIPBOARD_FORMAT_IMAGE_PNG "image/png"
 
-/* 多格式写剪贴板（多格式仅 Windows，其他平台取首文本项）。
- * Windows 的有效 PNG 项额外提供带 alpha 的 CF_DIBV5 位图表示。 */
+/* Prepare every representation before one publication: Windows uses one
+ * OleSetClipboard; X11 serves TARGETS plus every custom binary target. Other
+ * text-only backends reject multiple formats before writing anything.
+ * Windows also provides CF_DIBV5 for a supported PNG representation.
+ * Raw C entry points keep their explicit caller-managed code lifetime. */
 XGE_API int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount);
+XGE_API int xgeClipboardSetItemsWithTransfer(const xge_clipboard_item_t* items,
+    int count,const xn_transfer_services_v1* services);
+/* A cold Windows STA call initializes/balances OLE and flushes the prepared
+ * data. Once OleSetClipboard succeeds, a later Flush failure is reported but
+ * cannot promise OS rollback. Run-time exported COM references retain their
+ * actual resident capsule/code capability until physical cleanup returns. */
+/* Captures one generation snapshot. Lazy size/revision changes are rejected
+ * before publication; immediate bytes stay pinned through the backend call. */
+XGE_API int xgeDataObjectCopyToClipboardWithTransfer(xge_data_object data,
+    const xn_transfer_services_v1* services);
 /* 按格式读剪贴板数据（多格式仅 Windows）；Windows image/png 可从
  * 常见未压缩 CF_DIB(V5) 转换。 */
 XGE_API int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity);

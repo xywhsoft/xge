@@ -126,8 +126,8 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeSetFrameCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
+	__xgeCallbackOutcome(__xgeDragDropUnit(),&result,&first);
 	if(!initialized)goto finish;
-	XGE_UNIT_STEP(__xgeDragDropUnit());
 	g_xge.bRunning = 0;
 	XGE_UNIT_STEP(__xgeSceneClear());
 #if XGE_ENABLE_2D
@@ -253,6 +253,8 @@ int xgeFrameCallbackDispatchChecked(int* output)
 int xgeRun(xge_scene_proc procFrame,void* user)
 {return xgeRunOwned(procFrame,user,NULL);}
 int xgeRunOwned(xge_scene_proc procFrame, void* pUser,const xge_callback_owner_t* owner)
+{return xgeRunOwnedWithTransfer(procFrame,pUser,owner,NULL);}
+int xgeRunOwnedWithTransfer(xge_scene_proc procFrame,void* pUser,const xge_callback_owner_t* owner,const xn_transfer_services_v1* services)
 {
 #if !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 	sapp_desc objDesc;
@@ -264,10 +266,12 @@ int xgeRunOwned(xge_scene_proc procFrame, void* pUser,const xge_callback_owner_t
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
+	xge_transfer_run_scope_t transfer={0};
+	int admission=__xgeTransferRunBegin(&transfer,services);if(admission!=XGE_OK)return admission;
 	xge_callback_run_outcome_t outcome={0};
 	(void)xrtSpinLock(&g_xgeFrameSpin);
 	if(g_xgeFrameRun || g_xgeFrameDispatching || xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
-		(void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;
+		(void)xrtSpinUnlock(&g_xgeFrameSpin);__xgeTransferRunEnd(&transfer);return XGE_ERROR_INVALID_STATE;
 	}
 	g_xgeFrameRun=&outcome;g_xgeFrameRunThread=xrtThreadCurrentId();(void)xrtSpinUnlock(&g_xgeFrameSpin);
 	int result=xgeSetFrameCallbackOwned(procFrame,pUser,owner);
@@ -292,6 +296,7 @@ int xgeRunOwned(xge_scene_proc procFrame, void* pUser,const xge_callback_owner_t
 finish:
 	__xgeCallbackRunRemember(&outcome,result);
 	(void)xrtSpinLock(&g_xgeFrameSpin);g_xgeFrameRun=NULL;g_xgeFrameRunThread=0;(void)xrtSpinUnlock(&g_xgeFrameSpin);
+	__xgeTransferRunEnd(&transfer);
 	return outcome.iFirstStatus ? __xgeCallbackRunTake(&outcome):result;
 }
 

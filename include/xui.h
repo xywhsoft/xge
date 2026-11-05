@@ -23,7 +23,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	17
+#define XUI_PROXY_VERSION	18
 
 typedef enum xui_result_t {
 /* 成功。 */
@@ -5919,6 +5919,22 @@ struct xui_event_t {
 	int iCompositionAttribute;
 };
 
+/* Callback-period typed payload for transfer events. Geometric DRAG_BEGIN /
+ * MOVE / END / CANCEL events have a different contract and are excluded.
+ * A C custom producer using ENTER / OVER / LEAVE / DROP must supply this
+ * sized payload. This cannot validate an arbitrary forged native pointer. */
+static inline const xui_drag_event_data_t* xuiEventDragData(const xui_event_t* event)
+{
+    if(!event || event->iSize<sizeof(*event) || !event->pData)return NULL;
+    switch(event->iType){
+    case XUI_EVENT_DRAG_ENTER:case XUI_EVENT_DRAG_OVER:
+    case XUI_EVENT_DRAG_LEAVE:case XUI_EVENT_DROP:break;
+    default:return NULL;
+    }
+    const xui_drag_event_data_t* data=(const xui_drag_event_data_t*)event->pData;
+    return data->iSize>=sizeof(*data) ? data:NULL;
+}
+
 /* Context-wide desktop interaction parameters. All distances are pixels. */
 typedef struct xui_interaction_policy_t {
 	uint32_t iSize;
@@ -6046,6 +6062,9 @@ typedef struct xui_clipboard_item_t {
 /* Replaces the clipboard atomically with every supplied representation. */
 typedef int (*xui_clipboard_set_items_proc)(xui_proxy pProxy,
 	const xui_clipboard_item_t* pItems, int iItemCount);
+/* Cold, synchronous services; the provider must not store this borrowed record. */
+typedef int (*xui_clipboard_set_items_with_transfer_proc)(xui_proxy proxy,
+    const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services);
 /* Returns the complete byte size. pData may be NULL when iCapacity is zero. */
 typedef int (*xui_clipboard_get_data_proc)(xui_proxy pProxy, const char* sFormat,
 	void* pData, size_t iCapacity);
@@ -6209,6 +6228,8 @@ struct xui_proxy_t {
 	xui_clock_seconds_proc clockSeconds;
 	xui_request_frame_proc requestFrame;
     struct xui_proxy_capability_t* _pCapability; /* Private immutable owned backend capability. */
+    /* Optional cold capability; all earlier Proxy field offsets are preserved. */
+    xui_clipboard_set_items_with_transfer_proc clipboardSetItemsWithTransfer;
 };
 
 /* 创建 XUI 上下文（根与覆盖根就绪；渲染前需 xuiSetProxy 绑定后端）。 */
@@ -6226,6 +6247,17 @@ XUI_API xui_proxy xuiGetProxyOwned(xui_context pContext);
 /* Request is logical only; the caller still owns the Context until its
  * checked destructor consumes it after active calls and retained data end. */
 XUI_API int xuiRequestClose(xui_context pContext);
+/* Unsupported when the optional backend capability is absent. Items are
+ * prepared as one complete snapshot before the backend is called once;
+ * text-only backends must reject multiple formats before publication.
+ * Services are borrowed for this call, exported capsules retain real code.
+ * A post-publication OS/Flush failure does not promise clipboard rollback. */
+XUI_API int xuiClipboardSetItemsWithTransfer(xui_context context,
+    const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services);
+/* Uses fixed generations, rejects lazy size/source-revision changes before
+ * publication, and pins immediate bytes until the backend call returns. */
+XUI_API int xuiClipboardCopyDataWithTransfer(xui_context context,xui_data_object data,
+    const xn_transfer_services_v1* services);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
 /* Accepted logical close consumes the context owner even when physical cleanup
@@ -6399,7 +6431,10 @@ XUI_API int xuiDataObjectFormatCount(xui_data_object pData);
 XUI_API const char* xuiDataObjectFormatAt(xui_data_object pData, int iIndex);
 /* 是否含指定格式。 */
 XUI_API int xuiDataObjectHas(xui_data_object pData, const char* sFormat);
-/* 读格式数据；容量不足时仅输出所需大小。 */
+/* NULL/0 queries byte count without copying. A short immediate value leaves
+ * output untouched. Lazy providers may have completed earlier Write commands
+ * before a later command makes the read too small; caller buffers keep that
+ * prefix and the required byte count is still returned. */
 XUI_API int xuiDataObjectGet(xui_data_object pData, const char* sFormat,
 	void* pOutput, size_t iCapacity, size_t* pOutputSize);
 /* 以控件为源发起拖拽会话（效果位协商）。 */

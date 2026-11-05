@@ -1,6 +1,7 @@
 #include "xge_data_object.c"
 
 static xge_drag_event_proc g_xgeDragEventProc;
+static xge_drag_event_checked_proc g_xgeDragEventChecked;
 static void* g_xgeDragEventUser;
 static xspinlock g_xgeDragCallbackSpin=XRT_SPIN_INIT;
 static xge_callback_node_t* g_xgeDragEventOwner;
@@ -9,25 +10,43 @@ static xge_data_object g_xgeDragData;
 static uint32_t g_xgeDragAllowedEffects;
 static uint32_t g_xgeDragSuggestedEffect;
 static uint64_t g_xgeDragSequence;
+static uint64_t g_xgeDragSessionId;
+static uint64_t g_xgeDragSessionThread;
+static uint64_t g_xgeDragCancellingSession;
 static int g_xgeNativeDragIn;
 static int g_xgeNativeDragOut;
 
-static void __xgeDragSessionClear(void)
+static int __xgeDragSessionClear(void)
 {
-	if ( g_xgeDragData != NULL ) xgeDataObjectRelease(g_xgeDragData);
+	xge_data_object data=g_xgeDragData;
+	uint32_t allowed=g_xgeDragAllowedEffects,suggested=g_xgeDragSuggestedEffect;
+	uint64_t thread=g_xgeDragSessionThread;
 	g_xgeDragData = NULL;
 	g_xgeDragAllowedEffects = 0u;
 	g_xgeDragSuggestedEffect = 0u;
 	g_xgeDragActive = 0;
+	g_xgeDragSessionThread=0;
+	if(!data)return XGE_OK;
+	if(!xgeDataObjectIsOwned(data)){xgeDataObjectRelease(data);return XGE_OK;}
+	bool consumed=false;int status=xgeDataObjectReleaseOwnerChecked(data,&consumed);
+	if(!consumed){
+		/* A preflight failure invoked no callback; preserve the actual global
+		 * owner for a checked retry instead of losing its carrier. */
+		g_xgeDragData=data;g_xgeDragAllowedEffects=allowed;g_xgeDragSuggestedEffect=suggested;
+		g_xgeDragActive=1;g_xgeDragSessionThread=thread;
+	}
+	return status;
 }
 
-static void __xgeDragDropUnit(void)
+static int __xgeDragDropUnit(void)
 {
 	__xgeDragDropPlatformUnit();
-	__xgeDragSessionClear();
+	int result=__xgeDragSessionClear();
 	g_xgeDragSequence = 0u;
 	(void)xgeDragEventCallbackSetOwned(NULL,NULL,NULL);
+	return result;
 }
+
 
 int xgeDragDropCapsGet(xge_drag_drop_caps_t* pCaps)
 {
@@ -54,19 +73,23 @@ int xgeDragEventCallbackSet(xge_drag_event_proc onEvent, void* pUser)
 	return xgeDragEventCallbackSetOwned(onEvent,pUser,NULL);
 }
 
-int xgeDragEventCallbackSetOwned(xge_drag_event_proc proc,void* user,const xge_callback_owner_t* owner)
+static int __xgeDragEventCallbackSet(xge_drag_event_proc proc,xge_drag_event_checked_proc checked,void* user,const xge_callback_owner_t* owner)
 {
-	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
-	xge_callback_node_t* next=NULL;int result=__xgeCallbackNodePrepare(proc!=NULL,false,owner,&next);
+	if((proc || checked) && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	xge_callback_node_t* next=NULL;int result=__xgeCallbackNodePrepare(proc!=NULL || checked!=NULL,false,owner,&next);
 	if(result!=XGE_OK)return result;
 	(void)xrtSpinLock(&g_xgeDragCallbackSpin);
-	if(proc && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+	if((proc || checked) && xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
 		(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);(void)__xgeCallbackNodeRelease(next);return XGE_ERROR_INVALID_STATE;
 	}
 	xge_callback_node_t* old=g_xgeDragEventOwner;g_xgeDragEventOwner=next;
-	g_xgeDragEventProc=proc;g_xgeDragEventUser=proc ? user:NULL;
+	g_xgeDragEventProc=proc;g_xgeDragEventChecked=checked;g_xgeDragEventUser=(proc || checked) ? user:NULL;
 	(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);return __xgeCallbackNodeRelease(old);
 }
+int xgeDragEventCallbackSetOwned(xge_drag_event_proc proc,void* user,const xge_callback_owner_t* owner)
+{return __xgeDragEventCallbackSet(proc,NULL,user,owner);}
+int xgeDragEventCallbackSetCheckedOwned(xge_drag_event_checked_proc proc,void* user,const xge_callback_owner_t* owner)
+{return __xgeDragEventCallbackSet(NULL,proc,user,owner);}
 
 int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent,uint32_t* output)
 {
@@ -84,6 +107,8 @@ int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent,uint32_t* output)
 	}
 	iMask = XGE_DRAG_EFFECT_COPY | XGE_DRAG_EFFECT_MOVE | XGE_DRAG_EFFECT_LINK;
 	tEvent = *pEvent;
+	xge_data_operation_t dataCall={0};
+	if(tEvent.pData){int pin=__xgeDataOperationBegin(tEvent.pData,&dataCall);if(pin!=XGE_OK)return pin;}
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iSequence = tEvent.iSequence != 0u ? tEvent.iSequence :
 		++g_xgeDragSequence;
@@ -96,13 +121,20 @@ int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent,uint32_t* output)
 		tEvent.iSuggestedEffect = 0u;
 	}
 	(void)xrtSpinLock(&g_xgeDragCallbackSpin);
-	xge_drag_event_proc proc=g_xgeDragEventProc;void* user=g_xgeDragEventUser;xge_callback_node_t* node=g_xgeDragEventOwner;
-	if(!__xgeCallbackNodePin(node)){(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);return XGE_ERROR_INVALID_STATE;}
+	xge_drag_event_proc proc=g_xgeDragEventProc;xge_drag_event_checked_proc checked=g_xgeDragEventChecked;
+	void* user=g_xgeDragEventUser;xge_callback_node_t* node=g_xgeDragEventOwner;
+	if(!__xgeCallbackNodePin(node)){(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);return dataCall.pObject ? __xgeDataOperationEnd(&dataCall,XGE_ERROR_INVALID_STATE):XGE_ERROR_INVALID_STATE;}
 	(void)xrtSpinUnlock(&g_xgeDragCallbackSpin);
 	xge_callback_snapshot_t snapshot={0};int result=__xgeCallbackSnapshotBegin(node,false,&snapshot);
+	if(result!=XGE_OK)return dataCall.pObject ? __xgeDataOperationEnd(&dataCall,result):result;
+	iEffect=XGE_DRAG_EFFECT_NONE;
+	result=checked ? checked(&tEvent,&iEffect,user):XGE_OK;
+	if(!checked && proc)iEffect=proc(&tEvent,user);
+	if(result>0)result=XGE_ERROR_CALLBACK_FAILED;
+	xerror* first=result!=XGE_OK ? xrtTakeError():NULL;
+	__xgeCallbackOutcome(__xgeCallbackSnapshotEnd(&snapshot),&result,&first);xrtSetErrorTake(first);
+	if(dataCall.pObject)result=__xgeDataOperationEnd(&dataCall,result);
 	if(result!=XGE_OK)return result;
-	iEffect=proc ? proc(&tEvent,user):XGE_DRAG_EFFECT_NONE;
-	result=__xgeCallbackSnapshotEnd(&snapshot);if(result!=XGE_OK)return result;
 	if ( iEffect == 0u || (iEffect & ~iAllowed) != 0u ||
 		(iEffect & (iEffect - 1u)) != 0u )iEffect=XGE_DRAG_EFFECT_NONE;
 	*output=iEffect;return XGE_OK;
@@ -120,10 +152,12 @@ uint32_t xgeDragEventDispatch(const xge_drag_event_t* pEvent)
 	return result==XGE_OK ? effect:XGE_DRAG_EFFECT_NONE;
 }
 
-int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
-	uint32_t iSuggestedEffect)
+static int __xgeDragBegin(xge_data_object pData,uint32_t iAllowedEffects,uint32_t iSuggestedEffect,const xn_transfer_services_v1* services)
 {
 	uint32_t iMask;
+	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+	if(services){int status=__xgeTransferValidate(services);if(status!=XGE_OK)return status;}
+	if(g_xgeNativeDragOut && xgeDataObjectIsOwned(pData) && !services)return XGE_ERROR_UNSUPPORTED;
 
 	iMask = XGE_DRAG_EFFECT_COPY | XGE_DRAG_EFFECT_MOVE | XGE_DRAG_EFFECT_LINK;
 	if ( !__xgeDataObjectValid(pData) || (iAllowedEffects & iMask) == 0u ||
@@ -132,13 +166,30 @@ int xgeDragBegin(xge_data_object pData, uint32_t iAllowedEffects,
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( g_xgeDragActive ) return XGE_ERROR_INVALID_STATE;
-	if ( xgeDataObjectAddRef(pData) != XGE_OK ) return XGE_ERROR_INVALID_ARGUMENT;
+	if(g_xgeDragSessionId==UINT64_MAX)return XGE_ERROR_INVALID_STATE;
+	int acquired;
+	if(xgeDataObjectIsOwned(pData)){xge_data_object shared=NULL;acquired=xgeDataObjectShareOwned(pData,&shared);}
+	else acquired=xgeDataObjectAddRef(pData);
+	if(acquired!=XGE_OK)return acquired;
 	g_xgeDragData = pData;
 	g_xgeDragAllowedEffects = iAllowedEffects;
 	g_xgeDragSuggestedEffect = iSuggestedEffect;
 	g_xgeDragActive = 1;
-	if ( g_xgeNativeDragOut ) return __xgeDragDropPlatformBegin();
+	g_xgeDragSessionThread=xrtThreadCurrentId();++g_xgeDragSessionId;
+	if ( g_xgeNativeDragOut ) return __xgeDragDropPlatformBegin(services);
 	return XGE_OK;
+}
+int xgeDragBegin(xge_data_object data,uint32_t allowed,uint32_t suggested)
+{
+	xerror* ambient=xrtTakeError();xn_transfer_services_v1 services;
+	int status=__xgeDragBegin(data,allowed,suggested,__xgeTransferCurrent(&services) ? &services:NULL);
+	xge_data_outcome_t outcome={0};__xgeDataOwnedOutcomeBegin(&outcome,status);return __xgeDataOwnedOutcomeEnd(&outcome,ambient);
+}
+int xgeDragBeginWithTransfer(xge_data_object data,uint32_t allowed,uint32_t suggested,const xn_transfer_services_v1* services)
+{
+	xerror* ambient=xrtTakeError();int status=__xgeTransferValidate(services);
+	if(status==XGE_OK)status=xgeDataObjectIsOwned(data) ? __xgeDragBegin(data,allowed,suggested,services):XGE_ERROR_INVALID_ARGUMENT;
+	xge_data_outcome_t outcome={0};__xgeDataOwnedOutcomeBegin(&outcome,status);return __xgeDataOwnedOutcomeEnd(&outcome,ambient);
 }
 
 int xgeDragCancel(void)
@@ -146,17 +197,22 @@ int xgeDragCancel(void)
 	xge_drag_event_t tEvent;
 
 	if ( !g_xgeDragActive ) return XGE_OK;
+	if(g_xgeDragSessionThread!=xrtThreadCurrentId())return XGE_ERROR_BUSY;
+	uint64_t session=g_xgeDragSessionId;
+	if(g_xgeDragCancellingSession==session)return XGE_OK;
+	g_xgeDragCancellingSession=session;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = XGE_DRAG_EVENT_CANCEL;
 	tEvent.iAllowedEffects = g_xgeDragAllowedEffects;
 	tEvent.iSuggestedEffect = g_xgeDragSuggestedEffect;
 	tEvent.pData = g_xgeDragData;
-	if ( g_xgeDragEventProc != NULL ) {
-		(void)g_xgeDragEventProc(&tEvent, g_xgeDragEventUser);
-	}
-	__xgeDragSessionClear();
-	return XGE_OK;
+	uint32_t ignored=XGE_DRAG_EFFECT_NONE;int status=xgeDragEventDispatchChecked(&tEvent,&ignored);
+	if(g_xgeDragCancellingSession==session)g_xgeDragCancellingSession=0;
+	xerror* first=status!=XGE_OK ? xrtTakeError():NULL;
+	int cleanup=g_xgeDragSessionId==session ? __xgeDragSessionClear():XGE_OK;
+	if(status!=XGE_OK){xrtClearError();xrtSetErrorTake(first);return status;}
+	return cleanup;
 }
 
 int xgeDragIsActive(void)
@@ -263,7 +319,7 @@ static void __xgeDragDropSokolFiles(const sapp_event* pEvent)
 	}
 	pFiles = (char*)xrtMalloc(iFilesSize);
 	pUris = (char*)xrtMalloc(iUrisSize);
-	if ( pFiles == NULL || pUris == NULL || xgeDataObjectCreate(&pData) != XGE_OK ) {
+	if ( pFiles == NULL || pUris == NULL || xgeDataObjectCreateOwned(&pData) != XGE_OK ) {
 		if ( pFiles != NULL ) xrtFree(pFiles);
 		if ( pUris != NULL ) xrtFree(pUris);
 		return;
@@ -310,12 +366,55 @@ static void __xgeDragDropSokolFiles(const sapp_event* pEvent)
 typedef struct xge_win32_drop_target_t {
 	IDropTarget iface;
 	LONG iRefs;
+	uint64_t iCreator;
+	uint64_t iRevision;
 	HWND hWnd;
 	xge_data_object pData;
 } xge_win32_drop_target_t;
 
 static xge_win32_drop_target_t* g_xgeWin32DropTarget;
+static IDropTarget* g_xgeWin32RegisteredTarget;
 static int g_xgeWin32OleInitialized;
+static int __xgeWin32ReleaseDataReference(xge_data_object data,bool* consumed)
+{
+	if(!data){*consumed=true;return XGE_OK;}
+	if(xgeDataObjectIsOwned(data))return xgeDataObjectReleaseOwnerChecked(data,consumed);
+	xgeDataObjectRelease(data);*consumed=true;return XGE_OK;
+}
+static bool __xgeWin32TargetReady(const void* raw)
+{const xge_win32_drop_target_t* target=raw;return target->iCreator==xrtThreadCurrentId();}
+static bool __xgeWin32TargetTrace(const void* raw,xn_transfer_ownership_visitor visit,void* user)
+{
+	const xge_win32_drop_target_t* target=raw;
+	if(!target->pData)return true;
+	xrtownershipref ref=xgeDataObjectOwnership(target->pData);
+	return ref.Data && visit(ref,user);
+}
+static int __xgeWin32TargetReplace(xge_win32_drop_target_t* target,xge_data_object next)
+{
+	if(target->iRevision==UINT64_MAX)return XGE_ERROR_INVALID_STATE;
+	xrtownershipscope mutation={0};
+	if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;
+	xge_data_object previous=target->pData;target->pData=next;++target->iRevision;
+	if(!xrtOwnershipScopeEnd(&mutation))abort();
+	bool consumed=false;int status=__xgeWin32ReleaseDataReference(previous,&consumed);
+	/* All target entries execute on their creator, outside Freeze. Existing
+	 * actual owner release consumes even when semantic cleanup reports error. */
+	if(!consumed)abort();
+	return status;
+}
+static int __xgeWin32TargetReleaseChecked(void* raw,bool* consumed)
+{
+	if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+	*consumed=false;xge_win32_drop_target_t* target=raw;
+	if(!__xgeWin32TargetReady(target))return XGE_STATUS_DEFERRED;
+	xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;
+	xge_data_object previous=target->pData;target->pData=NULL;
+	if(!xrtOwnershipScopeEnd(&mutation))abort();
+	bool released=false;int status=__xgeWin32ReleaseDataReference(previous,&released);
+	if(!released){if(!xrtOwnershipMutationBegin(&mutation))abort();target->pData=previous;if(!xrtOwnershipScopeEnd(&mutation))abort();return status;}
+	*consumed=true;xrtFree(target);return status;
+}
 
 static uint32_t __xgeWin32Modifiers(DWORD iKeys)
 {
@@ -532,7 +631,7 @@ static int __xgeWin32DataObject(xge_data_object* ppData, IDataObject* pObject)
 
 	if ( ppData == NULL || pObject == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	*ppData = NULL;
-	if ( xgeDataObjectCreate(&pData) != XGE_OK ) return XGE_ERROR_OUT_OF_MEMORY;
+	if ( xgeDataObjectCreateOwned(&pData) != XGE_OK ) return XGE_ERROR_OUT_OF_MEMORY;
 	(void)__xgeWin32SetUnicodeText(pData, pObject);
 	(void)__xgeWin32SetFiles(pData, pObject);
 	iHtml = RegisterClipboardFormatA("HTML Format");
@@ -584,8 +683,8 @@ static ULONG STDMETHODCALLTYPE __xgeWin32DropRelease(IDropTarget* pThis)
 	xge_win32_drop_target_t* pTarget = (xge_win32_drop_target_t*)pThis;
 	LONG iRefs = InterlockedDecrement(&pTarget->iRefs);
 	if ( iRefs == 0 ) {
-		if ( pTarget->pData != NULL ) xgeDataObjectRelease(pTarget->pData);
-		xrtFree(pTarget);
+		bool consumed=false;(void)__xgeWin32TargetReleaseChecked(pTarget,&consumed);
+		if(!consumed){InterlockedIncrement(&pTarget->iRefs);return 1u;}
 	}
 	return (ULONG)iRefs;
 }
@@ -600,12 +699,18 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DropEnter(IDropTarget* pThis,
 	float fY;
 
 	if ( pEffect == NULL ) return E_INVALIDARG;
-	if ( pTarget->pData != NULL ) xgeDataObjectRelease(pTarget->pData);
-	pTarget->pData = NULL;
-	if ( __xgeWin32DataObject(&pTarget->pData, pObject) != XGE_OK ) {
+	if(g_xgeWin32DropTarget!=pTarget){*pEffect=DROPEFFECT_NONE;return S_OK;}
+	xge_data_object incoming=NULL;
+	int status=__xgeWin32DataObject(&incoming,pObject);
+	if(status==XGE_OK && g_xgeWin32DropTarget!=pTarget)status=XGE_ERROR_INVALID_STATE;
+	uint64_t expected=pTarget->iRevision==UINT64_MAX ? 0:pTarget->iRevision+1u;
+	if(status==XGE_OK)status=__xgeWin32TargetReplace(pTarget,incoming);
+	if ( status != XGE_OK ) {
+		if(incoming && pTarget->pData!=incoming)xgeDataObjectRelease(incoming);
 		*pEffect = DROPEFFECT_NONE;
 		return S_OK;
 	}
+	if(pTarget->iRevision!=expected){*pEffect=DROPEFFECT_NONE;return S_OK;}
 	iAllowed = __xgeWin32Effects(*pEffect);
 	__xgeWin32DropPoint(pTarget->hWnd, tPoint, &fX, &fY);
 	iResult = __xgeDragDispatchNative(XGE_DRAG_EVENT_ENTER, fX, fY,
@@ -625,6 +730,7 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DropOver(IDropTarget* pThis,
 	float fY;
 
 	if ( pEffect == NULL ) return E_INVALIDARG;
+	if(g_xgeWin32DropTarget!=pTarget){*pEffect=DROPEFFECT_NONE;return S_OK;}
 	iAllowed = __xgeWin32Effects(*pEffect);
 	__xgeWin32DropPoint(pTarget->hWnd, tPoint, &fX, &fY);
 	iResult = __xgeDragDispatchNative(XGE_DRAG_EVENT_OVER, fX, fY,
@@ -637,10 +743,11 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DropOver(IDropTarget* pThis,
 static HRESULT STDMETHODCALLTYPE __xgeWin32DropLeave(IDropTarget* pThis)
 {
 	xge_win32_drop_target_t* pTarget = (xge_win32_drop_target_t*)pThis;
+	if(g_xgeWin32DropTarget!=pTarget)return S_OK;
+	uint64_t revision=pTarget->iRevision;
 	(void)__xgeDragDispatchNative(XGE_DRAG_EVENT_LEAVE, g_xge.fMouseX,
 		g_xge.fMouseY, 0u, pTarget->pData, 0u, 0u);
-	if ( pTarget->pData != NULL ) xgeDataObjectRelease(pTarget->pData);
-	pTarget->pData = NULL;
+	if(pTarget->iRevision==revision)(void)__xgeWin32TargetReplace(pTarget,NULL);
 	return S_OK;
 }
 
@@ -648,6 +755,7 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DropDrop(IDropTarget* pThis,
 	IDataObject* pObject, DWORD iKeys, POINTL tPoint, DWORD* pEffect)
 {
 	xge_win32_drop_target_t* pTarget = (xge_win32_drop_target_t*)pThis;
+	uint64_t revision=pTarget->iRevision;
 	uint32_t iAllowed;
 	uint32_t iResult;
 	float fX;
@@ -655,14 +763,14 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DropDrop(IDropTarget* pThis,
 
 	(void)pObject;
 	if ( pEffect == NULL ) return E_INVALIDARG;
+	if(g_xgeWin32DropTarget!=pTarget){*pEffect=DROPEFFECT_NONE;return S_OK;}
 	iAllowed = __xgeWin32Effects(*pEffect);
 	__xgeWin32DropPoint(pTarget->hWnd, tPoint, &fX, &fY);
 	iResult = __xgeDragDispatchNative(XGE_DRAG_EVENT_DROP, fX, fY,
 		__xgeWin32Modifiers(iKeys), pTarget->pData, iAllowed,
 		(iAllowed & XGE_DRAG_EFFECT_COPY) ? XGE_DRAG_EFFECT_COPY : 0u);
 	*pEffect = __xgeWin32Effect(iResult);
-	if ( pTarget->pData != NULL ) xgeDataObjectRelease(pTarget->pData);
-	pTarget->pData = NULL;
+	if(pTarget->iRevision==revision)(void)__xgeWin32TargetReplace(pTarget,NULL);
 	return S_OK;
 }
 
@@ -679,25 +787,67 @@ static const IDropTargetVtbl g_xgeWin32DropTargetVtbl = {
 typedef struct xge_win32_data_object_t {
 	IDataObject iface;
 	LONG iRefs;
+	uint64_t iCreator;
 	xge_data_object pData;
 	FORMATETC* pFormats;
 	char** pNames;
 	int iCount;
+	HGLOBAL* pPrepared; /* Immutable clipboard-only representation handles. */
+	xge_callback_run_outcome_t* pFailure; /* Borrowed only within DoDragDrop. */
 } xge_win32_data_object_t;
 
 typedef struct xge_win32_drop_source_t {
 	IDropSource iface;
 	LONG iRefs;
+	uint64_t iCreator;
 } xge_win32_drop_source_t;
+static bool __xgeWin32DataReady(const void* raw)
+{const xge_win32_data_object_t* data=raw;return data->iCreator==xrtThreadCurrentId();}
+static bool __xgeWin32DataTrace(const void* raw,xn_transfer_ownership_visitor visit,void* user)
+{
+	const xge_win32_data_object_t* data=raw;if(!data->pData)return true;
+	xrtownershipref ref=xgeDataObjectOwnership(data->pData);return ref.Data && visit(ref,user);
+}
+static int __xgeWin32DataReleaseChecked(void* raw,bool* consumed)
+{
+	if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+	*consumed=false;xge_win32_data_object_t* data=raw;
+	if(!__xgeWin32DataReady(data))return XGE_STATUS_DEFERRED;
+	xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;
+	xge_data_object previous=data->pData;data->pData=NULL;
+	if(!xrtOwnershipScopeEnd(&mutation))abort();
+	bool released=false;int status=__xgeWin32ReleaseDataReference(previous,&released);
+	if(!released){if(!xrtOwnershipMutationBegin(&mutation))abort();data->pData=previous;if(!xrtOwnershipScopeEnd(&mutation))abort();return status;}
+	for(int i=0;i<data->iCount;++i){if(data->pNames && data->pNames[i])xrtFree(data->pNames[i]);if(data->pPrepared && data->pPrepared[i])GlobalFree(data->pPrepared[i]);}
+	if(!data->pPrepared)xrtFree(data->pFormats);
+	xrtFree(data->pNames);*consumed=true;xrtFree(data);return status;
+}
+static bool __xgeWin32SourceReady(const void* raw)
+{const xge_win32_drop_source_t* source=raw;return source->iCreator==xrtThreadCurrentId();}
+static bool __xgeWin32SourceTrace(const void* raw,xn_transfer_ownership_visitor visit,void* user)
+{(void)raw;(void)visit;(void)user;return true;}
+static int __xgeWin32SourceReleaseChecked(void* raw,bool* consumed)
+{
+	if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+	*consumed=false;if(!__xgeWin32SourceReady(raw))return XGE_STATUS_DEFERRED;
+	*consumed=true;xrtFree(raw);return XGE_OK;
+}
 
+static HGLOBAL __xgeWin32ClipboardHtml(const void*,size_t);
+static HRESULT __xgeWin32DataFailure(xge_win32_data_object_t* object,int status,HRESULT result)
+{
+	if(!__xgeWin32DataReady(object))return RPC_E_WRONG_THREAD;
+	__xgeCallbackRunRemember(object->pFailure,status<0 ? status:XGE_ERROR_CALLBACK_FAILED);return result;
+}
 static HRESULT __xgeWin32MediumBytes(const void* pValue, size_t iSize,
 	STGMEDIUM* pMedium)
 {
 	HGLOBAL hValue;
 	void* pCopy;
 
-	hValue = GlobalAlloc(GMEM_MOVEABLE, iSize > 0u ? iSize : 1u);
+	hValue = GlobalAlloc(GMEM_MOVEABLE, iSize);
 	if ( hValue == NULL ) return E_OUTOFMEMORY;
+	if(iSize==0u){memset(pMedium,0,sizeof(*pMedium));pMedium->tymed=TYMED_HGLOBAL;pMedium->hGlobal=hValue;return S_OK;}
 	pCopy = GlobalLock(hValue);
 	if ( pCopy == NULL ) {
 		GlobalFree(hValue);
@@ -719,17 +869,17 @@ static HRESULT __xgeWin32DataGetRaw(xge_win32_data_object_t* pObject,
 	int iRet;
 
 	iRet = xgeDataObjectGet(pObject->pData, sFormat, NULL, 0u, &iSize);
-	if ( iRet != XGE_OK ) return DV_E_FORMATETC;
+	if ( iRet != XGE_OK ) return __xgeWin32DataFailure(pObject,iRet,DV_E_FORMATETC);
 	pValue = xrtMalloc(iSize > 0u ? iSize : 1u);
-	if ( pValue == NULL ) return E_OUTOFMEMORY;
+	if ( pValue == NULL ) return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
 	iRet = xgeDataObjectGet(pObject->pData, sFormat, pValue, iSize, &iSize);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pValue);
-		return E_FAIL;
+		return __xgeWin32DataFailure(pObject,iRet,E_FAIL);
 	}
 	iRet = (int)__xgeWin32MediumBytes(pValue, iSize, pMedium);
 	xrtFree(pValue);
-	return (HRESULT)iRet;
+	return FAILED((HRESULT)iRet) ? __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,(HRESULT)iRet):(HRESULT)iRet;
 }
 
 static HRESULT __xgeWin32DataGetText(xge_win32_data_object_t* pObject,
@@ -743,30 +893,33 @@ static HRESULT __xgeWin32DataGetText(xge_win32_data_object_t* pObject,
 
 	iRet = xgeDataObjectGet(pObject->pData, XGE_DATA_FORMAT_TEXT_UTF8,
 		NULL, 0u, &iSize);
-	if ( iRet != XGE_OK ) return DV_E_FORMATETC;
+	if ( iRet != XGE_OK ) return __xgeWin32DataFailure(pObject,iRet,DV_E_FORMATETC);
+	if(iSize>(size_t)INT_MAX-1u)return __xgeWin32DataFailure(pObject,XGE_ERROR_INVALID_ARGUMENT,DV_E_FORMATETC);
 	sUtf8 = (char*)xrtMalloc(iSize + 1u);
-	if ( sUtf8 == NULL ) return E_OUTOFMEMORY;
+	if ( sUtf8 == NULL ) return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
 	iRet = xgeDataObjectGet(pObject->pData, XGE_DATA_FORMAT_TEXT_UTF8,
 		sUtf8, iSize, &iSize);
 	if ( iRet != XGE_OK ) {
 		xrtFree(sUtf8);
-		return E_FAIL;
+		return __xgeWin32DataFailure(pObject,iRet,E_FAIL);
 	}
+	if(iSize && memchr(sUtf8,0,iSize)){xrtFree(sUtf8);return __xgeWin32DataFailure(pObject,XGE_ERROR_INVALID_ARGUMENT,DV_E_FORMATETC);}
 	sUtf8[iSize] = '\0';
-	iWideSize = MultiByteToWideChar(CP_UTF8, 0, sUtf8, -1, NULL, 0);
+	iWideSize = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sUtf8, -1, NULL, 0);
+	if(iWideSize<=0){xrtFree(sUtf8);return __xgeWin32DataFailure(pObject,XGE_ERROR_INVALID_ARGUMENT,DV_E_FORMATETC);}
 	sWide = (iWideSize > 0) ? (wchar_t*)xrtMalloc(
 		(size_t)iWideSize * sizeof(wchar_t)) : NULL;
-	if ( sWide == NULL || MultiByteToWideChar(CP_UTF8, 0, sUtf8, -1,
+	if ( sWide == NULL || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sUtf8, -1,
 		sWide, iWideSize) <= 0 ) {
 		if ( sWide != NULL ) xrtFree(sWide);
 		xrtFree(sUtf8);
-		return E_OUTOFMEMORY;
+		return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
 	}
 	iRet = (int)__xgeWin32MediumBytes(sWide,
 		(size_t)iWideSize * sizeof(wchar_t), pMedium);
 	xrtFree(sWide);
 	xrtFree(sUtf8);
-	return (HRESULT)iRet;
+	return FAILED((HRESULT)iRet) ? __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,(HRESULT)iRet):(HRESULT)iRet;
 }
 
 static HRESULT __xgeWin32DataGetFiles(xge_win32_data_object_t* pObject,
@@ -785,31 +938,32 @@ static HRESULT __xgeWin32DataGetFiles(xge_win32_data_object_t* pObject,
 
 	iRet = xgeDataObjectGet(pObject->pData, XGE_DATA_FORMAT_FILE_LIST,
 		NULL, 0u, &iSize);
-	if ( iRet != XGE_OK || iSize == 0u ) return DV_E_FORMATETC;
+	if ( iRet != XGE_OK || iSize == 0u || iSize>(size_t)INT_MAX-1u ) return __xgeWin32DataFailure(pObject,iRet!=XGE_OK ? iRet:XGE_ERROR_INVALID_ARGUMENT,DV_E_FORMATETC);
 	pFiles = (char*)xrtMalloc(iSize + 1u);
-	if ( pFiles == NULL ) return E_OUTOFMEMORY;
-	if ( xgeDataObjectGet(pObject->pData, XGE_DATA_FORMAT_FILE_LIST,
-		pFiles, iSize, &iSize) != XGE_OK ) {
+	if ( pFiles == NULL ) return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
+	if ( (iRet=xgeDataObjectGet(pObject->pData, XGE_DATA_FORMAT_FILE_LIST,
+		pFiles, iSize, &iSize)) != XGE_OK ) {
 		xrtFree(pFiles);
-		return E_FAIL;
+		return __xgeWin32DataFailure(pObject,iRet,E_FAIL);
 	}
 	pFiles[iSize] = '\0';
 	for ( pScan = pFiles; (size_t)(pScan - pFiles) < iSize && *pScan != '\0';
 		pScan += strlen(pScan) + 1u ) {
-		iChars = MultiByteToWideChar(CP_UTF8, 0, pScan, -1, NULL, 0);
-		if ( iChars > 0 ) iWideCount += (size_t)iChars;
+		iChars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pScan, -1, NULL, 0);
+		if(iChars<=0 || iWideCount>(size_t)INT_MAX-(size_t)iChars){xrtFree(pFiles);return __xgeWin32DataFailure(pObject,XGE_ERROR_INVALID_ARGUMENT,DV_E_FORMATETC);}
+		iWideCount += (size_t)iChars;
 	}
 	hValue = GlobalAlloc(GMEM_MOVEABLE,
 		sizeof(DROPFILES) + iWideCount * sizeof(wchar_t));
 	if ( hValue == NULL ) {
 		xrtFree(pFiles);
-		return E_OUTOFMEMORY;
+		return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
 	}
 	pDrop = (DROPFILES*)GlobalLock(hValue);
 	if ( pDrop == NULL ) {
 		GlobalFree(hValue);
 		xrtFree(pFiles);
-		return E_OUTOFMEMORY;
+		return __xgeWin32DataFailure(pObject,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
 	}
 	memset(pDrop, 0, sizeof(*pDrop));
 	pDrop->pFiles = sizeof(DROPFILES);
@@ -817,7 +971,7 @@ static HRESULT __xgeWin32DataGetFiles(xge_win32_data_object_t* pObject,
 	pWide = (wchar_t*)((unsigned char*)pDrop + sizeof(DROPFILES));
 	for ( pScan = pFiles; (size_t)(pScan - pFiles) < iSize && *pScan != '\0';
 		pScan += strlen(pScan) + 1u ) {
-		iChars = MultiByteToWideChar(CP_UTF8, 0, pScan, -1,
+		iChars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pScan, -1,
 			pWide + iOffset, (int)(iWideCount - iOffset));
 		if ( iChars > 0 ) iOffset += (size_t)iChars;
 	}
@@ -830,6 +984,18 @@ static HRESULT __xgeWin32DataGetFiles(xge_win32_data_object_t* pObject,
 	return S_OK;
 }
 
+static HRESULT __xgeWin32DataGetHtml(xge_win32_data_object_t* object,STGMEDIUM* medium)
+{
+    size_t required=0,written=0;int status=xgeDataObjectGet(object->pData,XGE_DATA_FORMAT_HTML,NULL,0,&required);
+    if(status!=XGE_OK)return __xgeWin32DataFailure(object,status,E_FAIL);
+    void* bytes=xrtMalloc(required ? required:1u);
+    if(!bytes)return __xgeWin32DataFailure(object,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
+    status=xgeDataObjectGet(object->pData,XGE_DATA_FORMAT_HTML,bytes,required,&written);
+    if(status!=XGE_OK || written!=required){xrtFree(bytes);return __xgeWin32DataFailure(object,status!=XGE_OK ? status:XGE_ERROR_INVALID_STATE,E_FAIL);}
+    HGLOBAL memory=__xgeWin32ClipboardHtml(bytes,written);xrtFree(bytes);
+    if(!memory)return __xgeWin32DataFailure(object,XGE_ERROR_OUT_OF_MEMORY,E_OUTOFMEMORY);
+    memset(medium,0,sizeof(*medium));medium->tymed=TYMED_HGLOBAL;medium->hGlobal=memory;return S_OK;
+}
 static HRESULT STDMETHODCALLTYPE __xgeWin32DataQueryInterface(IDataObject* pThis,
 	REFIID pId, void** ppObject)
 {
@@ -851,20 +1017,11 @@ static ULONG STDMETHODCALLTYPE __xgeWin32DataAddRef(IDataObject* pThis)
 
 static ULONG STDMETHODCALLTYPE __xgeWin32DataRelease(IDataObject* pThis)
 {
-	xge_win32_data_object_t* pObject = (xge_win32_data_object_t*)pThis;
-	LONG iRefs = InterlockedDecrement(&pObject->iRefs);
-	int i;
-
-	if ( iRefs == 0 ) {
-		for ( i = 0; i < pObject->iCount; i++ ) {
-			if ( pObject->pNames[i] != NULL ) xrtFree(pObject->pNames[i]);
-		}
-		if ( pObject->pNames != NULL ) xrtFree(pObject->pNames);
-		if ( pObject->pFormats != NULL ) xrtFree(pObject->pFormats);
-		xgeDataObjectRelease(pObject->pData);
-		xrtFree(pObject);
-	}
-	return (ULONG)iRefs;
+    xge_win32_data_object_t* data=(xge_win32_data_object_t*)pThis;
+    LONG refs=InterlockedDecrement(&data->iRefs);
+    if(refs==0){bool consumed=false;(void)__xgeWin32DataReleaseChecked(data,&consumed);
+        if(!consumed){InterlockedIncrement(&data->iRefs);return 1;}}
+    return (ULONG)refs;
 }
 
 static int __xgeWin32DataFormatIndex(xge_win32_data_object_t* pObject,
@@ -882,18 +1039,30 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DataGetData(IDataObject* pThis,
 {
 	xge_win32_data_object_t* pObject = (xge_win32_data_object_t*)pThis;
 	int iIndex;
+	if(pMedium)memset(pMedium,0,sizeof(*pMedium));
+	if(!__xgeWin32DataReady(pObject))return RPC_E_WRONG_THREAD;
 
 	if ( pFormat == NULL || pMedium == NULL ||
 		(pFormat->tymed & TYMED_HGLOBAL) == 0u ||
 		pFormat->dwAspect != DVASPECT_CONTENT ) return DV_E_FORMATETC;
+	if(pFormat->lindex!=-1)return DV_E_LINDEX;
+	if(pFormat->ptd)return DV_E_DVTARGETDEVICE;
 	iIndex = __xgeWin32DataFormatIndex(pObject, pFormat->cfFormat);
 	if ( iIndex < 0 ) return DV_E_FORMATETC;
+    if(pObject->pPrepared){
+        HGLOBAL original=pObject->pPrepared[iIndex];
+        HGLOBAL copy=GlobalSize(original)==0u ? GlobalAlloc(GMEM_MOVEABLE,0):(HGLOBAL)OleDuplicateData(original,pFormat->cfFormat,0);
+        if(!copy)return E_OUTOFMEMORY;
+        memset(pMedium,0,sizeof(*pMedium));pMedium->tymed=TYMED_HGLOBAL;pMedium->hGlobal=copy;
+        return S_OK;
+    }
 	if ( pFormat->cfFormat == CF_UNICODETEXT ) {
 		return __xgeWin32DataGetText(pObject, pMedium);
 	}
 	if ( pFormat->cfFormat == CF_HDROP ) {
 		return __xgeWin32DataGetFiles(pObject, pMedium);
 	}
+	if(strcmp(pObject->pNames[iIndex],XGE_DATA_FORMAT_HTML)==0)return __xgeWin32DataGetHtml(pObject,pMedium);
 	return __xgeWin32DataGetRaw(pObject, pObject->pNames[iIndex], pMedium);
 }
 
@@ -910,6 +1079,8 @@ static HRESULT STDMETHODCALLTYPE __xgeWin32DataQueryGetData(IDataObject* pThis,
 	xge_win32_data_object_t* pObject = (xge_win32_data_object_t*)pThis;
 	if ( pFormat == NULL || (pFormat->tymed & TYMED_HGLOBAL) == 0u ||
 		pFormat->dwAspect != DVASPECT_CONTENT ) return DV_E_FORMATETC;
+	if(pFormat->lindex!=-1)return DV_E_LINDEX;
+	if(pFormat->ptd)return DV_E_DVTARGETDEVICE;
 	return __xgeWin32DataFormatIndex(pObject, pFormat->cfFormat) >= 0 ?
 		S_OK : DV_E_FORMATETC;
 }
@@ -998,10 +1169,11 @@ static ULONG STDMETHODCALLTYPE __xgeWin32SourceAddRef(IDropSource* pThis)
 
 static ULONG STDMETHODCALLTYPE __xgeWin32SourceRelease(IDropSource* pThis)
 {
-	xge_win32_drop_source_t* pSource = (xge_win32_drop_source_t*)pThis;
-	LONG iRefs = InterlockedDecrement(&pSource->iRefs);
-	if ( iRefs == 0 ) xrtFree(pSource);
-	return (ULONG)iRefs;
+    xge_win32_drop_source_t* source=(xge_win32_drop_source_t*)pThis;
+    LONG refs=InterlockedDecrement(&source->iRefs);
+    if(refs==0){bool consumed=false;(void)__xgeWin32SourceReleaseChecked(source,&consumed);
+        if(!consumed){InterlockedIncrement(&source->iRefs);return 1;}}
+    return (ULONG)refs;
 }
 
 static HRESULT STDMETHODCALLTYPE __xgeWin32SourceContinue(IDropSource* pThis,
@@ -1038,7 +1210,7 @@ static CLIPFORMAT __xgeDragWin32ClipboardFormat(const char* sFormat)
 	return (CLIPFORMAT)RegisterClipboardFormatA(sFormat);
 }
 
-static int __xgeWin32OutboundObjects(xge_win32_data_object_t** ppData,
+static int __xgeWin32OutboundObjects(xge_data_object original,xge_win32_data_object_t** ppData,
 	xge_win32_drop_source_t** ppSource)
 {
 	xge_win32_data_object_t* pData;
@@ -1050,7 +1222,7 @@ static int __xgeWin32OutboundObjects(xge_win32_data_object_t** ppData,
 
 	*ppData = NULL;
 	*ppSource = NULL;
-	iCount = xgeDataObjectFormatCount(g_xgeDragData);
+	iCount = xgeDataObjectFormatCount(original);
 	if ( iCount <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
 	pData = (xge_win32_data_object_t*)xrtCalloc(1u, sizeof(*pData));
 	pSource = (xge_win32_drop_source_t*)xrtCalloc(1u, sizeof(*pSource));
@@ -1060,10 +1232,11 @@ static int __xgeWin32OutboundObjects(xge_win32_data_object_t** ppData,
 	if ( pData->pFormats == NULL || pData->pNames == NULL ) goto memory_error;
 	pData->iface.lpVtbl = (IDataObjectVtbl*)&g_xgeWin32DataVtbl;
 	pData->iRefs = 1;
-	pData->pData = g_xgeDragData;
-	if ( xgeDataObjectAddRef(pData->pData) != XGE_OK ) goto memory_error;
+	pData->iCreator=xrtThreadCurrentId();
+	if ( xgeDataObjectAddRef(original) != XGE_OK ) goto memory_error;
+	pData->pData = original;
 	for ( i = 0; i < iCount; i++ ) {
-		sFormat = xgeDataObjectFormatAt(g_xgeDragData, i);
+		sFormat = xgeDataObjectFormatAt(original, i);
 		iFormat = __xgeDragWin32ClipboardFormat(sFormat);
 		if ( iFormat == 0 ) continue;
 		pData->pNames[pData->iCount] = __xgeDataStringCopy(sFormat);
@@ -1077,6 +1250,7 @@ static int __xgeWin32OutboundObjects(xge_win32_data_object_t** ppData,
 	if ( pData->iCount == 0 ) goto memory_error;
 	pSource->iface.lpVtbl = (IDropSourceVtbl*)&g_xgeWin32SourceVtbl;
 	pSource->iRefs = 1;
+	pSource->iCreator=xrtThreadCurrentId();
 	*ppData = pData;
 	*ppSource = pSource;
 	return XGE_OK;
@@ -1093,94 +1267,98 @@ memory_error:
 	return XGE_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xgeDragDropPlatformBegin(void)
-{
-	xge_win32_data_object_t* pData;
-	xge_win32_drop_source_t* pSource;
-	DWORD iAllowed = DROPEFFECT_NONE;
-	DWORD iEffect = DROPEFFECT_NONE;
-	uint32_t iResult;
-	HRESULT iHr;
-	int iRet;
+static xn_transfer_native_owner_v1 __xgeWin32DataOwner(const xge_win32_data_object_t* data)
+{xn_transfer_native_owner_v1 owner={sizeof(owner),XN_TRANSFER_NATIVE_OWNER_V1_TAG,data->iCreator,__xgeWin32DataReady,__xgeWin32DataTrace,__xgeWin32DataReleaseChecked};return owner;}
+static xn_transfer_native_owner_v1 __xgeWin32SourceOwner(const xge_win32_drop_source_t* source)
+{xn_transfer_native_owner_v1 owner={sizeof(owner),XN_TRANSFER_NATIVE_OWNER_V1_TAG,source->iCreator,__xgeWin32SourceReady,__xgeWin32SourceTrace,__xgeWin32SourceReleaseChecked};return owner;}
+static xn_transfer_native_owner_v1 __xgeWin32TargetOwner(const xge_win32_drop_target_t* target)
+{xn_transfer_native_owner_v1 owner={sizeof(owner),XN_TRANSFER_NATIVE_OWNER_V1_TAG,target->iCreator,__xgeWin32TargetReady,__xgeWin32TargetTrace,__xgeWin32TargetReleaseChecked};return owner;}
 
-	if ( !g_xgeWin32OleInitialized || !g_xgeDragActive ) {
-		return XGE_OK;
-	}
-	iRet = __xgeWin32OutboundObjects(&pData, &pSource);
-	if ( iRet != XGE_OK ) {
-		__xgeDragSessionClear();
-		return iRet;
-	}
-	if ( (g_xgeDragAllowedEffects & XGE_DRAG_EFFECT_COPY) != 0u ) iAllowed |= DROPEFFECT_COPY;
-	if ( (g_xgeDragAllowedEffects & XGE_DRAG_EFFECT_MOVE) != 0u ) iAllowed |= DROPEFFECT_MOVE;
-	if ( (g_xgeDragAllowedEffects & XGE_DRAG_EFFECT_LINK) != 0u ) iAllowed |= DROPEFFECT_LINK;
-	iHr = DoDragDrop(&pData->iface, &pSource->iface, iAllowed, &iEffect);
-	iResult = __xgeWin32Effects(iEffect);
-	if ( iHr == DRAGDROP_S_DROP ) {
-		(void)__xgeDragDispatchNative(XGE_DRAG_EVENT_COMPLETE,
-			g_xge.fMouseX, g_xge.fMouseY, 0u, g_xgeDragData,
-			g_xgeDragAllowedEffects, iResult);
-	} else {
-		(void)__xgeDragDispatchNative(XGE_DRAG_EVENT_CANCEL,
-			g_xge.fMouseX, g_xge.fMouseY, 0u, g_xgeDragData,
-			g_xgeDragAllowedEffects, 0u);
-	}
-	pSource->iface.lpVtbl->Release(&pSource->iface);
-	pData->iface.lpVtbl->Release(&pData->iface);
-	__xgeDragSessionClear();
-	return (iHr == DRAGDROP_S_DROP || iHr == DRAGDROP_S_CANCEL) ?
-		XGE_OK : XGE_ERROR;
+static int __xgeDragDropPlatformBegin(const xn_transfer_services_v1* services)
+{
+    if(!g_xgeWin32OleInitialized || !g_xgeDragActive)return XGE_OK;
+    uint64_t session=g_xgeDragSessionId;
+    uint32_t allowed=g_xgeDragAllowedEffects;
+    xge_win32_data_object_t* nativeData=NULL;xge_win32_drop_source_t* nativeSource=NULL;
+    IDataObject* data=NULL;IDropSource* source=NULL;
+    int status=__xgeWin32OutboundObjects(g_xgeDragData,&nativeData,&nativeSource);
+    if(status==XGE_OK){data=&nativeData->iface;source=&nativeSource->iface;}
+    if(status==XGE_OK && services){
+        xn_transfer_native_owner_v1 owner=__xgeWin32DataOwner(nativeData);void* wrapped=NULL;
+        int wrappedStatus=services->wrapDataObject(services,data,&owner,&wrapped);
+        if(wrappedStatus==0 && wrapped)data=(IDataObject*)wrapped;
+        if(wrappedStatus!=0 || !wrapped || xrtGetError())status=XGE_ERROR_BACKEND_FAILED;
+        if(status==XGE_OK){owner=__xgeWin32SourceOwner(nativeSource);wrapped=NULL;
+            wrappedStatus=services->wrapDropSource(services,source,&owner,&wrapped);
+            if(wrappedStatus==0 && wrapped)source=(IDropSource*)wrapped;
+            if(wrappedStatus!=0 || !wrapped || xrtGetError())status=XGE_ERROR_BACKEND_FAILED;}
+    }
+    if(status==XGE_OK && (!g_xgeDragActive || g_xgeDragSessionId!=session))status=XGE_ERROR_INVALID_STATE;
+    if(status==XGE_OK && !__xgeWin32DataReady(nativeData))status=XGE_ERROR_BUSY;
+    xge_callback_run_outcome_t callFailure={0};
+    DWORD effect=DROPEFFECT_NONE;HRESULT hr=E_FAIL;
+    if(status==XGE_OK){
+        DWORD effects=0;if(allowed&XGE_DRAG_EFFECT_COPY)effects|=DROPEFFECT_COPY;
+        if(allowed&XGE_DRAG_EFFECT_MOVE)effects|=DROPEFFECT_MOVE;
+        if(allowed&XGE_DRAG_EFFECT_LINK)effects|=DROPEFFECT_LINK;
+        nativeData->pFailure=&callFailure;
+        hr=DoDragDrop(data,source,effects,&effect);
+        nativeData->pFailure=NULL;
+        if(hr!=DRAGDROP_S_DROP && hr!=DRAGDROP_S_CANCEL)status=XGE_ERROR_BACKEND_FAILED;
+    }
+    if(callFailure.iFirstStatus){status=__xgeCallbackRunTake(&callFailure);}
+    xerror* first=status!=XGE_OK ? xrtTakeError():NULL;int outcome=status;
+    if(status==XGE_OK && g_xgeDragActive && g_xgeDragSessionId==session){
+        xge_drag_event_t event={0};event.iSize=sizeof(event);
+        event.iType=hr==DRAGDROP_S_DROP ? XGE_DRAG_EVENT_COMPLETE:XGE_DRAG_EVENT_CANCEL;
+        event.pData=nativeData->pData;event.iAllowedEffects=allowed;
+        event.iSuggestedEffect=__xgeWin32Effects(effect);event.fX=g_xge.fMouseX;event.fY=g_xge.fMouseY;
+        uint32_t ignored=0;__xgeCallbackOutcome(xgeDragEventDispatchChecked(&event,&ignored),&outcome,&first);
+    }
+    if(source){source->lpVtbl->Release(source);__xgeCallbackOutcome(XGE_OK,&outcome,&first);}
+    if(data){data->lpVtbl->Release(data);__xgeCallbackOutcome(XGE_OK,&outcome,&first);}
+    if(g_xgeDragActive && g_xgeDragSessionId==session)__xgeCallbackOutcome(__xgeDragSessionClear(),&outcome,&first);
+    xrtSetErrorTake(first);return outcome;
 }
 
 static void __xgeDragDropPlatformInit(void)
 {
-	xge_win32_drop_target_t* pTarget;
-	HWND hWnd;
-	HRESULT iHr;
-
-	if ( g_xgeWin32DropTarget != NULL ) return;
-	hWnd = (HWND)sapp_win32_get_hwnd();
-	if ( hWnd == NULL ) return;
-	iHr = OleInitialize(NULL);
-	if ( SUCCEEDED(iHr) ) {
-		g_xgeWin32OleInitialized = 1;
-		g_xgeNativeDragOut = 1;
-	}
-	else if ( iHr != RPC_E_CHANGED_MODE ) return;
-	pTarget = (xge_win32_drop_target_t*)xrtCalloc(1u, sizeof(*pTarget));
-	if ( pTarget == NULL ) return;
-	pTarget->iface.lpVtbl = (IDropTargetVtbl*)&g_xgeWin32DropTargetVtbl;
-	pTarget->iRefs = 1;
-	pTarget->hWnd = hWnd;
-	iHr = RegisterDragDrop(hWnd, &pTarget->iface);
-	if ( FAILED(iHr) ) {
-		pTarget->iface.lpVtbl->Release(&pTarget->iface);
-		return;
-	}
-	g_xgeWin32DropTarget = pTarget;
-	g_xgeNativeDragIn = 1;
+    if(g_xgeWin32RegisteredTarget)return;
+    HWND window=(HWND)sapp_win32_get_hwnd();if(!window)return;
+    HRESULT hr=OleInitialize(NULL);
+    if(SUCCEEDED(hr)){g_xgeWin32OleInitialized=1;g_xgeNativeDragOut=1;}
+    else if(hr!=RPC_E_CHANGED_MODE)return;
+    xge_win32_drop_target_t* target=xrtCalloc(1,sizeof(*target));if(!target)return;
+    target->iface.lpVtbl=(IDropTargetVtbl*)&g_xgeWin32DropTargetVtbl;
+    target->iRefs=1;target->iCreator=xrtThreadCurrentId();target->hWnd=window;
+    IDropTarget* registered=&target->iface;xn_transfer_services_v1 services;
+    if(__xgeTransferCurrent(&services)){
+        xn_transfer_native_owner_v1 owner=__xgeWin32TargetOwner(target);void* wrapped=NULL;
+        int wrappedStatus=services.wrapDropTarget(&services,registered,&owner,&wrapped);
+        if(wrappedStatus==0 && wrapped)registered=(IDropTarget*)wrapped;
+        if(wrappedStatus!=0 || !wrapped || xrtGetError()){
+            xerror* first=xrtTakeError();registered->lpVtbl->Release(registered);xrtClearError();xrtSetErrorTake(first);return;}
+    }
+    hr=RegisterDragDrop(window,registered);
+    if(FAILED(hr)){registered->lpVtbl->Release(registered);return;}
+    g_xgeWin32DropTarget=target;g_xgeWin32RegisteredTarget=registered;g_xgeNativeDragIn=1;
 }
 
 static void __xgeDragDropPlatformUnit(void)
 {
-	if ( g_xgeWin32DropTarget != NULL ) {
-		(void)RevokeDragDrop(g_xgeWin32DropTarget->hWnd);
-		g_xgeWin32DropTarget->iface.lpVtbl->Release(&g_xgeWin32DropTarget->iface);
-		g_xgeWin32DropTarget = NULL;
-	}
-	if ( g_xgeWin32OleInitialized ) {
-		OleUninitialize();
-		g_xgeWin32OleInitialized = 0;
-	}
-	g_xgeNativeDragIn = 0;
-	g_xgeNativeDragOut = 0;
+    IDropTarget* registered=g_xgeWin32RegisteredTarget;
+    HWND window=g_xgeWin32DropTarget ? g_xgeWin32DropTarget->hWnd:NULL;
+    g_xgeWin32RegisteredTarget=NULL;g_xgeWin32DropTarget=NULL;
+    if(registered){if(window)(void)RevokeDragDrop(window);registered->lpVtbl->Release(registered);}
+    if(g_xgeWin32OleInitialized){OleUninitialize();g_xgeWin32OleInitialized=0;}
+    g_xgeNativeDragIn=0;g_xgeNativeDragOut=0;
 }
 
 #else
 
-static int __xgeDragDropPlatformBegin(void)
+static int __xgeDragDropPlatformBegin(const xn_transfer_services_v1* services)
 {
-	return XGE_ERROR_UNSUPPORTED;
+	(void)services;return XGE_ERROR_UNSUPPORTED;
 }
 
 static void __xgeDragDropPlatformInit(void)

@@ -32,7 +32,7 @@ typedef struct xui_drag_detach_t {
 static int __xuiDragContextReady(xui_context pContext)
 {
 	return xuiInternalContextIsValid(pContext) &&
-		!pContext->bDestroyPending && !pContext->bDestroying;
+		!pContext->bCloseRequested && !pContext->bDestroyPending && !pContext->bDestroying;
 }
 
 static int __xuiDragCurrent(xui_context pContext, uint64_t iSessionId,
@@ -73,6 +73,33 @@ static xui_widget __xuiDragTargetAt(xui_context pContext, int iX, int iY)
 	return NULL;
 }
 
+static int __xuiDragAssign(xui_context context,xui_data_object data)
+{
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    context->pTransferData=data;
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    return XUI_OK;
+}
+static int __xuiDragRelease(xui_context context,xui_data_object data,int primary)
+{
+    if(!data)return primary;
+    xerror* first=xrtTakeError();bool consumed=true;
+    int dropped=XUI_OK;
+    if(xuiDataObjectIsOwned(data))dropped=xuiDataObjectReleaseOwnerChecked(data,&consumed);
+    else xuiDataObjectRelease(data);
+    xerror* fresh=xrtTakeError();
+    if(dropped==XUI_OK && fresh)dropped=XUI_ERROR_CALLBACK_FAILED;
+    if(dropped!=XUI_OK){
+        xuiInternalContextRecordOutcome(context,dropped,primary!=XUI_OK ? first:fresh);
+        if(primary==XUI_OK){xrtErrorFree(first);first=fresh;fresh=NULL;primary=dropped;}
+    }
+    xrtErrorFree(fresh);xrtSetErrorTake(first);
+    /* Owned Context only admits creator-origin real owners. Active operations
+     * own extra refs, so existing slot release consumes even when a callback
+     * is active or its semantic Drop fails. Freeze semantic calls are illegal. */
+    if(!consumed)abort();
+    return primary;
+}
 static void __xuiDragClear(xui_context pContext, int bKeepEffect);
 
 static int __xuiDragDispatch(xui_context pContext, int iType,
@@ -111,7 +138,7 @@ static int __xuiDragDispatch(xui_context pContext, int iType,
 	tEvent.pData = &tDrag;
 	if ( bCancel ) {
 		/* Retire before LEAVE; the dispatch now owns the former session reference. */
-		pContext->pTransferData = NULL;
+		iRet=__xuiDragAssign(pContext,NULL);if(iRet!=XUI_OK)return iRet;
 		__xuiDragClear(pContext, 0);
 	} else {
 		iRet = xuiDataObjectAddRef(tDrag.pData);
@@ -125,16 +152,16 @@ static int __xuiDragDispatch(xui_context pContext, int iType,
 	}
 	/* Restore the call stack, not the possibly replaced session's negotiation state. */
 	pContext->pDragDispatch = tDispatch.pPrevious;
-	xuiDataObjectRelease(tDrag.pData);
-	return iRet;
+	return __xuiDragRelease(pContext,tDrag.pData,iRet);
 }
 
 static void __xuiDragClear(xui_context pContext, int bKeepEffect)
 {
 	xui_data_object pData = pContext->pTransferData;
 
+	int assigned=__xuiDragAssign(pContext,NULL);
+	if(assigned!=XUI_OK){xuiInternalContextRecordFailure(pContext,assigned);return;}
 	pContext->iDragSessionId++;
-	pContext->pTransferData = NULL;
 	pContext->pDragSource = NULL;
 	pContext->pDropTarget = NULL;
 	pContext->iDragAllowedEffects = 0u;
@@ -144,7 +171,7 @@ static void __xuiDragClear(xui_context pContext, int bKeepEffect)
 	pContext->bTransferActive = 0;
 	pContext->bTransferExternal = 0;
 	pContext->bTransferDropping = 0;
-	if ( pData != NULL ) xuiDataObjectRelease(pData);
+	(void)__xuiDragRelease(pContext,pData,XUI_OK);
 }
 
 static int __xuiDragBeginOperation(xui_context pContext, xui_widget pSource,
@@ -152,7 +179,7 @@ static int __xuiDragBeginOperation(xui_context pContext, xui_widget pSource,
 {
 	if ( !__xuiDragContextReady(pContext) ||
 		!__xuiDragWidgetAvailable(pContext, pSource) ||
-		!__xuiDataObjectValid(pData) ||
+		!__xuiDataObjectValid(pData) || (pContext->pOwnedProxy && !xuiDataObjectIsOwned(pData)) ||
 		(iAllowedEffects & XUI_DRAG_EFFECT_MASK) == 0u ||
 		(iAllowedEffects & ~XUI_DRAG_EFFECT_MASK) != 0u ||
 		(iSuggestedEffect != 0u &&
@@ -162,7 +189,8 @@ static int __xuiDragBeginOperation(xui_context pContext, xui_widget pSource,
 	if ( pContext->bTransferActive ) return XUI_ERROR_INVALID_STATE;
 	if ( xuiDataObjectAddRef(pData) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
 	pContext->iDragSessionId++;
-	pContext->pTransferData = pData;
+	int assigned=__xuiDragAssign(pContext,pData);
+	if(assigned!=XUI_OK)return __xuiDragRelease(pContext,pData,assigned);
 	pContext->pDragSource = pSource;
 	pContext->iDragAllowedEffects = iAllowedEffects;
 	pContext->iDragSuggestedEffect = iSuggestedEffect;
@@ -176,11 +204,9 @@ static int __xuiDragBeginOperation(xui_context pContext, xui_widget pSource,
 XUI_API int xuiDragBegin(xui_context pContext, xui_widget pSource,
 	xui_data_object pData, uint32_t iAllowedEffects, uint32_t iSuggestedEffect)
 {
-	int iRet;
-	xuiInternalOperationEnter(pContext);
-	iRet = __xuiDragBeginOperation(pContext, pSource, pData, iAllowedEffects, iSuggestedEffect);
-	xuiInternalOperationLeave(pContext);
-	return iRet;
+    xui_call_scope_t scope={0};int iRet=xuiCallScopeBegin(pContext,&scope);if(iRet!=XUI_OK)return iRet;
+    iRet=__xuiDragBeginOperation(pContext,pSource,pData,iAllowedEffects,iSuggestedEffect);
+    xerror* error=xrtTakeError();iRet=xuiInternalCallScopeEndOutcome(&scope,iRet,&error);xrtSetErrorTake(error);return iRet;
 }
 
 XUI_API int xuiDragAccept(xui_context pContext, uint32_t iEffect)
@@ -306,9 +332,9 @@ void xuiInternalDragTransferCancel(xui_context pContext)
 
 XUI_API int xuiDragCancel(xui_context pContext)
 {
-	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
-	xuiInternalDragTransferCancel(pContext);
-	return XUI_OK;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pContext,&scope);if(status!=XUI_OK)return status;
+    xuiInternalDragTransferCancel(pContext);
+    xerror* error=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,XUI_OK,&error);xrtSetErrorTake(error);return status;
 }
 
 XUI_API int xuiDragIsActive(xui_context pContext)
@@ -333,7 +359,7 @@ static int __xuiDragExternalEventOperation(xui_context pContext, int iType,
 	if ( iType == XUI_DRAG_EXTERNAL_ENTER ) {
 		uint64_t iSessionId = pContext->iDragSessionId;
 		/* Pin incoming data before cancellation, including a borrowed current payload. */
-		if ( !__xuiDataObjectValid(pData) ||
+		if ( !__xuiDataObjectValid(pData) || (pContext->pOwnedProxy && !xuiDataObjectIsOwned(pData)) ||
 			(iAllowedEffects & XUI_DRAG_EFFECT_MASK) == 0u ||
 			(iAllowedEffects & ~XUI_DRAG_EFFECT_MASK) != 0u ||
 			(iSuggestedEffect != 0u &&
@@ -348,12 +374,13 @@ static int __xuiDragExternalEventOperation(xui_context pContext, int iType,
 		}
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiDragContextReady(pContext) || pContext->iDragSessionId != iSessionId ) {
-			xuiDataObjectRelease(pData);
+			(void)__xuiDragRelease(pContext,pData,XUI_OK);
 			if ( pEffect != NULL ) *pEffect = XUI_DRAG_EFFECT_NONE;
 			return XUI_OK;
 		}
 		pContext->iDragSessionId++;
-		pContext->pTransferData = pData;
+		int assigned=__xuiDragAssign(pContext,pData);
+		if(assigned!=XUI_OK)return __xuiDragRelease(pContext,pData,assigned);
 		pContext->iDragAllowedEffects = iAllowedEffects;
 		pContext->iDragSuggestedEffect = iSuggestedEffect;
 		pContext->iDragLastEffect = XUI_DRAG_EFFECT_NONE;
@@ -386,12 +413,9 @@ XUI_API int xuiDragExternalEvent(xui_context pContext, int iType,
 	int iX, int iY, uint32_t iModifiers, xui_data_object pData,
 	uint32_t iAllowedEffects, uint32_t iSuggestedEffect, uint32_t* pEffect)
 {
-	int iRet;
-	xuiInternalOperationEnter(pContext);
-	iRet = __xuiDragExternalEventOperation(pContext, iType, iX, iY, iModifiers,
-		pData, iAllowedEffects, iSuggestedEffect, pEffect);
-	xuiInternalOperationLeave(pContext);
-	return iRet;
+    xui_call_scope_t scope={0};int iRet=xuiCallScopeBegin(pContext,&scope);if(iRet!=XUI_OK)return iRet;
+    iRet=__xuiDragExternalEventOperation(pContext,iType,iX,iY,iModifiers,pData,iAllowedEffects,iSuggestedEffect,pEffect);
+    xerror* error=xrtTakeError();iRet=xuiInternalCallScopeEndOutcome(&scope,iRet,&error);xrtSetErrorTake(error);return iRet;
 }
 
 void xuiInternalDragTransferDetachWidget(xui_context pContext, xui_widget pWidget)
@@ -418,4 +442,36 @@ void xuiInternalDragTransferShutdown(xui_context pContext)
 	__xuiDragClear(pContext, 0);
 }
 
+typedef struct xui_clipboard_transfer_t {xui_context context;const xn_transfer_services_v1* services;} xui_clipboard_transfer_t;
+static bool __xuiTransferValid(const xn_transfer_services_v1* services)
+{
+    return services && services->iSize==sizeof(*services) && services->iAbiTag==XN_TRANSFER_SERVICES_V1_TAG &&
+        !(services->iFlags&~XN_TRANSFER_PROCESS_RESIDENT) && services->wrapDataObject && services->wrapDropSource && services->wrapDropTarget &&
+        ((services->iFlags&XN_TRANSFER_PROCESS_RESIDENT) ? services->pCodeCapability==NULL:services->pCodeCapability!=NULL);
+}
+static int __xuiClipboardPublish(xui_context context,const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
+{
+    if(!__xuiTransferValid(services) || !items || count<=0 || count>64)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!__xuiDragContextReady(context))return XUI_ERROR_INVALID_STATE;
+    if(!context->tProxy.clipboardSetItemsWithTransfer)return XUI_ERROR_UNSUPPORTED;
+    return context->tProxy.clipboardSetItemsWithTransfer(&context->tProxy,items,count,services);
+}
+XUI_API int xuiClipboardSetItemsWithTransfer(xui_context context,const xui_clipboard_item_t* items,int count,const xn_transfer_services_v1* services)
+{
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiClipboardPublish(context,items,count,services);
+    xerror* error=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&error);xrtSetErrorTake(error);return status;
+}
+static int __xuiDataClipboardConsume(const xui_clipboard_item_t* items,int count,void* opaque)
+{xui_clipboard_transfer_t* transfer=opaque;return __xuiClipboardPublish(transfer->context,items,count,transfer->services);}
+XUI_API int xuiClipboardCopyDataWithTransfer(xui_context context,xui_data_object data,const xn_transfer_services_v1* services)
+{
+    if(!__xuiTransferValid(services))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+    xui_clipboard_transfer_t transfer={context,services};
+    status=context->tProxy.clipboardSetItemsWithTransfer ? __xuiDataSnapshotCopy(data,__xuiDataClipboardConsume,&transfer):XUI_ERROR_UNSUPPORTED;
+    xerror* error=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&error);xrtSetErrorTake(error);return status;
+}
 #endif

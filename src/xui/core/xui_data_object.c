@@ -35,6 +35,7 @@ struct xui_data_object_t {
 	int iCapacity;
 	atomic_uint iActivity;
 	atomic_uint bDestroying;
+	uint64_t iRevision; /* Nonwrapping snapshot publication identity. */
 };
 
 
@@ -292,13 +293,14 @@ static int __xuiDataPublish(xui_data_object object,xui_data_generation_t* next,b
 {
     *published=false;xge_data_lifetime_t* root=__xuiDataObjectRoot(object);xrtownershipscope mutation={0};
     if(root){if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;int status=__xuiDataOwnedAdmit(root);if(status!=XUI_OK){__xuiDataOwnedMutationEnd(&mutation);return status;}}
+    if(object->iRevision==UINT64_MAX){if(root)__xuiDataOwnedMutationEnd(&mutation);return XUI_ERROR_INVALID_STATE;}
     int index=__xuiDataSlotFind(object,next->sFormat);xui_data_generation_t* old=NULL;int status=XUI_OK;
     if(index<0){
         if(object->iCount==INT_MAX)status=XUI_ERROR_OUT_OF_MEMORY;
         else status=__xuiDataSlotReserve(object,object->iCount+1);
         if(status==XUI_OK)index=object->iCount++;
     }else old=object->pSlots[index];
-    if(status==XUI_OK){object->pSlots[index]=next;*published=true;}
+    if(status==XUI_OK){object->pSlots[index]=next;object->iRevision++;*published=true;}
     if(root)__xuiDataOwnedMutationEnd(&mutation);
     if(status==XUI_OK)status=__xuiDataGenerationReleaseChecked(old);
     return status;
@@ -346,23 +348,9 @@ XUI_API const char* xuiDataObjectFormatAt(xui_data_object object,int index)
 XUI_API int xuiDataObjectHas(xui_data_object object,const char* format)
 {return __xuiDataSlotFind(object,format)>=0;}
 
-XUI_API int xuiDataObjectGet(xui_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+static int __xuiDataGenerationRead(xui_data_generation_t* generation,void* output,size_t capacity,size_t* outputSize)
 {
-    if(!outputSize || (capacity && !output))return XUI_ERROR_INVALID_ARGUMENT;
-    *outputSize=0u;int index=__xuiDataSlotFind(object,format);
-    xui_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
-    bool owned=__xuiDataObjectRoot(object)!=NULL;
-    bool provider=generation && ((generation->iFlags&XUI_DATA_OWNED_PROVIDER) || generation->tRead.raw!=NULL);
-    if(generation && !provider){
-        *outputSize=generation->tSize.valueBytes;
-        if(output && capacity<generation->tSize.valueBytes)return XUI_ERROR_BUFFER_TOO_SMALL;
-        if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
-        return XUI_OK;
-    }
-    xui_data_operation_t call={0};int status=__xuiDataOperationBegin(object,&call);if(status!=XUI_OK)return status;
-    if(!generation)status=XUI_ERROR_NOT_FOUND;
-    else if(!__xuiDataGenerationHold(generation))status=XUI_ERROR_INVALID_STATE;
-    else {
+    int status=XUI_OK;
         if(generation->iFlags&XUI_DATA_OWNED_PROVIDER){
             xui_callback_owner_t owner=*__xuiDataGenerationOwner(generation);bool held=false;
             status=__xuiDataOwnerHold(&owner,&held);xge_data_outcome_t result={0};__xuiDataOwnedOutcomeBegin(&result,status);
@@ -381,6 +369,27 @@ XUI_API int xuiDataObjectGet(xui_data_object object,const char* format,void* out
             *outputSize=generation->tSize.valueBytes;if(output && capacity<generation->tSize.valueBytes)status=XUI_ERROR_BUFFER_TOO_SMALL;
             else if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
         }
+    return status;
+}
+
+XUI_API int xuiDataObjectGet(xui_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+{
+    if(!outputSize || (capacity && !output))return XUI_ERROR_INVALID_ARGUMENT;
+    *outputSize=0u;int index=__xuiDataSlotFind(object,format);
+    xui_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
+    bool owned=__xuiDataObjectRoot(object)!=NULL;
+    bool provider=generation && ((generation->iFlags&XUI_DATA_OWNED_PROVIDER) || generation->tRead.raw!=NULL);
+    if(generation && !provider){
+        *outputSize=generation->tSize.valueBytes;
+        if(output && capacity<generation->tSize.valueBytes)return XUI_ERROR_BUFFER_TOO_SMALL;
+        if(output && generation->tSize.valueBytes)memcpy(output,generation->pValue,generation->tSize.valueBytes);
+        return XUI_OK;
+    }
+    xui_data_operation_t call={0};int status=__xuiDataOperationBegin(object,&call);if(status!=XUI_OK)return status;
+    if(!generation)status=XUI_ERROR_NOT_FOUND;
+    else if(!__xuiDataGenerationHold(generation))status=XUI_ERROR_INVALID_STATE;
+    else {
+        status=__xuiDataGenerationRead(generation,output,capacity,outputSize);
         if(owned){
             xge_data_outcome_t result={0};__xuiDataOwnedOutcomeBegin(&result,status);
             __xuiDataOwnedOutcomeAdd(&result,__xuiDataGenerationSnapshotEnd(generation));status=result.iStatus;xrtSetErrorTake(result.pError);
@@ -427,4 +436,24 @@ XUI_API int xuiDataObjectSetProviderOwned(xui_data_object object,const char* for
 }
 
 
+
+#define DS_FN(name) __xuiDataSnapshot##name
+#define DS_PREFIX(name) __xuiData##name
+#define DS_STATUS(name) XUI_##name
+#define DS_HANDLE xui_data_object
+#define DS_GENERATION xui_data_generation_t
+#define DS_OPERATION xui_data_operation_t
+#define DS_ITEM xui_clipboard_item_t
+#define DS_IS_OWNED xuiDataObjectIsOwned
+#define DS_PROVIDER XUI_DATA_OWNED_PROVIDER
+#include "xge_data_snapshot.inl"
+#undef DS_FN
+#undef DS_PREFIX
+#undef DS_STATUS
+#undef DS_HANDLE
+#undef DS_GENERATION
+#undef DS_OPERATION
+#undef DS_ITEM
+#undef DS_IS_OWNED
+#undef DS_PROVIDER
 #endif
