@@ -61,8 +61,27 @@ static int __xgeCallbackOwnerValid(const xge_callback_owner_t* owner)
     return !owner || ((!owner->tReference.Data && !owner->tReference.Ops && !owner->onHold && !owner->onDrop) ||
         (owner->tReference.Data && owner->tReference.Ops && owner->onHold && owner->onDrop));
 }
+static int __xgeCallbackOwnerHold(xge_callback_owner_t owner,bool* held)
+{
+    *held=false;
+    if(!owner.onHold)return XGE_OK;
+    xerror* ambient=xrtTakeError();
+    *held=owner.onHold(owner.tReference.Data);
+    xerror* fresh=xrtTakeError();
+    int status=*held && !fresh ? XGE_OK:XGE_ERROR_INVALID_STATE;
+    if(ambient){xrtErrorFree(fresh);fresh=ambient;}
+    xrtSetErrorTake(fresh);return status;
+}
 static int __xgeCallbackOwnerDrop(xge_callback_owner_t owner)
-{return !owner.onDrop || owner.onDrop(owner.tReference.Data) ? XGE_OK:XGE_ERROR_INVALID_STATE;}
+{
+    if(!owner.onDrop)return XGE_OK;
+    xerror* ambient=xrtTakeError();
+    bool success=owner.onDrop(owner.tReference.Data);
+    xerror* fresh=xrtTakeError();
+    int status=success && !fresh ? XGE_OK:XGE_ERROR_INVALID_STATE;
+    if(ambient){xrtErrorFree(fresh);fresh=ambient;}
+    xrtSetErrorTake(fresh);return status;
+}
 static int __xgeCallbackNodePrepare(bool hasCallback,bool allowShutdown,const xge_callback_owner_t* owner,xge_callback_node_t** output)
 {
     *output=NULL;
@@ -70,7 +89,12 @@ static int __xgeCallbackNodePrepare(bool hasCallback,bool allowShutdown,const xg
     if(!owner || !owner->onHold)return XGE_OK;
     if(!__xgeCallbackActivityEnter(allowShutdown))return XGE_ERROR_INVALID_STATE;
     xge_callback_owner_t incoming=*owner;
-    if(!incoming.onHold(incoming.tReference.Data)){__xgeCallbackActivityLeave();return XGE_ERROR_INVALID_STATE;}
+    bool held=false;int status=__xgeCallbackOwnerHold(incoming,&held);
+    if(status!=XGE_OK){
+        xerror* first=xrtTakeError();
+        if(held)__xgeCallbackOutcome(__xgeCallbackOwnerDrop(incoming),&status,&first);
+        xrtSetErrorTake(first);__xgeCallbackActivityLeave();return status;
+    }
     xge_callback_node_t* node=xrtCalloc(1,sizeof(*node));
     if(!node){
         xerror* primary=xrtTakeError();
@@ -103,26 +127,30 @@ static int __xgeCallbackSnapshotBegin(xge_callback_node_t* node,bool allowShutdo
 {
     if(!node)return XGE_OK;
     if(!__xgeCallbackActivityEnter(allowShutdown)){
-        (void)__xgeCallbackNodeRelease(node);return XGE_ERROR_INVALID_STATE;
+        int result=XGE_ERROR_INVALID_STATE;xerror* first=xrtTakeError();
+        __xgeCallbackOutcome(__xgeCallbackNodeRelease(node),&result,&first);
+        xrtSetErrorTake(first);return result;
     }
     xge_callback_owner_t owner=node->tOwner;
-    bool held=owner.onHold(owner.tReference.Data);
-    xerror* primary=held ? NULL:xrtTakeError();
-    int released=__xgeCallbackNodeRelease(node);
-    if(!held){xrtClearError();xrtSetErrorTake(primary);__xgeCallbackActivityLeave();return XGE_ERROR_INVALID_STATE;}
-    if(released!=XGE_OK){
-        primary=xrtTakeError();(void)__xgeCallbackOwnerDrop(owner);
-        xrtClearError();xrtSetErrorTake(primary);__xgeCallbackActivityLeave();return released;
+    bool held=false;int result=__xgeCallbackOwnerHold(owner,&held);
+    xerror* first=xrtTakeError();
+    __xgeCallbackOutcome(__xgeCallbackNodeRelease(node),&result,&first);
+    if(result!=XGE_OK){
+        if(held)__xgeCallbackOutcome(__xgeCallbackOwnerDrop(owner),&result,&first);
+        xrtSetErrorTake(first);__xgeCallbackActivityLeave();return result;
     }
+    xrtSetErrorTake(first);
     snapshot->tOwner=owner;snapshot->bHeld=true;snapshot->bActive=true;return XGE_OK;
 }
 static int __xgeCallbackSnapshotEnd(xge_callback_snapshot_t* snapshot)
 {
-    if(!snapshot->bHeld)return XGE_OK;
+    int result=XGE_OK;xerror* first=NULL;
+    __xgeCallbackOutcome(XGE_OK,&result,&first);
+    if(!snapshot->bHeld){xrtSetErrorTake(first);return result;}
     xge_callback_owner_t owner=snapshot->tOwner;
     snapshot->bHeld=false;snapshot->tOwner=(xge_callback_owner_t){0};
-    int result=__xgeCallbackOwnerDrop(owner);
+    __xgeCallbackOutcome(__xgeCallbackOwnerDrop(owner),&result,&first);
     if(snapshot->bActive){snapshot->bActive=false;__xgeCallbackActivityLeave();}
-    return result;
+    xrtSetErrorTake(first);return result;
 }
 #endif

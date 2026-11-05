@@ -1,0 +1,60 @@
+{
+  "passed": true,
+  "shippingDelivery": false,
+  "fullEngineBuild": false,
+  "scope": "Actual shared global publisher kernel; checked owner Hold/Drop with fresh diagnostics, reentrant pins, NULL failure receipt and cleanup isolation.",
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\global-callback-receipts-win-r3\\results.json",
+      "sha256": "6d078dd276041d028e488962a50e8786fcccd5ec1d73b358f159b1fc2003df35",
+      "rows": 4,
+      "expectedHistoricalRejection": false
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\global-callback-receipts-linux-r1.results.json",
+      "sha256": "db3bdc4c1dfaf641e767b94184d433f626ee6bdc676f2e84fe775c3791216edf",
+      "rows": 4,
+      "expectedHistoricalRejection": false
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\global-callback-receipts-baseline-win-r2\\results.json",
+      "sha256": "e1f9bb3194f6265ba225445948e42f599b45c1ebed14612eab1bae7a0fc7f049",
+      "rows": 4,
+      "expectedHistoricalRejection": true
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\global-callback-receipts-baseline-linux-r1.results.json",
+      "sha256": "41b639216035321b020a89ccb3a60ed2fbb57b82bf6c69bfeea34379e1e7c186",
+      "rows": 4,
+      "expectedHistoricalRejection": true
+    }
+  ],
+  "positiveProcessSteps": 8,
+  "baselineReproductionSteps": 8,
+  "historicalHeader": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\global-callback-header-baseline.h",
+    "sha256": "4ee8a3d23e8caf8a507b539bce9e512334b6ace876dcfcd68e92eba70b580fa2"
+  },
+  "limitations": [
+    "No full Native engine/OS/UI/DSL delivery qualification.",
+    "Successful snapshots remain allocation-free under forced OOM; extra diagnostic isolation/checks are real work."
+  ],
+  "files": [
+    {
+      "path": "src/xge/core/xge_callback_owned.h",
+      "canonicalLfSha256": "6a2a489dfc2afe515b672500b1d654e211940503e457ddaad0f3001528ffa334"
+    },
+    {
+      "path": "tests/xge/xge_owned_callback_receipt_test.c",
+      "canonicalLfSha256": "3c50380d889c09d909ed420a699be4268e2d3c55eced5492f20470af847ada45"
+    },
+    {
+      "path": "tools/test/check_xge_callback_receipts.py",
+      "canonicalLfSha256": "725368115672a99ba0b6df0c57b333739404b6138cd4463541ad1c8d14a3d4a0"
+    },
+    {
+      "path": "docs/native-global-callback-receipts.md",
+      "canonicalLfSha256": "1e5a79929cb09bfd4ebcceefa1efd9e9d29033019276311f89ee0bbff9ff2803"
+    }
+  ]
+}
