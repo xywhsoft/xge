@@ -27,6 +27,8 @@ extern "C" {
 typedef enum xui_result_t {
 /* 成功。 */
 	XUI_OK = 0,
+    /* Cleanup request accepted; the actual owner remains with the caller. */
+    XUI_STATUS_DEFERRED = 1,
 /* 通用失败。 */
 	XUI_ERROR = -1,
 /* 参数非法（空指针/越界）。 */
@@ -1993,6 +1995,10 @@ typedef struct xui_breadcrumb_desc_t {
 	float fPaddingY;
 } xui_breadcrumb_desc_t;
 
+/* Font/Surface ownership terminology below describes legacy xuiCreate
+ * contexts. A context created by xuiCreateOwned retains compatible resources
+ * in its native slots; see that constructor's ownership contract. This does
+ * not grant ownership to unrelated raw userdata, arrays or callbacks. */
 /* 图片创建描述（surface/源区/适配模式）。pSurface 为借用资源，调用方须保证
  * 其生命周期覆盖 Image 对它的使用期。 */
 typedef struct xui_image_desc_t {
@@ -2492,8 +2498,8 @@ typedef struct xui_nine_patch_t {
 	int iMode;
 } xui_nine_patch_t;
 
-/* 进度条创建描述。sText 会被复制；pFont 与 nine-patch surface 为借用资源，
- * 调用方须保证其生命周期覆盖 Progress 对它们的使用期。nine-patch 的源矩形
+/* 进度条创建描述。sText 会被复制；pFont 与 nine-patch surface 按 Context
+ * 资源规则保存：xuiCreateOwned 上下文持有，旧式上下文借用。nine-patch 的源矩形
  * 与切片均使用整数像素；源区域宽高必须同时为 0（整图）或同时为正，
  * 尺寸及切片不得为负，组合几何不得超过 XUI_LAYOUT_UNBOUNDED。 */
 typedef struct xui_progress_desc_t {
@@ -5618,7 +5624,7 @@ typedef struct xui_call_scope_t {
 	struct xui_call_scope_t* pNext;
 	int iResult;
 	int bEnding;
-	xerror* _pFirstError; /* Exact first diagnostic, including failed-with-NULL. */
+	xerror* _pFirstError; /* iResult==OK: owned ambient; otherwise exact first failure, possibly NULL. */
 } xui_call_scope_t;
 
 
@@ -6195,6 +6201,18 @@ struct xui_proxy_t {
 /* 创建 XUI 上下文（根与覆盖根就绪；渲染前需 xuiSetProxy 绑定后端）。 */
 #if XGE_ENABLE_XUI
 XUI_API int xuiCreate(xui_context* ppContext);
+/* Managed contexts require and retain an owned Proxy before publication.
+ * The backend binding is immutable. Font/Surface slots retain actual native
+ * references and reject resources from another backend; replacement/teardown
+ * releases those references after active operations and drawing sessions end.
+ * The legacy constructor and unowned handles remain explicit C interop.
+ * Raw userdata/array/provider pointers and raw callbacks are not made owning
+ * by this constructor; use their documented Owned registrations where present. */
+XUI_API int xuiCreateOwned(xui_proxy pProxy, xui_context* ppContext);
+XUI_API xui_proxy xuiGetProxyOwned(xui_context pContext);
+/* Request is logical only; the caller still owns the Context until its
+ * checked destructor consumes it after active calls and retained data end. */
+XUI_API int xuiRequestClose(xui_context pContext);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
 /* Accepted logical close consumes the context owner even when physical cleanup
@@ -6219,8 +6237,10 @@ XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
  * End marks the token as ending before deferred callbacks/destructors, retains
  * its checked cleanup receipt until they return, and then zeros the token.
  * It may physically destroy the context. Cleanup receipts retain their exact
- * first status and diagnostic (which may be NULL). Error
- * references are retained only on failure, without allocation. End on an empty token
+ * first status and diagnostic (which may be NULL). The entry diagnostic is
+ * isolated and restored on success; a new failure replaces it even with NULL.
+ * Balanced tokens may end out of order. Owned contexts admit only their Proxy
+ * creator thread. Diagnostic references require no allocation. End on an empty token
  * is a no-op. Balance every successful Begin on all exits; End executes user
  * code and rejects reentry on the same ending token. */
 XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
@@ -6270,6 +6290,7 @@ XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy);
 /* Called at most once. Every return semantically consumes the backend payload;
  * a nonzero status reports failure and must never request a second finalization. */
 typedef int (*xui_proxy_payload_finalize_proc)(xui_proxy pProxy, void* pPayload);
+typedef bool (*xui_proxy_payload_ready_proc)(const void* pPayload);
 /* Explicit provider promise: every resource/payload/backend-owner finalizer
  * can run on any thread. This does not make ordinary UI calls thread-safe. */
 #define XUI_PROXY_OWNED_ANYTHREAD_FINALIZE UINT32_C(1)
@@ -6290,6 +6311,7 @@ XUI_API int xuiSurfaceCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_pro
  * payload at most once; the RC carrier can remain alive for checked cleanup. */
 typedef struct xui_draw_scope_t {const void* _pSelf; xui_draw_context _pDraw;} xui_draw_scope_t;
 XUI_API int xuiDrawCreateOwned(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_draw_context* ppDraw, void** ppPayload);
+XUI_API int xuiDrawCreateOwnedEx(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_proxy_payload_ready_proc onCanEnd, xui_draw_context* ppDraw, void** ppPayload);
 XUI_API int xuiDrawEndChecked(xui_draw_context pDraw);
 XUI_API int xuiDrawAddRef(xui_draw_context pDraw);
 XUI_API int xuiDrawReleaseOwnerChecked(xui_draw_context pDraw, bool* pConsumed);
@@ -6784,6 +6806,18 @@ XUI_API int xuiCommandDispatch(xui_context pContext, xui_widget pTarget, int iCo
 XUI_API int xuiTextLayoutCreate(xui_context pContext, xui_text_layout* ppLayout, const xui_text_layout_desc_t* pDesc);
 /* 释放文本布局。 */
 XUI_API void xuiTextLayoutDestroy(xui_text_layout pLayout);
+/* Unique native owner, no reference-count layer. Context expiry makes methods
+ * invalid but the owner can still release Font/paint/backend afterwards. */
+XUI_API int xuiTextLayoutDestroyOwnerChecked(xui_text_layout pLayout,bool* pConsumed);
+XUI_API int xuiTextLayoutDestroyChecked(xui_text_layout pLayout);
+XUI_API int xuiTextLayoutRequestClose(xui_text_layout pLayout);
+XUI_API xui_context xuiTextLayoutGetContext(xui_text_layout pLayout);
+XUI_API bool xuiTextLayoutOwnershipBusy(xui_text_layout pLayout);
+XUI_API bool xuiTextLayoutTraceOwnership(xui_text_layout pLayout,xrtownershipvisitor onVisit,void* pUser);
+/* Only actual unique destruction consumes this watch; Context expiry merely
+ * clears GetContext and must not pretend the unique owner was consumed. */
+XUI_API int xuiTextLayoutLifetimeWatch(xui_text_layout pLayout,xui_lifetime_link_t* pLink,xui_lifetime_invalidate_proc onInvalidate,void* pUser);
+
 /* 以新描述重置布局（复用对象）。 */
 XUI_API int xuiTextLayoutReset(xui_text_layout pLayout, const xui_text_layout_desc_t* pDesc);
 /* 读取布局内容尺寸。 */
@@ -6802,6 +6836,19 @@ XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_
 XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_desc_t* pDesc, xui_vec2_t* pSize);
 /* 经引擎代理整形文本（字形序列，供自绘）。 */
 XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem, xui_text_shape_t* pShape);
+/* These lifetime APIs accept only the owned factory's record handle.
+ * Raw stack records continue to use xuiTextShapeFreeChecked. */
+XUI_API int xuiTextShapeCreateOwned(xui_proxy pProxy, const xui_text_item_t* pTextItem, const xui_text_shape_t** ppShape);
+XUI_API int xuiTextShapeAddRef(const xui_text_shape_t* pShape);
+XUI_API int xuiTextShapeReleaseOwnerChecked(const xui_text_shape_t* pShape, bool* pConsumed);
+XUI_API int xuiTextShapeReleaseChecked(const xui_text_shape_t* pShape);
+XUI_API xui_proxy xuiTextShapeGetProxy(const xui_text_shape_t* pShape);
+XUI_API xrtownershipref xuiTextShapeOwnership(const xui_text_shape_t* pShape);
+/* Borrowed native arrays remain valid while the immutable Shape is owned. */
+XUI_API int xuiTextShapeGetClusters(const xui_text_shape_t* pShape, const xui_text_cluster_t** ppClusters, size_t* pCount);
+XUI_API int xuiTextShapeGetCarets(const xui_text_shape_t* pShape, const xui_text_caret_t** ppCarets, size_t* pCount);
+XUI_API int xuiTextShapeGetCluster(const xui_text_shape_t* pShape, size_t iIndex, xui_text_cluster_t* pCluster);
+XUI_API int xuiTextShapeGetCaret(const xui_text_shape_t* pShape, size_t iIndex, xui_text_caret_t* pCaret);
 /* 释放整形输出的字形序列。 */
 /* Checked cleanup always frees clusters/carets. A consumed paint is cleared
  * even on failure; an unconsumed paint and its hooks remain for explicit retry.
@@ -7472,6 +7519,10 @@ XUI_API int xuiChartHitTest(xui_widget pWidget, float fX, float fY, xui_chart_hi
 XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument);
 /* 释放代码文档。 */
 XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentDestroyOwnerChecked(xui_code_document pDocument, bool* pConsumed);
+XUI_API int xuiCodeDocumentDestroyChecked(xui_code_document pDocument);
+XUI_API bool xuiCodeDocumentOwnershipBusy(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document pDocument, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 整体替换文档内容（清空撤销历史）。 */
 XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sText);
 /* 以指定字节长度替换文档内容（支持内嵌 NUL）。 */
@@ -10163,6 +10214,10 @@ XUI_API int xuiDockPanelGetWindowChangeCount(xui_widget pWidget);
 XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc);
 /* 释放消息框。 */
 XUI_API void xuiMsgBoxDestroy(xui_msgbox pBox);
+XUI_API int xuiMsgBoxDestroyOwnerChecked(xui_msgbox pBox, bool* pConsumed);
+XUI_API int xuiMsgBoxDestroyChecked(xui_msgbox pBox);
+XUI_API xui_context xuiMsgBoxGetContext(xui_msgbox pBox);
+XUI_API int xuiMsgBoxLifetimeWatch(xui_msgbox pBox, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 设置内容文本（消息主体）。 */
 XUI_API int xuiMsgBoxSetText(xui_msgbox pBox, const char* sTitle, const char* sMessage);
 /* 设置标题。 */
@@ -10191,6 +10246,7 @@ XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const cha
 XUI_API const char* xuiMsgBoxGetPresetButtonTitle(xui_msgbox pBox, int iTitle);
 /* 设置结果回调；回调可销毁当前消息框，框架不会在回调返回后继续访问它。 */
 XUI_API int xuiMsgBoxSetResult(xui_msgbox pBox, xui_msgbox_result_proc onResult, void* pUser);
+XUI_API int xuiMsgBoxSetResultOwned(xui_msgbox pBox, xui_msgbox_result_proc onResult, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置模态（带背景护罩）。 */
 XUI_API int xuiMsgBoxSetModal(xui_msgbox pBox, int bModal);
 /* 读取模态标志。 */
@@ -10240,6 +10296,10 @@ XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox);
 XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
 /* 释放文件对话框。 */
 XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogDestroyOwnerChecked(xui_file_dialog pDialog, bool* pConsumed);
+XUI_API int xuiFileDialogDestroyChecked(xui_file_dialog pDialog);
+XUI_API xui_context xuiFileDialogGetContext(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogLifetimeWatch(xui_file_dialog pDialog, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 一步打开文件选择对话框（模态；结果经 GetResultPath 读取）。 */
 XUI_API int xuiOpenFileDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
 /* 一步打开保存文件对话框（模态；覆盖确认）。 */
@@ -10256,8 +10316,10 @@ XUI_API int xuiFileDialogSetModal(xui_file_dialog pDialog, int bModal);
 XUI_API int xuiFileDialogIsModal(xui_file_dialog pDialog);
 /* 注册结果回调。 */
 XUI_API int xuiFileDialogSetResult(xui_file_dialog pDialog, xui_file_dialog_result_proc onResult, void* pUser);
+XUI_API int xuiFileDialogSetResultOwned(xui_file_dialog pDialog, xui_file_dialog_result_proc onResult, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册列表右键回调。 */
 XUI_API int xuiFileDialogSetContextMenu(xui_file_dialog pDialog, xui_file_dialog_context_proc onContext, void* pUser);
+XUI_API int xuiFileDialogSetContextMenuOwned(xui_file_dialog pDialog, xui_file_dialog_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置过滤器（显示名 + 通配模式，分号分隔）。 */
 XUI_API int xuiFileDialogSetFilter(xui_file_dialog pDialog, const char* sFilter);
 /* 读取当前过滤器串。 */
@@ -10325,6 +10387,10 @@ XUI_API int xuiFileDialogEntryIsDir(xui_file_dialog pDialog, int iIndex);
 XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_msgtip_desc_t* pDesc);
 /* 释放轻提示。 */
 XUI_API void xuiMsgTipDestroy(xui_msgtip pTip);
+XUI_API int xuiMsgTipDestroyOwnerChecked(xui_msgtip pTip, bool* pConsumed);
+XUI_API int xuiMsgTipDestroyChecked(xui_msgtip pTip);
+XUI_API xui_context xuiMsgTipGetContext(xui_msgtip pTip);
+XUI_API int xuiMsgTipLifetimeWatch(xui_msgtip pTip, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 显示提示（类型/文本/非负持续秒数；持续 0 不自动关闭）。 */
 XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float fDuration);
 /* 关闭提示。 */
@@ -10357,6 +10423,7 @@ XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColo
 XUI_API int xuiMsgTipGetColors(xui_msgtip pTip, xui_msgtip_colors_t* pColors);
 /* 注册关闭回调（含超时到期）；回调可销毁当前轻提示。 */
 XUI_API int xuiMsgTipSetClose(xui_msgtip pTip, xui_msgtip_close_proc onClose, void* pUser);
+XUI_API int xuiMsgTipSetCloseOwned(xui_msgtip pTip, xui_msgtip_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取提示关联的显示控件（借用句柄，轻提示销毁后失效）。 */
 XUI_API xui_widget xuiMsgTipGetWidget(xui_msgtip pTip);
 /* 读取提示整体矩形。 */
@@ -10382,6 +10449,10 @@ XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip);
 XUI_API int xuiToastCreate(xui_context pContext, xui_toast* ppToast, const xui_toast_desc_t* pDesc);
 /* 释放通知中心。 */
 XUI_API void xuiToastDestroy(xui_toast pToast);
+XUI_API int xuiToastDestroyOwnerChecked(xui_toast pToast, bool* pConsumed);
+XUI_API int xuiToastDestroyChecked(xui_toast pToast);
+XUI_API xui_context xuiToastGetContext(xui_toast pToast);
+XUI_API int xuiToastLifetimeWatch(xui_toast pToast, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 显示一条通知；标题和正文会被复制。返回通知 id，fDuration 为非负秒数（0 不自动关闭），
  * 鼠标悬停在通知上时自动关闭倒计时暂停。
  * 队列满时丢弃最早的待显示通知，并以 XUI_TOAST_CLOSE_CAPACITY_DROP 通知关闭回调。 */
@@ -10416,6 +10487,8 @@ XUI_API int xuiToastSetFont(xui_toast pToast, xui_font pFont);
 XUI_API xui_font xuiToastGetFont(xui_toast pToast);
 /* 注册通知关闭回调（含超时到期和容量丢弃）；回调可销毁当前通知中心。 */
 XUI_API int xuiToastSetClose(xui_toast pToast, xui_toast_close_proc onClose, void* pUser);
+XUI_API int xuiToastSetCloseOwned(xui_toast pToast, xui_toast_close_proc onClose, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API int xuiToastShowOwned(xui_toast pToast, int iType, const char* sTitle, const char* sMessage, float fDuration, xui_toast_click_proc onClick, void* pUser, const xui_callback_owner_t* pOwner, int* pToastId);
 /* 按槽位取通知项控件。 */
 XUI_API xui_widget xuiToastGetItemWidget(xui_toast pToast, int iSlot);
 /* 按槽位读取通知矩形。 */
@@ -10841,6 +10914,9 @@ XUI_API int xuiMessageListSetEvent(xui_widget pWidget, xui_message_list_event_pr
 XUI_API int xuiMessageListSetEventOwned(xui_widget pWidget, xui_message_list_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册气泡自绘回调（覆盖默认绘制）。 */
 XUI_API int xuiMessageListSetNodeRenderer(xui_widget pWidget, xui_message_list_node_renderer_proc onRender, void* pUser);
+/* Renderer status: zero uses the default renderer, positive means handled,
+ * negative reports a checked failure. Node/Draw arguments are callback views. */
+XUI_API int xuiMessageListSetNodeRendererOwned(xui_widget pWidget, xui_message_list_node_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 批量设置消息节点。 */
 XUI_API int xuiMessageListSetNodes(xui_widget pWidget, const xui_message_node_t* pNodes, int iCount);
 /* 追加一条消息。 */
@@ -13409,6 +13485,8 @@ XUI_API xui_widget_type xuiWebViewGetType(xui_context pContext);
 /* 创建尚未初始化浏览器后端的 WebView 控件。 */
 XUI_API int xuiWebViewCreate(xui_context pContext, xui_widget* ppWidget,
 	const xui_webview_desc_t* pDesc);
+XUI_API int xuiWebViewSetEvent(xui_widget pWidget, xui_webview_event_proc onEvent, void* pUser);
+XUI_API int xuiWebViewSetEventOwned(xui_widget pWidget, xui_webview_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 在 UI STA 线程异步建立浏览器；就绪或失败由事件回调报告。 */
 XUI_API int xuiWebViewInitializeAsync(xui_widget pWidget);
 /* 将 XUI 焦点和浏览器原生键盘焦点一起转入 WebView。 */

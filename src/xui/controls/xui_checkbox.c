@@ -1058,7 +1058,7 @@ XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext)
 		__xuiCheckBoxRegisterStyleProperties(pContext, pType);
 		pType->onPreparePaint = __xuiCheckBoxPreparePaint;
 		pType->pAccessibleAdapter = &g_xuiCheckBoxAccessible;
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1081,6 +1081,9 @@ XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiCheckBoxAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_checkbox_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_checkbox_data_t,pUncheckedSurface),offsetof(xui_checkbox_data_t,pCheckedSurface),offsetof(xui_checkbox_data_t,pMixedSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
@@ -1391,13 +1394,20 @@ XUI_API int xuiCheckBoxSetIndicatorSurface(xui_widget pWidget, xui_surface pUnch
 	if ( pData->pUncheckedSurface == pUncheckedSurface && pData->pCheckedSurface == pCheckedSurface &&
 	     __xuiCheckBoxRectEqual(pData->tUncheckedSrc, tUncheckedSrc) &&
 	     __xuiCheckBoxRectEqual(pData->tCheckedSrc, tCheckedSrc) ) return XUI_OK;
+    xui_surface_slot_update_t surfaces[2];memset(surfaces,0,sizeof(surfaces));
+    xui_surface* slots[]={&pData->pUncheckedSurface,&pData->pCheckedSurface};
+    xui_surface values[]={pUncheckedSurface,pCheckedSurface};
+    iRet=xuiInternalSurfaceSlotsPrepare(pWidget,2,slots,values,surfaces);
+    if(iRet!=XUI_OK)return iRet;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pUncheckedSurface = pUncheckedSurface;
+	if ( iRet != XUI_OK ) return xuiInternalSurfaceSlotsEnd(surfaces,2,false,iRet);
+    iRet=xuiInternalSurfaceSlotsPublish(surfaces,2);
+    if(iRet!=XUI_OK)return xuiInternalSurfaceSlotsEnd(surfaces,2,false,iRet);
+
 	pData->tUncheckedSrc = tUncheckedSrc;
-	pData->pCheckedSurface = pCheckedSurface;
+
 	pData->tCheckedSrc = tCheckedSrc;
-	return XUI_OK;
+	return xuiInternalSurfaceSlotsEnd(surfaces,2,true,XUI_OK);
 }
 
 XUI_API int xuiCheckBoxGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)
@@ -1420,11 +1430,15 @@ XUI_API int xuiCheckBoxSetMixedIndicatorSurface(xui_widget pWidget, xui_surface 
 	}
 	if ( pData->pMixedSurface == pSurface &&
 	     __xuiCheckBoxRectEqual(pData->tMixedSrc, tSrc) ) return XUI_OK;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    iRet=xuiInternalSurfaceSlotPrepare(pWidget->pContext,&pData->pMixedSurface,pSurface,pWidget->bTypeInitialized!=0,false,&surfaceUpdate);
+    if(iRet!=XUI_OK)return iRet;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pMixedSurface = pSurface;
+	if ( iRet != XUI_OK ) return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
+    iRet=xuiInternalSurfaceSlotPublish(&surfaceUpdate);
+    if(iRet!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
 	pData->tMixedSrc = tSrc;
-	return XUI_OK;
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
 }
 
 XUI_API int xuiCheckBoxGetMixedIndicatorSurface(xui_widget pWidget, xui_surface* ppSurface, xui_rect_t* pSrc)

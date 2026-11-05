@@ -1903,7 +1903,7 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "window");
 	if ( pType != NULL ) {
 		__xuiWindowRegisterStyleProperties(pContext, pType);
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1928,6 +1928,9 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiWindowAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_window_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_window_data_t,pIconSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
@@ -2127,13 +2130,17 @@ XUI_API int xuiWindowSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_
 	int iRet;
 	if ( pData == NULL || !__xuiWindowSourceRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pIconSurface == pSurface && memcmp(&pData->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    iRet=xuiInternalSurfaceSlotPrepare(pWidget->pContext,&pData->pIconSurface,pSurface,pWidget->bTypeInitialized!=0,false,&surfaceUpdate);
+    if(iRet!=XUI_OK)return iRet;
 	iRet = xuiWidgetInvalidate(pWidget,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pIconSurface = pSurface;
+	if ( iRet != XUI_OK ) return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
+    iRet=xuiInternalSurfaceSlotPublish(&surfaceUpdate);
+    if(iRet!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
 	pData->tIconSrc = tSrc;
 	pData->bHasIcon = (pSurface != NULL) ? 1 : 0;
-	return XUI_OK;
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
 }
 
 XUI_API xui_surface xuiWindowGetIconSurface(xui_widget pWidget)

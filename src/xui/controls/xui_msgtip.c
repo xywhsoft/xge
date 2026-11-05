@@ -2,14 +2,22 @@
 #if XUI_ENABLE_MSGTIP
 #include "xui_internal.h"
 #include "xui_text_internal.h"
+#include "xui_owned_manager.h"
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_MSGTIP_MAGIC 0x584D5354u
 
 struct xui_msgtip_t {
 	uint32_t iMagic;
+    xui_owned_manager_t tOwned;
+    xui_lifetime_link_t tWidgetWatch;
+    xui_text_layout pParagraphLayout;
+    xui_callback_owner_t tCloseOwner;
+    bool bOwnedFont,bOwnedIcon,bBusiness;
+
 	xui_context pContext;
 	xui_widget pWidget;
 	char* sText;
@@ -40,7 +48,35 @@ struct xui_msgtip_t {
 
 static int __xuiMsgTipValid(xui_msgtip pTip)
 {
-	return (pTip != NULL) && (pTip->iMagic == XUI_MSGTIP_MAGIC);
+	return (pTip != NULL) && (pTip->iMagic == XUI_MSGTIP_MAGIC) && xuiInternalManagerAlive(&pTip->tOwned);
+}
+
+static const xui_owned_manager_ops_t g_xuiMsgTipOwnedOps;
+static int __xuiMsgTipScopeBegin(xui_msgtip tip,xui_manager_scope_t* scope,bool business)
+{
+    if(!__xuiMsgTipValid(tip))return XUI_ERROR_INVALID_STATE;
+    int status=xuiInternalManagerScopeBegin(&tip->tOwned,scope);if(status!=XUI_OK)return status;
+    if(business && tip->bBusiness)return xuiInternalManagerScopeEnd(scope,XUI_ERROR_BUSY);
+    if(business)tip->bBusiness=true;
+    return XUI_OK;
+}
+/* Mutation transactions may call arbitrary native backend code. Reentrant
+ * mutation is checked BUSY; read-only queries and logical Destroy stay valid. */
+#define XUI_MSGTIP_STATUS_RETURN(...) do { int value=(__VA_ARGS__); if(managerBusiness)pTip->bBusiness=false; return xuiInternalManagerScopeEnd(&managerCall,value); } while(0)
+#define XUI_MSGTIP_VALUE_RETURN(Type,...) do { Type value=(__VA_ARGS__); if(managerBusiness)pTip->bBusiness=false; (void)xuiInternalManagerScopeEnd(&managerCall,XUI_OK); return value; } while(0)
+#define XUI_MSGTIP_NATIVE_RETURN(...) do { int value=(__VA_ARGS__); if(managerBusiness)pTip->bBusiness=false; int ended=xuiInternalManagerScopeEnd(&managerCall,value<0 ? value:XUI_OK); return ended!=XUI_OK ? ended:value; } while(0)
+static void __xuiMsgTipInvalidated(void* raw){*(bool*)raw=false;}
+static void __xuiMsgTipWidgetInvalidated(void* raw)
+{ xui_msgtip tip=raw;tip->pWidget=NULL;(void)xuiInternalManagerRequestClose(&tip->tOwned); }
+static int __xuiMsgTipConstructorEnd(xui_call_scope_t* scope,int status,xui_lifetime_link_t* watch,bool* alive,xui_msgtip tip,xui_msgtip* output)
+{
+    xerror* first=xrtTakeError();if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    if(status==XUI_OK && *alive && tip->pContext->bCloseRequested)status=XUI_ERROR_INVALID_STATE;
+    if(status!=XUI_OK && *alive){(void)xuiInternalManagerRequestClose(&tip->tOwned);xrtClearError();}
+    status=xuiInternalCallScopeEndOutcome(scope,status,&first);xuiLifetimeUnwatch(watch);
+    if(status==XUI_OK && !*alive)status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK)*output=tip;
+    xrtSetErrorTake(first);return status;
 }
 
 static uint32_t __xuiMsgTipStyleColor(xui_msgtip pTip, const char* sName, uint32_t iBase)
@@ -344,8 +380,8 @@ static int __xuiMsgTipMeasureText(xui_msgtip pTip, float fWidth,
 	tDesc.iWrapMode = XUI_TEXT_WRAP_CHAR;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 	tDesc.fLineGap = 2.0f;
-	pLayout = NULL;
-	iRet = xuiTextLayoutCreate(pTip->pContext, &pLayout, &tDesc);
+    iRet=xuiInternalTextLayoutEnsure(pTip->pContext,&pTip->pParagraphLayout,&tDesc);
+    pLayout=pTip->pParagraphLayout;
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -353,7 +389,6 @@ static int __xuiMsgTipMeasureText(xui_msgtip pTip, float fWidth,
 	if ( pLineCount != NULL ) {
 		*pLineCount = xuiTextLayoutGetLineCount(pLayout);
 	}
-	xuiTextLayoutDestroy(pLayout);
 	return XUI_OK;
 }
 
@@ -532,8 +567,8 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 	tDesc.iWrapMode = XUI_TEXT_WRAP_CHAR;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
 	tDesc.fLineGap = 2.0f;
-	pLayout = NULL;
-	iRet = xuiTextLayoutCreate(pTip->pContext, &pLayout, &tDesc);
+    iRet=xuiInternalTextLayoutEnsure(pTip->pContext,&pTip->pParagraphLayout,&tDesc);
+    pLayout=pTip->pParagraphLayout;
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -541,7 +576,6 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 		pTip->tTextRect,
 		__xuiMsgTipStyleColor(pTip, "msgtip.text.color",
 			pTip->tColors.iTextColor), 0);
-	xuiTextLayoutDestroy(pLayout);
 	return iRet;
 }
 
@@ -612,32 +646,35 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 	(void)pWidget;
 	ppTip = (xui_msgtip*)pUser;
 	pTip = (ppTip != NULL) ? *ppTip : NULL;
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);
+    if(admission!=XUI_OK)return admission;
 	if ( !__xuiMsgTipValid(pTip) || !pTip->bOpen ) {
-		return XUI_OK;
+		XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 	}
 	pProxy = xuiInternalContextGetProxy(pTip->pContext);
 	if ( (pProxy == NULL) || (pDraw == NULL) ) {
-		return XUI_OK;
+		XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pTip->tTipRect.fW, pTip->tTipRect.fH});
 	if ( pProxy->drawRectFill != NULL ) {
 		uint32_t iShadow = __xuiMsgTipStyleColor(pTip, "msgtip.shadow.color", pTip->tColors.iShadowColor);
 		if ( (iShadow & 0xffu) != 0u ) {
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, iShadow);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
 			tRect.fW = __xuiMsgTipMax(1.0f, tRect.fW - 2.0f);
 			tRect.fH = __xuiMsgTipMax(1.0f, tRect.fH - 2.0f);
 		}
 	}
 	if ( pProxy->drawRectFill != NULL ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, __xuiMsgTipStyleColor(pTip, "msgtip.background.color", pTip->tColors.iBackgroundColor));
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
 	}
 	iBorder = __xuiMsgTipStyleColor(pTip, "msgtip.border.color",
 		pTip->tColors.iBorderColor);
 	if ( ((iBorder & 0xffu) != 0u) && (pProxy->drawRectStroke != NULL) ) {
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorder);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
 	}
 	if ( __xuiMsgTipHasIcon(pTip) &&
 	     pTip->tIconRect.fW > 0 && pTip->tIconRect.fH > 0 ) {
@@ -651,9 +688,9 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 		} else {
 			iRet = __xuiMsgTipDrawBuiltinIcon(pTip, pDraw, pProxy);
 		}
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
 	}
-	return __xuiMsgTipDrawTextLayout(pTip, pDraw);
+	XUI_MSGTIP_NATIVE_RETURN(__xuiMsgTipDrawTextLayout(pTip, pDraw));
 }
 
 static int __xuiMsgTipCloseInternal(xui_msgtip pTip, int bExpired)
@@ -688,7 +725,13 @@ static int __xuiMsgTipCloseInternal(xui_msgtip pTip, int bExpired)
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
 	onClose = pTip->onClose;
 	pCloseUser = pTip->pCloseUser;
-	if ( onClose != NULL ) onClose(pTip, bExpired ? 1 : 0, pCloseUser);
+    if(onClose){
+        xui_callback_owner_t selected=pTip->tCloseOwner;xui_callback_snapshot_t snapshot={0};
+        iRet=xuiInternalManagerCallbackSnapshotBegin(&pTip->tOwned,&selected,&snapshot,true);
+        pTip->bBusiness=false; /* All state publication precedes the user callback. */
+        if(iRet==XUI_OK)onClose(pTip,bExpired ? 1:0,pCloseUser);
+        xerror* first=xrtTakeError();return xuiInternalCallbackSnapshotEndOutcome(&snapshot,iRet,first);
+    }
 	return XUI_OK;
 }
 
@@ -701,20 +744,23 @@ static int __xuiMsgTipUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	(void)pWidget;
 	ppTip = (xui_msgtip*)pUser;
 	pTip = (ppTip != NULL) ? *ppTip : NULL;
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);
+    if(admission!=XUI_OK)return admission;
 	if ( !__xuiMsgTipValid(pTip) || !pTip->bOpen ) {
-		return XUI_OK;
+		XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 	}
 	iRet = __xuiMsgTipSyncLayout(pTip);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
 	if ( pTip->fDuration <= 0.0f || (fDelta != fDelta) || fDelta <= 0.0f ) {
-		return XUI_OK;
+		XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 	}
 	if ( pTip->fElapsed >= pTip->fDuration ||
 	     fDelta >= pTip->fDuration - pTip->fElapsed ) {
-		return __xuiMsgTipCloseInternal(pTip, 1);
+		XUI_MSGTIP_NATIVE_RETURN(__xuiMsgTipCloseInternal(pTip, 1));
 	}
 	pTip->fElapsed += fDelta;
-	return XUI_OK;
+	XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 }
 
 static int __xuiMsgTipEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -725,15 +771,18 @@ static int __xuiMsgTipEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	(void)pWidget;
 	ppTip = (xui_msgtip*)pUser;
 	pTip = (ppTip != NULL) ? *ppTip : NULL;
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);
+    if(admission!=XUI_OK)return admission;
 	if ( !__xuiMsgTipValid(pTip) || (pEvent == NULL) || !pTip->bOpen ) {
-		return XUI_OK;
+		XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 	}
 	if ( (pEvent->iType == XUI_EVENT_POINTER_DOWN) && (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) ) {
 		int iRet = __xuiMsgTipCloseInternal(pTip, 0);
-		if ( iRet != XUI_OK ) return iRet;
-		return XUI_EVENT_DISPATCH_STOP;
+		if ( iRet != XUI_OK ) XUI_MSGTIP_NATIVE_RETURN(iRet);
+		XUI_MSGTIP_NATIVE_RETURN(XUI_EVENT_DISPATCH_STOP);
 	}
-	return XUI_OK;
+	XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 }
 
 static int __xuiMsgTipPreparePaint(xui_widget pWidget)
@@ -744,15 +793,18 @@ static int __xuiMsgTipPreparePaint(xui_widget pWidget)
 
 	ppTip = (xui_msgtip*)xuiWidgetGetTypeData(pWidget);
 	pTip = (ppTip != NULL) ? *ppTip : NULL;
-	if ( !__xuiMsgTipValid(pTip) ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);
+    if(admission!=XUI_OK)return admission;
+	if ( !__xuiMsgTipValid(pTip) ) XUI_MSGTIP_NATIVE_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	pProxy = xuiInternalContextGetProxy(pTip->pContext);
 	if ( xuiInternalSurfaceDependencySync(pProxy,
 		pTip->bCustomIcon ? pTip->pIconSurface : NULL,
 		&pTip->tIconDependency, 0) ) {
-		return xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		XUI_MSGTIP_NATIVE_RETURN(xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 	}
-	return XUI_OK;
+	XUI_MSGTIP_NATIVE_RETURN(XUI_OK);
 }
 
 static int __xuiMsgTipTypeInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -846,17 +898,25 @@ XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_m
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiMsgTipDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    xui_call_scope_t construction={0};xui_lifetime_link_t constructionWatch={0};bool constructionAlive=true;
+    int admission=xuiCallScopeBegin(pContext,&construction);if(admission!=XUI_OK)return admission;
 	pType = __xuiMsgTipEnsureType(pContext);
 	if ( pType == NULL ) {
-		return XUI_ERROR_NOT_INITIALIZED;
+		xerror* first=xrtTakeError();int ended=xuiInternalCallScopeEndOutcome(&construction,XUI_ERROR_NOT_INITIALIZED,&first);xrtSetErrorTake(first);return ended;
 	}
 	pTip = (xui_msgtip)xrtCalloc(1, sizeof(*pTip));
 	if ( pTip == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		xerror* first=xrtTakeError();int ended=xuiInternalCallScopeEndOutcome(&construction,XUI_ERROR_OUT_OF_MEMORY,&first);xrtSetErrorTake(first);return ended;
 	}
 	pTip->iMagic = XUI_MSGTIP_MAGIC;
 	pTip->pContext = pContext;
+    iRet=xuiInternalManagerRegister(pContext,&pTip->tOwned,&g_xuiMsgTipOwnedOps,pTip);
+    if(iRet!=XUI_OK){xrtFree(pTip);xerror* first=xrtTakeError();int ended=xuiInternalCallScopeEndOutcome(&construction,iRet,&first);xrtSetErrorTake(first);return ended;}
+    if(xuiInternalManagerWatch(&pTip->tOwned,&constructionWatch,__xuiMsgTipInvalidated,&constructionAlive)!=XUI_OK)abort();
 	pTip->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(pContext);
+    iRet=xuiInternalFontAdmit(pContext,pTip->pFont);
+    if(iRet!=XUI_OK)return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
+    pTip->bOwnedFont=pContext->pOwnedProxy && pTip->pFont;
 	pTip->iType = (pDesc != NULL) ? __xuiMsgTipNormalizeType(pDesc->iType) : XUI_MSGTIP_ICON_INFO;
 	pTip->fDuration = (pDesc != NULL) ? pDesc->fDuration : 1.8f;
 	__xuiMsgTipDefaultMetrics(&pTip->tMetrics);
@@ -871,53 +931,87 @@ XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_m
 	}
 	if ( pDesc != NULL && pDesc->bHasCustomIcon && pDesc->pIconSurface != NULL ) {
 		pTip->pIconSurface = pDesc->pIconSurface;
+        iRet=xuiInternalSurfaceAdmit(pContext,pTip->pIconSurface);
+        if(iRet!=XUI_OK)return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
+        pTip->bOwnedIcon=pContext->pOwnedProxy && pTip->pIconSurface;
 		pTip->tIconSrc = pDesc->tIconSrc;
 		pTip->bCustomIcon = 1;
 	}
 	iRet = __xuiMsgTipReplaceText(&pTip->sText, (pDesc != NULL && pDesc->sText != NULL) ? pDesc->sText : "");
 	if ( iRet != XUI_OK ) {
-		xrtFree(pTip);
-		return iRet;
+        return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
 	}
 	iRet = xuiWidgetCreateTyped(pContext, pType, &pTip->pWidget, pTip);
 	if ( iRet != XUI_OK ) {
-		xuiMsgTipDestroy(pTip);
-		return iRet;
+        return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
 	}
+    iRet=xuiWidgetLifetimeWatch(pTip->pWidget,&pTip->tWidgetWatch,__xuiMsgTipWidgetInvalidated,pTip);
+    if(iRet!=XUI_OK)return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
 	iRet = __xuiMsgTipLayout(pTip);
 	if ( iRet != XUI_OK ) {
-		xuiMsgTipDestroy(pTip);
-		return iRet;
+        return __xuiMsgTipConstructorEnd(&construction,iRet,&constructionWatch,&constructionAlive,pTip,ppTip);
 	}
-	*ppTip = pTip;
-	return XUI_OK;
+    return __xuiMsgTipConstructorEnd(&construction,XUI_OK,&constructionWatch,&constructionAlive,pTip,ppTip);
 }
 
-XUI_API void xuiMsgTipDestroy(xui_msgtip pTip)
+static bool __xuiMsgTipTrace(const void* raw,xrtownershipvisitor visit,void* user)
 {
-	if ( !__xuiMsgTipValid(pTip) ) {
-		return;
-	}
-	if ( pTip->bOpen ) {
-		pTip->bOpen = 0;
-		(void)xuiWidgetSetHitTestVisible(pTip->pWidget, 0);
-		(void)xuiWidgetSetEnabled(pTip->pWidget, 0);
-		(void)xuiWidgetSetVisible(pTip->pWidget, 0);
-	}
-	if ( pTip->pWidget != NULL ) {
-		xuiWidgetDestroy(pTip->pWidget);
-		pTip->pWidget = NULL;
-	}
-	if ( pTip->sText != NULL ) {
-		xrtFree(pTip->sText);
-		pTip->sText = NULL;
-	}
-	pTip->iMagic = 0;
-	xrtFree(pTip);
+    const struct xui_msgtip_t* tip=raw;
+    if(tip->pParagraphLayout && !xuiTextLayoutTraceOwnership(tip->pParagraphLayout,visit,user))return false;
+    if(tip->bOwnedFont && !visit(xuiFontOwnership(tip->pFont),user))return false;
+    if(tip->bOwnedIcon && !visit(xuiSurfaceOwnership(tip->pIconSurface),user))return false;
+    return !tip->tCloseOwner.tReference.Data || visit(tip->tCloseOwner.tReference,user);
 }
+static int __xuiMsgTipReady(const void* raw)
+{const struct xui_msgtip_t* tip=raw;return tip->pParagraphLayout ? xuiInternalTextLayoutDestroyReady(tip->pParagraphLayout):XUI_OK;}
+static int __xuiMsgTipPrepare(void* raw,bool* complete)
+{
+    xui_msgtip tip=raw;*complete=tip->pParagraphLayout==NULL;if(*complete)return XUI_OK;
+    bool consumed=false;int status=xuiTextLayoutDestroyOwnerChecked(tip->pParagraphLayout,&consumed);
+    if(consumed)tip->pParagraphLayout=NULL;
+    *complete=tip->pParagraphLayout==NULL;return status;
+}
+static void __xuiMsgTipCloseParts(void* raw)
+{
+    xui_msgtip tip=raw;xui_widget widget=tip->pWidget;tip->pWidget=NULL;tip->bOpen=0;
+    xuiLifetimeUnwatch(&tip->tWidgetWatch);
+    if(widget)xuiInternalContextRecordFailure(tip->pContext,xuiInternalWidgetRequestDestroy(widget,NULL));
+}
+static int __xuiMsgTipFinalize(void* raw)
+{
+    xui_msgtip tip=raw;xui_context context=tip->pContext;xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    xrtFree(tip->sText);
+    if(tip->bOwnedFont)xuiInternalCleanupAdd(&receipt,xuiInternalFontRelease(context,tip->pFont));
+    if(tip->bOwnedIcon)xuiInternalCleanupAdd(&receipt,xuiInternalSurfaceRelease(context,tip->pIconSurface));
+    xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&tip->tCloseOwner,receipt.status,receipt.error));
+    tip->iMagic=0;xrtFree(tip);return xuiInternalCleanupEnd(context,&receipt);
+}
+static const xui_owned_manager_ops_t g_xuiMsgTipOwnedOps={__xuiMsgTipTrace,__xuiMsgTipReady,__xuiMsgTipPrepare,__xuiMsgTipCloseParts,__xuiMsgTipFinalize};
+XUI_API int xuiMsgTipDestroyOwnerChecked(xui_msgtip tip,bool* consumed)
+{
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;if(!tip || tip->iMagic!=XUI_MSGTIP_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
+    if(tip->tOwned.pending)return XUI_OK;
+    xui_manager_scope_t scope={0};int status=xuiInternalManagerScopeBegin(&tip->tOwned,&scope);if(status!=XUI_OK)return status;
+    status=xuiInternalManagerRequestClose(&tip->tOwned);*consumed=status==XUI_OK;
+    return xuiInternalManagerScopeEnd(&scope,status);
+}
+XUI_API int xuiMsgTipDestroyChecked(xui_msgtip tip)
+{bool consumed=false;return xuiMsgTipDestroyOwnerChecked(tip,&consumed);}
+XUI_API void xuiMsgTipDestroy(xui_msgtip tip)
+{if(tip && tip->iMagic==XUI_MSGTIP_MAGIC)(void)xuiMsgTipDestroyChecked(tip);}
+XUI_API xui_context xuiMsgTipGetContext(xui_msgtip tip)
+{
+    if(xuiInternalManagerReadStatus(tip ? &tip->tOwned:NULL)!=XUI_OK)return NULL;
+    return __xuiMsgTipValid(tip) ? tip->pContext:NULL;
+}
+XUI_API int xuiMsgTipLifetimeWatch(xui_msgtip tip,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
+{return __xuiMsgTipValid(tip) ? xuiInternalManagerWatch(&tip->tOwned,link,invalidate,user):XUI_ERROR_INVALID_ARGUMENT;}
 
 XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float fDuration)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	char* sNewText;
 	char* sOldText;
 	xui_rect_t tOldTipRect;
@@ -935,10 +1029,10 @@ XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float f
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipTypeValid(iType) || !__xuiMsgTipFloatValid(fDuration) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
 	sNewText = xrtStrDup(sText);
-	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( sNewText == NULL ) XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_OUT_OF_MEMORY);
 	sOldText = pTip->sText;
 	iOldType = pTip->iType;
 	iOldIconColor = pTip->tColors.iIconColor;
@@ -986,65 +1080,75 @@ XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float f
 		(void)xuiWidgetSetHitTestVisible(pTip->pWidget, bOldOpen);
 		if ( !bWasAttached && xuiWidgetGetParent(pTip->pWidget) != NULL ) (void)xuiOverlayDetach(pTip->pWidget);
 		xrtFree(sNewText);
-		return iRet;
+		XUI_MSGTIP_STATUS_RETURN(iRet);
 	}
 	pTip->bOpen = 1;
 	if ( pTip->iShowCount < INT_MAX ) pTip->iShowCount++;
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
 	if ( sOldText != NULL ) xrtFree(sOldText);
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API int xuiMsgTipClose(xui_msgtip pTip)
 {
-	return __xuiMsgTipCloseInternal(pTip, 0);
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
+	XUI_MSGTIP_STATUS_RETURN(__xuiMsgTipCloseInternal(pTip, 0));
 }
 
 XUI_API int xuiMsgTipIsOpen(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->bOpen : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->bOpen : 0);
 }
 
 XUI_API int xuiMsgTipSetText(xui_msgtip pTip, const char* sText)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	char* sNewText;
 	char* sOldText;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
-	if ( __xuiMsgTipTextSame(pTip->sText, sText) ) return XUI_OK;
+	if ( __xuiMsgTipTextSame(pTip->sText, sText) ) XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 	sNewText = xrtStrDup(sText);
-	if ( sNewText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( sNewText == NULL ) XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_OUT_OF_MEMORY);
 	sOldText = pTip->sText;
 	pTip->sText = sNewText;
 	iRet = __xuiMsgTipLayout(pTip);
 	if ( iRet != XUI_OK ) {
 		pTip->sText = sOldText;
 		xrtFree(sNewText);
-		return iRet;
+		XUI_MSGTIP_STATUS_RETURN(iRet);
 	}
 	if ( sOldText != NULL ) xrtFree(sOldText);
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API const char* xuiMsgTipGetText(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->sText : NULL;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return NULL;
+	return (__xuiMsgTipValid(pTip) ? pTip->sText : NULL);
 }
 
 XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	uint32_t iOldIconColor;
 	int iOldType;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipTypeValid(iType) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
-	if ( pTip->iType == iType ) return XUI_OK;
+	if ( pTip->iType == iType ) XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 	iOldType = pTip->iType;
 	iOldIconColor = pTip->tColors.iIconColor;
 	pTip->iType = iType;
@@ -1055,141 +1159,111 @@ XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType)
 	if ( iRet != XUI_OK ) {
 		pTip->iType = iOldType;
 		pTip->tColors.iIconColor = iOldIconColor;
-		return iRet;
+		XUI_MSGTIP_STATUS_RETURN(iRet);
 	}
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API int xuiMsgTipGetType(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iType : XUI_MSGTIP_ICON_NONE;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iType : XUI_MSGTIP_ICON_NONE);
 }
 
 XUI_API int xuiMsgTipSetDuration(xui_msgtip pTip, float fDuration)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipFloatValid(fDuration) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
-	if ( pTip->fDuration == fDuration ) return XUI_OK;
+	if ( pTip->fDuration == fDuration ) XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 	pTip->fDuration = fDuration;
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API float xuiMsgTipGetDuration(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->fDuration : 0.0f;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->fDuration : 0.0f);
 }
 
-XUI_API int xuiMsgTipSetIconSurface(xui_msgtip pTip, xui_surface pSurface, xui_rect_t tSrc)
+static int __xuiMsgTipChangeIcon(xui_msgtip pTip,xui_surface surface,xui_rect_t source,bool builtin)
 {
-	xui_surface pOldSurface;
-	xui_rect_t tOldSrc;
-	int bOldCustomIcon;
-	int iRet;
-
-	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipRectValid(tSrc) ||
-	     (pSurface != NULL && (tSrc.fW <= 0 || tSrc.fH <= 0)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pTip->pIconSurface == pSurface && pTip->bCustomIcon == (pSurface != NULL) &&
-	     __xuiMsgTipRectSame(pTip->tIconSrc, tSrc) ) return XUI_OK;
-	pOldSurface = pTip->pIconSurface;
-	tOldSrc = pTip->tIconSrc;
-	bOldCustomIcon = pTip->bCustomIcon;
-	pTip->pIconSurface = pSurface;
-	pTip->tIconSrc = tSrc;
-	pTip->bCustomIcon = (pSurface != NULL);
-	iRet = __xuiMsgTipLayout(pTip);
-	if ( iRet != XUI_OK ) {
-		pTip->pIconSurface = pOldSurface;
-		pTip->tIconSrc = tOldSrc;
-		pTip->bCustomIcon = bOldCustomIcon;
-		return iRet;
-	}
-	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
+    if(!__xuiMsgTipRectValid(source) || (surface && (source.fW<=0 || source.fH<=0)))XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
+    xui_rect_t oldSource=pTip->tIconSrc;int oldCustom=pTip->bCustomIcon;bool oldOwned=pTip->bOwnedIcon;uint32_t oldColor=pTip->tColors.iIconColor;
+    xui_surface_slot_update_t update={0};int status=xuiInternalSurfaceSlotBegin(pTip->pContext,&pTip->pIconSurface,surface,pTip->pContext->pOwnedProxy!=NULL,&update);
+    if(status!=XUI_OK)XUI_MSGTIP_STATUS_RETURN(status);
+    pTip->tIconSrc=source;pTip->bCustomIcon=!builtin && surface;pTip->bOwnedIcon=pTip->pContext->pOwnedProxy && surface;
+    if(builtin && !pTip->bHasColors)pTip->tColors.iIconColor=__xuiMsgTipIconColor(pTip->iType);
+    status=__xuiMsgTipLayout(pTip);
+    if(status!=XUI_OK){xerror* first=xrtTakeError();(void)xuiInternalSurfaceSlotRestore(&update);xrtClearError();pTip->tIconSrc=oldSource;pTip->bCustomIcon=oldCustom;pTip->bOwnedIcon=oldOwned;pTip->tColors.iIconColor=oldColor;xrtSetErrorTake(first);}
+    else if(pTip->iChangeCount<INT_MAX)++pTip->iChangeCount;
+    status=xuiInternalSurfaceSlotEnd(&update,status==XUI_OK,status);XUI_MSGTIP_STATUS_RETURN(status);
 }
-
-XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip pTip)
-{
-	xui_surface pOldSurface;
-	xui_rect_t tOldSrc;
-	uint32_t iOldIconColor;
-	int bOldCustomIcon;
-	int iRet;
-
-	if ( !__xuiMsgTipValid(pTip) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !pTip->bCustomIcon && pTip->pIconSurface == NULL ) return XUI_OK;
-	pOldSurface = pTip->pIconSurface;
-	tOldSrc = pTip->tIconSrc;
-	iOldIconColor = pTip->tColors.iIconColor;
-	bOldCustomIcon = pTip->bCustomIcon;
-	pTip->pIconSurface = NULL;
-	pTip->tIconSrc = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-	pTip->bCustomIcon = 0;
-	if ( !pTip->bHasColors ) pTip->tColors.iIconColor = __xuiMsgTipIconColor(pTip->iType);
-	iRet = __xuiMsgTipLayout(pTip);
-	if ( iRet != XUI_OK ) {
-		pTip->pIconSurface = pOldSurface;
-		pTip->tIconSrc = tOldSrc;
-		pTip->tColors.iIconColor = iOldIconColor;
-		pTip->bCustomIcon = bOldCustomIcon;
-		return iRet;
-	}
-	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
-}
+XUI_API int xuiMsgTipSetIconSurface(xui_msgtip tip,xui_surface surface,xui_rect_t source)
+{return __xuiMsgTipChangeIcon(tip,surface,source,false);}
+XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip tip)
+{return __xuiMsgTipChangeIcon(tip,NULL,(xui_rect_t){0},true);}
 
 XUI_API int xuiMsgTipSetMetrics(xui_msgtip pTip, const xui_msgtip_metrics_t* pMetrics)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	xui_msgtip_metrics_t tOldMetrics;
 	xui_msgtip_metrics_t tNewMetrics;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipMetricsValid(pMetrics) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
 	tNewMetrics = *pMetrics;
 	tNewMetrics.iSize = sizeof(tNewMetrics);
-	if ( memcmp(&pTip->tMetrics, &tNewMetrics, sizeof(tNewMetrics)) == 0 ) return XUI_OK;
+	if ( memcmp(&pTip->tMetrics, &tNewMetrics, sizeof(tNewMetrics)) == 0 ) XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 	tOldMetrics = pTip->tMetrics;
 	pTip->tMetrics = tNewMetrics;
 	iRet = __xuiMsgTipLayout(pTip);
 	if ( iRet != XUI_OK ) {
 		pTip->tMetrics = tOldMetrics;
-		return iRet;
+		XUI_MSGTIP_STATUS_RETURN(iRet);
 	}
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API int xuiMsgTipGetMetrics(xui_msgtip pTip, xui_msgtip_metrics_t* pMetrics)
 {
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return readStatus;
 	if ( !__xuiMsgTipValid(pTip) || (pMetrics == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	*pMetrics = pTip->tMetrics;
 	pMetrics->iSize = sizeof(*pMetrics);
-	return XUI_OK;
+	return (XUI_OK);
 }
 
 XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColors)
 {
+    xui_manager_scope_t managerCall={0};bool managerBusiness=true;
+    int admission=__xuiMsgTipScopeBegin(pTip,&managerCall,managerBusiness);if(admission!=XUI_OK)return admission;
 	xui_msgtip_colors_t tOldColors;
 	xui_msgtip_colors_t tNewColors;
 	int bOldHasColors;
 	int iRet;
 
 	if ( !__xuiMsgTipValid(pTip) || !__xuiMsgTipColorsValid(pColors) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		XUI_MSGTIP_STATUS_RETURN(XUI_ERROR_INVALID_ARGUMENT);
 	}
 	tNewColors = *pColors;
 	tNewColors.iSize = sizeof(tNewColors);
-	if ( pTip->bHasColors && memcmp(&pTip->tColors, &tNewColors, sizeof(tNewColors)) == 0 ) return XUI_OK;
+	if ( pTip->bHasColors && memcmp(&pTip->tColors, &tNewColors, sizeof(tNewColors)) == 0 ) XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 	tOldColors = pTip->tColors;
 	bOldHasColors = pTip->bHasColors;
 	pTip->tColors = tNewColors;
@@ -1198,75 +1272,97 @@ XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColo
 	if ( iRet != XUI_OK ) {
 		pTip->tColors = tOldColors;
 		pTip->bHasColors = bOldHasColors;
-		return iRet;
+		XUI_MSGTIP_STATUS_RETURN(iRet);
 	}
 	if ( pTip->iChangeCount < INT_MAX ) pTip->iChangeCount++;
-	return XUI_OK;
+	XUI_MSGTIP_STATUS_RETURN(XUI_OK);
 }
 
 XUI_API int xuiMsgTipGetColors(xui_msgtip pTip, xui_msgtip_colors_t* pColors)
 {
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return readStatus;
 	if ( !__xuiMsgTipValid(pTip) || (pColors == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	*pColors = pTip->tColors;
 	pColors->iSize = sizeof(*pColors);
-	return XUI_OK;
+	return (XUI_OK);
 }
 
-XUI_API int xuiMsgTipSetClose(xui_msgtip pTip, xui_msgtip_close_proc onClose, void* pUser)
+XUI_API int xuiMsgTipSetCloseOwned(xui_msgtip tip,xui_msgtip_close_proc callback,void* user,const xui_callback_owner_t* incoming)
 {
-	if ( !__xuiMsgTipValid(pTip) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pTip->onClose = onClose;
-	pTip->pCloseUser = pUser;
-	return XUI_OK;
+    if(!__xuiMsgTipValid(tip))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_manager_callback_update_t update={0};
+    int status=xuiInternalManagerCallbackUpdateBegin(&tip->tOwned,&tip->tCloseOwner,callback!=NULL,incoming,&update);
+    if(status!=XUI_OK)return status;
+    tip->onClose=callback;tip->pCloseUser=user;xuiInternalManagerCallbackUpdatePublish(&update);
+    return xuiInternalManagerCallbackUpdateEnd(&update,XUI_OK);
 }
+XUI_API int xuiMsgTipSetClose(xui_msgtip tip,xui_msgtip_close_proc callback,void* user)
+{return xuiMsgTipSetCloseOwned(tip,callback,user,NULL);}
 
 XUI_API xui_widget xuiMsgTipGetWidget(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->pWidget : NULL;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return NULL;
+	return (__xuiMsgTipValid(pTip) ? pTip->pWidget : NULL);
 }
 
 XUI_API xui_rect_t xuiMsgTipGetTipRect(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->tTipRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return (xui_rect_t){0};
+	return (__xuiMsgTipValid(pTip) ? pTip->tTipRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f});
 }
 
 XUI_API xui_rect_t xuiMsgTipGetIconRect(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->tIconRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return (xui_rect_t){0};
+	return (__xuiMsgTipValid(pTip) ? pTip->tIconRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f});
 }
 
 XUI_API xui_rect_t xuiMsgTipGetTextRect(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->tTextRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return (xui_rect_t){0};
+	return (__xuiMsgTipValid(pTip) ? pTip->tTextRect : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f});
 }
 
 XUI_API int xuiMsgTipGetWrapLineCount(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iWrapLineCount : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iWrapLineCount : 0);
 }
 
 XUI_API int xuiMsgTipGetShowCount(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iShowCount : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iShowCount : 0);
 }
 
 XUI_API int xuiMsgTipGetCloseCount(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iCloseCount : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iCloseCount : 0);
 }
 
 XUI_API int xuiMsgTipGetExpireCount(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iExpireCount : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iExpireCount : 0);
 }
 
 XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip)
 {
-	return __xuiMsgTipValid(pTip) ? pTip->iChangeCount : 0;
+    int readStatus=xuiInternalManagerReadStatus(pTip ? &pTip->tOwned:NULL);
+    if(readStatus!=XUI_OK)return 0;
+	return (__xuiMsgTipValid(pTip) ? pTip->iChangeCount : 0);
 }
 
 #endif

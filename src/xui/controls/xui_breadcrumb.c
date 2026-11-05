@@ -1238,7 +1238,7 @@ XUI_API xui_widget_type xuiBreadcrumbGetType(xui_context pContext)
 	pType = xuiWidgetFindType(pContext, "breadcrumb");
 	if ( pType != NULL ) {
 		__xuiBreadcrumbRegisterStyleProperties(pContext, pType);
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1259,10 +1259,13 @@ XUI_API xui_widget_type xuiBreadcrumbGetType(xui_context pContext)
 	__xuiBreadcrumbRegisterStyleProperties(pContext, pType);
 	    static const size_t fontOffsets[]={offsetof(xui_breadcrumb_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_breadcrumb_data_t,pSeparatorIcon)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
-XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, const xui_breadcrumb_desc_t* pDesc)
+static int __xuiBreadcrumbCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_breadcrumb_desc_t* pDesc, xui_widget pOwner)
 {
 	xui_widget_type pType;
 
@@ -1271,7 +1274,15 @@ XUI_API int xuiBreadcrumbCreate(xui_context pContext, xui_widget* ppWidget, cons
 	if ( !__xuiBreadcrumbDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pType = xuiBreadcrumbGetType(pContext);
 	if ( pType == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return pOwner ? xuiInternalWidgetCreatePart(pOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc);
+}
+XUI_API int xuiBreadcrumbCreate(xui_context pContext,xui_widget* ppWidget,const xui_breadcrumb_desc_t* pDesc)
+{return __xuiBreadcrumbCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalBreadcrumbCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_breadcrumb_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    return context ? __xuiBreadcrumbCreateWithOwner(context,ppWidget,pDesc,pOwner):XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiBreadcrumbSetClickOwned(xui_widget pWidget,xui_breadcrumb_click_proc onClick,void* pUser,const xui_callback_owner_t* pOwner)
@@ -1469,18 +1480,22 @@ XUI_API int xuiBreadcrumbSetSeparatorIcon(xui_widget pWidget, xui_surface pSurfa
 	     pData->fSeparatorIconSize == fIconSize ) {
 		return XUI_OK;
 	}
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    iRet=xuiInternalSurfaceSlotPrepare(pWidget->pContext,&pData->pSeparatorIcon,pSurface,pWidget->bTypeInitialized!=0,false,&surfaceUpdate);
+    if(iRet!=XUI_OK)return iRet;
 	iRet = __xuiBreadcrumbCancelPress(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
 	pData = __xuiBreadcrumbGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->pSeparatorIcon = pSurface;
+	if ( pData == NULL ) return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_ERROR_INVALID_ARGUMENT);
+    iRet=xuiInternalSurfaceSlotPublish(&surfaceUpdate);
+    if(iRet!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,iRet);
 	pData->tSeparatorIconSrc = tSrc;
 	pData->fSeparatorIconSize = fIconSize;
 	if ( pSurface == NULL ) pData->bSeparatorMeasureDirty = 1;
 	pData->bSeparatorIconGenerationValid = __xuiBreadcrumbReadSurfaceGeneration(pWidget,
 		pData->pSeparatorIcon, &pData->iSeparatorIconGeneration);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_surface xuiBreadcrumbGetSeparatorIcon(xui_widget pWidget)

@@ -96,7 +96,7 @@ XUI_API int xuiBuiltinAssetGetRect(const char* sName, xui_rect_t* pRect)
 	return XUI_ERROR_FILE_NOT_FOUND;
 }
 
-XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface)
+static int __xuiBuiltinAssetGetAtlasOperation(xui_context pContext, xui_surface* ppSurface)
 {
 	xui_proxy pProxy;
 	xui_resource pResource;
@@ -142,26 +142,52 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 		g_iXuiBuiltinAtlasWidth, g_iXuiBuiltinAtlasHeight, pPixels,
 		g_iXuiBuiltinAtlasStride, XUI_SURFACE_ALPHA_PREMULTIPLIED);
 	xrtFree(pPixels);
-	if ( iRet != XUI_OK || pSurface == NULL ) {
-		if ( pSurface != NULL && pProxy->surfaceDestroy != NULL )
-			pProxy->surfaceDestroy(pProxy, pSurface);
-		return (iRet != XUI_OK) ? iRet : XUI_ERROR_BACKEND_FAILED;
-	}
+    if(iRet!=XUI_OK || !pSurface){
+        if(iRet==XUI_OK)iRet=XUI_ERROR_BACKEND_FAILED;
+        xerror* first=xrtTakeError();
+        if(pSurface){
+            if(pContext->pOwnedProxy)xuiInternalContextCleanupOutcome(pContext,xuiSurfaceReleaseChecked(pSurface),&iRet,&first);
+            else if(pProxy->surfaceDestroy)pProxy->surfaceDestroy(pProxy,pSurface);
+        }
+        xrtSetErrorTake(first);return iRet;
+    }
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = XUI_BUILTIN_ATLAS_RESOURCE_NAME;
 	tDesc.iKind = XUI_RESOURCE_SURFACE;
 	tDesc.pHandle = pSurface;
-	tDesc.onDestroy = __xuiBuiltinAssetAtlasDestroy;
-	iRet = xuiResourceSet(pContext, &pResource, &tDesc);
-	if ( iRet != XUI_OK ) {
-		if ( pSurface != NULL ) {
-			pProxy->surfaceDestroy(pProxy, pSurface);
-		}
-		return iRet;
-	}
-	*ppSurface = pSurface;
-	return XUI_OK;
+    tDesc.onDestroy=pContext->pOwnedProxy ? NULL:__xuiBuiltinAssetAtlasDestroy;
+    iRet=xuiResourceSet(pContext,&pResource,&tDesc);
+    xerror* first=iRet!=XUI_OK ? xrtTakeError():NULL;
+    if(pContext->pOwnedProxy){
+        /* The registry retained its own real Surface reference. Consume this
+         * synchronous, creator-affine producer owner on success or failure. */
+        xuiInternalContextCleanupOutcome(pContext,xuiSurfaceReleaseChecked(pSurface),&iRet,&first);
+    }else if(iRet!=XUI_OK && pSurface)pProxy->surfaceDestroy(pProxy,pSurface);
+    if(iRet==XUI_OK)*ppSurface=pSurface;
+    xrtSetErrorTake(first);return iRet;
+}
+
+typedef struct xui_asset_output_watch_t {bool dead;xui_surface* output;} xui_asset_output_watch_t;
+static void __xuiBuiltinAssetContextInvalidated(void* raw)
+{xui_asset_output_watch_t* watch=raw;watch->dead=true;*watch->output=NULL;}
+XUI_API int xuiBuiltinAssetGetAtlas(xui_context context,xui_surface* output)
+{
+    if(output)*output=NULL;
+    if(!xuiInternalContextIsValid(context) || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    xui_lifetime_link_t link={0};xui_asset_output_watch_t watch={false,output};
+    status=xuiContextLifetimeWatch(context,&link,__xuiBuiltinAssetContextInvalidated,&watch);
+    if(status==XUI_OK)status=__xuiBuiltinAssetGetAtlasOperation(context,output);
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
+    xuiLifetimeUnwatch(&link);
+    if(status==XUI_OK && (watch.dead || context->bCloseRequested)){
+        xrtErrorFree(first);first=NULL;status=XUI_ERROR_INVALID_STATE;
+    }
+    if(status!=XUI_OK)*output=NULL;
+    xrtSetErrorTake(first);return status;
 }
 
 #endif

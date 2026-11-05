@@ -1579,7 +1579,7 @@ XUI_API xui_widget_type xuiProgressGetType(xui_context pContext)
 	if ( pType != NULL ) {
 		__xuiProgressRegisterStyleProperties(pContext, pType);
 		pType->pAccessibleAdapter = &g_xuiProgressAccessible;
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1602,6 +1602,9 @@ XUI_API xui_widget_type xuiProgressGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiProgressAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_progress_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_progress_data_t,tTrackPatch.pSurface),offsetof(xui_progress_data_t,tFillPatch.pSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
@@ -2080,56 +2083,36 @@ XUI_API int xuiProgressGetFillDirection(xui_widget pWidget)
 
 XUI_API int xuiProgressSetTrackPatch(xui_widget pWidget, const xui_nine_patch_t* pPatch)
 {
-	xui_progress_data_t* pData;
-	xui_nine_patch_t tPatch;
-	uint32_t iGeneration;
-	int bGenerationValid;
-	int iRet;
-
-	if ( !__xuiProgressPatchValid(pPatch) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pData = __xuiProgressGetData(pWidget);
-	if ( pData == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pPatch != NULL ) {
-		tPatch = *pPatch;
-		__xuiProgressNormalizePatch(&tPatch);
-		if ( pData->bHasTrackPatch &&
-		     __xuiProgressPatchEqual(&pData->tTrackPatch, &tPatch) ) {
-			iGeneration = pData->iTrackSurfaceGeneration;
-			bGenerationValid = pData->bTrackSurfaceGenerationValid;
-			if ( !__xuiProgressUpdatePatchGeneration(pWidget, 1,
-				&pData->tTrackPatch, &iGeneration,
-				&bGenerationValid) ) return XUI_OK;
-			iRet = xuiWidgetInvalidate(pWidget,
-				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-			if ( iRet != XUI_OK ) return iRet;
-			pData->iTrackSurfaceGeneration = iGeneration;
-			pData->bTrackSurfaceGenerationValid = bGenerationValid;
-			return XUI_OK;
-		}
-		iGeneration = 0u;
-		bGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
-			tPatch.pSurface, &iGeneration);
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) return iRet;
-		pData->tTrackPatch = tPatch;
-		pData->bHasTrackPatch = 1;
-		pData->iTrackSurfaceGeneration = iGeneration;
-		pData->bTrackSurfaceGenerationValid = bGenerationValid;
-	} else {
-		if ( !pData->bHasTrackPatch ) return XUI_OK;
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) return iRet;
-		memset(&pData->tTrackPatch, 0, sizeof(pData->tTrackPatch));
-		pData->bHasTrackPatch = 0;
-		pData->bTrackSurfaceGenerationValid = 0;
-	}
-	return XUI_OK;
+    if(!__xuiProgressPatchValid(pPatch))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_progress_data_t* pData=__xuiProgressGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!pPatch && !pData->bHasTrackPatch)return XUI_OK;
+    xui_nine_patch_t tPatch={0};
+    if(pPatch){tPatch=*pPatch;__xuiProgressNormalizePatch(&tPatch);}
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int status=xuiInternalSurfaceSlotPrepare(pWidget->pContext,&pData->tTrackPatch.pSurface,
+        tPatch.pSurface,pWidget->bTypeInitialized!=0,false,&surfaceUpdate);
+    if(status!=XUI_OK)return status;
+    uint32_t generation=0u;
+    int generationValid=0;
+    if(pPatch){
+        if(pData->bHasTrackPatch && __xuiProgressPatchEqual(&pData->tTrackPatch,&tPatch)){
+            generation=pData->iTrackSurfaceGeneration;
+            generationValid=pData->bTrackSurfaceGenerationValid;
+            if(!__xuiProgressUpdatePatchGeneration(pWidget,1,&pData->tTrackPatch,&generation,&generationValid))
+                return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
+        }else generationValid=__xuiProgressReadSurfaceGeneration(pWidget,tPatch.pSurface,&generation);
+        if(xrtGetError())return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_ERROR_CALLBACK_FAILED);
+    }
+    status=xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+    if(status!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,status);
+    status=xuiInternalSurfaceSlotPublish(&surfaceUpdate);
+    if(status!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,status);
+    pData->tTrackPatch=tPatch;
+    pData->bHasTrackPatch=pPatch!=NULL;
+    pData->iTrackSurfaceGeneration=generation;
+    pData->bTrackSurfaceGenerationValid=generationValid;
+    return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
 }
 
 XUI_API int xuiProgressClearTrackPatch(xui_widget pWidget)
@@ -2163,56 +2146,36 @@ XUI_API int xuiProgressGetTrackPatch(xui_widget pWidget, xui_nine_patch_t* pPatc
 
 XUI_API int xuiProgressSetFillPatch(xui_widget pWidget, const xui_nine_patch_t* pPatch)
 {
-	xui_progress_data_t* pData;
-	xui_nine_patch_t tPatch;
-	uint32_t iGeneration;
-	int bGenerationValid;
-	int iRet;
-
-	if ( !__xuiProgressPatchValid(pPatch) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pData = __xuiProgressGetData(pWidget);
-	if ( pData == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pPatch != NULL ) {
-		tPatch = *pPatch;
-		__xuiProgressNormalizePatch(&tPatch);
-		if ( pData->bHasFillPatch &&
-		     __xuiProgressPatchEqual(&pData->tFillPatch, &tPatch) ) {
-			iGeneration = pData->iFillSurfaceGeneration;
-			bGenerationValid = pData->bFillSurfaceGenerationValid;
-			if ( !__xuiProgressUpdatePatchGeneration(pWidget, 1,
-				&pData->tFillPatch, &iGeneration,
-				&bGenerationValid) ) return XUI_OK;
-			iRet = xuiWidgetInvalidate(pWidget,
-				XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-			if ( iRet != XUI_OK ) return iRet;
-			pData->iFillSurfaceGeneration = iGeneration;
-			pData->bFillSurfaceGenerationValid = bGenerationValid;
-			return XUI_OK;
-		}
-		iGeneration = 0u;
-		bGenerationValid = __xuiProgressReadSurfaceGeneration(pWidget,
-			tPatch.pSurface, &iGeneration);
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) return iRet;
-		pData->tFillPatch = tPatch;
-		pData->bHasFillPatch = 1;
-		pData->iFillSurfaceGeneration = iGeneration;
-		pData->bFillSurfaceGenerationValid = bGenerationValid;
-	} else {
-		if ( !pData->bHasFillPatch ) return XUI_OK;
-		iRet = xuiWidgetInvalidate(pWidget,
-			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) return iRet;
-		memset(&pData->tFillPatch, 0, sizeof(pData->tFillPatch));
-		pData->bHasFillPatch = 0;
-		pData->bFillSurfaceGenerationValid = 0;
-	}
-	return XUI_OK;
+    if(!__xuiProgressPatchValid(pPatch))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_progress_data_t* pData=__xuiProgressGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!pPatch && !pData->bHasFillPatch)return XUI_OK;
+    xui_nine_patch_t tPatch={0};
+    if(pPatch){tPatch=*pPatch;__xuiProgressNormalizePatch(&tPatch);}
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int status=xuiInternalSurfaceSlotPrepare(pWidget->pContext,&pData->tFillPatch.pSurface,
+        tPatch.pSurface,pWidget->bTypeInitialized!=0,false,&surfaceUpdate);
+    if(status!=XUI_OK)return status;
+    uint32_t generation=0u;
+    int generationValid=0;
+    if(pPatch){
+        if(pData->bHasFillPatch && __xuiProgressPatchEqual(&pData->tFillPatch,&tPatch)){
+            generation=pData->iFillSurfaceGeneration;
+            generationValid=pData->bFillSurfaceGenerationValid;
+            if(!__xuiProgressUpdatePatchGeneration(pWidget,1,&pData->tFillPatch,&generation,&generationValid))
+                return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
+        }else generationValid=__xuiProgressReadSurfaceGeneration(pWidget,tPatch.pSurface,&generation);
+        if(xrtGetError())return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_ERROR_CALLBACK_FAILED);
+    }
+    status=xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+    if(status!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,status);
+    status=xuiInternalSurfaceSlotPublish(&surfaceUpdate);
+    if(status!=XUI_OK)return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,status);
+    pData->tFillPatch=tPatch;
+    pData->bHasFillPatch=pPatch!=NULL;
+    pData->iFillSurfaceGeneration=generation;
+    pData->bFillSurfaceGenerationValid=generationValid;
+    return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,XUI_OK);
 }
 
 XUI_API int xuiProgressClearFillPatch(xui_widget pWidget)

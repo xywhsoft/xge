@@ -37,8 +37,10 @@ struct xui_resource_t {
 	uint32_t iGeneration;
 	uint32_t iCascadeMark;
 	int iRefCount;
+    uint32_t iOwnershipFlags;
 	xui_resource_dependency_t* pDependencies;
 };
+enum { XUI_RESOURCE_OWNS_SURFACE=1u, XUI_RESOURCE_OWNS_FONT=2u, XUI_RESOURCE_UPDATING=4u };
 
 struct xui_resource_dependency_t {
 	xui_resource pResource;
@@ -954,20 +956,42 @@ void xuiInternalOperationEnter(xui_context pContext)
 	}
 }
 
-XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope)
+/* A diagnostic restored by an independently ended outer receipt is still an
+ * inherited ambient value in the remaining receipts, not a new failure. */
+static bool __xuiContextHasAmbient(xui_context context,const xerror* error)
+{
+    if(!error)return false;
+    for(xui_call_scope_t* scope=context->pCallScopes;scope;scope=scope->pNext)
+        if(scope->iResult==XUI_OK && scope->_pFirstError==error)return true;
+    return false;
+}
+static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,bool closing)
 {
 	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return XUI_ERROR_BUSY;
 	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pScope->pPrevious != NULL ||
-		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pScope->_pFirstError != NULL || pContext->bDestroying ||
-		pContext->bDestroyPending || pContext->iOperationDepth == INT_MAX ) return XUI_ERROR_INVALID_STATE;
+		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pScope->_pFirstError != NULL ||
+        (!closing && (pContext->bDestroying || pContext->bDestroyPending || pContext->bCloseRequested)) ||
+        pContext->iOperationDepth == INT_MAX ) return XUI_ERROR_INVALID_STATE;
+    /* Capture a new diagnostic for its actual enclosing operations before a
+     * child hides it. This also permits balanced receipts to end out of order. */
+    if(!__xuiContextHasAmbient(pContext,xrtGetError())){
+        xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
+    }
 	pScope->pContext = pContext;
 	pScope->pSelf = pScope;
 	pScope->pNext = pContext->pCallScopes;
 	if ( pScope->pNext != NULL ) pScope->pNext->pPrevious = pScope;
 	pContext->pCallScopes = pScope;
+    pScope->_pFirstError=xrtTakeError();
 	xuiInternalOperationEnter(pContext);
 	return XUI_OK;
 }
+
+XUI_API int xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope)
+{return __xuiCallScopeBegin(pContext,pScope,false);}
+int xuiInternalCleanupCallScopeBegin(xui_context context,xui_call_scope_t* scope)
+{return __xuiCallScopeBegin(context,scope,true);}
 
 XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 {
@@ -975,22 +999,41 @@ XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pScope->pContext == NULL && pScope->pSelf == NULL && pScope->pPrevious == NULL &&
 		pScope->pNext == NULL && pScope->iResult == XUI_OK && !pScope->bEnding && pScope->_pFirstError == NULL ) return XUI_OK;
-	if ( pScope->pSelf != pScope || pScope->pContext == NULL || pScope->bEnding ) return XUI_ERROR_INVALID_STATE;
+	if ( pScope->pSelf != pScope || pScope->pContext == NULL || (pScope->bEnding&XUI_CALL_SCOPE_ENDING) ) return XUI_ERROR_INVALID_STATE;
 	pContext = pScope->pContext;
-	pScope->bEnding = 1;
-    xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
+    if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return XUI_ERROR_BUSY;
+	pScope->bEnding |= XUI_CALL_SCOPE_ENDING;
+    xerror* inheritedAmbient=__xuiContextHasAmbient(pContext,xrtGetError()) ? xrtErrorRef(xrtGetError()):NULL;
+    if(!inheritedAmbient){
+        xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
+    }
 	xuiInternalOperationLeave(pContext);
 	/* Destruction clears pContext in every still-linked receipt before free.
 	 * Keep this receipt linked during Leave, including final native cleanup. */
 	if ( pScope->pContext != NULL ) {
+        if(pScope->pPrevious && pScope->pPrevious->iResult==XUI_OK){
+            /* Its entry ambient belonged to this operation. Move the ending
+             * receipt's outcome into that inherited slot, retaining exactly
+             * one owner until the remaining nested operation ends. */
+            xerror* inherited=xrtErrorRef(pScope->_pFirstError);
+            xrtErrorFree(pScope->pPrevious->_pFirstError);
+            pScope->pPrevious->_pFirstError=inherited;
+        }
 		if ( pScope->pPrevious != NULL ) pScope->pPrevious->pNext = pScope->pNext;
 		else pContext->pCallScopes = pScope->pNext;
 		if ( pScope->pNext != NULL ) pScope->pNext->pPrevious = pScope->pPrevious;
 	}
+    /* A legacy void destructor may leave only TLS. Capture that new tail
+     * diagnostic before restoring the entry ambient value, even after the
+     * Context invalidated all linked receipts during physical destruction. */
+    if(xrtGetError()!=inheritedAmbient && !(pScope->iResult==XUI_OK && pScope->_pFirstError==xrtGetError())){
+        xuiInternalCallScopeRecordOutcome(pScope,XUI_OK,xrtGetError());
+    }
 	int iResult = pScope->iResult;
     xerror* first=pScope->_pFirstError;
+	xrtErrorFree(inheritedAmbient);
 	memset(pScope, 0, sizeof(*pScope));
-    if(iResult!=XUI_OK)xrtSetErrorTake(first);
+    xrtSetErrorTake(first);
 	return iResult;
 }
 
@@ -1010,24 +1053,39 @@ void xuiInternalOperationLeave(xui_context pContext)
 			__xuiContextDestroyNow(pContext);
 			return;
 		}
-		if ( pContext->pStateChangeHead != NULL ) {
+        if(pContext->iDestroyOwnership==1){
+            /* Void native close relinquished its unique owner. The Context
+             * itself keeps that exact responsibility until true preparation
+             * finishes; no raw handle or code observation is discarded. */
+            bool consumed=false;(void)xuiDestroyOwnerChecked(pContext,&consumed);
+            return; /* It may have freed the Context; never inspect it again. */
+        }
+		if ( pContext->pStateChangeHead != NULL && !pContext->bCloseRequested ) {
 			/* State callbacks are part of the operation that produced the change. */
 			pContext->iOperationDepth = 1;
 			xuiInternalStateChangeFlush(pContext);
 			pContext->iOperationDepth = 0;
 			continue;
 		}
-		if ( pContext->pDeferredDestroyHead != NULL ) {
-			xuiInternalWidgetDestroyFlush(pContext);
-			continue;
-		}
+        if(pContext->pDeferredDestroyHead && xuiInternalWidgetDestroyFlush(pContext))continue;
+        if(pContext->pPendingManagers) {
+            pContext->iOperationDepth=1;
+            bool progressed=xuiInternalContextDrainManagers(pContext);
+            pContext->iOperationDepth=0;
+            if(!progressed)break;
+            continue;
+        }
 		break;
 	}
 }
 
 int xuiInternalContextDestroyPending(xui_context pContext)
 {
-	return __xuiContextValid(pContext) && pContext->bDestroyPending;
+	/* Business transactions stop at logical close. Physical consumption may
+     * wait for checked preparation, but must never reopen adapter publication,
+     * event dispatch or rendering in that interval. */
+	return __xuiContextValid(pContext) &&
+        (pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying);
 }
 
 int xuiInternalContextHasProxy(xui_context pContext)
@@ -1227,6 +1285,7 @@ static void __xuiResourceDestroyOne(xui_resource pResource)
 	if ( !__xuiResourceValid(pResource) ) {
 		return;
 	}
+    pResource->iMagic=0;
 	pDependency = pResource->pDependencies;
 	while ( pDependency != NULL ) {
 		pNextDependency = pDependency->pNext;
@@ -1234,13 +1293,18 @@ static void __xuiResourceDestroyOne(xui_resource pResource)
 		pDependency = pNextDependency;
 	}
 	pResource->pDependencies = NULL;
-	if ( pResource->onDestroy != NULL ) {
+    if(pResource->iOwnershipFlags&XUI_RESOURCE_OWNS_SURFACE){
+        xui_surface surface=pResource->pHandle;pResource->pHandle=NULL;pResource->iOwnershipFlags=0;
+        if(surface)(void)xuiInternalSurfaceRelease(pResource->pContext,surface);
+    }else if(pResource->iOwnershipFlags&XUI_RESOURCE_OWNS_FONT){
+        xui_font font=pResource->pHandle;pResource->pHandle=NULL;pResource->iOwnershipFlags=0;
+        if(font)(void)xuiInternalFontRelease(pResource->pContext,font);
+    }else if ( pResource->onDestroy != NULL ) {
 		pResource->onDestroy(pResource->pContext, pResource->pHandle, pResource->pUser);
 	}
 	if ( pResource->sName != NULL ) {
 		xrtFree(pResource->sName);
 	}
-	pResource->iMagic = 0;
 	xrtFree(pResource);
 }
 
@@ -1283,12 +1347,22 @@ void xuiInternalContextDestroyResources(xui_context pContext)
 		return;
 	}
 	pResource = pContext->pResources;
+    pContext->pResources=NULL;
 	while ( pResource != NULL ) {
 		pNext = pResource->pNext;
 		__xuiResourceDestroyOne(pResource);
 		pResource = pNext;
 	}
-	pContext->pResources = NULL;
+}
+
+bool xuiInternalContextTraceRegistry(xui_context context,xrtownershipvisitor visit,void* user)
+{
+    for(xui_resource resource=context->pResources;resource;resource=resource->pNext){
+        if(!resource->pHandle)continue;
+        if((resource->iOwnershipFlags&XUI_RESOURCE_OWNS_SURFACE) && !visit(xuiSurfaceOwnership(resource->pHandle),user))return false;
+        if((resource->iOwnershipFlags&XUI_RESOURCE_OWNS_FONT) && !visit(xuiFontOwnership(resource->pHandle),user))return false;
+    }
+    return true;
 }
 
 static int __xuiContextWidgetContains(xui_widget pRoot, xui_widget pWidget)
@@ -1693,7 +1767,7 @@ XUI_API int xuiGetInteractionPolicy(xui_context pContext, xui_interaction_policy
 	return XUI_OK;
 }
 
-XUI_API int xuiCreate(xui_context* ppContext)
+static int __xuiCreateContext(xui_context* ppContext)
 {
 	xui_context pContext;
 
@@ -1749,6 +1823,46 @@ XUI_API int xuiCreate(xui_context* ppContext)
 	pContext->tChromeStyle.fShadowSize = 8.0f;
 	*ppContext = pContext;
 	return XUI_OK;
+}
+
+XUI_API int xuiCreate(xui_context* ppContext)
+{return __xuiCreateContext(ppContext);}
+
+XUI_API int xuiCreateOwned(xui_proxy pProxy,xui_context* ppContext)
+{
+    if(!ppContext)return XUI_ERROR_INVALID_ARGUMENT;
+    *ppContext=NULL;
+    if(!xuiProxyIsOwned(pProxy))return XUI_ERROR_INVALID_ARGUMENT;
+    /* SetProxyOwned retains the candidate backend before invoking getCaps.
+     * Each real graph publication uses its own mutation gate; do not keep a
+     * global mutation interval open across an arbitrary backend callback. */
+    xui_context context=NULL;
+    int status=xuiInternalProxyReady(pProxy) ? __xuiCreateContext(&context):XUI_ERROR_BUSY;
+    if(status==XUI_OK)status=xuiSetProxyOwned(context,pProxy);
+    if(status==XUI_OK)*ppContext=context;
+    else if(context){
+        /* This unpublished Context has no external owners or active calls.
+         * Roll back directly through the normal physical destructor, rather
+         * than enqueueing an unobservable owner for a later retry. Preserve
+         * the first operation outcome even when its diagnostic is NULL. */
+        xerror* first=xrtTakeError();__xuiContextDestroyNow(context);
+        xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);
+    }
+    return status;
+}
+
+XUI_API xui_proxy xuiGetProxyOwned(xui_context pContext)
+{return __xuiContextValid(pContext) && !pContext->bCloseRequested && !pContext->bDestroyPending && !pContext->bDestroying ? pContext->pOwnedProxy:NULL;}
+
+XUI_API int xuiRequestClose(xui_context context)
+{
+    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bDestroying || context->bDestroyPending)return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    context->bCloseRequested=1;
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    return XUI_OK;
 }
 
 static void __xuiContextDestroyFonts(xui_context pContext)
@@ -1809,6 +1923,7 @@ static void __xuiContextDestroyNow(xui_context pContext)
 		pContext->onImeDetach = NULL;
 	}
 	xuiInternalDragTransferShutdown(pContext);
+    xuiInternalContextDestroyManagers(pContext);
 	if ( pContext->pRoot != NULL ) {
 		xuiWidgetDestroy(pContext->pRoot);
 		pContext->pRoot = NULL;
@@ -1849,24 +1964,52 @@ static void __xuiContextDestroyNow(xui_context pContext)
     if(receipt.iResult!=XUI_OK)xrtSetErrorTake(receipt._pFirstError);
 }
 
-XUI_API int xuiDestroyOwnerChecked(xui_context pContext,bool* pConsumed)
+XUI_API int xuiDestroyOwnerChecked(xui_context context,bool* consumed)
 {
-    if(!pConsumed)return XUI_ERROR_INVALID_ARGUMENT;
-    *pConsumed=false;
-    if(!__xuiContextValid(pContext))return XUI_ERROR_INVALID_ARGUMENT;
-    if(pContext->bDestroying || pContext->bDestroyPending)return XUI_ERROR_INVALID_STATE;
-    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(pContext,&scope);
-    if(result!=XUI_OK)return result;
-    pContext->bDestroyPending=1;*pConsumed=true;
-    xuiInternalContextInvalidateLifetimes(pContext);
-    return xuiCallScopeEnd(&scope);
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bDestroying || context->bDestroyPending || context->iDestroyOwnership==2)return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    int result=xuiRequestClose(context);if(result!=XUI_OK)return result;
+    /* Deep graph readiness and idle destruction are different questions.
+     * Independent cache owners can become ready only after another widget is
+     * actually prepared (for example a custom backend's LIFO Draw stack).
+     * Active native C stacks still block every destructive preparation. */
+    if(context->iOperationDepth || context->iWidgetCallbackDepth || context->iDestroyFlushDepth)
+        return XUI_STATUS_DEFERRED;
+    bool selfPending=context->iDestroyOwnership==1;
+    if(selfPending)context->iDestroyOwnership=2;
+    xui_call_scope_t scope={0};result=xuiInternalCleanupCallScopeBegin(context,&scope);
+    if(result!=XUI_OK){if(selfPending)context->iDestroyOwnership=1;return result;}
+    bool complete=false;result=xuiInternalContextPrepareDestroy(context,&complete);
+    xerror* first=xrtTakeError();
+    if(result>=0 && first)result=XUI_ERROR_CALLBACK_FAILED;
+    /* Pure waiting is not a failure receipt. Actual negative cleanup results
+     * stay independent of completion and of a possibly NULL diagnostic. */
+    int failure=result<0 ? result:XUI_OK;
+    xuiInternalCallScopeRecordOutcome(&scope,failure,first);
+    if((selfPending || complete) && failure!=XUI_OK)xuiInternalContextRecordOutcome(context,failure,first);
+    if(complete){context->bDestroyPending=1;*consumed=true;}
+    int ended=xuiInternalCallScopeEndOutcome(&scope,failure,&first);
+    if(selfPending && !complete)context->iDestroyOwnership=1;
+    xrtSetErrorTake(first);
+    return ended==XUI_OK && !complete ? XUI_STATUS_DEFERRED:ended;
 }
 XUI_API int xuiDestroyChecked(xui_context pContext)
 {bool consumed=false;return xuiDestroyOwnerChecked(pContext,&consumed);}
-XUI_API void xuiDestroy(xui_context pContext)
+XUI_API void xuiDestroy(xui_context context)
 {
-    if(__xuiContextValid(pContext) && !pContext->bDestroying && !pContext->bDestroyPending)
-        (void)xuiDestroyChecked(pContext);
+    if(!__xuiContextValid(context) || context->bDestroying || context->bDestroyPending || context->iDestroyOwnership==2)return;
+    int status=xuiRequestClose(context);
+    if(status!=XUI_OK){
+        if(!xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",status,"Native Context close was refused.");
+        return;
+    }
+    context->iDestroyOwnership=1;
+    if(!context->iOperationDepth && !context->iWidgetCallbackDepth && !context->iDestroyFlushDepth){
+        bool consumed=false;(void)xuiDestroyOwnerChecked(context,&consumed);
+    }
 }
 
 XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))
@@ -1901,12 +2044,20 @@ XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy)
 XUI_API int xuiSetProxyOwned(xui_context pContext,xui_proxy pProxy)
 {
     if(!__xuiContextValid(pContext) || !xuiProxyIsOwned(pProxy))return XUI_ERROR_INVALID_ARGUMENT;
+    pProxy=xuiInternalProxyCanonical(pProxy);
+    if(!xuiInternalProxyReady(pProxy))return XUI_ERROR_BUSY;
+    if(pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(pContext->pOwnedProxy)return pContext->pOwnedProxy==pProxy ? XUI_OK:XUI_ERROR_ALREADY_INITIALIZED;
     if(pContext->bHasProxy)return XUI_ERROR_ALREADY_INITIALIZED;
+    /* Legacy backend-less contexts may bind only before they acquire slots
+     * whose old contract was borrowed. Safe language factories bind first. */
+    if(pContext->pAllWidgets || pContext->pResources || pContext->pDefaultFont || pContext->iFontCount)
+        return XUI_ERROR_INVALID_STATE;
     xui_call_scope_t scope={0};int result=xuiCallScopeBegin(pContext,&scope);if(result!=XUI_OK)return result;
     result=xuiProxyAddRef(pProxy);bool retained=result==XUI_OK;
     xui_proxy_caps_t caps={0};
     if(result==XUI_OK)result=__xuiContextValidateProxy(pProxy,&caps);
-    if(result==XUI_OK && (pContext->bDestroyPending || pContext->bDestroying || pContext->bHasProxy))result=XUI_ERROR_INVALID_STATE;
+    if(result==XUI_OK && (pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying || pContext->bHasProxy))result=XUI_ERROR_INVALID_STATE;
     if(result==XUI_OK){
         xrtownershipscope mutation={0};
         if(!xrtOwnershipMutationBegin(&mutation))result=XUI_ERROR_INVALID_STATE;
@@ -2326,81 +2477,72 @@ XUI_API void xuiClearDamage(xui_context pContext)
 	pContext->iDamageCount = 0;
 }
 
-XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const xui_resource_desc_t* pDesc)
+XUI_API int xuiResourceSet(xui_context context,xui_resource* output,const xui_resource_desc_t* desc)
 {
-	xui_resource pResource;
-	xui_resource pExisting;
-	xui_resource pPrev;
-	char* sName;
-
-	if ( ppResource != NULL ) {
-		*ppResource = NULL;
-	}
-	if ( !__xuiContextValid(pContext) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
-	     (pDesc->sName == NULL) || (pDesc->sName[0] == '\0') || (pDesc->iKind <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pPrev = NULL;
-	pExisting = NULL;
-	for ( pResource = pContext->pResources; pResource != NULL;
-	      pResource = pResource->pNext ) {
-		if ( strcmp(pResource->sName, pDesc->sName) == 0 ) {
-			pExisting = pResource;
-			break;
-		}
-		pPrev = pResource;
-	}
-	if ( pExisting != NULL && pExisting->iKind == pDesc->iKind &&
-	     pExisting->pHandle == pDesc->pHandle &&
-	     pExisting->pUser == pDesc->pUser &&
-	     pExisting->onDestroy == pDesc->onDestroy ) {
-		if ( ppResource != NULL ) *ppResource = pExisting;
-		return XUI_OK;
-	}
-	if ( pExisting != NULL && pExisting->iRefCount != 1 ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
-	if ( pExisting != NULL && pExisting->pHandle != NULL &&
-	     pExisting->pHandle == pDesc->pHandle &&
-	     pExisting->onDestroy != NULL ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
-	sName = __xuiCoreStringDuplicate(pDesc->sName);
-	if ( sName == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	pResource = (xui_resource)xrtCalloc(1, sizeof(*pResource));
-	if ( pResource == NULL ) {
-		xrtFree(sName);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	if ( pExisting != NULL ) {
-		__xuiResourceCascadeChanged(pContext, pExisting);
-		if ( pPrev != NULL ) {
-			pPrev->pNext = pExisting->pNext;
-		} else {
-			pContext->pResources = pExisting->pNext;
-		}
-		__xuiResourceRemoveDependencyReferences(pContext, pExisting);
-		__xuiResourceDestroyOne(pExisting);
-	}
-	pResource->iMagic = XUI_RESOURCE_MAGIC;
-	pResource->pContext = pContext;
-	pResource->sName = sName;
-	pResource->iKind = pDesc->iKind;
-	pResource->pHandle = pDesc->pHandle;
-	pResource->pUser = pDesc->pUser;
-	pResource->onDestroy = pDesc->onDestroy;
-	pResource->iGeneration = __xuiResourceNextGeneration(pContext);
-	pResource->iRefCount = 1;
-	pResource->pNext = pContext->pResources;
-	pContext->pResources = pResource;
-	__xuiContextBumpGeneration(pContext);
-	__xuiResourceRegistryChanged(pContext);
-	if ( ppResource != NULL ) {
-		*ppResource = pResource;
-	}
-	return XUI_OK;
+    if(output)*output=NULL;
+    if(!__xuiContextValid(context) || !desc || desc->iSize<sizeof(*desc) || !desc->sName || !*desc->sName || desc->iKind<=0)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bCloseRequested || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyReady(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    uint32_t owned=0;
+    if(context->pOwnedProxy && (desc->iKind==XUI_RESOURCE_SURFACE || desc->iKind==XUI_RESOURCE_FONT)){
+        if(desc->onDestroy)return XUI_ERROR_INVALID_ARGUMENT;
+        owned=desc->iKind==XUI_RESOURCE_SURFACE ? XUI_RESOURCE_OWNS_SURFACE:XUI_RESOURCE_OWNS_FONT;
+    }
+    xui_resource existing=NULL,previous=NULL;
+    for(xui_resource scan=context->pResources;scan;scan=scan->pNext){
+        if(strcmp(scan->sName,desc->sName)==0){existing=scan;break;}previous=scan;
+    }
+    if(existing && (existing->iOwnershipFlags&XUI_RESOURCE_UPDATING))return XUI_ERROR_BUSY;
+    if(existing && existing->iKind==desc->iKind && existing->pHandle==desc->pHandle &&
+       existing->pUser==desc->pUser && existing->onDestroy==desc->onDestroy){if(output)*output=existing;return XUI_OK;}
+    if(existing && existing->iRefCount!=1)return XUI_ERROR_INVALID_STATE;
+    if(existing && existing->pHandle && existing->pHandle==desc->pHandle && existing->onDestroy)return XUI_ERROR_INVALID_STATE;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    xui_resource candidate=NULL;bool held=false,published=false;
+    char* name=__xuiCoreStringDuplicate(desc->sName);
+    if(!name){status=XUI_ERROR_OUT_OF_MEMORY;goto finish;}
+    candidate=xrtCalloc(1,sizeof(*candidate));
+    if(!candidate){status=XUI_ERROR_OUT_OF_MEMORY;goto finish;}
+    if(owned && desc->pHandle){
+        status=owned==XUI_RESOURCE_OWNS_SURFACE ? xuiInternalSurfaceAdmit(context,desc->pHandle):xuiInternalFontAdmit(context,desc->pHandle);
+        if(status!=XUI_OK)goto finish;
+        held=true;
+    }
+    candidate->iMagic=XUI_RESOURCE_MAGIC;candidate->pContext=context;candidate->sName=name;
+    candidate->iKind=desc->iKind;candidate->pHandle=desc->pHandle;candidate->pUser=desc->pUser;
+    candidate->onDestroy=desc->onDestroy;candidate->iRefCount=1;
+    candidate->iOwnershipFlags=owned|XUI_RESOURCE_UPDATING;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation)){status=XUI_ERROR_INVALID_STATE;goto finish;}
+    if(existing){
+        __xuiResourceCascadeChanged(context,existing);
+        if(previous)previous->pNext=existing->pNext;else context->pResources=existing->pNext;
+        __xuiResourceRemoveDependencyReferences(context,existing);
+    }
+    candidate->iGeneration=__xuiResourceNextGeneration(context);
+    candidate->pNext=context->pResources;context->pResources=candidate;published=true;
+    __xuiContextBumpGeneration(context);__xuiResourceRegistryChanged(context);
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    /* The complete new entry is visible while an old finalizer reenters.
+     * Same-name replacement/removal is BUSY until that cleanup has returned. */
+    if(existing)__xuiResourceDestroyOne(existing);
+    if(!xrtOwnershipMutationBegin(&mutation))abort();
+    candidate->iOwnershipFlags&=~XUI_RESOURCE_UPDATING;
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    if(context->bCloseRequested || context->bDestroyPending || context->bDestroying)status=XUI_ERROR_INVALID_STATE;
+    else if(output)*output=candidate;
+finish:
+    if(status==XUI_OK && xrtGetError())status=XUI_ERROR_CALLBACK_FAILED;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    xuiInternalCallScopeRecordOutcome(&scope,status,first);
+    if(!published){
+        if(held)xuiInternalContextCleanupOutcome(context,
+            owned==XUI_RESOURCE_OWNS_SURFACE ? xuiSurfaceReleaseChecked(desc->pHandle):xuiFontReleaseChecked(desc->pHandle),&status,&first);
+        xrtFree(candidate);xrtFree(name);
+    }
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
+    xrtSetErrorTake(first);return status;
 }
 
 XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName)
@@ -2418,40 +2560,31 @@ XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName)
 	return NULL;
 }
 
-XUI_API int xuiResourceRemove(xui_resource pResource)
+XUI_API int xuiResourceRemove(xui_resource resource)
 {
-	xui_context pContext;
-	xui_resource pScan;
-	xui_resource pPrev;
-
-	if ( !__xuiResourceValid(pResource) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pResource->iRefCount != 1 ) {
-		return XUI_ERROR_INVALID_STATE;
-	}
-	pContext = pResource->pContext;
-	if ( !__xuiContextValid(pContext) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pPrev = NULL;
-	for ( pScan = pContext->pResources; pScan != NULL; pScan = pScan->pNext ) {
-		if ( pScan == pResource ) {
-			__xuiResourceCascadeChanged(pContext, pScan);
-			if ( pPrev != NULL ) {
-				pPrev->pNext = pScan->pNext;
-			} else {
-				pContext->pResources = pScan->pNext;
-			}
-			__xuiResourceRemoveDependencyReferences(pContext, pScan);
-			__xuiResourceDestroyOne(pScan);
-			__xuiContextBumpGeneration(pContext);
-			__xuiResourceRegistryChanged(pContext);
-			return XUI_OK;
-		}
-		pPrev = pScan;
-	}
-	return XUI_ERROR_INVALID_ARGUMENT;
+    if(!__xuiResourceValid(resource))return XUI_ERROR_INVALID_ARGUMENT;
+    if(resource->iOwnershipFlags&XUI_RESOURCE_UPDATING)return XUI_ERROR_BUSY;
+    if(resource->iRefCount!=1)return XUI_ERROR_INVALID_STATE;
+    xui_context context=resource->pContext;
+    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bCloseRequested || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyReady(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xui_resource previous=NULL;
+    for(xui_resource scan=context->pResources;scan;scan=scan->pNext){
+        if(scan==resource){
+            xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+            xrtownershipscope mutation={0};
+            if(!xrtOwnershipMutationBegin(&mutation))return xuiCallScopeEnd(&scope)==XUI_OK ? XUI_ERROR_INVALID_STATE:XUI_ERROR_CALLBACK_FAILED;
+            __xuiResourceCascadeChanged(context,resource);
+            if(previous)previous->pNext=resource->pNext;else context->pResources=resource->pNext;
+            __xuiResourceRemoveDependencyReferences(context,resource);
+            __xuiContextBumpGeneration(context);__xuiResourceRegistryChanged(context);
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+            __xuiResourceDestroyOne(resource);return xuiCallScopeEnd(&scope);
+        }
+        previous=scan;
+    }
+    return XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiResourceTouch(xui_resource pResource)

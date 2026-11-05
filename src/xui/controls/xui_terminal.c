@@ -174,7 +174,7 @@ typedef struct xui_terminal_data_t {
 	uint8_t* pQueue;
 	uint8_t* pTabStops;
 	uint8_t* pDirtyRows;
-	xui_surface pLastCacheSurface;
+	uint32_t iLastCacheEpoch;
 	xui_font pBaseFont;
 	xui_font pFont;
 	xui_scroll_model_t tScroll;
@@ -6142,7 +6142,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 {
 	xui_terminal_data_t* pData;
 	xui_proxy pProxy;
-	xui_surface pCache;
+	uint32_t iCacheEpoch;
 	xui_rect_t tRect;
 	xui_rect_t tLineRect;
 	xui_rect_t tCursor;
@@ -6172,8 +6172,8 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	pCache = xuiWidgetGetCacheSurface(pWidget, iStateId);
-	if ( pCache != pData->pLastCacheSurface ) {
+	iCacheEpoch = pWidget->iCacheEpoch;
+	if ( iCacheEpoch != pData->iLastCacheEpoch ) {
 		__xuiTerminalMarkFullCacheDirty(pData);
 	}
 	__xuiTerminalResolveStyle(pWidget, pData);
@@ -6318,7 +6318,7 @@ render_done:
 	pData->bFullCacheDirty = 0;
 	pData->bCacheRendered = 1;
 	pData->bLastCaretBlinkVisible = bCaretBlinkVisible;
-	pData->pLastCacheSurface = pCache;
+	pData->iLastCacheEpoch = iCacheEpoch;
 	pData->iLastRenderTopLine = iTopLine;
 	pData->iLastRenderOffsetY = iOffsetY;
 	pData->iLastRenderColumns = pData->iColumns;

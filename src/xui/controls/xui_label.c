@@ -26,6 +26,7 @@ typedef struct xui_label_measure_entry_t {
 } xui_label_measure_entry_t;
 
 typedef struct xui_label_data_t {
+    xui_text_layout pLayout; /* actual font/paint owner, not a temporary */
 	char* sText;
 	int iTextCapacity;
 	int iTextSize;
@@ -101,6 +102,7 @@ static int __xuiLabelTextSet(xui_label_data_t* pData, const char* sText)
 
 static xui_label_data_t* __xuiLabelGetData(xui_widget pWidget)
 {
+    if(xuiInternalWidgetIsValid(pWidget) && pWidget->pContext->bCloseRequested)return NULL;
 	xui_context pContext;
 	xui_widget_type pType;
 
@@ -266,7 +268,7 @@ static int __xuiLabelMeasureKeyEqual(const xui_label_measure_key_t* a,
 		a->fLineGap == b->fLineGap && a->fParagraphGap == b->fParagraphGap;
 }
 
-static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+static int __xuiLabelContentMeasureImpl(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_label_data_t* pData;
 	xui_text_layout_desc_t tDesc;
@@ -315,7 +317,8 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 		tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	}
 	pData->bMeasuring = 1;
-	iRet = xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	iRet = xuiInternalTextLayoutEnsure(xuiWidgetGetContext(pWidget), &pData->pLayout, &tDesc);
+    if(iRet==XUI_OK)*pSize=xuiTextLayoutGetSize(pData->pLayout);
 	/* Proxy callbacks may change or retire the label while shaping text. */
 	if ( !xuiInternalWidgetIsValid(pWidget) || pWidget->bDestroyPending || pWidget->pTypeData != pData ) {
 		return XUI_ERROR_INVALID_STATE;
@@ -331,8 +334,8 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	__xuiLabelResolve(pWidget, pData, &tDesc, &iTextColor);
 	tCurrentKey = __xuiLabelMeasureKey(pWidget, pData, &tDesc);
 	if ( pData->bMeasureKeyValid && __xuiLabelMeasureKeyEqual(&tKey, &tCurrentKey) ) {
-		/* Four numeric results cover alternating parent/arranged constraints.
-		 * No retained text, glyph arrays or surfaces are added to the label. */
+        /* Four numeric results cover alternating constraints. Their Font
+         * identity is protected by the same native owned Layout slot. */
 		i = pData->iMeasureCacheCount;
 		if ( i < XUI_LABEL_MEASURE_CACHE_CAPACITY ) pData->iMeasureCacheCount++;
 		else i = XUI_LABEL_MEASURE_CACHE_CAPACITY - 1;
@@ -342,12 +345,23 @@ static int __xuiLabelContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, 
 	}
 	return XUI_OK;
 }
+static int __xuiLabelContentMeasure(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* size,void* user)
+{
+    xui_label_data_t* data=__xuiLabelGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bMeasuring)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    status=__xuiLabelContentMeasureImpl(widget,constraint,size,user);
+    data->bMeasuring=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
 
-static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+
+static int __xuiLabelCacheRenderImpl(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_label_data_t* pData;
 	xui_text_layout_desc_t tDesc;
-	xui_text_layout pLayout;
 	xui_rect_t tContent;
 	xui_proxy pProxy;
 	uint32_t iTextColor;
@@ -377,16 +391,28 @@ static int __xuiLabelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	}
 	tDesc.fMaxWidth = tContent.fW;
 	tDesc.fMaxHeight = tContent.fH;
-	pLayout = NULL;
-	iRet = xuiTextLayoutCreate(xuiWidgetGetContext(pWidget), &pLayout, &tDesc);
+    if(pData->bMeasureKeyValid && pData->tMeasureKey.pFont!=tDesc.pFont)pData->bMeasureKeyValid=0;
+    iRet=xuiInternalTextLayoutEnsure(xuiWidgetGetContext(pWidget),&pData->pLayout,&tDesc);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iRet = xuiInternalTextLayoutDrawContext(pLayout, pDraw, tContent,
+	iRet = xuiInternalTextLayoutDrawContext(pData->pLayout, pDraw, tContent,
 		iTextColor, 0);
-	xuiTextLayoutDestroy(pLayout);
 	return iRet;
 }
+static int __xuiLabelCacheRender(xui_widget widget,xui_draw_context draw,uint32_t state,void* user)
+{
+    xui_label_data_t* data=__xuiLabelGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bMeasuring)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    data->bMeasuring=2;
+    status=__xuiLabelCacheRenderImpl(widget,draw,state,user);
+    data->bMeasuring=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
+
 
 static int __xuiLabelInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
@@ -434,6 +460,7 @@ static void __xuiLabelDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	if ( pData == NULL ) {
 		return;
 	}
+    if(pData->pLayout){bool consumed=false;int status=xuiTextLayoutDestroyOwnerChecked(pData->pLayout,&consumed);if(status<0)xuiInternalContextRecordFailure(pWidget->pContext,status);if(consumed)pData->pLayout=NULL;}
 	if ( pData->sText != NULL ) {
 		xrtFree(pData->sText);
 	}
@@ -507,6 +534,26 @@ static int __xuiLabelAccessibleNode(xui_widget pWidget, xui_accessible_node_t* p
 
 static const xui_internal_accessibility_adapter_t g_xuiLabelAccessible = {.getNode = __xuiLabelAccessibleNode, .performAction = NULL};
 
+static bool __xuiLabelTrace(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    (void)widget;const xui_label_data_t* data=raw;
+    return !data->bMeasuring && (!data->pLayout || xuiTextLayoutTraceOwnership(data->pLayout,visit,user));
+}
+static int __xuiLabelReady(xui_widget widget,const void* raw)
+{
+    (void)widget;const xui_label_data_t* data=raw;
+    if(data->bMeasuring)return XUI_ERROR_BUSY;
+    return data->pLayout ? xuiInternalTextLayoutDestroyReady(data->pLayout):XUI_OK;
+}
+static int __xuiLabelPrepare(xui_widget widget,void* raw,bool* complete)
+{
+    (void)widget;xui_label_data_t* data=raw;if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;if(data->bMeasuring)return XUI_STATUS_DEFERRED;
+    if(!data->pLayout){*complete=true;return XUI_OK;}
+    data->bMeasuring=1;bool consumed=false;int status=xuiTextLayoutDestroyOwnerChecked(data->pLayout,&consumed);
+    if(consumed)data->pLayout=NULL;
+    data->bMeasuring=0;*complete=consumed;return status;
+}
 XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -542,6 +589,7 @@ XUI_API xui_widget_type xuiLabelGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiLabelAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_label_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    pType->onTraceOwnership=__xuiLabelTrace;pType->onDestroyReady=__xuiLabelReady;pType->onDestroyPrepare=__xuiLabelPrepare;
     return pType;
 }
 
@@ -586,6 +634,7 @@ XUI_API int xuiLabelSetText(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(pData->bMeasuring)return XUI_ERROR_BUSY;
 	if ( sText == NULL ) {
 		sText = "";
 	}
@@ -616,6 +665,7 @@ XUI_API int xuiLabelSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(pData->bMeasuring)return XUI_ERROR_BUSY;
 	if ( pData->pFont == pFont ) {
 		return XUI_OK;
 	}

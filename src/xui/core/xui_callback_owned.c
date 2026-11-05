@@ -52,7 +52,7 @@ int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,b
         xrtSetErrorTake(first);return result;
     }
     xui_event_owners_t* header=NULL;xui_callback_binding_t* binding=NULL;
-    if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
+    if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
     if(preflight){result=preflight(widget,preflightData);if(result!=XUI_OK)goto fail;}
     /* Hold may reenter and replace or remove this exact slot. Allocate against
      * the resulting live directory, outside the ownership mutation gate. */
@@ -126,7 +126,7 @@ int xuiInternalCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_ent
         result=xuiInternalCallbackOwnerHold(&entries[i].tCandidate);
         if(result!=XUI_OK)goto fail;
         entries[i].bHeld=true;
-        if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
+        if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
     }
     /* Hold has finished, including all reentry. Read the resulting directory;
      * no user callback runs during allocation or under the mutation gate. */
@@ -194,16 +194,20 @@ int xuiInternalCallbackGroupUpdateEnd(xui_callback_group_update_t* update,int re
 static int __xuiCallbackSnapshotBegin(xui_widget widget,const void* slot,void** user,xui_callback_snapshot_t* snapshot,bool report)
 {
     if(!snapshot || !user || snapshot->pContext || !xuiInternalWidgetIsValid(widget))return XUI_ERROR_INVALID_STATE;
+    xui_context context=widget->pContext;
+    if(context->bCloseRequested){
+        if(report)__xuiCallbackRecordFailure(context,XUI_ERROR_INVALID_STATE);
+        return XUI_ERROR_INVALID_STATE;
+    }
     xui_callback_binding_t** current=__xuiCallbackFind(widget,slot);
     if(!current || !*current)return XUI_OK;
-    xui_context context=widget->pContext;
     /* The native public operation, not just the callback, owns physical
      * quiescence. Its Leave must follow all native use of widget/output data. */
-    if(context->iOperationDepth<=0 || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(context->iOperationDepth<=0 || context->bCloseRequested || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
     xui_callback_owner_t owner=(*current)->tOwner;void* selectedUser=(*current)->pUser;
     int result=xuiInternalCallbackOwnerHold(&owner);
     if(result!=XUI_OK){if(report)__xuiCallbackRecordFailure(context,result);return result;}
-    if(!xuiInternalWidgetIsValid(widget) || context->bDestroyPending || context->bDestroying){
+    if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){
         result=XUI_ERROR_INVALID_STATE;xerror* first=xrtTakeError();
         /* A dispatch that cannot enter its selected callback must reach the
          * enclosing receipt, including native void consumers. */

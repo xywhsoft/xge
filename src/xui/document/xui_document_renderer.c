@@ -2,9 +2,290 @@
 #if XUI_ENABLE_DOCUMENT_VIEW
 #include "xui_document_layout_internal.h"
 #include "xui_text_internal.h"
+#include "xui_internal.h"
 #include <math.h>
 #include <float.h>
 #include <stdio.h>
+
+typedef struct doc_renderer_call_t {xui_document_renderer renderer;xui_context context;xui_call_scope_t scope;} doc_renderer_call_t;
+static int doc_renderer_call_begin(xui_document_renderer,doc_renderer_call_t*,bool,bool);
+static int doc_renderer_call_end(doc_renderer_call_t*,int);
+static bool doc_rows_trace_ownership(const doc_source_row*,xrtownershipvisitor,void*);
+static int doc_rows_paint_ready(const doc_source_row*,bool);
+static void doc_rows_update(doc_source_row*);
+#define XUI_DOC_FONT_OUTPUT_MAGIC UINT32_C(0x5844464f)
+XUI_API int xuiDocumentFontOutputInit(xui_document_renderer renderer,xui_doc_font_output_t* output)
+{
+    if(!renderer || renderer->lifecycle!=renderer || renderer->destroying || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    if(renderer->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(!renderer->owned_proxy)return XUI_ERROR_UNSUPPORTED;
+    *output=(xui_doc_font_output_t){._pProxy=renderer->owned_proxy,._iCreatorThread=renderer->creator_thread,._iMagic=XUI_DOC_FONT_OUTPUT_MAGIC};return XUI_OK;
+}
+XUI_API int xuiDocumentFontOutputSetFont(xui_doc_font_output_t* output,xui_font font)
+{
+    if(!output || output->_iMagic!=XUI_DOC_FONT_OUTPUT_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
+    if(output->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(font==output->_pFont)return XUI_OK;
+    if(font){
+        xui_proxy proxy=xuiFontGetProxy(font);
+        if(!proxy || proxy->_pCapability!=output->_pProxy->_pCapability)return XUI_ERROR_INVALID_ARGUMENT;
+        int status=xuiFontAddRef(font);if(status!=XUI_OK)return status;
+    }
+    xui_font previous=output->_pFont;output->_pFont=font;
+    return previous ? xuiFontReleaseChecked(previous):XUI_OK;
+}
+XUI_API xui_font xuiDocumentFontOutputGetFont(const xui_doc_font_output_t* output)
+{return output && output->_iMagic==XUI_DOC_FONT_OUTPUT_MAGIC ? output->_pFont:NULL;}
+XUI_API int xuiDocumentFontOutputDisposeChecked(xui_doc_font_output_t* output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!output->_iMagic)return XUI_OK;
+    if(output->_iMagic!=XUI_DOC_FONT_OUTPUT_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
+    if(output->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    xui_doc_font_output_t previous=*output;*output=(xui_doc_font_output_t){0};
+    if(!previous._pFont)return XUI_OK;
+    bool consumed=false;int status=xuiFontReleaseOwnerChecked(previous._pFont,&consumed);
+    if(!consumed)*output=previous;
+    return status;
+}
+
+static xui_document_renderer doc_renderer_root(xui_document_renderer renderer)
+{return renderer->lifecycle ? renderer->lifecycle:renderer;}
+typedef union doc_renderer_callback_t {
+    xui_doc_font_owned_proc font;
+    xui_doc_object_measure_owned_proc measure;
+    xui_doc_object_draw_owned_proc draw;
+} doc_renderer_callback_t;
+static int doc_renderer_set_callback(xui_document_renderer renderer,unsigned slot,
+    doc_renderer_callback_t callback,bool present,void* user,const xui_callback_owner_t* owner)
+{
+    if(!xuiInternalCallbackOwnerValid(owner) || (!present && owner && owner->onHold))return XUI_ERROR_INVALID_ARGUMENT;
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(renderer,&call,true,false);
+    if(status!=XUI_OK)return doc_renderer_call_end(&call,status);
+    if(!renderer->owned_proxy || (slot==0 && renderer->desc.onFont) ||
+        (slot==1 && renderer->desc.onObjectMeasure) || (slot==2 && renderer->desc.onObjectDraw))
+        return doc_renderer_call_end(&call,XUI_ERROR_INVALID_STATE);
+    uint64 generation=renderer->callback_generation[slot];
+    xui_callback_owner_t candidate=owner ? *owner:(xui_callback_owner_t){0};
+    status=xuiInternalCallbackOwnerHold(&candidate);
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    if(status==XUI_OK && (renderer->callback_generation[slot]!=generation ||
+        renderer->context!=call.context || call.context->bCloseRequested || call.context->bDestroyPending || call.context->bDestroying))
+        receipt.status=XUI_ERROR_INVALID_STATE;
+    if(receipt.status==XUI_OK){
+        xui_callback_owner_t previous=renderer->callback_owners[slot];
+        renderer->callback_owners[slot]=candidate;candidate=(xui_callback_owner_t){0};
+        renderer->callback_users[slot]=user;
+        if(slot==0)renderer->font_resolver=callback.font;
+        else if(slot==1)renderer->object_measure=callback.measure;
+        else renderer->object_draw=callback.draw;
+        ++renderer->callback_generation[slot];
+        status=xuiInternalCallbackOwnerDropOutcome(call.context,&previous,receipt.status,receipt.error);
+        xuiInternalCleanupAdd(&receipt,status);
+    }else if(status==XUI_OK){
+        status=xuiInternalCallbackOwnerDropOutcome(call.context,&candidate,receipt.status,receipt.error);
+        xuiInternalCleanupAdd(&receipt,status);
+    }
+    status=xuiInternalCleanupEnd(NULL,&receipt);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererSetFontResolverOwned(xui_document_renderer renderer,
+    xui_doc_font_owned_proc callback,void* user,const xui_callback_owner_t* owner)
+{return doc_renderer_set_callback(renderer,0,(doc_renderer_callback_t){.font=callback},callback!=NULL,user,owner);}
+XUI_API int xuiDocumentRendererSetObjectMeasureOwned(xui_document_renderer renderer,
+    xui_doc_object_measure_owned_proc callback,void* user,const xui_callback_owner_t* owner)
+{return doc_renderer_set_callback(renderer,1,(doc_renderer_callback_t){.measure=callback},callback!=NULL,user,owner);}
+XUI_API int xuiDocumentRendererSetObjectDrawOwned(xui_document_renderer renderer,
+    xui_doc_object_draw_owned_proc callback,void* user,const xui_callback_owner_t* owner)
+{return doc_renderer_set_callback(renderer,2,(doc_renderer_callback_t){.draw=callback},callback!=NULL,user,owner);}
+/* The renderer's outer operation holds native storage through snapshot Drop.
+ * Snapshot selection is immutable even if Hold or the callback changes the
+ * registration. The independent owner keeps the selected closure executable. */
+static int doc_renderer_snapshot(xui_document_renderer root,unsigned slot,xui_callback_snapshot_t* snapshot)
+{
+    xui_callback_owner_t owner=root->callback_owners[slot];
+    int status=xuiInternalCallbackOwnerHold(&owner);if(status!=XUI_OK)return status;
+    snapshot->pContext=root->context;snapshot->tOwner=owner;
+    if(!root->context || root->context->bCloseRequested || root->context->bDestroyPending || root->context->bDestroying)
+        return xuiInternalCallbackSnapshotEnd(snapshot,XUI_ERROR_INVALID_STATE);
+    return XUI_OK;
+}
+int doc_render_work_shape_begin(xui_document_renderer renderer,xui_text_shape_t** output)
+{
+    if(!renderer || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;xui_document_renderer root=doc_renderer_root(renderer);
+    if(root->work_shape_active || root->work_blocked)return XUI_ERROR_BUSY;
+    bool consumed=false,called=false;int status=xuiInternalTextShapeFreeOutcome(&root->work_shape,&consumed,&called);
+    if(called)xuiInternalContextRecordFailure(root->context,status);
+    if(!consumed && !called && status==XUI_ERROR_BUSY)return XUI_ERROR_BUSY;
+    if(status!=XUI_OK)return status;
+    if(!consumed)return XUI_ERROR_INVALID_STATE;
+    root->work_shape_active=true;*output=&root->work_shape;return XUI_OK;
+}
+int doc_render_work_shape_end(xui_document_renderer renderer,xui_text_shape_t* shape,int prior)
+{
+    if(!shape)return prior;
+    xui_document_renderer root=doc_renderer_root(renderer);
+    if(shape!=&root->work_shape || !root->work_shape_active)return XUI_ERROR_INVALID_STATE;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,prior);
+    bool consumed=false,called=false;int status=xuiInternalTextShapeFreeOutcome(shape,&consumed,&called);
+    if(called)xuiInternalContextCleanupOutcome(root->context,status,&receipt.status,&receipt.error);
+    else xuiInternalCleanupAdd(&receipt,status);
+    root->work_shape_active=false;if(!consumed)root->work_blocked=true;
+    return xuiInternalCleanupEnd(NULL,&receipt);
+}
+void doc_render_work_shape_move(xui_document_renderer renderer,xui_text_shape_t* source,xui_text_shape_t* output)
+{
+    xui_document_renderer root=doc_renderer_root(renderer);
+    /* Internal unique-owner move; source and destination are real slots. */
+    *output=*source;memset(source,0,sizeof(*source));root->work_shape_active=false;
+}
+int doc_render_resolve_font(xui_document_renderer renderer,const char* family,uint32 marks,float size,xui_font* output)
+{
+    xui_document_renderer root=doc_renderer_root(renderer);*output=NULL;
+    xui_doc_font_owned_proc callback=root->font_resolver;
+    if(!callback)return XUI_OK;
+    void* user=root->callback_users[0];xui_callback_snapshot_t snapshot={0};
+    int status=doc_renderer_snapshot(root,0,&snapshot);if(status!=XUI_OK)return status;
+    xui_doc_font_output_t result={0};status=xuiDocumentFontOutputInit(root,&result);
+    if(status==XUI_OK)status=callback(root,family,marks,size,&result,user);
+    if(status>1)status=XUI_ERROR_INVALID_ARGUMENT;
+    if(status>=0 && (root->retiring || !root->context || root->context->bCloseRequested || root->context->bDestroyPending || root->context->bDestroying))status=XUI_ERROR_INVALID_STATE;
+    if(status==1 && !result._pFont)status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();
+    if(status>=0 && first)status=XUI_ERROR_CALLBACK_FAILED;
+    if(status==1){
+        xui_font font=result._pFont;size_t index;
+        for(index=0;index<root->font_count;++index)if(root->fonts[index].font==font)break;
+        if(index==root->font_count){
+            status=doc_render_reserve((void**)&root->fonts,&root->font_capacity,root->font_count+1,sizeof(*root->fonts));
+            if(status==XUI_OK){root->fonts[root->font_count++]=(doc_sized_font){NULL,font,0};result._pFont=NULL;}
+            else first=xrtTakeError();
+        }else status=XUI_OK;
+        if(status==XUI_OK)*output=font;
+    }
+    xuiInternalContextCleanupOutcome(root->context,xuiDocumentFontOutputDisposeChecked(&result),&status,&first);
+    return xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
+}
+int doc_render_measure_object(xui_document_renderer renderer,xui_doc_node_id node,float width,xui_vec2_t* size,float* baseline)
+{
+    xui_document_renderer root=doc_renderer_root(renderer);
+    xui_doc_object_measure_owned_proc callback=root->object_measure;
+    if(!callback)return renderer->desc.onObjectMeasure ? renderer->desc.onObjectMeasure(renderer->snapshot,node,width,renderer->desc.fZoom,size,baseline,renderer->desc.pUser):XUI_ERROR_UNSUPPORTED;
+    void* user=root->callback_users[1];xui_callback_snapshot_t snapshot={0};
+    int status=doc_renderer_snapshot(root,1,&snapshot);if(status!=XUI_OK)return status;
+    status=callback(root,renderer->snapshot,node,width,renderer->desc.fZoom,size,baseline,user);
+    if(status>0)status=XUI_ERROR_INVALID_ARGUMENT;
+    return xuiInternalCallbackSnapshotEnd(&snapshot,status);
+}
+static int doc_render_draw_object(xui_document_renderer renderer,xui_doc_node_id node,xui_draw_context draw,xui_rect_t bounds)
+{
+    xui_document_renderer root=doc_renderer_root(renderer);
+    xui_doc_object_draw_owned_proc callback=root->object_draw;
+    if(!callback)return renderer->desc.onObjectDraw ? renderer->desc.onObjectDraw(renderer->snapshot,node,renderer->proxy,draw,bounds,renderer->desc.pUser):XUI_ERROR_UNSUPPORTED;
+    void* user=root->callback_users[2];xui_callback_snapshot_t snapshot={0};
+    int status=doc_renderer_snapshot(root,2,&snapshot);if(status!=XUI_OK)return status;
+    status=callback(root,renderer->snapshot,node,draw,bounds,user);
+    if(status>0)status=XUI_ERROR_INVALID_ARGUMENT;
+    return xuiInternalCallbackSnapshotEnd(&snapshot,status);
+}
+static xui_font* doc_renderer_font_slot(xui_document_renderer r,unsigned index)
+{
+    static const size_t offsets[]={offsetof(xui_doc_font_set_t,normal),offsetof(xui_doc_font_set_t,bold),
+        offsetof(xui_doc_font_set_t,italic),offsetof(xui_doc_font_set_t,boldItalic),offsetof(xui_doc_font_set_t,monospace)};
+    return (xui_font*)((unsigned char*)&r->desc.tFonts+offsets[index]);
+}
+static void doc_renderer_context_gone(void* raw)
+{((xui_document_renderer)raw)->context=NULL;}
+XUI_API xui_context xuiDocumentRendererGetContext(xui_document_renderer r)
+{return r && !r->destroying ? r->context:NULL;}
+XUI_API bool xuiDocumentRendererOwnershipBusy(xui_document_renderer r)
+{return doc_render_destroy_ready(r)!=XUI_OK;}
+XUI_API int xuiDocumentRendererLifetimeWatch(xui_document_renderer r,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidated,void* user)
+{
+    if(!r || r->destroying || r->lifecycle!=r || !link || !invalidated)return XUI_ERROR_INVALID_ARGUMENT;
+    if(r->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(link->pNext || link->ppPrevious || link->onInvalidate || link->pUser)return XUI_ERROR_INVALID_STATE;
+    link->pNext=r->lifetime_links;link->ppPrevious=&r->lifetime_links;link->onInvalidate=invalidated;link->pUser=user;
+    if(link->pNext)link->pNext->ppPrevious=&link->pNext;
+    r->lifetime_links=link;return XUI_OK;
+}
+static bool doc_renderer_shape_trace(const xui_text_shape_t* shape,xrtownershipvisitor visit,void* user)
+{return xuiInternalTextShapeTraceOwnership(shape,visit,user);}
+static bool doc_renderer_block_trace(const doc_render_block* block,xrtownershipvisitor visit,void* user)
+{
+    for(size_t i=0;i<block->run_count;++i)if(!doc_renderer_shape_trace(&block->runs[i].shape,visit,user))return false;
+    for(size_t i=0;i<block->paint_seed_count;++i)
+        if(!block->paint_seeds[i].source_run && !doc_renderer_shape_trace(&block->paint_seeds[i].shape,visit,user))return false;
+    for(size_t i=0;i<block->paint_group_count;++i)
+        if(!block->paint_groups[i].shared_seed && !block->paint_groups[i].variant_span && !doc_renderer_shape_trace(&block->paint_groups[i].shape,visit,user))return false;
+    for(const doc_render_paint_variant* variant=block->variants;variant;variant=variant->next)
+        for(size_t i=0;i<variant->span_count;++i)
+            if(!variant->spans[i].source_run && !doc_renderer_shape_trace(&variant->spans[i].shape,visit,user))return false;
+    return true;
+}
+int doc_render_block_ready(const doc_render_block* block,bool managed)
+{
+    int status;
+    for(size_t i=0;i<block->run_count;++i){status=xuiInternalTextShapeReady(&block->runs[i].shape,managed);if(status!=XUI_OK)return status;}
+    for(size_t i=0;i<block->paint_seed_count;++i)if(!block->paint_seeds[i].source_run){status=xuiInternalTextShapeReady(&block->paint_seeds[i].shape,managed);if(status!=XUI_OK)return status;}
+    for(size_t i=0;i<block->paint_group_count;++i)if(!block->paint_groups[i].shared_seed && !block->paint_groups[i].variant_span){status=xuiInternalTextShapeReady(&block->paint_groups[i].shape,managed);if(status!=XUI_OK)return status;}
+    for(const doc_render_paint_variant* variant=block->variants;variant;variant=variant->next)
+        for(size_t i=0;i<variant->span_count;++i)if(!variant->spans[i].source_run){status=xuiInternalTextShapeReady(&variant->spans[i].shape,managed);if(status!=XUI_OK)return status;}
+    return XUI_OK;
+}
+static int doc_renderer_paint_ready(xui_document_renderer r)
+{
+    xui_document_renderer root=doc_renderer_root(r);
+    bool managed=root->owned_proxy!=NULL;int status=r==root ? doc_render_work_ready(root):XUI_OK;
+    if(status!=XUI_OK)return status;
+    if(r->blocks)for(size_t i=0;i<r->count;++i){status=doc_render_block_ready(&r->blocks[i],managed);if(status!=XUI_OK)return status;}
+    return doc_rows_paint_ready(r->source_rows,managed);
+}
+int doc_render_destroy_ready(xui_document_renderer renderer)
+{
+    if(!renderer || renderer->lifecycle!=renderer)return XUI_ERROR_INVALID_ARGUMENT;
+    if(renderer->creator_thread!=xrtThreadCurrentId() || renderer->destroying || renderer->calls)return XUI_ERROR_BUSY;
+    return doc_renderer_paint_ready(renderer);
+}
+XUI_API bool xuiDocumentRendererTraceOwnership(xui_document_renderer r,xrtownershipvisitor visit,void* user)
+{
+    if(!r || r->lifecycle!=r || !visit || r->destroying || r->calls)return false;
+    if(!doc_render_work_trace(r,visit,user))return false;
+    if(r->owned_proxy && !visit(xuiProxyOwnership(r->owned_proxy),user))return false;
+    for(unsigned i=0;i<3;++i)if(r->callback_owners[i].tReference.Ops &&
+        !visit(r->callback_owners[i].tReference,user))return false;
+    for(unsigned i=0;i<5;++i)if((r->owned_font_mask&(1u<<i)) && !visit(xuiFontOwnership(*doc_renderer_font_slot(r,i)),user))return false;
+    if(r->owned_proxy)for(size_t i=0;i<r->font_count;++i)
+        if(r->fonts[i].font && !visit(xuiFontOwnership(r->fonts[i].font),user))return false;
+    for(size_t i=0;i<r->count;++i)if(r->blocks && !doc_renderer_block_trace(&r->blocks[i],visit,user))return false;
+    return doc_rows_trace_ownership(r->source_rows,visit,user);
+}
+
+static int doc_impl_SetSnapshot(xui_document_renderer r, xui_document_snapshot s, xui_document_change_set changes);
+static int doc_impl_SetSourceInput(xui_document_renderer r, xui_document_prepare p);
+static int doc_impl_SetMode(xui_document_renderer r, uint32_t mode);
+static int doc_impl_InvalidateObjects(xui_document_renderer r);
+static int doc_impl_InvalidateFonts(xui_document_renderer r);
+static int doc_impl_SetActivePosition(xui_document_renderer r, const xui_doc_position_t* p);
+static int doc_impl_GetActiveSourceRange(xui_document_renderer r, uint64_t* start, uint64_t* end);
+static int doc_impl_Layout(xui_document_renderer r, double width, double top, double height);
+static int doc_impl_GetSize(xui_document_renderer r, xui_doc_rect_t* size, int* exact);
+static int doc_impl_HitTest(xui_document_renderer r, double x, double y, xui_doc_position_t* out);
+static int doc_impl_HitTaskMarker(xui_document_renderer r,
+    double x, double y, xui_doc_node_id* item);
+static int doc_impl_HitTestCell(xui_document_renderer r, double x, double y, xui_doc_cell_hit_t* out);
+static int doc_impl_GetCellRect(xui_document_renderer r, xui_doc_node_id cell, xui_doc_cell_hit_t* out);
+static int doc_impl_GetNodeRect(xui_document_renderer r, xui_doc_node_id id, xui_doc_rect_t* out);
+static int doc_impl_GetCaretRect(xui_document_renderer r, const xui_doc_position_t* p, xui_doc_rect_t* out);
+static int doc_impl_GetLineRange(xui_document_renderer r,
+    const xui_doc_position_t* position, xui_doc_range_t* out);
+static int doc_impl_GetRangeRects(xui_document_renderer r,
+    const xui_doc_range_t* range, xui_doc_rect_t* rects,
+    uint64_t capacity, uint64_t* total);
+static int doc_impl_Draw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
+    const xui_doc_range_t* selection, uint32_t selection_color);
+static int doc_impl_GetStats(xui_document_renderer r, xui_doc_renderer_stats_t* out);
 
 /* Image sources may name a surface in the owning XUI context. The registry
  * owns the handle; resolve it for each operation so replacement/removal never
@@ -86,6 +367,62 @@ struct doc_source_row {
     double height, width;
     int64_t shift;
 };
+/* Read-only traversal: never call the indexed row accessor here, because its
+ * lazy source-offset propagation writes fields and is not valid under freeze. */
+static bool doc_rows_trace_ownership(const doc_source_row* row,xrtownershipvisitor visit,void* user)
+{
+    return !row || (doc_rows_trace_ownership(row->left,visit,user) &&
+        doc_renderer_block_trace(&row->block,visit,user) && doc_rows_trace_ownership(row->right,visit,user));
+}
+static int doc_rows_paint_ready(const doc_source_row* row,bool managed)
+{
+    if(!row)return XUI_OK;
+    int status=doc_rows_paint_ready(row->left,managed);if(status!=XUI_OK)return status;
+    status=doc_render_block_ready(&row->block,managed);return status!=XUI_OK ? status:doc_rows_paint_ready(row->right,managed);
+}
+
+static int doc_rows_paint_prepare(xui_document_renderer renderer,doc_source_row* row,bool* complete)
+{
+    *complete=true;if(!row)return XUI_OK;
+    bool left=true,own=true,right=true;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    int status=doc_rows_paint_prepare(renderer,row->left,&left);
+    if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+    status=doc_render_block_prepare(renderer,&row->block,&own);
+    if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+    status=doc_rows_paint_prepare(renderer,row->right,&right);
+    if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+    doc_rows_update(row);
+    *complete=left && own && right;status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:*complete ? XUI_OK:XUI_STATUS_DEFERRED;
+}
+static int doc_renderer_paint_prepare(xui_document_renderer renderer,bool* complete)
+{
+    *complete=true;xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    bool workComplete=true;int workStatus=renderer->lifecycle==renderer ? doc_render_work_prepare(renderer,&workComplete):XUI_OK;
+    if(workStatus!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,workStatus);
+    if(!workComplete)*complete=false;
+    if(renderer->blocks)for(size_t i=0;i<renderer->count;++i){
+        bool done=false;int status=doc_render_block_prepare(renderer,&renderer->blocks[i],&done);
+        if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+        if(!done)*complete=false;
+    }
+    bool rows=true;int status=doc_rows_paint_prepare(renderer,renderer->source_rows,&rows);
+    if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+    if(!rows)*complete=false;
+    status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:*complete ? XUI_OK:XUI_STATUS_DEFERRED;
+}
+
+int doc_render_destroy_prepare(xui_document_renderer renderer,bool* complete)
+{
+    if(!renderer || renderer->lifecycle!=renderer || !complete)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;if(renderer->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(renderer->destroying)return XUI_ERROR_INVALID_STATE;
+    renderer->retiring=true;if(renderer->calls)return XUI_STATUS_DEFERRED;
+    ++renderer->calls;int status=doc_renderer_paint_prepare(renderer,complete);--renderer->calls;
+    return status;
+}
 static size_t doc_rows_count(doc_source_row* n) { return n ? n->count : 0; }
 static double doc_rows_height(doc_source_row* n) { return n ? n->height : 0; }
 static double doc_rows_width(doc_source_row* n) { return n ? n->width : 0; }
@@ -234,27 +571,49 @@ static void doc_rows_refresh(doc_source_row* n, size_t index)
     else if (index > before) doc_rows_refresh(n->right, index - before - 1);
     doc_rows_update(n);
 }
-static void doc_rows_unmeasure(doc_source_row* n, double line_height)
+static void doc_rows_unmeasure(xui_document_renderer r,doc_source_row* n, double line_height)
 {
     if (!n) return;
-    doc_rows_unmeasure(n->left, line_height);
-    doc_render_block_free(&n->block);
+    doc_rows_unmeasure(r,n->left, line_height);
+    doc_render_block_free(r,&n->block);
     n->block.height = line_height;
     n->block.ever_measured = 0;
-    doc_rows_unmeasure(n->right, line_height);
+    doc_rows_unmeasure(r,n->right, line_height);
     doc_rows_update(n);
 }
-static void doc_rows_free(doc_source_row* n)
+static int doc_rows_dispose_structure(xui_document_renderer renderer,doc_source_row* row)
 {
-    if (!n) return;
-    doc_rows_free(n->left); doc_rows_free(n->right);
-    doc_render_block_free(&n->block); free(n);
+    if(!row)return XUI_OK;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    xuiInternalCleanupAdd(&receipt,doc_rows_dispose_structure(renderer,row->left));
+    xuiInternalCleanupAdd(&receipt,doc_rows_dispose_structure(renderer,row->right));
+    xuiInternalCleanupAdd(&receipt,doc_render_block_free(renderer,&row->block));free(row);
+    return xuiInternalCleanupEnd(NULL,&receipt);
 }
+static int doc_rows_free(xui_document_renderer renderer,doc_source_row* row)
+{
+    bool complete=false;int prepared=doc_rows_paint_prepare(renderer,row,&complete);if(!complete)return prepared;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,prepared);
+    xuiInternalCleanupAdd(&receipt,doc_rows_dispose_structure(renderer,row));return xuiInternalCleanupEnd(NULL,&receipt);
+}
+static int doc_rows_range_prepare(xui_document_renderer renderer,doc_source_row* row,size_t first,size_t end,bool* complete)
+{
+    *complete=true;if(!row || first>=end)return XUI_OK;
+    size_t left=row->left ? row->left->count:0;
+    bool a=true,b=true,c=true;xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);int status;
+    if(first<left){status=doc_rows_range_prepare(renderer,row->left,first,end<left ? end:left,&a);if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);}
+    if(first<=left && end>left){status=doc_render_block_prepare(renderer,&row->block,&b);if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);}
+    if(end>left+1){status=doc_rows_range_prepare(renderer,row->right,first>left+1 ? first-left-1:0,end-left-1,&c);if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);}
+    doc_rows_update(row);*complete=a&&b&&c;status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:*complete ? XUI_OK:XUI_STATUS_DEFERRED;
+}
+
 static void doc_render_release_block(xui_document_renderer r, doc_render_block* b)
 {
     size_t bytes = b->cache_bytes;
-    doc_render_block_free(b);
-    r->cache_bytes -= bytes;
+    int status=doc_render_block_free(r,b);
+    r->cache_bytes=r->cache_bytes-bytes+b->cache_bytes;
+    if(status==XUI_STATUS_DEFERRED)r->size_dirty=1;
     r->size_dirty = 1;
 }
 static void doc_rows_trim_cache(xui_document_renderer r, doc_source_row* n, double y,
@@ -368,11 +727,14 @@ int doc_render_copy_range(xui_document_renderer r, const xui_doc_range_t* range,
     *text = malloc((size_t)(end - start) + 1); if (!*text) return XUI_ERROR_OUT_OF_MEMORY;
     *bytes = end - start; doc_seq_read(doc_render_source(r), start, *text, *bytes); (*text)[*bytes] = 0; return XUI_OK;
 }
-static void doc_render_clear(xui_document_renderer r)
+static int doc_render_clear_checked(xui_document_renderer r,bool* completed)
 {
-    size_t i;
-    if (r->blocks) for (i = 0; i < r->count; i++) doc_render_block_free(&r->blocks[i]);
-    free(r->blocks); free(r->heights); doc_rows_free(r->source_rows);
+    *completed=false;bool complete=false;int prepared=doc_renderer_paint_prepare(r,&complete);if(!complete)return prepared;
+    *completed=true;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,prepared);
+    if(r->blocks)for(size_t i=0;i<r->count;++i)xuiInternalCleanupAdd(&receipt,doc_render_block_free(r,&r->blocks[i]));
+    xuiInternalCleanupAdd(&receipt,doc_rows_free(r,r->source_rows));
+    free(r->blocks);free(r->heights);
     r->blocks = NULL; r->heights = NULL; r->source_rows = NULL; r->count = r->capacity = 0;
     r->cache_bytes = 0;
     r->size_width = 0; r->size_exact = 1; r->size_dirty = 1;
@@ -380,34 +742,21 @@ static void doc_render_clear(xui_document_renderer r)
     r->source_height_hint_valid = 0;
     r->has_named_images = 0;
     xrtMapClear(&r->block_index);
+    return xuiInternalCleanupEnd(NULL,&receipt);
 }
-static double doc_render_code_line_height(xui_document_renderer r, doc_node* node)
+static int doc_render_clear(xui_document_renderer renderer)
+{bool complete=false;return doc_render_clear_checked(renderer,&complete);}
+
+static int doc_render_code_line_height(xui_document_renderer r,doc_node* node,double* output)
 {
-    xui_doc_attributes_t attrs = {0};
-    xui_font_metrics_t metrics = {0}, selected_metrics = {0};
-    xui_font font = r->desc.tFonts.monospace ? r->desc.tFonts.monospace : r->desc.tFonts.normal;
-    double scale = r->desc.fZoom;
-    float size;
-    if (node) attrs = doc_effective_text_attrs(r->snapshot->state, node);
-    attrs.iMarks |= XUI_DOC_CODE;
-    if (r->proxy && r->proxy->fontGetMetrics && font)
-        r->proxy->fontGetMetrics(r->proxy, font, &metrics);
-    size = attrs.fFontSize > 0 ? attrs.fFontSize : metrics.fSize > 0 ? metrics.fSize : 16;
-    size *= r->desc.fZoom;
-    if (r->desc.onFont && r->proxy && r->proxy->fontGetMetrics) {
-        xui_font selected = r->desc.onFont(r->context, attrs.sFontFamily,
-            attrs.iMarks, size, r->desc.pUser);
-        if (selected && r->proxy->fontGetMetrics(r->proxy, selected,
-                &selected_metrics) == XUI_OK && selected_metrics.fLineHeight > 0)
-            return selected_metrics.fLineHeight;
-    }
-    if (metrics.fLineHeight > 0) {
-        if (attrs.fFontSize > 0 && metrics.fSize > 0)
-            scale *= attrs.fFontSize / metrics.fSize;
-        return metrics.fLineHeight * scale;
-    }
-    return 20 * scale;
+    xui_doc_attributes_t attrs={0};xui_font_metrics_t metrics={0};xui_font font=NULL;
+    if(node)attrs=doc_effective_text_attrs(r->snapshot->state,node);
+    attrs.iMarks|=XUI_DOC_CODE;
+    int status=doc_layout_text_font(r,&attrs,0,&font);if(status!=XUI_OK)return status;
+    if(r->proxy->fontGetMetrics){status=r->proxy->fontGetMetrics(r->proxy,font,&metrics);if(status!=XUI_OK)return status;}
+    *output=metrics.fLineHeight>0 ? metrics.fLineHeight:20*r->desc.fZoom;return XUI_OK;
 }
+
 static int doc_render_plain_ascii_line(doc_sequence* text,
     uint64_t start, uint64_t end, int* plain)
 {
@@ -453,8 +802,8 @@ static int doc_render_collect_code(xui_document_renderer r, doc_node* node, doub
     char buffer[4099];
     uint64_t bytes = doc_seq_size(node->text), offset = 0, start = 0, lines = 0, last_break = 0;
     size_t first = r->count;
-    double line_height = doc_render_code_line_height(r, node);
-    int result = XUI_OK;
+    double line_height;
+    int result=doc_render_code_line_height(r,node,&line_height);if(result!=XUI_OK)return result;
     while (offset < bytes) {
         uint64_t n = bytes - offset < 4096 ? bytes - offset : 4096;
         uint64_t read = bytes - offset < sizeof(buffer) ? bytes - offset : sizeof(buffer), consumed = n;
@@ -597,7 +946,7 @@ static int doc_render_source_line(xui_document_renderer r, uint64_t start,
 static int doc_render_collect_source_range(xui_document_renderer r, uint64_t first, uint64_t size)
 {
     char buffer[4096]; uint64_t offset = first, line = first; int result;
-    double line_height = doc_render_code_line_height(r, NULL);
+    double line_height;result=doc_render_code_line_height(r,NULL,&line_height);if(result!=XUI_OK)return result;
     char previous = 0; int height_uncertain = 0;
     while (offset < size) {
         uint64_t i, bytes = size - offset < sizeof(buffer) ? size - offset : sizeof(buffer);
@@ -671,19 +1020,21 @@ static int doc_render_source_splice(xui_document_renderer r, xui_document_prepar
     if (removed > INT64_MAX || bytes > INT64_MAX || old_size > INT64_MAX ||
         doc_seq_size(doc_prepare_source_store(p)) > INT64_MAX) return XUI_ERROR_NOT_FOUND;
     shift = (int64_t)bytes - (int64_t)removed;
-    part.context = r->context; part.proxy = r->proxy;
+    part.lifecycle=doc_renderer_root(r); part.context = r->context; part.proxy = r->proxy;
     part.snapshot = r->snapshot; part.input = p; part.desc = r->desc;
     part.mode = XUI_DOC_SOURCE_TEXT; part.source_row_serial = r->source_row_serial;
     result = doc_render_collect_source_range(&part, first_block->source_start, new_end);
-    if (result != XUI_OK) { doc_rows_free(part.source_rows); return result; }
+    if (result != XUI_OK) { doc_rows_free(r,part.source_rows); return result; }
     count = first + part.count + r->count - last;
-    if (count > 1000000) { doc_rows_free(part.source_rows); return XUI_DOC_ERROR_LIMIT; }
+    if (count > 1000000) { doc_rows_free(r,part.source_rows); return XUI_DOC_ERROR_LIMIT; }
+    bool removed_complete=false;result=doc_rows_range_prepare(r,r->source_rows,first,last,&removed_complete);
+    if(!removed_complete){xerror* first_error=xrtTakeError();(void)doc_rows_free(r,part.source_rows);xrtErrorFree(xrtTakeError());xrtSetErrorTake(first_error);return result==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:result;}
     /* All allocations have succeeded. Splits, suffix rebasing and joins are
      * allocation-free, so a failure cannot expose a half-updated directory. */
     doc_rows_split(r->source_rows, first, &prefix, &tail);
     doc_rows_split(tail, last - first, &removed_rows, &suffix);
     r->cache_bytes -= doc_rows_cache_bytes(removed_rows);
-    doc_rows_free(removed_rows);
+    doc_rows_free(r,removed_rows);
     doc_rows_apply(suffix, shift);
     r->source_rows = doc_rows_join(doc_rows_join(prefix, part.source_rows), suffix);
     r->source_row_serial = part.source_row_serial;
@@ -874,13 +1225,17 @@ static int doc_render_live_splice(xui_document_renderer r, xui_document_prepare 
     first_abs = r->live_first + first; last_abs = r->live_first + last;
     old_end = last < old_live_rows ? r->blocks[last_abs].source_start : r->live_end;
     new_end = old_end - (end - start) + bytes;
-    part.context = r->context; part.proxy = r->proxy;
+    part.lifecycle=doc_renderer_root(r); part.context = r->context; part.proxy = r->proxy;
     part.snapshot = r->snapshot; part.input = p; part.desc = r->desc;
     part.mode = r->mode; part.width = r->width;
     result = doc_render_collect_source_range(&part, r->blocks[first_abs].source_start, new_end);
     if (result != XUI_OK) goto fail;
     new_count = first_abs + part.count + old_count - last_abs;
     if (!part.count || new_count > 1000000) { result = XUI_DOC_ERROR_LIMIT; goto fail; }
+    for(i=first_abs;i<last_abs;++i){
+        bool complete=false;int cleanup=doc_render_block_prepare(r,&old_blocks[i],&complete);
+        if(!complete){result=cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;goto fail;}
+    }
     if (part.count == last - first) {
         /* Most typing changes no line count. The NodeId map and Fenwick
          * directory keep their indices, so exchange only the prepared rows.
@@ -890,7 +1245,7 @@ static int doc_render_live_splice(xui_document_renderer r, xui_document_prepare 
             size_t index = first_abs + i;
             double previous_height = old_blocks[index].height;
             removed_cache += old_blocks[index].cache_bytes;
-            doc_render_block_free(&old_blocks[index]);
+            doc_render_block_free(r,&old_blocks[index]);
             old_blocks[index] = part.blocks[i];
             doc_render_set_height(r, index, old_blocks[index].height - previous_height);
         }
@@ -934,7 +1289,7 @@ static int doc_render_live_splice(xui_document_renderer r, xui_document_prepare 
      * the reused layout buffers; rebase retained row geometry in place. */
     for (i = first_abs; i < last_abs; i++) {
         removed_cache += old_blocks[i].cache_bytes;
-        doc_render_block_free(&old_blocks[i]);
+        doc_render_block_free(r,&old_blocks[i]);
     }
     if (shift) for (i = first_abs + part.count;
         i < first_abs + part.count + old_live_rows - last; i++)
@@ -958,7 +1313,7 @@ static int doc_render_live_splice(xui_document_renderer r, xui_document_prepare 
     return XUI_OK;
 fail:
     free(new_blocks); free(new_heights); xrtMapUnit(&new_index);
-    for (i = 0; i < part.count; i++) doc_render_block_free(&part.blocks[i]);
+    for (i = 0; i < part.count; i++) doc_render_block_free(r,&part.blocks[i]);
     free(part.blocks);
     return result;
 }
@@ -1012,7 +1367,7 @@ static int doc_render_materialize_block(xui_document_renderer r, size_t index, d
     if (b->measured && !b->partial && !b->line_partial) return XUI_OK;
     previous = b->height;
     previous_bytes = b->cache_bytes;
-    if (b->partial || b->line_partial) doc_render_block_free(b);
+    if(b->partial || b->line_partial || b->retirement_pending){result=doc_render_block_free(r,b);if(result!=XUI_OK)return result==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:result;}
     result = doc_layout_block(r, b, r->width);
     r->cache_bytes = r->cache_bytes - previous_bytes + b->cache_bytes;
     r->size_dirty = 1;
@@ -1309,7 +1664,7 @@ XUI_API int xuiDocumentRendererCreate(xui_context context, const xui_doc_rendere
         !isfinite(desc->fParagraphGap) || desc->fParagraphGap < 0 || !isfinite(desc->fLineGap) || desc->fLineGap < 0 ||
         !isfinite(desc->fIndent) || desc->fIndent < 0))) return XUI_ERROR_INVALID_ARGUMENT;
     r = calloc(1, sizeof(*r)); if (!r) return XUI_ERROR_OUT_OF_MEMORY;
-    r->context = context; r->proxy = &r->proxy_storage;
+    r->context = context; r->proxy = &r->proxy_storage;r->lifecycle=r;r->creator_thread=xrtThreadCurrentId();
     r->resource_registry_generation = xuiResourceGetRegistryGeneration(context);
     r->dpi_scale = xuiGetVirtualDpi(context);
     r->uses_default_font = !desc || !desc->tFonts.normal;
@@ -1334,17 +1689,86 @@ XUI_API int xuiDocumentRendererCreate(xui_context context, const xui_doc_rendere
     if (!r->desc.iImageTextColor) r->desc.iImageTextColor = XUI_COLOR_RGBA(90, 100, 112, 255);
     r->width = 640; r->mode = XUI_DOC_VISUAL; r->size_dirty = 1;
     if (!r->proxy || !xrtMapInit(&r->block_index, sizeof(size_t))) { free(r); return XUI_ERROR_OUT_OF_MEMORY; }
+    int admission=XUI_OK;
+    if(context->pOwnedProxy){
+        admission=xuiProxyAddRef(context->pOwnedProxy);
+        if(admission==XUI_OK)r->owned_proxy=context->pOwnedProxy;
+        for(unsigned i=0;i<5 && admission==XUI_OK;++i){
+            xui_font font=*doc_renderer_font_slot(r,i);if(!font)continue;
+            admission=xuiInternalFontAdmit(context,font);if(admission==XUI_OK)r->owned_font_mask|=(uint8_t)(1u<<i);
+        }
+    }
+    if(admission==XUI_OK)admission=xuiContextLifetimeWatch(context,&r->context_link,doc_renderer_context_gone,r);
+    if(admission!=XUI_OK){
+        xerror* first=xrtTakeError();
+        for(unsigned i=5;i>0;--i)if(r->owned_font_mask&(1u<<(i-1)))(void)xuiFontReleaseChecked(*doc_renderer_font_slot(r,i-1));
+        if(r->owned_proxy)(void)xuiProxyReleaseChecked(r->owned_proxy);
+        xrtMapUnit(&r->block_index);free(r);xrtSetErrorTake(first);return admission;
+    }
     *out = r; return XUI_OK;
 }
-XUI_API void xuiDocumentRendererRelease(xui_document_renderer r)
+XUI_API int xuiDocumentRendererRequestClose(xui_document_renderer renderer)
 {
-    size_t i;
-    if (!r) return;
-    doc_render_clear(r); xrtMapUnit(&r->block_index); xuiDocumentSnapshotRelease(r->snapshot); xuiDocumentPrepareRelease(r->input);
-    for (i = 0; i < r->font_count; i++) if (r->proxy->fontDestroy) r->proxy->fontDestroy(r->proxy, r->fonts[i].font);
-    free(r->fonts); free(r);
+    if(!renderer || renderer->lifecycle!=renderer || renderer->destroying)return XUI_ERROR_INVALID_ARGUMENT;
+    if(renderer->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    renderer->retiring=true;return XUI_OK;
 }
-XUI_API int xuiDocumentRendererSetSnapshot(xui_document_renderer r, xui_document_snapshot s, xui_document_change_set changes)
+XUI_API int xuiDocumentRendererReleaseOwnerChecked(xui_document_renderer r,bool* consumed)
+{
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!r || r->lifecycle!=r || r->destroying)return XUI_ERROR_INVALID_ARGUMENT;
+    if(r->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    r->retiring=true;if(r->calls)return XUI_STATUS_DEFERRED;
+    xui_context context=r->context;xui_call_scope_t scope={0};
+    if(context){int status=xuiInternalCleanupCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;}
+    ++r->calls;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    bool complete=false;int status=doc_renderer_paint_prepare(r,&complete);
+    if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+    if(complete){
+        /* All semantic paint owners have already been consumed. Only now may
+         * structural cleanup discard their arrays and borrowed geometry. */
+        xuiInternalCleanupAdd(&receipt,doc_render_clear(r));
+        for(size_t i=0;i<r->font_count;++i){
+            if(!r->fonts[i].font)continue;
+            if(r->owned_proxy){
+                bool released=false;status=xuiFontReleaseOwnerChecked(r->fonts[i].font,&released);
+                if(!released && (status==XUI_ERROR_BUSY || status==XUI_STATUS_DEFERRED)){complete=false;continue;}
+                xuiInternalContextCleanupOutcome(context,status,&receipt.status,&receipt.error);
+                if(released)r->fonts[i].font=NULL;else complete=false;
+            }else if(r->proxy->fontDestroy){r->proxy->fontDestroy(r->proxy,r->fonts[i].font);r->fonts[i].font=NULL;
+                xuiInternalContextCleanupOutcome(context,XUI_OK,&receipt.status,&receipt.error);}
+        }
+        for(unsigned i=5;i>0;--i)if(r->owned_font_mask&(1u<<(i-1))){
+            bool released=false;status=xuiFontReleaseOwnerChecked(*doc_renderer_font_slot(r,i-1),&released);
+            if(!released && (status==XUI_ERROR_BUSY || status==XUI_STATUS_DEFERRED)){complete=false;continue;}
+            xuiInternalContextCleanupOutcome(context,status,&receipt.status,&receipt.error);
+            if(released)r->owned_font_mask&=(uint8_t)~(1u<<(i-1));else complete=false;
+        }
+    }
+    if(!complete){
+        --r->calls;receipt.status=xuiInternalCallScopeEndOutcome(&scope,receipt.status,&receipt.error);
+        status=xuiInternalCleanupEnd(NULL,&receipt);return status==XUI_OK ? XUI_STATUS_DEFERRED:status;
+    }
+    r->destroying=true;*consumed=true;
+    xuiLifetimeUnwatch(&r->context_link);xuiInternalLifetimeInvalidateAll(&r->lifetime_links);
+    xuiInternalContextCleanupOutcome(context,XUI_OK,&receipt.status,&receipt.error);
+    xrtMapUnit(&r->block_index);xuiDocumentSnapshotRelease(r->snapshot);xuiDocumentPrepareRelease(r->input);free(r->fonts);
+    for(unsigned i=3;i>0;--i){
+        xui_callback_owner_t owner=r->callback_owners[i-1];r->callback_owners[i-1]=(xui_callback_owner_t){0};
+        xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&owner,receipt.status,receipt.error));
+    }
+    xui_proxy proxy=r->owned_proxy;free(r);
+    if(proxy)xuiInternalContextCleanupOutcome(context,xuiProxyReleaseChecked(proxy),&receipt.status,&receipt.error);
+    receipt.status=xuiInternalCallScopeEndOutcome(&scope,receipt.status,&receipt.error);
+    return xuiInternalCleanupEnd(NULL,&receipt);
+}
+XUI_API int xuiDocumentRendererReleaseChecked(xui_document_renderer r)
+{bool consumed=false;return xuiDocumentRendererReleaseOwnerChecked(r,&consumed);}
+XUI_API void xuiDocumentRendererRelease(xui_document_renderer r)
+{if(r)(void)xuiDocumentRendererReleaseChecked(r);}
+static int doc_impl_SetSnapshot(xui_document_renderer r, xui_document_snapshot s, xui_document_change_set changes)
 {
     int rebuild, promote, paint_only; size_t i;
     if (!r || !s) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1376,7 +1800,7 @@ XUI_API int xuiDocumentRendererSetSnapshot(xui_document_renderer r, xui_document
         doc_render_paint_only_change(changes);
     if (rebuild) {
         struct xui_document_renderer_t next = {0}; int result;
-        next.context = r->context; next.proxy = r->proxy;
+        next.lifecycle=doc_renderer_root(r); next.context = r->context; next.proxy = r->proxy;
         next.snapshot = s; next.desc = r->desc; next.width = r->width; next.mode = r->mode; next.active_source = r->active_source;
         if (!xrtMapInit(&next.block_index, sizeof(size_t))) return XUI_ERROR_OUT_OF_MEMORY;
         if (r->mode == XUI_DOC_SOURCE_TEXT) result = doc_render_collect_source_range(&next, 0, doc_seq_size(s->state->source));
@@ -1388,7 +1812,9 @@ XUI_API int xuiDocumentRendererSetSnapshot(xui_document_renderer r, xui_document
             if (!next.heights) result = XUI_ERROR_OUT_OF_MEMORY;
         }
         if (result != XUI_OK) { doc_render_clear(&next); xrtMapUnit(&next.block_index); return result; }
-        doc_render_clear(r); xrtMapUnit(&r->block_index);
+        bool directory_done=false;int clear_status=doc_render_clear_checked(r,&directory_done);
+        if(!directory_done){xerror* first=xrtTakeError();(void)doc_render_clear(&next);xrtMapUnit(&next.block_index);xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);return clear_status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:clear_status;}
+        xrtMapUnit(&r->block_index);
         r->blocks = next.blocks; r->heights = next.heights; r->source_rows = next.source_rows;
         r->source_row_serial = next.source_row_serial;
         r->source_height_hint = next.source_height_hint;
@@ -1458,7 +1884,7 @@ static int doc_render_set_live_input(xui_document_renderer r, xui_document_prepa
         if (result == XUI_OK) return XUI_OK;
         if (result != XUI_ERROR_NOT_FOUND) return result;
     }
-    next.context = r->context; next.proxy = r->proxy; next.snapshot = r->snapshot;
+    next.lifecycle=doc_renderer_root(r); next.context = r->context; next.proxy = r->proxy; next.snapshot = r->snapshot;
     next.input = p; next.desc = r->desc; next.width = r->width; next.mode = r->mode;
     next.active_source = r->active_source;
     next.live_active_node = r->live_active_node; next.live_base_end = r->live_base_end;
@@ -1470,7 +1896,9 @@ static int doc_render_set_live_input(xui_document_renderer r, xui_document_prepa
         if (!next.heights) result = XUI_ERROR_OUT_OF_MEMORY;
     }
     if (result != XUI_OK) { doc_render_clear(&next); xrtMapUnit(&next.block_index); return result; }
-    doc_render_clear(r); xrtMapUnit(&r->block_index);
+    bool directory_done=false;int clear_status=doc_render_clear_checked(r,&directory_done);
+    if(!directory_done){xerror* first=xrtTakeError();(void)doc_render_clear(&next);xrtMapUnit(&next.block_index);xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);return clear_status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:clear_status;}
+    xrtMapUnit(&r->block_index);
     r->blocks = next.blocks; r->heights = next.heights;
     r->count = next.count; r->capacity = next.capacity; r->block_index = next.block_index;
     r->source_height_hint = next.source_height_hint;
@@ -1485,11 +1913,11 @@ static int doc_render_set_live_input(xui_document_renderer r, xui_document_prepa
     xuiDocumentPrepareRetain(p); xuiDocumentPrepareRelease(r->input); r->input = p;
     return XUI_OK;
 }
-XUI_API int xuiDocumentRendererSetSourceInput(xui_document_renderer r, xui_document_prepare p)
+static int doc_impl_SetSourceInput(xui_document_renderer r, xui_document_prepare p)
 {
     struct xui_document_renderer_t next = {0}; xui_doc_prepare_info_t info = {0}; int result;
     if (!r || !r->snapshot) return XUI_ERROR_INVALID_ARGUMENT;
-    if (!p) return xuiDocumentRendererSetSnapshot(r, r->snapshot, NULL);
+    if (!p) return doc_impl_SetSnapshot(r, r->snapshot, NULL);
     if (r->mode != XUI_DOC_SOURCE_TEXT && r->mode != XUI_DOC_LIVE_MARKDOWN) return XUI_ERROR_UNSUPPORTED;
     if (r->input == p) return XUI_OK;
     info.iSize = sizeof(info); result = xuiDocumentPrepareGetInfo(p, &info); if (result != XUI_OK) return result;
@@ -1499,11 +1927,13 @@ XUI_API int xuiDocumentRendererSetSourceInput(xui_document_renderer r, xui_docum
     if (result == XUI_OK) goto applied;
     if (result != XUI_ERROR_NOT_FOUND) return result;
     next.snapshot = r->snapshot; next.input = p; next.desc = r->desc; next.width = r->width; next.mode = r->mode;
-    next.context = r->context; next.proxy = r->proxy;
+    next.lifecycle=doc_renderer_root(r); next.context = r->context; next.proxy = r->proxy;
     if (!xrtMapInit(&next.block_index, sizeof(size_t))) return XUI_ERROR_OUT_OF_MEMORY;
     result = doc_render_collect_source_range(&next, 0, info.iSourceBytes);
     if (result != XUI_OK) { doc_render_clear(&next); xrtMapUnit(&next.block_index); return result; }
-    doc_render_clear(r); xrtMapUnit(&r->block_index);
+    bool directory_done=false;int clear_status=doc_render_clear_checked(r,&directory_done);
+    if(!directory_done){xerror* first=xrtTakeError();(void)doc_render_clear(&next);xrtMapUnit(&next.block_index);xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);return clear_status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:clear_status;}
+    xrtMapUnit(&r->block_index);
     r->blocks = next.blocks; r->source_rows = next.source_rows; r->source_row_serial = next.source_row_serial;
     r->count = next.count; r->capacity = next.capacity; r->heights = next.heights; r->block_index = next.block_index;
     r->size_dirty = 1;
@@ -1512,7 +1942,7 @@ XUI_API int xuiDocumentRendererSetSourceInput(xui_document_renderer r, xui_docum
 applied:
     xuiDocumentPrepareRetain(p); xuiDocumentPrepareRelease(r->input); r->input = p; return XUI_OK;
 }
-XUI_API int xuiDocumentRendererSetMode(xui_document_renderer r, uint32_t mode)
+static int doc_impl_SetMode(xui_document_renderer r, uint32_t mode)
 {
     xui_document_snapshot s; uint32_t previous; int result;
     if (!r || (mode != XUI_DOC_VISUAL && mode != XUI_DOC_SOURCE_TEXT && mode != XUI_DOC_LIVE_MARKDOWN)) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1522,12 +1952,12 @@ XUI_API int xuiDocumentRendererSetMode(xui_document_renderer r, uint32_t mode)
     previous = r->mode; r->mode = mode;
     if (!r->snapshot) return XUI_OK;
     s = r->snapshot; r->snapshot = NULL;
-    result = xuiDocumentRendererSetSnapshot(r, s, NULL);
+    result = doc_impl_SetSnapshot(r, s, NULL);
     if (result != XUI_OK) { r->snapshot = s; r->mode = previous; }
     else xuiDocumentSnapshotRelease(s);
     return result;
 }
-XUI_API int xuiDocumentRendererInvalidateObjects(xui_document_renderer r)
+static int doc_impl_InvalidateObjects(xui_document_renderer r)
 {
     size_t i;
     if (!r) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1543,16 +1973,17 @@ XUI_API int xuiDocumentRendererInvalidateObjects(xui_document_renderer r)
             block->shaped_revision == r->snapshot->revision &&
             fabsf(block->dpi_scale - xuiGetVirtualDpi(r->context)) < .001f) {
             size_t previous_bytes = block->cache_bytes;
-            doc_render_block_reflow(block);
+            int cleanup=doc_render_block_reflow(r,block);
+            if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;
             r->cache_bytes = r->cache_bytes - previous_bytes + block->cache_bytes;
         } else doc_render_release_block(r, block);
     }
     r->size_dirty = 1;
     return XUI_OK;
 }
-static void doc_render_live_reset_source_heights(xui_document_renderer r)
+static int doc_render_live_reset_source_heights(xui_document_renderer r)
 {
-    double line_height = doc_render_code_line_height(r, NULL);
+    double line_height;int status=doc_render_code_line_height(r,NULL,&line_height);if(status!=XUI_OK)return status;
     size_t i;
     r->source_height_hint_valid = 0;
     for (i = 0; i < r->count; i++) {
@@ -1565,22 +1996,28 @@ static void doc_render_live_reset_source_heights(xui_document_renderer r)
             r->source_height_hint_valid = 1;
         }
     }
-    if (!r->heights) return;
+    if (!r->heights) return XUI_OK;
     memset(r->heights, 0, (r->count + 1) * sizeof(*r->heights));
     for (i = 1; i <= r->count; i++) {
         size_t parent = i + (i & (~i + 1));
         r->heights[i] += r->blocks[i - 1].height;
         if (parent <= r->count) r->heights[parent] += r->heights[i];
     }
+    return XUI_OK;
 }
 static int doc_render_invalidate_fonts(xui_document_renderer r, float dpi_scale,
     xui_font default_font)
 {
     struct xui_document_renderer_t next = {0};
-    size_t i;
-    int result = XUI_OK;
+    size_t old_font_count=r->font_count;
+    bool font_changed=default_font!=r->desc.tFonts.normal,held=false;
+    int result=doc_renderer_paint_ready(r);if(result!=XUI_OK)return result;
+    if(font_changed && r->owned_proxy && default_font){
+        result=xuiInternalFontAdmit(r->context,default_font);if(result!=XUI_OK)return result;held=true;
+    }
+    xui_cleanup_receipt_t receipt={0};xui_cleanup_prefix_t prefix={0};
     if (r->snapshot) {
-        next.context = r->context; next.proxy = r->proxy;
+        next.lifecycle=doc_renderer_root(r); next.context = r->context; next.proxy = r->proxy;
         next.snapshot = r->snapshot; next.input = r->input;
         next.desc = r->desc; next.desc.tFonts.normal = default_font;
         next.width = r->width; next.mode = r->mode;
@@ -1590,7 +2027,7 @@ static int doc_render_invalidate_fonts(xui_document_renderer r, float dpi_scale,
         next.live_base_end = r->live_base_end;
         next.live_pending_full = r->live_pending_full;
         next.source_row_serial = r->source_row_serial;
-        if (!xrtMapInit(&next.block_index, sizeof(size_t))) return XUI_ERROR_OUT_OF_MEMORY;
+        if (!xrtMapInit(&next.block_index, sizeof(size_t))) {result=XUI_ERROR_OUT_OF_MEMORY;goto rollback;}
         if (r->mode == XUI_DOC_SOURCE_TEXT)
             result = doc_render_collect_source_range(&next, 0,
                 doc_seq_size(doc_render_source(&next)));
@@ -1603,11 +2040,11 @@ static int doc_render_invalidate_fonts(xui_document_renderer r, float dpi_scale,
             next.heights = doc_render_build_heights(next.blocks, next.count);
             if (!next.heights) result = XUI_ERROR_OUT_OF_MEMORY;
         }
-        if (result != XUI_OK) {
-            doc_render_clear(&next); xrtMapUnit(&next.block_index);
-            return result;
-        }
-        doc_render_clear(r); xrtMapUnit(&r->block_index);
+        if(result==XUI_OK && (r->context->bDestroyPending || r->context->bDestroying))result=XUI_ERROR_INVALID_STATE;
+        if(result!=XUI_OK)goto rollback;
+        bool directory_done=false;int clear_status=doc_render_clear_checked(r,&directory_done);
+        if(!directory_done){xerror* first=xrtTakeError();(void)doc_render_clear(&next);xrtMapUnit(&next.block_index);xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);return clear_status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:clear_status;}
+        xrtMapUnit(&r->block_index);
         r->blocks = next.blocks; r->heights = next.heights;
         r->source_rows = next.source_rows; r->source_row_serial = next.source_row_serial;
         r->source_height_hint = next.source_height_hint;
@@ -1625,16 +2062,44 @@ static int doc_render_invalidate_fonts(xui_document_renderer r, float dpi_scale,
         r->stats.iSourceBytesScanned += next.stats.iSourceBytesScanned;
         r->stats.iSourceRowsCreated += next.stats.iSourceRowsCreated;
     }
-    /* No block layout retains a sized font after clearing the old directory. */
-    for (i = 0; i < r->font_count; i++)
-        if (r->proxy->fontDestroy) r->proxy->fontDestroy(r->proxy, r->fonts[i].font);
-    r->font_count = 0;
-    r->desc.tFonts.normal = default_font;
-    r->dpi_scale = dpi_scale;
-    r->size_dirty = 1;
-    return XUI_OK;
+    /* Old blocks are gone before their borrowed cache keys and font owners.
+     * Entries created by rebuilding append after old_font_count and survive
+     * this commit; no transient default-font key can outlive its owner. */
+    xuiInternalCleanupStart(&receipt,XUI_OK);
+    for(size_t i=0;i<old_font_count;++i){
+        int cleanup=XUI_OK;
+        if(r->owned_proxy)cleanup=xuiFontReleaseChecked(r->fonts[i].font);
+        else if(r->proxy->fontDestroy)r->proxy->fontDestroy(r->proxy,r->fonts[i].font);
+        xuiInternalContextCleanupOutcome(r->context,cleanup,&receipt.status,&receipt.error);
+    }
+    if(r->font_count>old_font_count)memmove(r->fonts,r->fonts+old_font_count,(r->font_count-old_font_count)*sizeof(*r->fonts));
+    r->font_count-=old_font_count;
+    xui_font previous=r->desc.tFonts.normal;
+    bool previous_owned=(r->owned_font_mask&1u)!=0;
+    r->desc.tFonts.normal=default_font;
+    if(font_changed && r->owned_proxy){
+        if(held)r->owned_font_mask|=1u;else r->owned_font_mask&=(uint8_t)~1u;
+        if(previous_owned)xuiInternalContextCleanupOutcome(r->context,xuiFontReleaseChecked(previous),&receipt.status,&receipt.error);
+    }
+    r->dpi_scale=dpi_scale;r->size_dirty=1;
+    return xuiInternalCleanupEnd(NULL,&receipt);
+rollback:
+    xuiInternalCleanupStart(&receipt,result);
+    if(receipt.status!=XUI_OK)xuiInternalCleanupAdd(&receipt,xuiInternalCleanupPrefixBegin(r->context,&prefix,receipt.status,receipt.error));
+    xuiInternalContextCleanupOutcome(r->context,doc_render_clear(&next),&receipt.status,&receipt.error);
+    xrtMapUnit(&next.block_index);
+    while(r->font_count>old_font_count){
+        xui_font font=r->fonts[--r->font_count].font;int cleanup=XUI_OK;
+        if(r->owned_proxy)cleanup=xuiFontReleaseChecked(font);
+        else if(r->proxy->fontDestroy)r->proxy->fontDestroy(r->proxy,font);
+        xuiInternalContextCleanupOutcome(r->context,cleanup,&receipt.status,&receipt.error);
+    }
+    if(held)xuiInternalContextCleanupOutcome(r->context,xuiFontReleaseChecked(default_font),&receipt.status,&receipt.error);
+    xuiInternalCleanupAdd(&receipt,xuiInternalCleanupPrefixEnd(&prefix));
+    return xuiInternalCleanupEnd(NULL,&receipt);
 }
-XUI_API int xuiDocumentRendererInvalidateFonts(xui_document_renderer r)
+
+static int doc_impl_InvalidateFonts(xui_document_renderer r)
 {
     if (!r) return XUI_ERROR_INVALID_ARGUMENT;
     return doc_render_invalidate_fonts(r, xuiGetVirtualDpi(r->context),
@@ -1653,9 +2118,9 @@ static int doc_render_refresh_resources(xui_document_renderer r)
     }
     if (generation == r->resource_registry_generation) return XUI_OK;
     if (!r->has_named_images) { r->resource_registry_generation = generation; return XUI_OK; }
-    return xuiDocumentRendererInvalidateObjects(r);
+    return doc_impl_InvalidateObjects(r);
 }
-XUI_API int xuiDocumentRendererSetActivePosition(xui_document_renderer r, const xui_doc_position_t* p)
+static int doc_impl_SetActivePosition(xui_document_renderer r, const xui_doc_position_t* p)
 {
     xui_document_snapshot s; uint64_t offset, previous; int mapping, result;
     if (!r || !r->snapshot || !p) return XUI_ERROR_INVALID_ARGUMENT;
@@ -1673,25 +2138,26 @@ XUI_API int xuiDocumentRendererSetActivePosition(xui_document_renderer r, const 
         return result;
     }
     s = r->snapshot; r->snapshot = NULL;
-    result = xuiDocumentRendererSetSnapshot(r, s, NULL);
+    result = doc_impl_SetSnapshot(r, s, NULL);
     if (result != XUI_OK) { r->snapshot = s; r->active_source = previous; }
     else xuiDocumentSnapshotRelease(s);
     return result;
 }
-XUI_API int xuiDocumentRendererGetActiveSourceRange(xui_document_renderer r, uint64_t* start, uint64_t* end)
+static int doc_impl_GetActiveSourceRange(xui_document_renderer r, uint64_t* start, uint64_t* end)
 {
     if (!r || !r->snapshot || !start || !end) return XUI_ERROR_INVALID_ARGUMENT;
     if (r->mode != XUI_DOC_LIVE_MARKDOWN) return XUI_ERROR_UNSUPPORTED;
     *start = r->live_start; *end = r->live_end; return XUI_OK;
 }
-XUI_API int xuiDocumentRendererLayout(xui_document_renderer r, double width, double top, double height)
+static int doc_impl_Layout(xui_document_renderer r, double width, double top, double height)
 {
     size_t i, start, visible_bytes = 0; double y; int result, reverse;
     if (!r || !r->snapshot || !isfinite(width) || !isfinite(top) || !isfinite(height) || width <= 0 || top < 0 || height < 0) return XUI_ERROR_INVALID_ARGUMENT;
     result = doc_render_refresh_resources(r); if (result != XUI_OK) return result;
     if (fabs(r->width - width) > .001) {
         if (r->mode == XUI_DOC_SOURCE_TEXT) {
-            doc_rows_unmeasure(r->source_rows, doc_render_code_line_height(r, NULL));
+            double line_height;result=doc_render_code_line_height(r,NULL,&line_height);if(result!=XUI_OK)return result;
+            doc_rows_unmeasure(r,r->source_rows,line_height);
             r->cache_bytes = 0;
         }
         else {
@@ -1706,13 +2172,15 @@ XUI_API int xuiDocumentRendererLayout(xui_document_renderer r, double width, dou
                     block_bottom >= keep_top && block_top <= keep_bottom &&
                     block->shaped_revision == r->snapshot->revision &&
                     fabsf(block->dpi_scale - dpi_scale) < .001f)
-                    doc_render_block_reflow(block);
-                else doc_render_block_free(block);
+                    result=doc_render_block_reflow(r,block);
+                else result=doc_render_block_free(r,block);
+                if(result!=XUI_OK)return result==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:result;
                 r->cache_bytes = r->cache_bytes - previous_bytes + block->cache_bytes;
                 block_top = block_bottom;
             }
-            if (r->mode == XUI_DOC_LIVE_MARKDOWN)
-                doc_render_live_reset_source_heights(r);
+            if(r->mode==XUI_DOC_LIVE_MARKDOWN){
+                result=doc_render_live_reset_source_heights(r);if(result!=XUI_OK)return result;
+            }
         }
         r->width = width;
         r->size_dirty = 1;
@@ -1773,7 +2241,7 @@ int doc_render_prepare_caret_viewport(xui_document_renderer r,
     const xui_doc_position_t* position, double height, xui_doc_rect_t* caret)
 {
     size_t index; double covered; int result;
-    result = xuiDocumentRendererGetCaretRect(r, position, caret);
+    result = doc_impl_GetCaretRect(r, position, caret);
     if (result != XUI_OK || r->mode == XUI_DOC_SOURCE_TEXT || !r->count)
         return result;
     index = doc_render_block_at(r, caret->y);
@@ -1786,9 +2254,9 @@ int doc_render_prepare_caret_viewport(xui_document_renderer r,
         if (result != XUI_OK) return result;
         covered += block->height;
     }
-    return xuiDocumentRendererGetCaretRect(r, position, caret);
+    return doc_impl_GetCaretRect(r, position, caret);
 }
-XUI_API int xuiDocumentRendererGetSize(xui_document_renderer r, xui_doc_rect_t* size, int* exact)
+static int doc_impl_GetSize(xui_document_renderer r, xui_doc_rect_t* size, int* exact)
 {
     size_t i; int result;
     if (!r || !size || !exact) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2041,7 +2509,7 @@ static xui_doc_rect_t doc_render_grapheme_caret(xui_document_renderer renderer,
     rect.width = 1;
     return rect;
 }
-XUI_API int xuiDocumentRendererHitTest(xui_document_renderer r, double x, double y, xui_doc_position_t* out)
+static int doc_impl_HitTest(xui_document_renderer r, double x, double y, xui_doc_position_t* out)
 {
     size_t index, i, first, end, best = SIZE_MAX; doc_render_block* b; uint64_t cell = 0;
     double best_dy = DBL_MAX, best_dx = DBL_MAX, cell_area = DBL_MAX, top; int result;
@@ -2142,7 +2610,7 @@ XUI_API int xuiDocumentRendererHitTest(xui_document_renderer r, double x, double
     }
     return XUI_OK;
 }
-XUI_API int xuiDocumentRendererHitTaskMarker(xui_document_renderer r,
+static int doc_impl_HitTaskMarker(xui_document_renderer r,
     double x, double y, xui_doc_node_id* item)
 {
     size_t index;
@@ -2187,7 +2655,7 @@ static int doc_render_cell_hit(xui_document_renderer r, const doc_box* box, doub
     out->tBounds = (xui_doc_rect_t){box->x, top + box->y, box->width, box->height};
     return XUI_OK;
 }
-XUI_API int xuiDocumentRendererHitTestCell(xui_document_renderer r, double x, double y, xui_doc_cell_hit_t* out)
+static int doc_impl_HitTestCell(xui_document_renderer r, double x, double y, xui_doc_cell_hit_t* out)
 {
     size_t index, i; doc_render_block* block; double top; int result;
     if (!r || !r->snapshot || !out || out->iSize != sizeof(*out) || !isfinite(x) || !isfinite(y))
@@ -2211,7 +2679,7 @@ XUI_API int xuiDocumentRendererHitTestCell(xui_document_renderer r, double x, do
     }
     return XUI_ERROR_NOT_FOUND;
 }
-XUI_API int xuiDocumentRendererGetCellRect(xui_document_renderer r, xui_doc_node_id cell, xui_doc_cell_hit_t* out)
+static int doc_impl_GetCellRect(xui_document_renderer r, xui_doc_node_id cell, xui_doc_cell_hit_t* out)
 {
     doc_node* node; doc_render_block* block; size_t index, i; int result;
     if (!r || !r->snapshot || !cell || !out || out->iSize != sizeof(*out)) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2273,7 +2741,7 @@ static int doc_render_partial_through_object(xui_document_renderer r,
 static int doc_render_partial_through_text(xui_document_renderer r,
     size_t index, doc_render_block* b, const xui_doc_position_t* p,
     doc_fragment** covered);
-XUI_API int xuiDocumentRendererGetNodeRect(xui_document_renderer r, xui_doc_node_id id, xui_doc_rect_t* out)
+static int doc_impl_GetNodeRect(xui_document_renderer r, xui_doc_node_id id, xui_doc_rect_t* out)
 {
     doc_render_block* block; doc_state* state; doc_node* node; size_t index, i; double top;
     int found = 0, result;
@@ -2285,7 +2753,7 @@ XUI_API int xuiDocumentRendererGetNodeRect(xui_document_renderer r, xui_doc_node
     result = doc_render_refresh_resources(r); if (result != XUI_OK) return result;
     if (id == DOC_ROOT) {
         xui_doc_rect_t size; int exact;
-        result = xuiDocumentRendererGetSize(r, &size, &exact);
+        result = doc_impl_GetSize(r, &size, &exact);
         if (result == XUI_OK) *out = (xui_doc_rect_t){0, 0, size.width, size.height};
         return result;
     }
@@ -2534,7 +3002,7 @@ static int doc_render_object_edge_caret(xui_document_renderer r, uint64_t id,
     }
     return XUI_ERROR_NOT_FOUND;
 }
-XUI_API int xuiDocumentRendererGetCaretRect(xui_document_renderer r, const xui_doc_position_t* p, xui_doc_rect_t* out)
+static int doc_impl_GetCaretRect(xui_document_renderer r, const xui_doc_position_t* p, xui_doc_rect_t* out)
 {
     size_t index; doc_render_block* b; double top; int result; xui_doc_position_t clamped;
     if (!r || !r->snapshot || !p || !out) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2563,7 +3031,7 @@ XUI_API int xuiDocumentRendererGetCaretRect(xui_document_renderer r, const xui_d
         { xui_doc_position_t mapped; uint64_t base = p->iOffset; int mapping;
           if (r->input) { result = doc_render_live_input_to_base(r, p->iOffset, &base); if (result != XUI_OK) return result; }
           result = xuiDocumentSourceToPositionEx(r->snapshot, base, p->iAffinity, &mapped, &mapping);
-          return result == XUI_OK ? xuiDocumentRendererGetCaretRect(r, &mapped, out) : result; }
+          return result == XUI_OK ? doc_impl_GetCaretRect(r, &mapped, out) : result; }
     }
     if (p->iKind == XUI_DOC_POSITION_GAP) {
         doc_node* n = doc_index_get(r->snapshot->state->index, p->iNodeId);
@@ -2598,7 +3066,7 @@ XUI_API int xuiDocumentRendererGetCaretRect(xui_document_renderer r, const xui_d
             }
             edge.iNodeId = n->id; edge.iKind = doc_text_kind(n->kind) ? XUI_DOC_POSITION_TEXT : XUI_DOC_POSITION_GAP;
             edge.iOffset = end ? doc_seq_size(n->text) : 0;
-            return xuiDocumentRendererGetCaretRect(r, &edge, out);
+            return doc_impl_GetCaretRect(r, &edge, out);
         }
     }
     if (p->iKind == XUI_DOC_POSITION_SOURCE && r->mode == XUI_DOC_SOURCE_TEXT) {
@@ -2658,7 +3126,7 @@ int doc_render_visual_move(xui_document_renderer r, const xui_doc_position_t* p,
     int result, found = 0, base = 0;
     if (!out || !logical_right) return XUI_ERROR_INVALID_ARGUMENT;
     *logical_right = right;
-    result = xuiDocumentRendererGetCaretRect(r, p, &caret);
+    result = doc_impl_GetCaretRect(r, p, &caret);
     if (result != XUI_OK) return result;
     index = doc_render_block_at(r, caret.y + caret.height * .5);
     block = doc_render_block_at_index(r, index);
@@ -2686,7 +3154,7 @@ int doc_render_visual_move(xui_document_renderer r, const xui_doc_position_t* p,
     }
     if (found) {
         double inset = fmin(.0001, candidate.width * .25);
-        return xuiDocumentRendererHitTest(r, right ? candidate.x + candidate.width - inset : candidate.x + inset,
+        return doc_impl_HitTest(r, right ? candidate.x + candidate.width - inset : candidate.x + inset,
             candidate.y + candidate.height * .5, out);
     }
     *logical_right = right != !!(base & 1);
@@ -2719,7 +3187,7 @@ int doc_render_visual_move(xui_document_renderer r, const xui_doc_position_t* p,
             left = fmin(left, rect.x); right_edge = fmax(right_edge, rect.x + rect.width);
         }
         if (left == DBL_MAX) return XUI_ERROR_NOT_FOUND;
-        return xuiDocumentRendererHitTest(r, *logical_right != !!(base & 1) ? left : right_edge,
+        return doc_impl_HitTest(r, *logical_right != !!(base & 1) ? left : right_edge,
             candidate.y + candidate.height * .5, out);
     }
 }
@@ -2828,7 +3296,7 @@ static int doc_render_horizontal_row_range(xui_document_renderer r,
     range.tCaret.iAffinity = XUI_DOC_BEFORE;
     *out = range; return XUI_OK;
 }
-XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer r,
+static int doc_impl_GetLineRange(xui_document_renderer r,
     const xui_doc_position_t* position, xui_doc_range_t* out)
 {
     xui_doc_rect_t caret; xui_doc_position_t carrier; xui_doc_range_t range, fragment;
@@ -2855,7 +3323,7 @@ XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer r,
     block = index == SIZE_MAX ? NULL : doc_render_block_at_index(r, index);
     if (block && (block->source_line || block->line_lazy))
         return doc_render_horizontal_row_range(r, block, out);
-    result = xuiDocumentRendererGetCaretRect(r, position, &caret);
+    result = doc_impl_GetCaretRect(r, position, &caret);
     if (result != XUI_OK) return result;
     if (!r->count) { range.tAnchor = range.tCaret = *position; *out = range; return XUI_OK; }
     index = doc_render_block_at(r, caret.y + caret.height * .5);
@@ -2968,7 +3436,7 @@ int doc_render_position_may_bidi(xui_document_renderer r, const xui_doc_position
      * merely to collapse a selection towards the visible start. */
     return !block->measured && !block->line_lazy && !block->virtual_gap;
 }
-XUI_API int xuiDocumentRendererGetRangeRects(xui_document_renderer r,
+static int doc_impl_GetRangeRects(xui_document_renderer r,
     const xui_doc_range_t* range, xui_doc_rect_t* rects,
     uint64_t capacity, uint64_t* total)
 {
@@ -3447,7 +3915,7 @@ static int doc_render_draw_paint_group(xui_document_renderer r,
     if (result == XUI_OK) result = doc_render_group_decorations(r, block, group, draw, ox, top);
     return result;
 }
-XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
+static int doc_impl_Draw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
     const xui_doc_range_t* selection, uint32_t selection_color)
 {
     size_t index, i; xui_rect_t saved = {0}; int had_clip = 0, result = XUI_OK;
@@ -3597,7 +4065,7 @@ XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context dr
                     if (result != XUI_OK) break;
                 }
                 if (doc_render_visible(rect, clip) && f->kind != XUI_DOC_HARD_BREAK && f->kind != XUI_DOC_SOFT_BREAK && f->kind != XUI_DOC_PARAGRAPH && f->kind != XUI_DOC_HEADING && f->kind != XUI_DOC_CELL && f->kind != XUI_DOC_ROOT && f->kind != XUI_DOC_QUOTE) {
-                    int object_result = r->desc.onObjectDraw ? r->desc.onObjectDraw(r->snapshot, f->node, r->proxy, draw, rect, r->desc.pUser) : XUI_ERROR_UNSUPPORTED;
+                    int object_result = doc_render_draw_object(r,f->node,draw,rect);
                     if (object_result == XUI_ERROR_UNSUPPORTED && f->kind == XUI_DOC_IMAGE)
                         object_result = doc_render_image_draw(r, doc_index_get(r->snapshot->state->index, f->node), draw, rect);
                     if (object_result == XUI_ERROR_UNSUPPORTED && f->kind == XUI_DOC_IMAGE)
@@ -3677,7 +4145,7 @@ draw_done:
     }
     return result;
 }
-XUI_API int xuiDocumentRendererGetStats(xui_document_renderer r, xui_doc_renderer_stats_t* out)
+static int doc_impl_GetStats(xui_document_renderer r, xui_doc_renderer_stats_t* out)
 {
     size_t i;
     if (!r || !out || out->iSize != sizeof(*out)) return XUI_ERROR_INVALID_ARGUMENT;
@@ -3687,6 +4155,150 @@ XUI_API int xuiDocumentRendererGetStats(xui_document_renderer r, xui_doc_rendere
     if (r->mode == XUI_DOC_SOURCE_TEXT) { out->iSourceBlocks = r->count; return XUI_OK; }
     for (i = 0; i < r->count; i++) out->iSourceBlocks += !!r->blocks[i].source_line;
     return XUI_OK;
+}
+
+static int doc_renderer_call_begin(xui_document_renderer r,doc_renderer_call_t* call,bool readOnly,bool clearAll)
+{
+    if(!r || r->lifecycle!=r || r->destroying)return XUI_ERROR_INVALID_ARGUMENT;
+    if(r->retiring)return XUI_ERROR_INVALID_STATE;
+    if(r->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(!xuiInternalContextIsValid(r->context))return XUI_ERROR_INVALID_STATE;
+    if(r->calls && !readOnly)return XUI_ERROR_BUSY;
+    int status=xuiCallScopeBegin(r->context,&call->scope);if(status!=XUI_OK)return status;
+    call->renderer=r;call->context=r->context;++r->calls;
+    if(!readOnly){bool complete=false;status=doc_render_work_prepare(r,&complete);if(status==XUI_STATUS_DEFERRED)status=XUI_ERROR_BUSY;if(status!=XUI_OK)return status;}
+    return clearAll ? doc_renderer_paint_ready(r):XUI_OK;
+}
+static int doc_renderer_call_end(doc_renderer_call_t* call,int status)
+{
+    if(!call->renderer)return status;
+    xui_document_renderer r=call->renderer;xui_context context=call->context;
+    if(status==XUI_OK && r->work_blocked)status=XUI_ERROR_BUSY;
+    if(status==XUI_OK && (r->retiring || r->context!=context || context->bCloseRequested || context->bDestroyPending || context->bDestroying))status=XUI_ERROR_INVALID_STATE;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    --r->calls;call->renderer=NULL;
+    /* The tail can physically release a Widget-owned renderer. */
+    receipt.status=xuiInternalCallScopeEndOutcome(&call->scope,receipt.status,&receipt.error);
+    return xuiInternalCleanupEnd(NULL,&receipt);
+}
+XUI_API int xuiDocumentRendererSetSnapshot(xui_document_renderer r, xui_document_snapshot s, xui_document_change_set changes)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
+    if(status==XUI_OK)status=doc_impl_SetSnapshot(r,s,changes);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererSetSourceInput(xui_document_renderer r, xui_document_prepare p)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
+    if(status==XUI_OK)status=doc_impl_SetSourceInput(r,p);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererSetMode(xui_document_renderer r, uint32_t mode)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
+    if(status==XUI_OK)status=doc_impl_SetMode(r,mode);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererInvalidateObjects(xui_document_renderer r)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
+    if(status==XUI_OK)status=doc_impl_InvalidateObjects(r);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererInvalidateFonts(xui_document_renderer r)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
+    if(status==XUI_OK)status=doc_impl_InvalidateFonts(r);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererSetActivePosition(xui_document_renderer r, const xui_doc_position_t* p)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_SetActivePosition(r,p);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetActiveSourceRange(xui_document_renderer r, uint64_t* start, uint64_t* end)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetActiveSourceRange(r,start,end);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererLayout(xui_document_renderer r, double width, double top, double height)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_Layout(r,width,top,height);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetSize(xui_document_renderer r, xui_doc_rect_t* size, int* exact)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetSize(r,size,exact);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererHitTest(xui_document_renderer r, double x, double y, xui_doc_position_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_HitTest(r,x,y,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererHitTaskMarker(xui_document_renderer r,
+    double x, double y, xui_doc_node_id* item)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_HitTaskMarker(r,x,y,item);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererHitTestCell(xui_document_renderer r, double x, double y, xui_doc_cell_hit_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_HitTestCell(r,x,y,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetCellRect(xui_document_renderer r, xui_doc_node_id cell, xui_doc_cell_hit_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetCellRect(r,cell,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetNodeRect(xui_document_renderer r, xui_doc_node_id id, xui_doc_rect_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetNodeRect(r,id,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetCaretRect(xui_document_renderer r, const xui_doc_position_t* p, xui_doc_rect_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetCaretRect(r,p,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer r,
+    const xui_doc_position_t* position, xui_doc_range_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetLineRange(r,position,out);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetRangeRects(xui_document_renderer r,
+    const xui_doc_range_t* range, xui_doc_rect_t* rects,
+    uint64_t capacity, uint64_t* total)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_GetRangeRects(r,range,rects,capacity,total);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
+    const xui_doc_range_t* selection, uint32_t selection_color)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
+    if(status==XUI_OK)status=doc_impl_Draw(r,draw,ox,oy,clip,selection,selection_color);
+    return doc_renderer_call_end(&call,status);
+}
+XUI_API int xuiDocumentRendererGetStats(xui_document_renderer r, xui_doc_renderer_stats_t* out)
+{
+    doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,true,false);
+    if(status==XUI_OK)status=doc_impl_GetStats(r,out);
+    return doc_renderer_call_end(&call,status);
 }
 
 #endif

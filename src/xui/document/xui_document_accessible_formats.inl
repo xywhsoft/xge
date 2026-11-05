@@ -48,8 +48,8 @@ static int doc_text_format_key_for(doc_view_data* view, doc_node* node, int raw,
         key->alignment = doc_effective_alignment(state, node);
         if (doc_selectable_object_kind(node->kind)) key->object_kind = node->kind;
     }
-    key->font = doc_layout_text_font(r, &attrs, heading);
-    if (!key->font) return XUI_ERROR_OUT_OF_MEMORY;
+    int font_status=doc_layout_text_font(r,&attrs,heading,&key->font);
+    if(font_status!=XUI_OK)return font_status;
     key->language = attrs.sLanguage;
     key->marks = attrs.iMarks | (heading ? XUI_DOC_BOLD : 0);
     key->foreground = doc_render_text_foreground(r, &attrs);

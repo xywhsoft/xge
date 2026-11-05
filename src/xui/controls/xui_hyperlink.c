@@ -15,6 +15,8 @@
 #define XUI_HYPERLINK_VISUAL_COUNT	6
 
 typedef struct xui_hyperlink_data_t {
+    xui_text_layout pLayout; /* actual font/paint owner, not a temporary */
+    int bLayoutActive;
 	char* sText;
 	int iTextCapacity;
 	xui_font pFont;
@@ -103,6 +105,7 @@ static int __xuiHyperlinkTextSet(xui_hyperlink_data_t* pData, const char* sText)
 
 static xui_hyperlink_data_t* __xuiHyperlinkGetData(xui_widget pWidget)
 {
+    if(xuiInternalWidgetIsValid(pWidget) && pWidget->pContext->bCloseRequested)return NULL;
 	xui_context pContext;
 	xui_widget_type pType;
 
@@ -336,7 +339,7 @@ static void __xuiHyperlinkResolve(xui_widget pWidget, xui_hyperlink_data_t* pDat
 	pDesc->fParagraphGap = fParagraphGap;
 }
 
-static int __xuiHyperlinkContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+static int __xuiHyperlinkContentMeasureImpl(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_hyperlink_data_t* pData;
 	xui_text_layout_desc_t tDesc;
@@ -365,7 +368,8 @@ static int __xuiHyperlinkContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	if ( (tDesc.fMaxHeight <= 0.0f) || (tDesc.fMaxHeight > XUI_LAYOUT_UNBOUNDED) ) {
 		tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
 	}
-	iRet = xuiTextMeasureLayout(xuiWidgetGetContext(pWidget), &tDesc, pSize);
+	iRet = xuiInternalTextLayoutEnsure(xuiWidgetGetContext(pWidget), &pData->pLayout, &tDesc);
+    if(iRet==XUI_OK)*pSize=xuiTextLayoutGetSize(pData->pLayout);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -375,12 +379,24 @@ static int __xuiHyperlinkContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	     (pSize->fY > tConstraint.fY) ) pSize->fY = tConstraint.fY;
 	return XUI_OK;
 }
+static int __xuiHyperlinkContentMeasure(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* size,void* user)
+{
+    xui_hyperlink_data_t* data=__xuiHyperlinkGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bLayoutActive)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    data->bLayoutActive=1;
+    status=__xuiHyperlinkContentMeasureImpl(widget,constraint,size,user);
+    data->bLayoutActive=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
 
-static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+
+static int __xuiHyperlinkCacheRenderImpl(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_hyperlink_data_t* pData;
 	xui_text_layout_desc_t tDesc;
-	xui_text_layout pLayout;
 	xui_rect_t tContent;
 	xui_rect_t tFocusRect;
 	xui_proxy pProxy;
@@ -412,12 +428,11 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	}
 	tDesc.fMaxWidth = tContent.fW;
 	tDesc.fMaxHeight = tContent.fH;
-	pLayout = NULL;
-	iRet = xuiTextLayoutCreate(xuiWidgetGetContext(pWidget), &pLayout, &tDesc);
+    iRet=xuiInternalTextLayoutEnsure(xuiWidgetGetContext(pWidget),&pData->pLayout,&tDesc);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iRet = xuiInternalTextLayoutDrawContext(pLayout, pDraw, tContent,
+	iRet = xuiInternalTextLayoutDrawContext(pData->pLayout, pDraw, tContent,
 		iTextColor, 0);
 	if ( iRet == XUI_OK && (iStateId & XUI_WIDGET_STATE_FOCUS) != 0 &&
 	     pProxy->drawRectStroke != NULL ) {
@@ -434,9 +449,21 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 			}
 		}
 	}
-	xuiTextLayoutDestroy(pLayout);
 	return iRet;
 }
+static int __xuiHyperlinkCacheRender(xui_widget widget,xui_draw_context draw,uint32_t state,void* user)
+{
+    xui_hyperlink_data_t* data=__xuiHyperlinkGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bLayoutActive)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    data->bLayoutActive=2;
+    status=__xuiHyperlinkCacheRenderImpl(widget,draw,state,user);
+    data->bLayoutActive=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
+
 
 static int __xuiHyperlinkDoClick(xui_widget pWidget, xui_hyperlink_data_t* pData)
 {
@@ -712,6 +739,7 @@ static void __xuiHyperlinkDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	}
 	(void)xuiInternalPointerPressCancel(xuiWidgetGetContext(pWidget), pWidget,
 		&pData->tPointerPress);
+    if(pData->pLayout){bool consumed=false;int status=xuiTextLayoutDestroyOwnerChecked(pData->pLayout,&consumed);if(status<0)xuiInternalContextRecordFailure(pWidget->pContext,status);if(consumed)pData->pLayout=NULL;}
 	if ( pData->sText != NULL ) {
 		xrtFree(pData->sText);
 	}
@@ -772,6 +800,26 @@ static const xui_internal_accessibility_adapter_t g_xuiHyperlinkAccessible = {
 	.performAction = NULL
 };
 
+static bool __xuiHyperlinkTrace(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    (void)widget;const xui_hyperlink_data_t* data=raw;
+    return !data->bLayoutActive && (!data->pLayout || xuiTextLayoutTraceOwnership(data->pLayout,visit,user));
+}
+static int __xuiHyperlinkReady(xui_widget widget,const void* raw)
+{
+    (void)widget;const xui_hyperlink_data_t* data=raw;
+    if(data->bLayoutActive)return XUI_ERROR_BUSY;
+    return data->pLayout ? xuiInternalTextLayoutDestroyReady(data->pLayout):XUI_OK;
+}
+static int __xuiHyperlinkPrepare(xui_widget widget,void* raw,bool* complete)
+{
+    (void)widget;xui_hyperlink_data_t* data=raw;if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;if(data->bLayoutActive)return XUI_STATUS_DEFERRED;
+    if(!data->pLayout){*complete=true;return XUI_OK;}
+    data->bLayoutActive=1;bool consumed=false;int status=xuiTextLayoutDestroyOwnerChecked(data->pLayout,&consumed);
+    if(consumed)data->pLayout=NULL;
+    data->bLayoutActive=0;*complete=consumed;return status;
+}
 XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -808,6 +856,7 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiHyperlinkAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_hyperlink_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    pType->onTraceOwnership=__xuiHyperlinkTrace;pType->onDestroyReady=__xuiHyperlinkReady;pType->onDestroyPrepare=__xuiHyperlinkPrepare;
     return pType;
 }
 
@@ -864,6 +913,7 @@ XUI_API int xuiHyperlinkSetText(xui_widget pWidget, const char* sText)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(pData->bLayoutActive)return XUI_ERROR_BUSY;
 	if ( sText == NULL ) {
 		sText = "";
 	}
@@ -894,6 +944,7 @@ XUI_API int xuiHyperlinkSetFont(xui_widget pWidget, xui_font pFont)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(pData->bLayoutActive)return XUI_ERROR_BUSY;
 	if ( pData->pFont == pFont ) {
 		return XUI_OK;
 	}

@@ -63,6 +63,19 @@ int main(void)
     }
     item.iRangeStart=item.iRangeEnd=0;
     CHECK(__xuiTextItemNormalize(&item,&normalized)==XUI_OK);
+    {
+        /* The address deliberately has no readable element. Empty byte/span
+         * values can have a non-NULL data pointer in an ordinary C caller. */
+        item.pPaintSpans=(const xui_text_paint_span_t*)(uintptr_t)1;
+        item.iPaintSpanCount=0;
+        CHECK(__xuiTextItemNormalize(&item,&normalized)==XUI_OK && !normalized.pPaintSpans);
+        CHECK(__xuiTextItemNormalize(&normalized,&normalized)==XUI_OK && !normalized.pPaintSpans);
+        item.iFlags&=~XUI_TEXT_SHAPE_RANGE;
+        CHECK(__xuiTextItemNormalize(&item,&normalized)==XUI_OK && !normalized.pPaintSpans);
+        bad=item;bad.iPaintSpanCount=1;rejected(&bad);
+        bad=item;bad.iPaintSpanCount=-1;rejected(&bad);
+        item.pPaintSpans=NULL;
+    }
     item=before;
     bad=item;bad.iTextSize=1;rejected(&bad);
     bad=item;bad.iContextSize=-2;rejected(&bad);

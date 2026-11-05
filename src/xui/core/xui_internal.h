@@ -4,10 +4,16 @@
 #include "xui.h"
 #include "xui_xrt_port.h"
 #include "xui_unicode_core.h"
+#include "xui_owned_manager.h"
 #include "../modules/xlayout/xlayout.h"
 
 /* Private composite ownership. A live child retains its identity across
  * internal moves, including parent-change callbacks. No thread/global bypass. */
+int xuiInternalWidgetRequestDestroy(xui_widget,const void* authority);
+int xuiInternalWidgetDestroyReady(xui_widget);
+int xuiInternalContextPrepareDestroy(xui_context,bool* complete);
+int xuiInternalTreeViewCreatePart(xui_widget,xui_widget*,const xui_tree_view_desc_t*);
+int xuiInternalBreadcrumbCreatePart(xui_widget,xui_widget*,const xui_breadcrumb_desc_t*);
 int xuiInternalWidgetCreatePart(xui_widget pOwner,xui_widget_type pType,xui_widget* ppPart,const void* pCreateData);
 int xuiInternalWidgetOverlayAttachPart(xui_widget pOwner,xui_widget pOverlayOwner,xui_widget pPart,int iLayer,int iZIndex);
 int xuiInternalWidgetBindPartSlot(xui_widget pOwner,xui_widget pPart,xui_widget* ppStableDataSlot);
@@ -40,23 +46,65 @@ int xuiInternalListViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const x
 
 bool xuiInternalTextShapeTraceOwnership(const xui_text_shape_t* pShape,xrtownershipvisitor onVisit,void* pUser);
 int xuiInternalTextShapeReady(const xui_text_shape_t* pShape,bool bManaged);
+int xuiInternalTextLayoutDestroy(xui_context pContext,xui_text_layout pLayout);
+int xuiInternalTextLayoutDestroyReady(xui_text_layout pLayout);
+bool xuiInternalTextMeasureCacheTrace(xui_context,xrtownershipvisitor,void*);
+int xuiInternalTextMeasureCacheReady(xui_context);
+int xuiInternalTextMeasureCachePrepare(xui_context,bool* complete);
+int xuiInternalCleanupCallScopeBegin(xui_context,xui_call_scope_t*);
 /* Stack-only native slot transaction. No language bridge or per-widget map. */
-typedef struct xui_font_slot_update_t {
+typedef struct xui_resource_slot_update_t {
     xui_call_scope_t scope;
     xui_context context;
     xui_widget widget;
-    xui_font* slot;
-    xui_font previous,current,guarded;
-    struct xui_font_slot_update_t* next;
+    void* slot;
+    void* previous;
+    void* current;
+    void* guarded;
+    struct xui_resource_slot_update_t* next;
     bool prepared,published,restored,preserveOld,ownsSlots,newHeld,guardHeld;
-} xui_font_slot_update_t;
-int xuiInternalFontSlotPrepare(xui_context context,xui_font* slot,xui_font font,bool admitted,bool preserveOld,xui_font_slot_update_t* update);
-int xuiInternalFontSlotPublish(xui_font_slot_update_t* update);
-int xuiInternalFontSlotBegin(xui_context context,xui_font* slot,xui_font font,bool admitted,xui_font_slot_update_t* update);
-int xuiInternalFontSlotRestore(xui_font_slot_update_t* update);
-int xuiInternalFontSlotEnd(xui_font_slot_update_t* update,bool commit,int status);
+    uint8_t kind;
+} xui_resource_slot_update_t;
+typedef xui_resource_slot_update_t xui_font_slot_update_t;
+typedef xui_resource_slot_update_t xui_surface_slot_update_t;
+int xuiInternalResourceSlotPublish(xui_resource_slot_update_t* update);
+int xuiInternalResourceSlotRestore(xui_resource_slot_update_t* update);
+int xuiInternalResourceSlotEnd(xui_resource_slot_update_t* update,bool commit,int status);
+#define xuiInternalFontSlotPublish xuiInternalResourceSlotPublish
+#define xuiInternalFontSlotRestore xuiInternalResourceSlotRestore
+#define xuiInternalFontSlotEnd xuiInternalResourceSlotEnd
+#define xuiInternalSurfaceSlotPublish xuiInternalResourceSlotPublish
+#define xuiInternalSurfaceSlotRestore xuiInternalResourceSlotRestore
+#define xuiInternalSurfaceSlotEnd xuiInternalResourceSlotEnd
+int xuiInternalFontSlotPrepare(xui_context,xui_font*,xui_font,bool,bool,xui_font_slot_update_t*);
+int xuiInternalFontSlotBegin(xui_context,xui_font*,xui_font,bool,xui_font_slot_update_t*);
+int xuiInternalSurfaceSlotPrepare(xui_context,xui_surface*,xui_surface,bool,bool,xui_surface_slot_update_t*);
+int xuiInternalSurfaceSlotBegin(xui_context,xui_surface*,xui_surface,bool,xui_surface_slot_update_t*);
+int xuiInternalSurfaceSlotsPrepare(xui_widget,size_t,xui_surface* const*,const xui_surface*,xui_surface_slot_update_t*);
+int xuiInternalSurfaceSlotsPublish(xui_surface_slot_update_t*,size_t);
+int xuiInternalSurfaceSlotsEnd(xui_surface_slot_update_t*,size_t,bool,int);
 int xuiInternalFontAdmit(xui_context context,xui_font font);
 int xuiInternalFontRelease(xui_context context,xui_font font);
+int xuiInternalSurfaceAdmit(xui_context context,xui_surface surface);
+int xuiInternalSurfaceRelease(xui_context context,xui_surface surface);
+xui_proxy xuiInternalProxyCanonical(const xui_proxy_t* proxy);
+bool xuiInternalProxyReady(const xui_proxy_t* proxy);
+bool xuiInternalProxyCreator(const xui_proxy_t* proxy);
+bool xuiInternalContextTraceRegistry(xui_context,xrtownershipvisitor,void*);
+bool xuiInternalContextTraceIcons(xui_context,xrtownershipvisitor,void*);
+/* An explicitly declared primary outcome across implicit void cleanup.
+ * Caller owns error for the entire LIFO scope and already protects Context
+ * activity on its UI thread. This is neither TLS nor an inferred parent error. */
+typedef struct xui_cleanup_prefix_t {
+    const void* self;
+    xui_context context;
+    struct xui_cleanup_prefix_t* previous;
+    uint64_t thread;
+    int status;
+    const xerror* error;
+} xui_cleanup_prefix_t;
+int xuiInternalCleanupPrefixBegin(xui_context,xui_cleanup_prefix_t*,int,const xerror*);
+int xuiInternalCleanupPrefixEnd(xui_cleanup_prefix_t*);
 void xuiInternalContextRecordFailure(xui_context context,int status);
 /* Borrows error, retaining one reference in each still-successful receipt.
  * status is independent of nullable error; callers that took TLS pass it here. */
@@ -71,26 +119,58 @@ static inline void xuiInternalContextCleanupOutcome(xui_context context,int next
     if(*status==XUI_OK){*status=next;*first=error;}else xrtErrorFree(error);
 }
 
+enum { XUI_CALL_SCOPE_ENDING=1, XUI_CALL_SCOPE_INHERITED=2, XUI_CALL_SCOPE_PROPAGATED=4 };
 static inline void xuiInternalCallScopeRecordOutcome(xui_call_scope_t* scope,int status,const xerror* error)
 {
     if(!scope || scope->pSelf!=scope || scope->iResult!=XUI_OK || (status==XUI_OK && !error))return;
+    xerror* next=xrtErrorRef(error);
+    /* While successful this tagged slot owns the entry ambient diagnostic.
+     * The first actual failure replaces it, including failed-with-NULL. */
+    xrtErrorFree(scope->_pFirstError);
+    scope->_pFirstError=next;
     scope->iResult=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;
-    scope->_pFirstError=xrtErrorRef(error);
 }
 
 /* Finish an owned local outcome through the authoritative enclosing receipt.
  * The caller has detached *first from TLS and owns its reference. */
 static inline int xuiInternalCallScopeEndOutcome(xui_call_scope_t* scope,int status,xerror** first)
 {
+    const xerror* ambient=scope && scope->pSelf==scope && scope->iResult==XUI_OK ? scope->_pFirstError:NULL;
+    bool inherited=scope && scope->pSelf==scope && (scope->bEnding&XUI_CALL_SCOPE_INHERITED)!=0;
     xuiInternalCallScopeRecordOutcome(scope,status,*first);
     int ended=xuiCallScopeEnd(scope);xerror* error=xrtTakeError();
-    if(status!=XUI_OK){xrtErrorFree(error);return status;}
+    if(status!=XUI_OK && !inherited){xrtErrorFree(error);return status;}
     if(ended!=XUI_OK){xrtErrorFree(*first);*first=error;return ended;}
-    if(status==XUI_OK && error){*first=error;return XUI_ERROR_CALLBACK_FAILED;}
-    xrtErrorFree(error);return status;
+    /* End preserves the old ambient diagnostic on success. Carry its owned
+     * reference through the caller's final SetErrorTake without calling it a
+     * new failure. status remains the authoritative failure tag. */
+    if(error==ambient){*first=error;return XUI_OK;}
+    if(error){*first=error;return XUI_ERROR_CALLBACK_FAILED;}
+    return status;
 }
 
 bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user);
+/* C-stack receipt, not a TLS stack. Preserve an explicit failed bit even when
+ * no diagnostic could allocate, and keep the first void-hook diagnostic. */
+typedef struct xui_cleanup_receipt_t {int status;xerror* error;} xui_cleanup_receipt_t;
+static inline void xuiInternalCleanupStart(xui_cleanup_receipt_t* receipt,int status)
+{
+    receipt->error=xrtTakeError();
+    receipt->status=status!=XUI_OK ? status:receipt->error ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+}
+static inline void xuiInternalCleanupAdd(xui_cleanup_receipt_t* receipt,int status)
+{
+    xerror* error=xrtTakeError();
+    if(status==XUI_OK && !error)return;
+    if(receipt->status==XUI_OK){receipt->status=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;receipt->error=error;}
+    else xrtErrorFree(error);
+}
+static inline int xuiInternalCleanupEnd(xui_context context,xui_cleanup_receipt_t* receipt)
+{
+    xuiInternalContextRecordOutcome(context,receipt->status,receipt->error);
+    xrtSetErrorTake(receipt->error);receipt->error=NULL;return receipt->status;
+}
+
 
 void xuiInternalTableGridConfigProject(const xui_table_grid_editor_config_output_t* pOutput,xui_table_grid_editor_config_t* pConfig);
 
@@ -418,11 +498,13 @@ struct xui_context_t {
 	xui_widget pDeferredDestroyHead;
 	xui_widget pStateChangeHead;
 	xui_widget pStateChangeTail;
+	uint32_t iDestroyVisitEpoch;
 	int iDestroyFlushDepth;
 	int iWidgetCallbackDepth;
 	int iOperationDepth;
 	xui_call_scope_t* pCallScopes;
 	int bDestroyPending;
+	int bCloseRequested;
 	int bDestroying;
 	xui_rect_i_t arrInlineDamage[XUI_CONTEXT_DAMAGE_INLINE];
 	xui_rect_i_t* pDamage;
@@ -483,7 +565,13 @@ struct xui_context_t {
 	xui_chrome_style_t tChromeStyle;
 	xui_font pDefaultFont;
     xui_proxy pOwnedProxy; /* one real capability owner; tProxy is a borrowed table copy */
-    xui_font_slot_update_t* pActiveFontUpdates; /* stack nodes, no allocation */
+    xui_owned_manager_t* pOwnedManagers;
+    xui_owned_manager_t* pPendingManagers;
+    xui_cleanup_prefix_t* pCleanupPrefixes;
+    xui_text_layout pMeasureLayout;
+    int bMeasureLayoutActive;
+    int iDestroyOwnership; /* 0 caller-owned, 1 void-close pending, 2 preparing; uses padding. */
+    xui_resource_slot_update_t* pActiveResourceUpdates; /* stack nodes, no allocation */
 	xui_font_entry_t arrInlineFonts[XUI_CONTEXT_FONT_INLINE];
 	xui_font_entry_t* pFonts;
 	int iFontCount;
@@ -510,6 +598,15 @@ typedef struct xui_internal_accessibility_adapter_t {
 typedef int (*xui_internal_prepare_paint_proc)(xui_widget pWidget);
 typedef void (*xui_internal_parent_changed_proc)(xui_widget pWidget,
 	xui_widget pOldParent, xui_widget pNewParent);
+/* Pure metadata for actual Surface fields in a variable item array. The
+ * borrowed layout is read only under the Context activity/ownership gate. */
+typedef struct xui_surface_slot_array_t {
+    void* data;
+    size_t count,stride;
+    const size_t* offsets;
+    size_t fields;
+} xui_surface_slot_array_t;
+typedef void (*xui_internal_surface_slots_proc)(xui_widget,void*,xui_surface_slot_array_t*);
 
 struct xui_widget_type_t {
 	uint32_t iMagic;
@@ -521,6 +618,11 @@ struct xui_widget_type_t {
 	size_t iTypeDataSize;
     const size_t* pFontOffsets;
     size_t iFontSlotCount;
+    const size_t* pSurfaceOffsets;
+    size_t iSurfaceSlotCount;
+    xui_internal_surface_slots_proc onSurfaceSlots;
+    int (*onDestroyReady)(xui_widget,const void*);
+    int (*onDestroyPrepare)(xui_widget,void*,bool* complete);
 	void* pUser;
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;
@@ -570,6 +672,7 @@ typedef int (*xui_internal_edit_prepare_proc)(xui_widget pHost, xui_widget pSour
 
 struct xui_widget_t {
 	uint32_t iMagic;
+    uint32_t iDestroyVisitEpoch; /* Reuses the natural pointer alignment gap. */
 	xui_lifetime_link_t* pLifetimeLinks;
 	xlayout_node_t iLayoutNode;
 	xui_context pContext;
@@ -577,6 +680,10 @@ struct xui_widget_t {
 	xui_widget pContextPrev;
 	xui_widget pContextNext;
 	xui_widget pParent;
+    xui_widget pFirstOwnedPart;
+    xui_widget pOwnedPartNext;
+    xui_widget* ppOwnedPartPrevious;
+    xui_widget_type pInitializedType; /* Last successful init stage; also on failed construction. */
     const void* pInternalOwner; /* Native construction identity; never a public bypass flag. */
     xui_widget* ppInternalOwnerSlot; /* Exact fixed TypeData slot; never a stack/relocatable slot. */
 	xui_widget pFirstChild;
@@ -702,6 +809,7 @@ struct xui_widget_t {
 	void* pQueryCursorUser;
 	xui_widget_cache_slot_t* pCacheSlots;
 	int iCacheCount;
+    int bCacheMutationActive; /* Uses the pointer-alignment gap after count. */
 	xui_table_track_t* pTableRows;
 	xui_table_track_t* pTableColumns;
 	int iTableRowCount;
@@ -709,6 +817,7 @@ struct xui_widget_t {
 	xui_draw_context pActiveUpdateDraw;
 	xui_widget_cache_slot_t* pActiveUpdateSlot;
 	uint32_t iActiveUpdateStateId;
+    uint32_t iCacheEpoch; /* Nonwrapping identity; uses the trailing alignment gap. */
 };
 
 struct xui_painter_t {
@@ -917,7 +1026,7 @@ int xuiInternalPopupSetSizing(xui_widget pWidget, float fContentWidth,
 #if XUI_ENABLE_MENU
 int xuiInternalMenuIsLive(xui_context pContext, xui_widget pWidget);
 #endif
-void xuiInternalWidgetDestroyFlush(xui_context pContext);
+bool xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgets(xui_context pContext);
 /* Caller holds an operation/physical-destruction scope across callbacks. */
 void xuiInternalLifetimeInvalidateAll(xui_lifetime_link_t** ppHead);

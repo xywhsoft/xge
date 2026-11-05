@@ -17,8 +17,10 @@
 	(XUI_RENDER_CACHE_DIRTY_FLAGS | XUI_WIDGET_DIRTY_RENDER)
 
 static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget,const void* pAuthority);
-static int __xuiWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority);
 static void __xuiWidgetSyncInactiveTree(xui_widget pWidget);
+static int __xuiWidgetDestroyPrepareClosure(xui_widget,bool*);
+static int __xuiWidgetDestroyReadySelf(xui_widget);
+static int __xuiWidgetDestroyPrepareSelf(xui_widget,bool*);
 
 int xuiInternalCallbackOwnerValid(const xui_callback_owner_t* pOwner)
 {
@@ -1593,32 +1595,50 @@ static xui_widget_cache_slot_t* __xuiWidgetFindCacheSlot(xui_widget pWidget, uin
 	return &pWidget->pCacheSlots[iIndex];
 }
 
-static void __xuiWidgetDestroyCacheSlot(xui_widget pWidget, xui_widget_cache_slot_t* pSlot)
+/* Producer-owned cache records are represented by their actual fields. A
+ * managed Native Drop can fail without consuming its owner; preserve that
+ * exact field, and keep the enclosing cache array alive for checked retry. */
+static int __xuiWidgetReleaseCacheSlot(xui_widget widget,xui_widget_cache_slot_t* slot,bool* complete)
 {
-	xui_proxy pProxy;
-
-	if ( pSlot->pSurface != NULL ) {
-		pProxy = xuiInternalContextGetProxy(pWidget->pContext);
-		if ( (pProxy != NULL) && (pProxy->surfaceDestroy != NULL) ) {
-			pProxy->surfaceDestroy(pProxy, pSlot->pSurface);
-		}
-	}
-	memset(pSlot, 0, sizeof(*pSlot));
+    *complete=true;
+    if(!slot->pSurface){memset(slot,0,sizeof(*slot));return XUI_OK;}
+    xui_surface surface=slot->pSurface;slot->pSurface=NULL;
+    int result=XUI_OK;
+    if(widget->pContext->pOwnedProxy){
+        bool consumed=false;result=xuiSurfaceReleaseOwnerChecked(surface,&consumed);
+        if(!consumed){slot->pSurface=surface;*complete=false;}
+    }else{
+        xui_proxy proxy=xuiInternalContextGetProxy(widget->pContext);
+        if(proxy && proxy->surfaceDestroy)proxy->surfaceDestroy(proxy,surface);
+        else {slot->pSurface=surface;*complete=false;result=XUI_ERROR_NOT_INITIALIZED;}
+    }
+    if(*complete)memset(slot,0,sizeof(*slot));
+    if(result<0 || xrtGetError())xuiInternalContextRecordOutcome(widget->pContext,result<0 ? result:XUI_ERROR_CALLBACK_FAILED,xrtGetError());
+    return result;
 }
-
-static void __xuiWidgetDestroyAllCaches(xui_widget pWidget)
+static int __xuiWidgetDestroyCacheSlot(xui_widget widget,xui_widget_cache_slot_t* slot)
 {
-	int i;
-
-	if ( pWidget->pCacheSlots == NULL ) {
-		return;
-	}
-	for ( i = 0; i < pWidget->iCacheCount; i++ ) {
-		__xuiWidgetDestroyCacheSlot(pWidget, &pWidget->pCacheSlots[i]);
-	}
-	xrtFree(pWidget->pCacheSlots);
-	pWidget->pCacheSlots = NULL;
-	pWidget->iCacheCount = 0;
+    if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    widget->bCacheMutationActive=1;bool complete=false;
+    int result=__xuiWidgetReleaseCacheSlot(widget,slot,&complete);
+    widget->bCacheMutationActive=0;
+    return complete ? result:(result<0 ? result:XUI_ERROR_BUSY);
+}
+static int __xuiWidgetDestroyAllCaches(xui_widget widget)
+{
+    if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    widget->bCacheMutationActive=1;
+    bool all=true;int result=XUI_OK;xerror* first=xrtTakeError();
+    if(first)result=XUI_ERROR_CALLBACK_FAILED;
+    for(int i=0;i<widget->iCacheCount;++i){
+        bool complete=false;int status=__xuiWidgetReleaseCacheSlot(widget,&widget->pCacheSlots[i],&complete);
+        xerror* error=xrtTakeError();
+        if(status<0 || error){if(result==XUI_OK){result=status<0 ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}else xrtErrorFree(error);}
+        if(!complete){all=false;break;}
+    }
+    if(all){xrtFree(widget->pCacheSlots);widget->pCacheSlots=NULL;widget->iCacheCount=0;}
+    widget->bCacheMutationActive=0;xrtSetErrorTake(first);
+    return all ? result:(result<0 ? result:XUI_STATUS_DEFERRED);
 }
 
 static size_t __xuiWidgetCacheSlotBytes(const xui_widget_cache_slot_t* pSlot)
@@ -1648,24 +1668,16 @@ static void __xuiWidgetCollectCacheStats(xui_widget pWidget, size_t* pUsedBytes,
 	}
 }
 
-static void __xuiWidgetPurgeCacheSlotSurface(xui_widget pWidget, xui_widget_cache_slot_t* pSlot)
+static void __xuiWidgetPurgeCacheSlotSurface(xui_widget widget,xui_widget_cache_slot_t* slot)
 {
-	xui_proxy pProxy;
-
-	if ( (pWidget == NULL) || (pSlot == NULL) || (pSlot->pSurface == NULL) ) {
-		return;
-	}
-	pProxy = xuiInternalContextGetProxy(pWidget->pContext);
-	if ( (pProxy != NULL) && (pProxy->surfaceDestroy != NULL) ) {
-		pProxy->surfaceDestroy(pProxy, pSlot->pSurface);
-	}
-	pSlot->pSurface = NULL;
-	pSlot->iWidth = 0;
-	pSlot->iHeight = 0;
-	pSlot->iSurfaceGeneration = 0;
-	pSlot->iFlags |= XUI_WIDGET_DIRTY_CACHE;
-	pWidget->iDirtyFlags |= XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
-	pWidget->iSubtreeDirtyFlags |= XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+    if(!widget || !slot || !slot->pSurface)return;
+    uint32_t state=slot->iStateId;
+    (void)__xuiWidgetDestroyCacheSlot(widget,slot);
+    slot->iStateId=state;
+    if(slot->pSurface)return;
+    slot->iFlags|=XUI_WIDGET_DIRTY_CACHE;
+    widget->iDirtyFlags|=XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER;
+    widget->iSubtreeDirtyFlags|=XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER;
 }
 
 static void __xuiWidgetPurgeCachesToTarget(xui_widget pWidget, size_t* pUsedBytes, size_t iTargetBytes)
@@ -1692,6 +1704,7 @@ static void __xuiWidgetPurgeCachesToTarget(xui_widget pWidget, size_t* pUsedByte
 			continue;
 		}
 		__xuiWidgetPurgeCacheSlotSurface(pWidget, &pWidget->pCacheSlots[i]);
+        if(pWidget->pCacheSlots[i].pSurface)continue;
 		*pUsedBytes = (*pUsedBytes > iBytes) ? (*pUsedBytes - iBytes) : 0u;
 		if ( *pUsedBytes <= iTargetBytes ) {
 			return;
@@ -1753,20 +1766,30 @@ static void __xuiWidgetDestroyTooltipData(xui_widget pWidget)
 	pWidget->pTooltipUser = NULL;
 }
 
-static void __xuiWidgetEndActiveUpdate(xui_widget pWidget)
+static int __xuiWidgetEndActiveUpdate(xui_widget widget)
 {
-	xui_proxy pProxy;
-
-	if ( pWidget->pActiveUpdateDraw == NULL ) {
-		return;
-	}
-	pProxy = xuiInternalContextGetProxy(pWidget->pContext);
-	if ( (pProxy != NULL) && (pProxy->drawEnd != NULL) ) {
-		(void)pProxy->drawEnd(pProxy, pWidget->pActiveUpdateDraw);
-	}
-	pWidget->pActiveUpdateDraw = NULL;
-	pWidget->pActiveUpdateSlot = NULL;
-	pWidget->iActiveUpdateStateId = 0;
+    if(!widget->pActiveUpdateDraw){widget->pActiveUpdateSlot=NULL;widget->iActiveUpdateStateId=0;return XUI_OK;}
+    if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    widget->bCacheMutationActive=1;
+    xui_draw_context draw=widget->pActiveUpdateDraw;
+    bool consumed=false;int status=XUI_OK;
+    if(widget->pContext->pOwnedProxy){
+        status=xuiDrawEndChecked(draw);xerror* first=xrtTakeError();
+        if(status==XUI_OK || xuiDrawEnded(draw)){
+            int released=xuiDrawReleaseOwnerChecked(draw,&consumed);xerror* error=xrtTakeError();
+            if(status==XUI_OK && (released!=XUI_OK || error)){status=released!=XUI_OK ? released:XUI_ERROR_CALLBACK_FAILED;first=error;}
+            else xrtErrorFree(error);
+        }
+        xrtSetErrorTake(first);
+    }else {
+        xui_proxy proxy=xuiInternalContextGetProxy(widget->pContext);
+        if(proxy && proxy->drawEnd){status=proxy->drawEnd(proxy,draw);consumed=status!=XUI_ERROR_BUSY;}
+        else status=XUI_ERROR_NOT_INITIALIZED;
+    }
+    if(consumed){widget->pActiveUpdateDraw=NULL;widget->pActiveUpdateSlot=NULL;widget->iActiveUpdateStateId=0;}
+    widget->bCacheMutationActive=0;
+    if(status<0 || xrtGetError())xuiInternalContextRecordOutcome(widget->pContext,status<0 ? status:XUI_ERROR_CALLBACK_FAILED,xrtGetError());
+    return consumed ? status:(status<0 ? status:XUI_STATUS_DEFERRED);
 }
 
 static int __xuiWidgetEnsureSingleCacheSlot(xui_widget pWidget, uint32_t iStateId)
@@ -2065,22 +2088,29 @@ static int __xuiWidgetEnsureCacheSurface(xui_widget pWidget, xui_widget_cache_sl
 	if ( (pSlot->pSurface != NULL) && (pSlot->iWidth == iWidth) && (pSlot->iHeight == iHeight) ) {
 		return XUI_OK;
 	}
+    /* Epoch never wraps: a reused allocator address cannot resurrect an old
+     * cache identity. Exhaustion refuses a rebuild while preserving its slot. */
+    if(pWidget->iCacheEpoch==UINT32_MAX)return XUI_ERROR_INVALID_STATE;
 	pProxy = xuiInternalContextGetProxy(pWidget->pContext);
 	if ( pProxy == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	if ( pSlot->pSurface != NULL ) {
-		pProxy->surfaceDestroy(pProxy, pSlot->pSurface);
-		memset(pSlot, 0, sizeof(*pSlot));
-		pSlot->iStateId = pWidget->iActiveUpdateStateId;
-	}
+    if(pSlot->pSurface){
+        int released=__xuiWidgetDestroyCacheSlot(pWidget,pSlot);
+        if(released!=XUI_OK)return released;
+        pSlot->iStateId=pWidget->iActiveUpdateStateId;
+    }
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
 	tDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
 	tDesc.iWidth = iWidth;
 	tDesc.iHeight = iHeight;
 	tDesc.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
+    ++pWidget->iCacheEpoch;
+    pWidget->bCacheMutationActive=1;
 	iRet = pProxy->surfaceCreate(pProxy, &pSlot->pSurface, &tDesc);
+    pWidget->bCacheMutationActive=0;
+    if(iRet==XUI_OK && (!__xuiWidgetValid(pWidget) || pWidget->pContext->bCloseRequested))iRet=XUI_ERROR_INVALID_STATE;
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -2090,9 +2120,51 @@ static int __xuiWidgetEnsureCacheSurface(xui_widget pWidget, xui_widget_cache_sl
 	return XUI_OK;
 }
 
+/* Native ownership and visual parentage are different relations. A menu
+ * owns its Popup while the Popup content visually contains that same menu.
+ * Each relation is acyclic on its own; their union may contain such cycles. */
+#define XUI_DESTROY_EXECUTING UINT32_C(0x80000000)
+#define XUI_DESTROY_MEMBER UINT32_C(0x40000000)
+#define XUI_DESTROY_PREPARING UINT32_C(0x20000000)
+#define XUI_DESTROY_EPOCH_MASK UINT32_C(0x1fffffff)
+static uint32_t __xuiWidgetVisitBegin(xui_context context)
+{
+    uint32_t epoch=(++context->iDestroyVisitEpoch)&XUI_DESTROY_EPOCH_MASK;
+    if(!epoch){
+        for(xui_widget value=context->pAllWidgets;value;value=value->pContextNext)
+            value->iDestroyVisitEpoch&=~XUI_DESTROY_EPOCH_MASK;
+        context->iDestroyVisitEpoch=epoch=1;
+    }
+    return epoch;
+}
+static int __xuiWidgetVisitSeen(xui_widget value,uint32_t epoch)
+{return (value->iDestroyVisitEpoch&XUI_DESTROY_EPOCH_MASK)==epoch;}
+static void __xuiWidgetVisitMark(xui_widget value,uint32_t epoch)
+{value->iDestroyVisitEpoch=(value->iDestroyVisitEpoch&~XUI_DESTROY_EPOCH_MASK)|epoch;}
+static int __xuiWidgetNativeOwnerContains(xui_widget value,xui_widget target)
+{
+    for(;__xuiWidgetMemoryValid(value);value=(xui_widget)value->pInternalOwner)
+        if(value==target)return 1;
+    return 0;
+}
+static void __xuiWidgetLinkPart(xui_widget owner,xui_widget part)
+{
+    part->pInternalOwner=owner;
+    part->pOwnedPartNext=owner->pFirstOwnedPart;
+    part->ppOwnedPartPrevious=&owner->pFirstOwnedPart;
+    if(part->pOwnedPartNext)part->pOwnedPartNext->ppOwnedPartPrevious=&part->pOwnedPartNext;
+    owner->pFirstOwnedPart=part;
+}
+static void __xuiWidgetUnlinkPart(xui_widget part)
+{
+    if(part->ppOwnedPartPrevious){
+        *part->ppOwnedPartPrevious=part->pOwnedPartNext;
+        if(part->pOwnedPartNext)part->pOwnedPartNext->ppOwnedPartPrevious=part->ppOwnedPartPrevious;
+    }
+    part->ppOwnedPartPrevious=NULL;part->pOwnedPartNext=NULL;part->pInternalOwner=NULL;
+}
 static int __xuiWidgetCanAttachChild(xui_widget pParent, xui_widget pChild, const void* pAuthority)
 {
-	xui_widget pScan;
 
 	if ( !__xuiWidgetValid(pParent) || !__xuiWidgetValid(pChild) || (pParent == pChild) ) {
 		return 0;
@@ -2107,11 +2179,7 @@ static int __xuiWidgetCanAttachChild(xui_widget pParent, xui_widget pChild, cons
 	if ( (pChild->pContext->pRoot == pChild) || (pChild->pContext->pOverlayRoot == pChild) ) {
 		return 0;
 	}
-	for ( pScan = pParent; pScan != NULL; pScan = pScan->pParent ) {
-		if ( pScan == pChild ) {
-			return 0;
-		}
-	}
+    for(xui_widget scan=pParent;scan;scan=scan->pParent)if(scan==pChild)return 0;
 	return 1;
 }
 
@@ -2139,22 +2207,18 @@ static int __xuiWidgetSizeValid(xui_vec2_t tSize)
 	return __xuiNonNegativeFloatValid(tSize.fX) && __xuiNonNegativeFloatValid(tSize.fY);
 }
 
-static xui_vec2_t __xuiWidgetMeasureOwnContent(xui_widget pWidget, xui_vec2_t tConstraint)
+static int __xuiWidgetMeasureOwnContent(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output)
 {
-	xui_vec2_t tSize;
-	int iRet;
-
-	tSize = __xuiVec2(0.0f, 0.0f);
-	if ( pWidget->onContentMeasure == NULL ) {
-		return tSize;
-	}
-	tConstraint.fX = __xuiFiniteConstraint(tConstraint.fX);
-	tConstraint.fY = __xuiFiniteConstraint(tConstraint.fY);
-	iRet = xuiInternalInvokeContentMeasure(pWidget,tConstraint,&tSize);
-	if ( (iRet != XUI_OK) || !__xuiWidgetSizeValid(tSize) ) {
-		return __xuiVec2(0.0f, 0.0f);
-	}
-	return __xuiWidgetClampSize(pWidget, tSize);
+    xui_vec2_t size=__xuiVec2(0.0f,0.0f);
+    if(widget->onContentMeasure){
+        constraint.fX=__xuiFiniteConstraint(constraint.fX);
+        constraint.fY=__xuiFiniteConstraint(constraint.fY);
+        int status=xuiInternalInvokeContentMeasure(widget,constraint,&size);
+        if(status!=XUI_OK)return status;
+        if(!__xuiWidgetSizeValid(size))return XUI_ERROR_INVALID_STATE;
+    }
+    if(!__xuiWidgetValid(widget) || widget->pContext->bCloseRequested)return XUI_ERROR_INVALID_STATE;
+    *output=__xuiWidgetClampSize(widget,size);return XUI_OK;
 }
 
 static int __xuiLayoutStructValid(const xui_layout_t* pLayout)
@@ -2601,41 +2665,120 @@ static int __xuiStyleCommitChange(xui_context pContext)
 
 static xui_font __xuiTypeFont(xui_widget widget,xui_widget_type type,size_t index)
 {return *(xui_font*)((char*)widget->pTypeData+type->pFontOffsets[index]);}
-static void __xuiTypeFontRollback(xui_widget widget,xui_widget_type type)
+static xui_surface __xuiTypeSurface(xui_widget widget,xui_widget_type type,size_t index)
+{return *(xui_surface*)((char*)widget->pTypeData+type->pSurfaceOffsets[index]);}
+typedef struct xui_type_resource_view_t {
+    xui_widget_type type;
+    xui_surface_slot_array_t array;
+    size_t count;
+} xui_type_resource_view_t;
+static bool __xuiTypeResourceView(xui_widget widget,xui_widget_type type,xui_type_resource_view_t* view)
+{
+    memset(view,0,sizeof(*view));view->type=type;
+    if(type->iFontSlotCount>SIZE_MAX-type->iSurfaceSlotCount)return false;
+    view->count=type->iFontSlotCount+type->iSurfaceSlotCount;
+    if(!type->onSurfaceSlots)return true;
+    type->onSurfaceSlots(widget,widget->pTypeData,&view->array);
+    const xui_surface_slot_array_t* array=&view->array;
+    if(!array->count)return true;
+    if(!array->data || !array->offsets || !array->fields || array->stride<sizeof(xui_surface) ||
+       array->count>SIZE_MAX/array->fields || array->count*array->fields>SIZE_MAX-view->count ||
+       array->count>SIZE_MAX/array->stride || (uintptr_t)array->data>UINTPTR_MAX-array->count*array->stride)return false;
+    for(size_t i=0;i<array->fields;++i)
+        if(array->offsets[i]>array->stride-sizeof(xui_surface) ||
+           ((uintptr_t)array->data+array->offsets[i])%_Alignof(xui_surface) || array->stride%_Alignof(xui_surface))return false;
+    view->count+=array->count*array->fields;return true;
+}
+static void* __xuiTypeResource(xui_widget widget,const xui_type_resource_view_t* view,size_t index,bool* surface)
+{
+    xui_widget_type type=view->type;*surface=index>=type->iFontSlotCount;
+    if(!*surface)return __xuiTypeFont(widget,type,index);
+    index-=type->iFontSlotCount;
+    if(index<type->iSurfaceSlotCount)return __xuiTypeSurface(widget,type,index);
+    index-=type->iSurfaceSlotCount;
+    const xui_surface_slot_array_t* array=&view->array;
+    return *(xui_surface*)((char*)array->data+(index/array->fields)*array->stride+array->offsets[index%array->fields]);
+}
+static int __xuiTypeResourceRelease(bool surface,void* value)
+{return surface ? xuiSurfaceReleaseChecked(value):xuiFontReleaseChecked(value);}
+static void __xuiTypeResourceRollback(xui_widget widget,xui_widget_type type,int* status,xerror** first)
 {
     if(!__xuiWidgetTypeValid(type))return;
-    for(size_t i=type->iFontSlotCount;i>0;--i){
-        xui_font font=__xuiTypeFont(widget,type,i-1);
-        if(font)(void)xuiInternalFontRelease(widget->pContext,font);
+    xui_type_resource_view_t view;
+    if(!__xuiTypeResourceView(widget,type,&view)){xuiInternalContextRecordOutcome(widget->pContext,XUI_ERROR_INVALID_STATE,NULL);return;}
+    for(size_t i=view.count;i>0;--i){
+        bool surface=false;void* value=__xuiTypeResource(widget,&view,i-1,&surface);
+        if(value)xuiInternalContextCleanupOutcome(widget->pContext,__xuiTypeResourceRelease(surface,value),status,first);
     }
-    __xuiTypeFontRollback(widget,type->pParent);
+    __xuiTypeResourceRollback(widget,type->pParent,status,first);
 }
-static int __xuiTypeFontAdmit(xui_widget widget,xui_widget_type type)
+static int __xuiTypeResourceAdmit(xui_widget widget,xui_widget_type type)
 {
     if(!__xuiWidgetTypeValid(type) || !widget->pContext->pOwnedProxy)return XUI_OK;
-    int status=__xuiTypeFontAdmit(widget,type->pParent);if(status!=XUI_OK)return status;
-    for(size_t i=0;i<type->iFontSlotCount;++i){
-        status=xuiInternalFontAdmit(widget->pContext,__xuiTypeFont(widget,type,i));
+    int status=__xuiTypeResourceAdmit(widget,type->pParent);if(status!=XUI_OK)return status;
+    xui_type_resource_view_t view;
+    if(!__xuiTypeResourceView(widget,type,&view)){
+        xerror* first=NULL;status=XUI_ERROR_INVALID_STATE;__xuiTypeResourceRollback(widget,type->pParent,&status,&first);xrtSetErrorTake(first);return status;
+    }
+    for(size_t i=0;i<view.count;++i){
+        bool surface=false;void* value=__xuiTypeResource(widget,&view,i,&surface);
+        status=surface ? xuiInternalSurfaceAdmit(widget->pContext,value):xuiInternalFontAdmit(widget->pContext,value);
         if(status!=XUI_OK){
-            xerror* first=xrtTakeError();
-            for(size_t j=i;j>0;--j){xui_font font=__xuiTypeFont(widget,type,j-1);if(font)(void)xuiFontReleaseChecked(font);}
-            __xuiTypeFontRollback(widget,type->pParent);xrtSetErrorTake(first);return status;
+            xerror* first=xrtTakeError();xui_cleanup_prefix_t prefix={0};
+            int begun=xuiInternalCleanupPrefixBegin(widget->pContext,&prefix,status,first);
+            for(size_t j=i;j>0;--j){
+                value=__xuiTypeResource(widget,&view,j-1,&surface);
+                if(value)xuiInternalContextCleanupOutcome(widget->pContext,__xuiTypeResourceRelease(surface,value),&status,&first);
+            }
+            __xuiTypeResourceRollback(widget,type->pParent,&status,&first);
+            if(begun==XUI_OK)begun=xuiInternalCleanupPrefixEnd(&prefix);
+            if(begun!=XUI_OK)xuiInternalContextRecordOutcome(widget->pContext,begun,first);
+            xrtSetErrorTake(first);return status;
         }
     }
     return XUI_OK;
 }
-/* Recursion captures each owning slot before onDestroy can clear TypeData.
- * All owner releases occur after onDestroy and in reverse slot order. */
-static void __xuiTypeDestroyWithFonts(xui_widget widget,xui_widget_type type,size_t index)
+static void __xuiTypeDestroyCallbacks(xui_widget widget,xui_widget_type type)
 {
-    if(widget->bTypeInitialized && widget->pContext->pOwnedProxy && index<type->iFontSlotCount){
-        xui_font font=__xuiTypeFont(widget,type,index);
-        __xuiTypeDestroyWithFonts(widget,type,index+1);
-        if(font)(void)xuiInternalFontRelease(widget->pContext,font);
-    }else if(type->onDestroy)type->onDestroy(widget,widget->pTypeData,type->pUser);
+    if(!__xuiWidgetTypeValid(type))return;
+    if(type->onDestroy)type->onDestroy(widget,widget->pTypeData,type->pUser);
+    __xuiTypeDestroyCallbacks(widget,type->pParent);
 }
-static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pType);
-
+typedef struct xui_type_resource_frame_t {
+    xui_type_resource_view_t view;
+    const struct xui_type_resource_frame_t* next;
+} xui_type_resource_frame_t;
+/* All inheritance frames and actual references are captured on the C stack
+ * before the first destructor can clear shared TypeData or free item arrays.
+ * Parent owners are captured first, and released last. No heap directory or
+ * additional retained copy of the owned resources is required. */
+static void __xuiTypeDestroyCaptured(xui_widget widget,xui_widget_type leaf,const xui_type_resource_frame_t* frame,size_t index)
+{
+    if(index<frame->view.count){
+        bool surface=false;void* value=__xuiTypeResource(widget,&frame->view,index,&surface);
+        __xuiTypeDestroyCaptured(widget,leaf,frame,index+1);
+        if(value){
+            if(surface)(void)xuiInternalSurfaceRelease(widget->pContext,value);
+            else (void)xuiInternalFontRelease(widget->pContext,value);
+        }
+    }else if(frame->next)__xuiTypeDestroyCaptured(widget,leaf,frame->next,0);
+    else __xuiTypeDestroyCallbacks(widget,leaf);
+}
+static void __xuiTypeDestroyFrames(xui_widget widget,xui_widget_type leaf,xui_widget_type type,const xui_type_resource_frame_t* children)
+{
+    if(!__xuiWidgetTypeValid(type)){
+        if(children)__xuiTypeDestroyCaptured(widget,leaf,children,0);
+        else __xuiTypeDestroyCallbacks(widget,leaf);
+        return;
+    }
+    xui_type_resource_frame_t frame={.next=children};
+    if(!__xuiTypeResourceView(widget,type,&frame.view)){
+        xuiInternalContextRecordOutcome(widget->pContext,XUI_ERROR_INVALID_STATE,NULL);
+        frame.view.count=0;
+    }
+    __xuiTypeDestroyFrames(widget,leaf,type->pParent,&frame);
+}
+static void __xuiWidgetTypeDestroyChain(xui_widget pWidget,xui_widget_type pType);
 static int __xuiWidgetTypeInitChain(xui_widget pWidget, xui_widget_type pType, const void* pCreateData)
 {
 	int iRet;
@@ -2649,11 +2792,9 @@ static int __xuiWidgetTypeInitChain(xui_widget pWidget, xui_widget_type pType, c
 	}
 	if ( pType->onInit != NULL ) {
 		iRet = pType->onInit(pWidget, pWidget->pTypeData, pCreateData, pType->pUser);
-		if ( iRet != XUI_OK ) {
-			__xuiWidgetTypeDestroyChain(pWidget, pType->pParent);
-			return iRet;
-		}
+		if ( iRet != XUI_OK ) return iRet;
 	}
+    pWidget->pInitializedType=pType;
 	return XUI_OK;
 }
 
@@ -2662,8 +2803,9 @@ static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pTyp
 	if ( !__xuiWidgetTypeValid(pType) ) {
 		return;
 	}
-    __xuiTypeDestroyWithFonts(pWidget,pType,0);
-	__xuiWidgetTypeDestroyChain(pWidget, pType->pParent);
+    if(pWidget->bTypeInitialized && pWidget->pContext->pOwnedProxy)
+        __xuiTypeDestroyFrames(pWidget,pType,pType,NULL);
+    else __xuiTypeDestroyCallbacks(pWidget,pType);
 }
 
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext)
@@ -3564,7 +3706,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
-	if ( pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
+	if ( pContext->bDestroying || pContext->bDestroyPending || pContext->bCloseRequested ) return XUI_ERROR_INVALID_STATE;
 	if ( pType == NULL ) {
 		pType = &g_xuiWidgetBaseType;
 	}
@@ -3580,7 +3722,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iMagic = XUI_WIDGET_MAGIC;
 	pWidget->pContext = pContext;
 	pWidget->pType = pType;
-	pWidget->pInternalOwner = pNativeOwner;
+
     if(pNativeOwner && __xuiWidgetStablePartSlot((xui_widget)pNativeOwner,ppWidget))pWidget->ppInternalOwnerSlot=ppWidget;
 	__xuiWidgetInitStackingChildren(pWidget);
 	__xuiWidgetInitLayout(pWidget);
@@ -3649,21 +3791,20 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->pContextNext = pContext->pAllWidgets;
 	if ( pContext->pAllWidgets != NULL ) pContext->pAllWidgets->pContextPrev = pWidget;
 	pContext->pAllWidgets = pWidget;
+    if(pNativeOwner)__xuiWidgetLinkPart((xui_widget)pNativeOwner,pWidget);
 	iRet = __xuiWidgetTypeInitChain(pWidget, pType, pCreateData);
 	if ( iRet != XUI_OK ) {
-		/* InitChain already unwound successfully initialized parent stages.
-		 * Keep queued/tree-owned instances alive until operation cleanup, and
-		 * do not invoke the failed leaf's destructor or repeat parent cleanup. */
-		(void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);
+        /* Completed parent stages remain on this real Context-owned carrier.
+         * A busy cache cannot be discarded by immediate constructor rollback. */
+		(void)xuiInternalWidgetRequestDestroy(pWidget,pNativeOwner);
 		return iRet;
 	}
     /* Init setters only borrow. Admit the final fields exactly once after the
      * full inheritance chain succeeds; partial failure rolls back held slots. */
-    iRet=pContext->pOwnedProxy && !xuiInternalWidgetIsValid(pWidget) ? XUI_ERROR_INVALID_STATE:__xuiTypeFontAdmit(pWidget,pType);
+    iRet=pContext->pOwnedProxy && !xuiInternalWidgetIsValid(pWidget) ? XUI_ERROR_INVALID_STATE:__xuiTypeResourceAdmit(pWidget,pType);
     if(iRet!=XUI_OK){
         xerror* first=xrtTakeError();
-        __xuiWidgetTypeDestroyChain(pWidget,pType);
-        (void)__xuiWidgetRequestDestroy(pWidget,pNativeOwner);xrtSetErrorTake(first);return iRet;
+        (void)xuiInternalWidgetRequestDestroy(pWidget,pNativeOwner);xrtSetErrorTake(first);return iRet;
     }
 	pWidget->bTypeInitialized = 1;
 	*ppWidget = pWidget;
@@ -3676,7 +3817,7 @@ XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget)
 	xuiInternalOperationEnter(pContext);
 	iRet = __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, ppWidget, NULL, NULL);
 	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
-		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
+		(!__xuiWidgetValid(*ppWidget) || pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
 		iRet = XUI_ERROR;
 	}
@@ -3690,7 +3831,7 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 	xuiInternalOperationEnter(pContext);
 	iRet = __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData, NULL);
 	if ( (iRet == XUI_OK) && (ppWidget != NULL) &&
-		(!__xuiWidgetValid(*ppWidget) || pContext->bDestroyPending || pContext->bDestroying) ) {
+		(!__xuiWidgetValid(*ppWidget) || pContext->bCloseRequested || pContext->bDestroyPending || pContext->bDestroying) ) {
 		*ppWidget = NULL;
 		iRet = XUI_ERROR;
 	}
@@ -3706,8 +3847,8 @@ int xuiInternalWidgetCreatePart(xui_widget owner,xui_widget_type type,xui_widget
     xui_context context=owner->pContext;
     xuiInternalOperationEnter(context);
     int status=__xuiWidgetCreateInternal(context,type,output,data,owner);
-    if(status==XUI_OK && (!__xuiWidgetValid(owner) || !__xuiWidgetValid(*output) || context->bDestroyPending || context->bDestroying)) {
-        if(__xuiWidgetMemoryValid(*output))(void)__xuiWidgetRequestDestroy(*output,owner);
+    if(status==XUI_OK && (!__xuiWidgetValid(owner) || !__xuiWidgetValid(*output) || context->bCloseRequested || context->bDestroyPending || context->bDestroying)) {
+        if(__xuiWidgetMemoryValid(*output))(void)xuiInternalWidgetRequestDestroy(*output,owner);
         *output=NULL;status=XUI_ERROR_INVALID_STATE;
     }
     xuiInternalOperationLeave(context);
@@ -3861,15 +4002,20 @@ static void __xuiWidgetMarkDestroyPending(xui_widget pWidget)
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xuiWidgetMarkDestroyPending(pChild);
 	}
+    for(pChild=pWidget->pFirstOwnedPart;pChild;pChild=pChild->pOwnedPartNext)__xuiWidgetMarkDestroyPending(pChild);
 	return;
 }
 
-static void __xuiWidgetInvalidateLifetimes(xui_widget pWidget)
+static void __xuiWidgetInvalidateLifetimesVisit(xui_widget widget,uint32_t epoch)
 {
-	xuiInternalLifetimeInvalidateAll(&pWidget->pLifetimeLinks);
-	for ( xui_widget pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
-		__xuiWidgetInvalidateLifetimes(pChild);
+    if(__xuiWidgetVisitSeen(widget,epoch))return;
+    __xuiWidgetVisitMark(widget,epoch);
+    xuiInternalLifetimeInvalidateAll(&widget->pLifetimeLinks);
+    for(xui_widget child=widget->pFirstChild;child;child=child->pNextSibling)__xuiWidgetInvalidateLifetimesVisit(child,epoch);
+    for(xui_widget part=widget->pFirstOwnedPart;part;part=part->pOwnedPartNext)__xuiWidgetInvalidateLifetimesVisit(part,epoch);
 }
+static void __xuiWidgetInvalidateLifetimes(xui_widget widget)
+{__xuiWidgetInvalidateLifetimesVisit(widget,__xuiWidgetVisitBegin(widget->pContext));}
 
 static void __xuiWidgetDestroyQueue(xui_context pContext, xui_widget pWidget)
 {
@@ -3877,38 +4023,40 @@ static void __xuiWidgetDestroyQueue(xui_context pContext, xui_widget pWidget)
 	pContext->pDeferredDestroyHead = pWidget;
 }
 
-static int __xuiWidgetHasPendingAncestor(xui_widget pWidget)
-{
-	xui_widget pScan;
-
-	for ( pScan = pWidget != NULL ? pWidget->pParent : NULL;
-		__xuiWidgetMemoryValid(pScan); pScan = pScan->pParent ) {
-		if ( pScan->bDestroyPending ) return 1;
-	}
-	return 0;
-}
-
-static int __xuiWidgetIsDescendantOf(xui_widget pWidget, xui_widget pAncestor)
-{
-	xui_widget pScan;
-
-	for ( pScan = pWidget; __xuiWidgetMemoryValid(pScan); pScan = pScan->pParent ) {
-		if ( pScan == pAncestor ) return 1;
-	}
-	return 0;
-}
-
 static void __xuiWidgetDestroyNow(xui_widget pWidget)
 {
 	xui_widget pChild;
 
-	if ( !__xuiWidgetMemoryValid(pWidget) ) return;
+    if(!__xuiWidgetMemoryValid(pWidget) || (pWidget->iDestroyVisitEpoch&XUI_DESTROY_EXECUTING))return;
+    /* The exclusive native owner must stay alive until all its parts have
+     * retired. A visual traversal entering a part first promotes to that owner.
+     * The execution bit breaks a legitimate mixed visual/owner cycle without
+     * reading freed records or duplicating any destructor. */
+    xui_widget nativeOwner=(xui_widget)pWidget->pInternalOwner;
+    if(nativeOwner && nativeOwner->bDestroyPending &&
+       (nativeOwner->iDestroyVisitEpoch&XUI_DESTROY_MEMBER) &&
+       !(nativeOwner->iDestroyVisitEpoch&XUI_DESTROY_EXECUTING)){
+        __xuiWidgetDestroyNow(nativeOwner);return;
+    }
+    pWidget->iDestroyVisitEpoch|=XUI_DESTROY_EXECUTING;
 	if ( !pWidget->bDestroyPending ) {
 		__xuiWidgetMarkDestroyPending(pWidget);
 		__xuiWidgetInvalidateLifetimes(pWidget);
 	}
 	/* Disarm the exact owner slot before parent TypeData can be released. */
     __xuiWidgetClearPartSlot(pWidget);
+    __xuiWidgetUnlinkPart(pWidget);
+    xui_widget visualParent=pWidget->pParent;
+    if(visualParent){
+        xuiInternalLayoutDetach(pWidget);
+        if(pWidget->pPrevSibling)pWidget->pPrevSibling->pNextSibling=pWidget->pNextSibling;
+        else visualParent->pFirstChild=pWidget->pNextSibling;
+        if(pWidget->pNextSibling)pWidget->pNextSibling->pPrevSibling=pWidget->pPrevSibling;
+        else visualParent->pLastChild=pWidget->pPrevSibling;
+        if(visualParent->iChildCount>0)--visualParent->iChildCount;
+        __xuiWidgetStackingDirty(visualParent);
+        pWidget->pParent=NULL;pWidget->pPrevSibling=NULL;pWidget->pNextSibling=NULL;
+    }
 	/* Detach before user destructors can request more context cleanup. */
 	xui_context pContext = pWidget->pContext;
 	if ( pWidget->pContextPrev != NULL ) pWidget->pContextPrev->pContextNext = pWidget->pContextNext;
@@ -3937,8 +4085,11 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
 		pChild->pNextSibling = NULL;
 		__xuiWidgetDestroyNow(pChild);
 	}
+    /* All native-owned parts are physically retired while their owner's data
+     * and callback targets are still alive, even outside its visual subtree. */
+    while(pWidget->pFirstOwnedPart)__xuiWidgetDestroyNow(pWidget->pFirstOwnedPart);
 	__xuiWidgetEndActiveUpdate(pWidget);
-	if ( pWidget->bTypeInitialized ) __xuiWidgetTypeDestroyChain(pWidget, pWidget->pType);
+    if(pWidget->pInitializedType)__xuiWidgetTypeDestroyChain(pWidget,pWidget->pInitializedType);
 	/* Empty the physical slots before arbitrary consuming cleanup reenters. */
 	xui_event_owners_t* pOwners = pWidget->pEventOwners;
 	pWidget->pEventOwners = NULL;
@@ -3981,38 +4132,49 @@ void xuiInternalContextDestroyWidgets(xui_context pContext)
 {
 	/* Roots have already been destroyed. Destroying a remaining instance also
 	 * removes any descendants from this registry; no parallel tree is built. */
-	while(pContext->pAllWidgets!=NULL){xui_widget widget=pContext->pAllWidgets;(void)__xuiWidgetRequestDestroy(widget,widget->pInternalOwner);}
+	while(pContext->pAllWidgets!=NULL){xui_widget widget=pContext->pAllWidgets;(void)xuiInternalWidgetRequestDestroy(widget,widget->pInternalOwner);}
 }
 
-void xuiInternalWidgetDestroyFlush(xui_context pContext)
+static void __xuiWidgetMarkClosure(xui_widget widget,uint32_t epoch)
 {
-	xui_widget pWidget;
-	xui_widget* ppPending;
-	xui_widget pPending;
-
-	if ( !xuiInternalContextIsValid(pContext) || pContext->iDestroyFlushDepth > 0 ||
-		pContext->iWidgetCallbackDepth > 0 || pContext->iOperationDepth > 0 ) return;
-	pContext->iDestroyFlushDepth++;
-	while ( (pWidget = pContext->pDeferredDestroyHead) != NULL ) {
-		pContext->pDeferredDestroyHead = pWidget->pDeferredDestroyNext;
-		pWidget->pDeferredDestroyNext = NULL;
-		if ( !__xuiWidgetMemoryValid(pWidget) || !pWidget->bDestroyPending ||
-			 __xuiWidgetHasPendingAncestor(pWidget) ) continue;
-		ppPending = &pContext->pDeferredDestroyHead;
-		while ( (pPending = *ppPending) != NULL ) {
-			if ( __xuiWidgetIsDescendantOf(pPending, pWidget) ) {
-				*ppPending = pPending->pDeferredDestroyNext;
-				pPending->pDeferredDestroyNext = NULL;
-			} else {
-				ppPending = &pPending->pDeferredDestroyNext;
-			}
-		}
-		__xuiWidgetDestroyNow(pWidget);
-	}
-	pContext->iDestroyFlushDepth--;
+    if(__xuiWidgetVisitSeen(widget,epoch))return;
+    __xuiWidgetVisitMark(widget,epoch);
+    widget->iDestroyVisitEpoch|=XUI_DESTROY_MEMBER;
+    for(xui_widget child=widget->pFirstChild;child;child=child->pNextSibling)__xuiWidgetMarkClosure(child,epoch);
+    for(xui_widget part=widget->pFirstOwnedPart;part;part=part->pOwnedPartNext)__xuiWidgetMarkClosure(part,epoch);
+}
+bool xuiInternalWidgetDestroyFlush(xui_context context)
+{
+    if(!xuiInternalContextIsValid(context) || context->iDestroyFlushDepth>0 ||
+       context->iWidgetCallbackDepth>0 || context->iOperationDepth>0)return false;
+    ++context->iDestroyFlushDepth;
+    bool progressed=false;
+    xui_widget candidates=context->pDeferredDestroyHead;
+    context->pDeferredDestroyHead=NULL;
+    while(candidates){
+        xui_widget widget=candidates;candidates=widget->pDeferredDestroyNext;widget->pDeferredDestroyNext=NULL;
+        if(!__xuiWidgetMemoryValid(widget) || !widget->bDestroyPending)continue;
+        /* An independently queued part can stay pending without delaying its
+         * native owner; the owner retries the complete closure below. */
+        bool complete=false;
+        int status=__xuiWidgetDestroyPrepareClosure(widget,&complete);
+        if(status<0)xuiInternalContextRecordFailure(context,status);
+        if(!complete){__xuiWidgetDestroyQueue(context,widget);continue;}
+        uint32_t epoch=__xuiWidgetVisitBegin(context);__xuiWidgetMarkClosure(widget,epoch);
+        xui_widget* lists[2]={&candidates,&context->pDeferredDestroyHead};
+        for(size_t i=0;i<2;++i){
+            for(xui_widget* link=lists[i];*link;){
+                xui_widget pending=*link;
+                if(__xuiWidgetVisitSeen(pending,epoch)){*link=pending->pDeferredDestroyNext;pending->pDeferredDestroyNext=NULL;}
+                else link=&pending->pDeferredDestroyNext;
+            }
+        }
+        __xuiWidgetDestroyNow(widget);progressed=true;
+    }
+    --context->iDestroyFlushDepth;return progressed;
 }
 
-static int __xuiWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority)
+int xuiInternalWidgetRequestDestroy(xui_widget pWidget,const void* pAuthority)
 {
 	xui_context pContext;
 	int bDestroying;
@@ -4056,9 +4218,9 @@ XUI_API int xuiWidgetDestroyChecked(xui_widget widget)
     if(!__xuiWidgetValid(widget))return XUI_OK;
     if(widget->pInternalOwner)return XUI_ERROR_INVALID_STATE;
     xui_context context=widget->pContext;
-    if(!xuiInternalContextIsValid(context) || context->bDestroying)return __xuiWidgetRequestDestroy(widget,NULL);
+    if(!xuiInternalContextIsValid(context) || context->bDestroying)return xuiInternalWidgetRequestDestroy(widget,NULL);
     xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
-    result=__xuiWidgetRequestDestroy(widget,NULL);
+    result=xuiInternalWidgetRequestDestroy(widget,NULL);
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     result=xuiInternalCallScopeEndOutcome(&scope,result,&first);
     xrtSetErrorTake(first);return result;
@@ -4071,15 +4233,16 @@ XUI_API void xuiWidgetDestroy(xui_widget widget)
 int xuiInternalWidgetClaimPart(xui_widget owner,xui_widget part)
 {
     if(!__xuiWidgetValid(owner) || !__xuiWidgetValid(part) || owner==part || owner->pContext!=part->pContext)return XUI_ERROR_INVALID_ARGUMENT;
-    if(part->pInternalOwner && part->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
-    part->pInternalOwner=owner;return XUI_OK;
+    if(part->pInternalOwner)return part->pInternalOwner==owner ? XUI_OK:XUI_ERROR_INVALID_STATE;
+    if(__xuiWidgetNativeOwnerContains(owner,part))return XUI_ERROR_INVALID_STATE;
+    __xuiWidgetLinkPart(owner,part);return XUI_OK;
 }
 int xuiInternalWidgetDestroyPart(xui_widget owner,xui_widget part)
 {
     if(!part)return XUI_OK;
     if(!__xuiWidgetMemoryValid(owner) || !__xuiWidgetMemoryValid(part) ||
        owner->pContext!=part->pContext || part->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
-    return __xuiWidgetRequestDestroy(part,owner);
+    return xuiInternalWidgetRequestDestroy(part,owner);
 }
 
 XUI_API xui_context xuiWidgetGetContext(xui_widget pWidget)
@@ -4588,20 +4751,16 @@ static int __xuiWidgetMeasureContentOperation(xui_widget pWidget, xui_vec2_t tCo
 	     !__xuiNonNegativeFloatValid(tConstraint.fY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*pContentSize = __xuiWidgetMeasureOwnContent(pWidget, tConstraint);
-	return XUI_OK;
+    return __xuiWidgetMeasureOwnContent(pWidget,tConstraint,pContentSize);
 }
 
-XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize)
+XUI_API int xuiWidgetMeasureContent(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output)
 {
-	xui_context pContext;
-	int iRet;
-
-	pContext = __xuiWidgetValid(pWidget) ? pWidget->pContext : NULL;
-	xuiInternalOperationEnter(pContext);
-	iRet = __xuiWidgetMeasureContentOperation(pWidget, tConstraint, pContentSize);
-	xuiInternalOperationLeave(pContext);
-	return iRet;
+    if(!__xuiWidgetValid(widget) || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
+    status=__xuiWidgetMeasureContentOperation(widget,constraint,output);
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
 }
 
 XUI_API int xuiWidgetSetLayoutType(xui_widget pWidget, int iLayoutType)
@@ -5799,11 +5958,154 @@ XUI_API int xuiWidgetSetEventHandlerOwned(xui_widget pWidget, int iEventType, xu
 	return __xuiWidgetSetOwnedEvent(pWidget, iEventType, onEvent, pUser, pOwner);
 }
 
+static int __xuiWidgetDestroyReadySelf(xui_widget widget)
+{
+    if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    if(widget->iDestroyVisitEpoch&XUI_DESTROY_PREPARING)return XUI_ERROR_BUSY;
+    if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    if(widget->pActiveUpdateDraw && widget->pContext->pOwnedProxy &&
+       xuiProxyResourceOwnershipBusy(xuiDrawOwnership(widget->pActiveUpdateDraw)))return XUI_ERROR_BUSY;
+    for(xui_widget_type type=widget->pInitializedType;type;type=type->pParent){
+        if(type->onDestroyReady){int status=type->onDestroyReady(widget,widget->pTypeData);if(status!=XUI_OK)return status;}
+    }
+    return XUI_OK;
+}
+static int __xuiWidgetDestroyReadyVisit(xui_widget widget,uint32_t epoch)
+{
+    if(__xuiWidgetVisitSeen(widget,epoch))return XUI_OK;
+    __xuiWidgetVisitMark(widget,epoch);
+    int status=__xuiWidgetDestroyReadySelf(widget);if(status!=XUI_OK)return status;
+    for(xui_widget child=widget->pFirstChild;child;child=child->pNextSibling){
+        status=__xuiWidgetDestroyReadyVisit(child,epoch);if(status!=XUI_OK)return status;
+    }
+    for(xui_widget part=widget->pFirstOwnedPart;part;part=part->pOwnedPartNext){
+        status=__xuiWidgetDestroyReadyVisit(part,epoch);if(status!=XUI_OK)return status;
+    }
+    return XUI_OK;
+}
+int xuiInternalWidgetDestroyReady(xui_widget widget)
+{
+    if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    return __xuiWidgetDestroyReadyVisit(widget,__xuiWidgetVisitBegin(widget->pContext));
+}
+static int __xuiWidgetDestroyPrepareSelf(xui_widget widget,bool* complete)
+{
+    *complete=false;
+    if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    if(widget->bCacheMutationActive)return XUI_STATUS_DEFERRED;
+    bool all=true;int result=XUI_OK;xerror* first=NULL;
+    bool drawWaiting=widget->pActiveUpdateDraw && widget->pContext->pOwnedProxy &&
+        xuiProxyResourceOwnershipBusy(xuiDrawOwnership(widget->pActiveUpdateDraw));
+    if(!drawWaiting){result=__xuiWidgetEndActiveUpdate(widget);first=xrtTakeError();}
+    if(widget->pActiveUpdateDraw)all=false;
+    else {
+        int caches=__xuiWidgetDestroyAllCaches(widget);xerror* error=xrtTakeError();
+        if(caches<0 || error){
+            if(result>=0){result=caches<0 ? caches:XUI_ERROR_CALLBACK_FAILED;first=error;}else xrtErrorFree(error);
+        }
+        if(widget->pCacheSlots)all=false;
+    }
+    if(result>=0 && first)result=XUI_ERROR_CALLBACK_FAILED;
+    if(result>=0)result=XUI_OK;
+    for(xui_widget_type type=widget->pInitializedType;type;type=type->pParent){
+        /* Pure readiness refuses only this layer's cache. Another layer may
+         * own the topmost session which makes the first one ready next pass. */
+        if(type->onDestroyReady && type->onDestroyReady(widget,widget->pTypeData)!=XUI_OK){all=false;continue;}
+        if(!type->onDestroyPrepare)continue;
+        bool done=false;int next=type->onDestroyPrepare(widget,widget->pTypeData,&done);
+        xerror* error=xrtTakeError();
+        if(next<0 || error){
+            if(next>=0)next=XUI_ERROR_CALLBACK_FAILED;
+            if(result==XUI_OK){result=next;first=error;}else xrtErrorFree(error);
+            xuiInternalContextRecordOutcome(widget->pContext,next,first);
+        }else if((next!=XUI_OK && next!=XUI_STATUS_DEFERRED) || (next==XUI_STATUS_DEFERRED && done)){
+            if(result==XUI_OK)result=XUI_ERROR_INVALID_STATE;
+            xuiInternalContextRecordOutcome(widget->pContext,XUI_ERROR_INVALID_STATE,first);
+        }
+        if(!done)all=false;
+    }
+    *complete=all;xrtSetErrorTake(first);return all || result<0 ? result:XUI_STATUS_DEFERRED;
+}
+static int __xuiWidgetDestroyPrepareVisit(xui_widget widget,uint32_t epoch,bool* complete)
+{
+    /* The native-owner/visual union may contain a Menu-like cycle. A recursive
+     * edge observes this same in-progress frame; the frame itself contributes
+     * its own completion. Preserve the marker across reentrant pure queries. */
+    if(__xuiWidgetVisitSeen(widget,epoch) || (widget->iDestroyVisitEpoch&XUI_DESTROY_PREPARING)){
+        *complete=true;return XUI_OK;
+    }
+    __xuiWidgetVisitMark(widget,epoch);widget->iDestroyVisitEpoch|=XUI_DESTROY_PREPARING;
+    bool all=false;int result=__xuiWidgetDestroyPrepareSelf(widget,&all);xerror* first=xrtTakeError();
+    for(int relation=0;relation<2;++relation){
+        for(xui_widget value=relation ? widget->pFirstOwnedPart:widget->pFirstChild;value;
+            value=relation ? value->pOwnedPartNext:value->pNextSibling){
+            bool done=false;int status=__xuiWidgetDestroyPrepareVisit(value,epoch,&done);xerror* error=xrtTakeError();
+            if(status<0 || error){
+                if(status>=0)status=XUI_ERROR_CALLBACK_FAILED;
+                if(result>=0){result=status;first=error;}else xrtErrorFree(error);
+            }
+            if(!done)all=false;
+        }
+    }
+    widget->iDestroyVisitEpoch&=~XUI_DESTROY_PREPARING;__xuiWidgetVisitMark(widget,epoch);
+    *complete=all;xrtSetErrorTake(first);return all || result<0 ? (result<0 ? result:XUI_OK):XUI_STATUS_DEFERRED;
+}
+static int __xuiWidgetDestroyPrepareClosure(xui_widget widget,bool* complete)
+{
+    *complete=false;
+    return __xuiWidgetDestroyPrepareVisit(widget,__xuiWidgetVisitBegin(widget->pContext),complete);
+}
+int xuiInternalContextPrepareDestroy(xui_context context,bool* complete)
+{
+    if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;
+    if(!xuiInternalContextIsValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    int result=XUI_OK;xerror* first=xrtTakeError();
+    if(first)result=XUI_ERROR_CALLBACK_FAILED;
+    size_t previous=SIZE_MAX;
+    for(;;){
+        size_t remaining=0;
+        bool done=false;int status=xuiInternalTextMeasureCachePrepare(context,&done);
+        xerror* error=xrtTakeError();
+        if(status<0 || error){
+            if(result==XUI_OK){result=status<0 ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}else xrtErrorFree(error);
+            xuiInternalContextRecordOutcome(context,status<0 ? status:XUI_ERROR_CALLBACK_FAILED,first);
+        }
+        if(!done)++remaining;
+        done=false;status=xuiInternalContextPrepareManagers(context,&done);error=xrtTakeError();
+        if(status<0 || error){
+            if(result==XUI_OK){result=status<0 ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}else xrtErrorFree(error);
+            xuiInternalContextRecordOutcome(context,status<0 ? status:XUI_ERROR_CALLBACK_FAILED,first);
+        }
+        if(!done)++remaining;
+        /* A deferred earlier widget must not prevent a later topmost Draw or
+         * independent cache from making actual progress in this pass. */
+        for(xui_widget widget=context->pAllWidgets;widget;widget=widget->pContextNext){
+            done=false;status=__xuiWidgetDestroyPrepareSelf(widget,&done);error=xrtTakeError();
+            if(status<0 || error){
+                if(result==XUI_OK){result=status<0 ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}else xrtErrorFree(error);
+            }
+            if(!done)++remaining;
+        }
+        if(!remaining){*complete=true;break;}
+        if(remaining>=previous)break;
+        previous=remaining;
+    }
+    xrtSetErrorTake(first);return *complete || result<0 ? result:XUI_STATUS_DEFERRED;
+}
 XUI_API bool xuiContextOwnershipBusy(xui_context pContext)
 {
-	return !xuiInternalContextIsValid(pContext) || pContext->iOperationDepth != 0 ||
-		pContext->iWidgetCallbackDepth != 0 || pContext->iDestroyFlushDepth != 0 ||
-		pContext->bDestroyPending || pContext->bDestroying;
+    if(!xuiInternalContextIsValid(pContext) || pContext->iOperationDepth!=0 ||
+        pContext->iWidgetCallbackDepth!=0 || pContext->iDestroyFlushDepth!=0 ||
+        pContext->bDestroyPending || pContext->bDestroying)return true;
+    if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return true;
+    if(xuiInternalTextMeasureCacheReady(pContext)!=XUI_OK)return true;
+    if(!xuiInternalContextManagersReady(pContext))return true;
+    /* Each actual widget is inspected once, including unattached/pending
+     * instances still physically owned by this Context. No subtree repeats. */
+    for(xui_widget widget=pContext->pAllWidgets;widget;widget=widget->pContextNext)
+        if(__xuiWidgetDestroyReadySelf(widget)!=XUI_OK)return true;
+    return false;
 }
 
 XUI_API bool xuiContextTraceEventOwners(xui_context pContext, xrtownershipvisitor onVisit, void* pUser)
@@ -5824,21 +6126,30 @@ XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor 
 {
 	if ( !xuiContextTraceEventOwners(pContext, onVisit, pUser) ) return false;
     if(!xuiInternalContextTraceResources(pContext,onVisit,pUser))return false;
+    if(!xuiInternalContextTraceManagers(pContext,onVisit,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {
         if(pWidget->pEventOwners) {
             for(const xui_callback_binding_t* binding=pWidget->pEventOwners->pBindings;binding;binding=binding->pNext) {
                 if(!onVisit(binding->tOwner.tReference,pUser))return false;
             }
         }
+        if(pContext->pOwnedProxy){
+            for(int i=0;i<pWidget->iCacheCount;++i){
+                xui_surface surface=pWidget->pCacheSlots[i].pSurface;
+                if(surface && !onVisit(xuiSurfaceOwnership(surface),pUser))return false;
+            }
+            if(pWidget->pActiveUpdateDraw && !onVisit(xuiDrawOwnership(pWidget->pActiveUpdateDraw),pUser))return false;
+        }
         if(pContext->pOwnedProxy && pWidget->bTypeInitialized){
             for(xui_widget_type type=pWidget->pType;type;type=type->pParent){
-                for(size_t i=0;i<type->iFontSlotCount;++i){
-                    xui_font font=__xuiTypeFont(pWidget,type,i);
-                    if(font && !onVisit(xuiFontOwnership(font),pUser))return false;
+                xui_type_resource_view_t view;if(!__xuiTypeResourceView(pWidget,type,&view))return false;
+                for(size_t i=0;i<view.count;++i){
+                    bool surface=false;void* value=__xuiTypeResource(pWidget,&view,i,&surface);
+                    if(value && !onVisit(surface ? xuiSurfaceOwnership(value):xuiFontOwnership(value),pUser))return false;
                 }
             }
         }
-		for ( xui_widget_type pType = pWidget->pType; pType != NULL; pType = pType->pParent )
+		for ( xui_widget_type pType = pWidget->pInitializedType; pType != NULL; pType = pType->pParent )
 			if ( pType->onTraceOwnership != NULL &&
 			     !pType->onTraceOwnership(pWidget, pWidget->pTypeData, onVisit, pUser) ) return false;
     }
@@ -7449,50 +7760,34 @@ XUI_API int xuiWidgetGetCacheRenderCallback(xui_widget pWidget, xui_widget_cache
 	return XUI_OK;
 }
 
-XUI_API int xuiWidgetSetCacheStateCount(xui_widget pWidget, int iCount)
+XUI_API int xuiWidgetSetCacheStateCount(xui_widget widget,int count)
 {
-	xui_widget_cache_slot_t* pSlots;
-	int i;
-	int iCopyCount;
-
-	if ( !__xuiWidgetValid(pWidget) || (iCount < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pWidget->pActiveUpdateDraw != NULL ) {
-		return XUI_ERROR_ALREADY_INITIALIZED;
-	}
-	if ( iCount == pWidget->iCacheCount ) {
-		return XUI_OK;
-	}
-	if ( iCount == 0 ) {
-		__xuiWidgetDestroyAllCaches(pWidget);
-		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	pSlots = (xui_widget_cache_slot_t*)xrtMalloc(sizeof(*pSlots) * (size_t)iCount);
-	if ( pSlots == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pSlots, 0, sizeof(*pSlots) * (size_t)iCount);
-	iCopyCount = pWidget->iCacheCount;
-	if ( iCopyCount > iCount ) {
-		iCopyCount = iCount;
-	}
-	for ( i = 0; i < iCopyCount; i++ ) {
-		pSlots[i] = pWidget->pCacheSlots[i];
-		memset(&pWidget->pCacheSlots[i], 0, sizeof(pWidget->pCacheSlots[i]));
-	}
-	for ( i = iCopyCount; i < iCount; i++ ) {
-		pSlots[i].iStateId = __xuiWidgetNextFreeStateId(pSlots, i);
-	}
-	for ( i = iCopyCount; i < pWidget->iCacheCount; i++ ) {
-		__xuiWidgetDestroyCacheSlot(pWidget, &pWidget->pCacheSlots[i]);
-	}
-	if ( pWidget->pCacheSlots != NULL ) {
-		xrtFree(pWidget->pCacheSlots);
-	}
-	pWidget->pCacheSlots = pSlots;
-	pWidget->iCacheCount = iCount;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    if(!__xuiWidgetValid(widget) || count<0 || (size_t)count>SIZE_MAX/sizeof(xui_widget_cache_slot_t))return XUI_ERROR_INVALID_ARGUMENT;
+    if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    if(widget->pActiveUpdateDraw)return XUI_ERROR_ALREADY_INITIALIZED;
+    if(count==widget->iCacheCount)return XUI_OK;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
+    widget->bCacheMutationActive=1;
+    xui_widget_cache_slot_t* slots=count ? xrtCalloc((size_t)count,sizeof(*slots)):NULL;
+    bool complete=true;
+    if(count && !slots)status=XUI_ERROR_OUT_OF_MEMORY;
+    if(status==XUI_OK){
+        for(int i=count;i<widget->iCacheCount;++i){
+            bool consumed=false;int next=__xuiWidgetReleaseCacheSlot(widget,&widget->pCacheSlots[i],&consumed);
+            if(next!=XUI_OK){status=next;complete=false;break;}
+            if(!consumed){status=XUI_ERROR_BUSY;complete=false;break;}
+        }
+    }
+    if(status==XUI_OK && complete && __xuiWidgetValid(widget) && !widget->pContext->bCloseRequested){
+        int copy=widget->iCacheCount<count ? widget->iCacheCount:count;
+        for(int i=0;i<copy;++i){slots[i]=widget->pCacheSlots[i];memset(&widget->pCacheSlots[i],0,sizeof(widget->pCacheSlots[i]));}
+        for(int i=copy;i<count;++i)slots[i].iStateId=__xuiWidgetNextFreeStateId(slots,i);
+        xrtFree(widget->pCacheSlots);widget->pCacheSlots=slots;widget->iCacheCount=count;slots=NULL;
+        status=xuiWidgetInvalidate(widget,XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+    }else if(status==XUI_OK)status=XUI_ERROR_INVALID_STATE;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    xrtFree(slots);widget->bCacheMutationActive=0;
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
 }
 
 XUI_API int xuiWidgetGetCacheStateCount(xui_widget pWidget)
@@ -7502,6 +7797,7 @@ XUI_API int xuiWidgetGetCacheStateCount(xui_widget pWidget)
 
 XUI_API int xuiWidgetSetCacheStateId(xui_widget pWidget, int iIndex, uint32_t iStateId)
 {
+    if(__xuiWidgetMemoryValid(pWidget) && pWidget->bCacheMutationActive)return XUI_ERROR_BUSY;
 	if ( !__xuiWidgetValid(pWidget) || (iIndex < 0) || (iIndex >= pWidget->iCacheCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -7531,7 +7827,7 @@ XUI_API xui_surface xuiWidgetGetCacheSurface(xui_widget pWidget, uint32_t iState
 {
 	xui_widget_cache_slot_t* pSlot;
 
-	if ( !__xuiWidgetValid(pWidget) ) {
+	if ( !__xuiWidgetValid(pWidget) || pWidget->bCacheMutationActive ) {
 		return NULL;
 	}
 	pSlot = __xuiWidgetFindCacheSlot(pWidget, iStateId);
@@ -7540,7 +7836,7 @@ XUI_API xui_surface xuiWidgetGetCacheSurface(xui_widget pWidget, uint32_t iState
 
 static int __xuiWidgetEnsureCacheStateSlot(xui_widget pWidget, uint32_t iStateId);
 
-XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t iFlags, uint32_t iClearColor, xui_draw_context* ppDraw)
+static int __xuiWidgetUpdateBeginOperation(xui_widget pWidget, uint32_t iStateId, uint32_t iFlags, uint32_t iClearColor, xui_draw_context* ppDraw)
 {
 	xui_widget_cache_slot_t* pSlot;
 	xui_proxy pProxy;
@@ -7551,6 +7847,7 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppDraw = NULL;
+    if(pWidget->bCacheMutationActive || pWidget->pContext->bCloseRequested)return XUI_ERROR_BUSY;
 	if ( pWidget->pActiveUpdateDraw != NULL ) {
 		return XUI_ERROR_ALREADY_INITIALIZED;
 	}
@@ -7575,22 +7872,34 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 		pWidget->iActiveUpdateStateId = 0;
 		return iRet;
 	}
-	iRet = pProxy->drawBegin(pProxy, ppDraw, pSlot->pSurface);
-	if ( iRet != XUI_OK ) {
-		pWidget->iActiveUpdateStateId = 0;
-		return iRet;
-	}
+    pWidget->bCacheMutationActive=1;
+    iRet=pProxy->drawBegin(pProxy,&pWidget->pActiveUpdateDraw,pSlot->pSurface);
+    pWidget->bCacheMutationActive=0;
+    pWidget->pActiveUpdateSlot=pSlot;
+    if(iRet==XUI_OK && (!__xuiWidgetValid(pWidget) || pWidget->pContext->bCloseRequested))iRet=XUI_ERROR_INVALID_STATE;
+    if(iRet!=XUI_OK){
+        xerror* first=xrtTakeError();xui_cleanup_prefix_t prefix={0};
+        int begun=xuiInternalCleanupPrefixBegin(pWidget->pContext,&prefix,iRet,first);
+        (void)__xuiWidgetEndActiveUpdate(pWidget);
+        if(begun==XUI_OK)(void)xuiInternalCleanupPrefixEnd(&prefix);
+        xrtClearError();xrtSetErrorTake(first);return iRet;
+    }
+    *ppDraw=pWidget->pActiveUpdateDraw;
 	if ( (iFlags & XUI_WIDGET_UPDATE_CLEAR) != 0 ) {
 		tClearRect.fX = 0.0f;
 		tClearRect.fY = 0.0f;
 		tClearRect.fW = (float)pSlot->iWidth;
 		tClearRect.fH = (float)pSlot->iHeight;
+        pWidget->bCacheMutationActive=1;
 		iRet = pProxy->drawClearRect(pProxy, *ppDraw, tClearRect, iClearColor);
+        pWidget->bCacheMutationActive=0;
+        if(iRet==XUI_OK && (!__xuiWidgetValid(pWidget) || pWidget->pContext->bCloseRequested))iRet=XUI_ERROR_INVALID_STATE;
 		if ( iRet != XUI_OK ) {
-			(void)pProxy->drawEnd(pProxy, *ppDraw);
-			*ppDraw = NULL;
-			pWidget->iActiveUpdateStateId = 0;
-			return iRet;
+            xerror* first=xrtTakeError();xui_cleanup_prefix_t prefix={0};
+            int begun=xuiInternalCleanupPrefixBegin(pWidget->pContext,&prefix,iRet,first);
+            (void)__xuiWidgetEndActiveUpdate(pWidget);
+            if(begun==XUI_OK)(void)xuiInternalCleanupPrefixEnd(&prefix);
+            *ppDraw=NULL;xrtClearError();xrtSetErrorTake(first);return iRet;
 		}
 	}
 	pWidget->pActiveUpdateDraw = *ppDraw;
@@ -7600,37 +7909,45 @@ XUI_API int xuiWidgetUpdateBegin(xui_widget pWidget, uint32_t iStateId, uint32_t
 	return XUI_OK;
 }
 
-XUI_API int xuiWidgetUpdateEnd(xui_widget pWidget, uint32_t iStateId, xui_draw_context pDraw)
+typedef struct xui_cache_output_watch_t {bool invalid;xui_draw_context* output;} xui_cache_output_watch_t;
+static void __xuiWidgetCacheOutputInvalidated(void* raw)
 {
-	xui_proxy pProxy;
-	xui_widget_cache_slot_t* pSlot;
-	int iRet;
+    xui_cache_output_watch_t* watch=raw;watch->invalid=true;*watch->output=NULL;
+}
+XUI_API int xuiWidgetUpdateBegin(xui_widget widget,uint32_t state,uint32_t flags,uint32_t clear,xui_draw_context* output)
+{
+    if(output)*output=NULL;
+    if(!__xuiWidgetValid(widget) || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
+    xui_lifetime_link_t link={0};xui_cache_output_watch_t watch={false,output};
+    status=xuiWidgetLifetimeWatch(widget,&link,__xuiWidgetCacheOutputInvalidated,&watch);
+    if(status==XUI_OK)status=__xuiWidgetUpdateBeginOperation(widget,state,flags,clear,output);
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
+    xuiLifetimeUnwatch(&link);
+    if(status==XUI_OK && watch.invalid){xrtErrorFree(first);first=NULL;status=XUI_ERROR_INVALID_STATE;}
+    if(status!=XUI_OK)*output=NULL;
+    xrtSetErrorTake(first);return status;
+}
 
-	if ( !__xuiWidgetValid(pWidget) || (pDraw == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pWidget->pActiveUpdateDraw != pDraw) || (pWidget->iActiveUpdateStateId != iStateId) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pProxy = xuiInternalContextGetProxy(pWidget->pContext);
-	if ( pProxy == NULL ) {
-		return XUI_ERROR_NOT_INITIALIZED;
-	}
-	pSlot = pWidget->pActiveUpdateSlot;
-	iRet = pProxy->drawEnd(pProxy, pDraw);
-	pWidget->pActiveUpdateDraw = NULL;
-	pWidget->pActiveUpdateSlot = NULL;
-	pWidget->iActiveUpdateStateId = 0;
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( pSlot != NULL ) {
-		pSlot->iFlags &= ~XUI_WIDGET_DIRTY_CACHE;
-		if ( (pProxy->surfaceGetGeneration != NULL) && (pSlot->pSurface != NULL) ) {
-			(void)pProxy->surfaceGetGeneration(pProxy, pSlot->pSurface, &pSlot->iSurfaceGeneration);
-		}
-	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_RENDER);
+XUI_API int xuiWidgetUpdateEnd(xui_widget widget,uint32_t state,xui_draw_context draw)
+{
+    if(!__xuiWidgetMemoryValid(widget) || !draw || widget->pActiveUpdateDraw!=draw || widget->iActiveUpdateStateId!=state)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=widget->pContext;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xui_call_scope_t scope={0};int status=xuiInternalCleanupCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    xui_widget_cache_slot_t* slot=widget->pActiveUpdateSlot;
+    status=__xuiWidgetEndActiveUpdate(widget);
+    if(status==XUI_OK && slot && __xuiWidgetValid(widget) && !context->bCloseRequested){
+        slot->iFlags&=~XUI_WIDGET_DIRTY_CACHE;
+        xui_proxy proxy=xuiInternalContextGetProxy(context);
+        if(proxy && proxy->surfaceGetGeneration && slot->pSurface)(void)proxy->surfaceGetGeneration(proxy,slot->pSurface,&slot->iSurfaceGeneration);
+        status=xuiWidgetInvalidate(widget,XUI_WIDGET_DIRTY_RENDER);
+    }
+    xerror* first=status<0 ? xrtTakeError():NULL;
+    int reported=status<0 ? status:XUI_OK;
+    reported=xuiInternalCallScopeEndOutcome(&scope,reported,&first);xrtSetErrorTake(first);
+    return reported==XUI_OK && status==XUI_STATUS_DEFERRED ? XUI_STATUS_DEFERRED:reported;
 }
 
 static int __xuiWidgetHasCurrentCacheSurface(xui_widget pWidget)

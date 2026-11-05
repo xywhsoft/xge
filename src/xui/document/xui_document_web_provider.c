@@ -4,6 +4,7 @@
 /* Optional, application-owned static math/Mermaid/HTML renderer. The Document
  * remains authoritative; the one browser worker only produces cached pixels. */
 #include "xui_document_ui.h"
+#include "xui_internal.h"
 #include "xui_webview_internal.h"
 #include <math.h>
 #include <stdio.h>
@@ -39,9 +40,15 @@ typedef struct doc_web_entry {
 } doc_web_entry;
 
 struct xui_doc_web_provider_t {
+    xui_owned_manager_t owned;
+    xui_callback_owner_t invalidate_owner;
+    xui_lifetime_link_t parent_watch,worker_watch;
+    unsigned working;
+    bool proxy_owned;
+    xui_surface pending_surface,pending_crop;
     xui_context context;
     xui_widget parent, worker;
-    xui_proxy_t proxy;
+    xui_proxy proxy;
     char* assets_folder;
     char* user_data_folder;
     xui_doc_web_invalidate_proc on_invalidate;
@@ -61,10 +68,23 @@ struct xui_doc_web_provider_t {
     char worker_error[128];
 };
 
+static void doc_web_message(xui_widget,const char*,const char*,size_t,void*);
+static void doc_web_event(xui_widget,int,int32_t,void*);
+static int doc_web_message_impl(xui_widget,const char*,const char*,size_t,void*);
+static int doc_web_event_impl(xui_widget,int,int32_t,void*);
+static void doc_web_worker_gone(void*);
+static int doc_web_invalidate(xui_doc_web_provider);
+static const xui_owned_manager_ops_t doc_web_ops;
+static bool doc_web_business_alive(xui_doc_web_provider provider)
+{
+    return xuiInternalManagerAlive(&provider->owned) && !provider->context->bCloseRequested &&
+        !provider->context->bDestroyPending && !provider->context->bDestroying;
+}
+
 static int doc_web_timed_out(xui_doc_web_provider provider,
     uint64_t started)
 {
-    /* xrtClock counts microseconds; the public option is milliseconds. */
+    /* The engine monotonic clock is microseconds; the public option is milliseconds. */
     return xgeClockMicroseconds() - started >= (uint64_t)provider->timeout_ms * 1000u;
 }
 
@@ -134,22 +154,71 @@ static void doc_web_set_error(doc_web_entry* entry, const xvalue* value)
     entry->error_text[bytes] = 0;
 }
 
-static void doc_web_entry_clear(xui_doc_web_provider provider, doc_web_entry* entry)
+/* A valid native Surface owner is consumed independently from its cleanup
+ * result. An unconsumed preflight failure keeps the actual slot for retry. */
+static int doc_web_surface_release(xui_doc_web_provider provider,xui_surface* slot)
 {
-    if (entry->surface && provider->proxy.surfaceDestroy)
-        provider->proxy.surfaceDestroy(&provider->proxy, entry->surface);
+    if(!*slot)return XUI_OK;
+    if(provider->proxy_owned){
+        bool consumed=false;
+        int status=xuiSurfaceReleaseOwnerChecked(*slot,&consumed);
+        if(consumed)*slot=NULL;
+        return status;
+    }
+    provider->proxy->surfaceDestroy(provider->proxy,*slot);*slot=NULL;
+    return xrtGetError() ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+}
+
+static int doc_web_entry_clear(xui_doc_web_provider provider, doc_web_entry* entry)
+{
+    int status=doc_web_surface_release(provider,&entry->surface);
+    if(entry->surface)return status==XUI_OK ? XUI_STATUS_DEFERRED:status;
     if (provider->cache_bytes >= entry->surface_bytes)
         provider->cache_bytes -= entry->surface_bytes;
     free(entry->source);
     memset(entry, 0, sizeof(*entry));
+    return status;
 }
 
-static void doc_web_prepare_error_card(xui_doc_web_provider provider,
+static int doc_web_invalidate(xui_doc_web_provider provider)
+{
+    xui_doc_web_invalidate_proc callback=provider->on_invalidate;
+    void* user=provider->user;
+    if(!callback || !doc_web_business_alive(provider))return XUI_OK;
+    xui_callback_snapshot_t snapshot={0};
+    int status=xuiInternalManagerCallbackSnapshotBegin(&provider->owned,
+        &provider->invalidate_owner,&snapshot,true);
+    if(status!=XUI_OK)return status;
+    callback(user);return xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+}
+
+static void doc_web_message(xui_widget widget,const char* source,const char* json,size_t bytes,void* raw)
+{
+    xui_doc_web_provider provider=raw;xui_manager_scope_t scope={0};
+    if(!provider || xuiInternalManagerScopeBegin(&provider->owned,&scope)!=XUI_OK)return;
+    int status=doc_web_message_impl(widget,source,json,bytes,raw);
+    if(status<0)xuiInternalContextRecordFailure(provider->context,status);
+    (void)xuiInternalManagerScopeEnd(&scope,status);
+}
+
+static void doc_web_event(xui_widget widget,int event,int32_t error,void* raw)
+{
+    xui_doc_web_provider provider=raw;xui_manager_scope_t scope={0};
+    if(!provider || xuiInternalManagerScopeBegin(&provider->owned,&scope)!=XUI_OK)return;
+    int status=doc_web_event_impl(widget,event,error,raw);
+    if(status<0)xuiInternalContextRecordFailure(provider->context,status);
+    (void)xuiInternalManagerScopeEnd(&scope,status);
+}
+
+static int doc_web_prepare_error_card(xui_doc_web_provider provider,
     doc_web_entry* entry)
 {
     xui_font font = xuiGetDefaultFont(provider->context);
+    int status=xuiInternalFontAdmit(provider->context,font);
+    if(status!=XUI_OK)return status;
     size_t bytes = strlen(entry->error_text), start = 0;
     float max_width;
+    entry->height=0;entry->error_line_count=0;
     entry->width = (int)fminf(4096.0f, fmaxf(1.0f,
         fminf(entry->available, fmaxf(240.0f, 480.0f * entry->zoom))));
     max_width = fmaxf(1.0f, (float)entry->width - 16.0f);
@@ -164,9 +233,12 @@ static void doc_web_prepare_error_card(xui_doc_web_provider provider,
                 next++;
             memcpy(candidate, entry->error_text + start, next - start);
             candidate[next - start] = 0;
-            if (font && provider->proxy.textMeasure &&
-                    provider->proxy.textMeasure(&provider->proxy, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=font, .sText=candidate, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &measured) == XUI_OK &&
-                    measured.fX > max_width && fit > start) break;
+            if(font && provider->proxy->textMeasure){
+                status=provider->proxy->textMeasure(provider->proxy,
+                    &(xui_text_item_t){.iSize=sizeof(xui_text_item_t),.pFont=font,.sText=candidate,.iTextSize=-1,.iFlags=XUI_TEXT_SHAPE_DEFAULT},&measured);
+                if(status!=XUI_OK)goto end;
+                if(measured.fX>max_width && fit>start)break;
+            }
             if (entry->error_text[cursor] == ' ' && cursor > start)
                 space = cursor;
             fit = next;
@@ -189,11 +261,19 @@ static void doc_web_prepare_error_card(xui_doc_web_provider provider,
     entry->height = 28 + 20 * entry->error_line_count;
     if (entry->height < 56) entry->height = 56;
     entry->baseline = (float)entry->height;
+end: ;
+    xerror* first=xrtTakeError();
+    if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    xui_cleanup_prefix_t prefix={0};xuiInternalCleanupPrefixBegin(provider->context,&prefix,status,first);
+    xuiInternalContextCleanupOutcome(provider->context,xuiInternalFontRelease(provider->context,font),&status,&first);
+    xuiInternalCleanupPrefixEnd(&prefix);
+    xrtSetErrorTake(first);return status;
 }
 
-static void doc_web_active_finish(xui_doc_web_provider provider, int success)
+static int doc_web_active_finish(xui_doc_web_provider provider, int success)
 {
     doc_web_entry* entry = provider->active;
+    int result=XUI_OK;
     if (provider->capture) {
         xuiWebRequestRelease(provider->capture);
         provider->capture = NULL;
@@ -203,30 +283,32 @@ static void doc_web_active_finish(xui_doc_web_provider provider, int success)
         if (!success) {
             if (!entry->error_text[0])
                 strcpy(entry->error_text, "Rendering failed");
-            doc_web_prepare_error_card(provider, entry);
+            result=doc_web_prepare_error_card(provider,entry);
         }
     }
     provider->active = NULL;
     provider->stage = DOC_WEB_IDLE;
     provider->stage_frames = 0;
-    if (provider->on_invalidate) provider->on_invalidate(provider->user);
+    return result!=XUI_OK ? result:doc_web_invalidate(provider);
 }
 
-static void doc_web_active_fail(xui_doc_web_provider provider,
+static int doc_web_active_fail(xui_doc_web_provider provider,
     const char* reason)
 {
     if (provider->active)
         (void)snprintf(provider->active->error_text,
             sizeof(provider->active->error_text), "%s", reason);
-    doc_web_active_finish(provider, 0);
+    return doc_web_active_finish(provider,0);
 }
 
-static void doc_web_fail_provider(xui_doc_web_provider provider,
+static int doc_web_fail_provider(xui_doc_web_provider provider,
     const char* reason, int retryable)
 {
     size_t i;
+    int result=XUI_OK;xerror* first=NULL;
+    xui_cleanup_prefix_t prefix={0};
     uint64_t now = xgeClockMicroseconds();
-    if (provider->failed) return;
+    if (provider->failed) return XUI_OK;
     if (retryable && provider->healthy_since &&
             now - provider->healthy_since >= DOC_WEB_HEALTHY_RESET_US)
         provider->restart_attempts = 0;
@@ -254,24 +336,33 @@ static void doc_web_fail_provider(xui_doc_web_provider provider,
         entry->state = DOC_WEB_FAILED;
         entry->worker_failure = 1;
         strcpy(entry->error_text, provider->worker_error);
-        doc_web_prepare_error_card(provider, entry);
+        int status=doc_web_prepare_error_card(provider,entry);xerror* error=xrtTakeError();
+        if(status!=XUI_OK || error){
+            if(result==XUI_OK){
+                result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;
+                xuiInternalCleanupPrefixBegin(provider->context,&prefix,result,first);
+            }
+            else xrtErrorFree(error);
+        }
     }
-    if (provider->on_invalidate) provider->on_invalidate(provider->user);
+    if(prefix.self)xuiInternalCleanupPrefixEnd(&prefix);
+    xrtSetErrorTake(first);return result!=XUI_OK ? result:doc_web_invalidate(provider);
 }
 
-static void doc_web_message(xui_widget widget, const char* source,
+static int doc_web_message_impl(xui_widget widget, const char* source,
     const char* json, size_t bytes, void* user)
 {
     xui_doc_web_provider provider = user;
     xvalue* value;
+    int outcome=XUI_OK;
     int id, width, height;
     uint64_t palette_generation;
     float baseline = 0;
     (void)source;
     if (!provider || widget != provider->worker || provider->failed ||
-            bytes > 1024u * 1024u) return;
+            bytes > 1024u * 1024u) return XUI_OK;
     value = xrtJsonParse(doc_web_view(json, bytes));
-    if (!value) return;
+    if (!value) return XUI_OK;
     if (doc_web_string_equals(doc_web_field(value, "kind"), "ready")) {
         bool math = false, diagram = false, html = false;
         (void)xrtValueGetBool(doc_web_field(value, "katex"), &math);
@@ -279,7 +370,7 @@ static void doc_web_message(xui_widget widget, const char* source,
         (void)xrtValueGetBool(doc_web_field(value, "dompurify"), &html);
         provider->page_ready = math && diagram && html;
         if (!provider->page_ready)
-            doc_web_fail_provider(provider,
+            outcome=doc_web_fail_provider(provider,
                 "Document renderer assets are incomplete", 0);
         else {
             provider->healthy_since = xgeClockMicroseconds();
@@ -299,8 +390,7 @@ static void doc_web_message(xui_widget widget, const char* source,
                 entry->width = entry->height = 0;
                 entry->baseline = entry->display ? -1.0f : 0.0f;
             }
-            if (provider->on_invalidate)
-                provider->on_invalidate(provider->user);
+            outcome=doc_web_invalidate(provider);
         }
     } else if (provider->active && provider->stage == DOC_WEB_WAIT_RENDER &&
             doc_web_integer(doc_web_field(value, "id"), &id) &&
@@ -310,7 +400,7 @@ static void doc_web_message(xui_widget widget, const char* source,
             palette_generation == provider->active->palette_generation) {
         if (doc_web_string_equals(doc_web_field(value, "kind"), "error")) {
             doc_web_set_error(provider->active, doc_web_field(value, "error"));
-            doc_web_active_finish(provider, 0);
+            outcome=doc_web_active_finish(provider,0);
         } else if (doc_web_string_equals(doc_web_field(value, "kind"), "rendered") &&
                 doc_web_integer(doc_web_field(value, "width"), &width) &&
                 doc_web_integer(doc_web_field(value, "height"), &height) &&
@@ -324,37 +414,37 @@ static void doc_web_message(xui_widget widget, const char* source,
             provider->stage_frames = 0;
             provider->stage_started = xgeClockMicroseconds();
         } else {
-            doc_web_active_finish(provider, 0);
+            outcome=doc_web_active_finish(provider,0);
         }
     }
-    xrtValueRelease(value);
+    xrtValueRelease(value);return outcome;
 }
 
-static void doc_web_event(xui_widget widget, int event, int32_t error, void* user)
+static int doc_web_event_impl(xui_widget widget, int event, int32_t error, void* user)
 {
     xui_doc_web_provider provider = user;
     (void)error;
     if (!provider || widget != provider->worker ||
-            provider->restarting || provider->failed) return;
+            provider->restarting || provider->failed) return XUI_OK;
     if (event == XUI_WEBVIEW_EVENT_READY) {
         if (xuiWebViewMapLocalFolder(widget, "xui-document.invalid",
                     provider->assets_folder,
                     XUI_WEB_LOCAL_ACCESS_SAME_ORIGIN) != XUI_OK)
-            doc_web_fail_provider(provider,
+            return doc_web_fail_provider(provider,
                 "Document renderer assets cannot be mapped", 0);
         else if (xuiWebViewSetMessageHandler(widget,
                     "https://xui-document.invalid", doc_web_message,
                     provider) != XUI_OK)
-            doc_web_fail_provider(provider,
+            return doc_web_fail_provider(provider,
                 "Document renderer message channel is unavailable", 0);
         else if (xuiWebViewNavigate(widget,
                     "https://xui-document.invalid/renderer.html") != XUI_OK)
-            doc_web_fail_provider(provider,
+            return doc_web_fail_provider(provider,
                 "Document renderer navigation failed", 0);
     } else if (event == XUI_WEBVIEW_EVENT_FAILED ||
             event == XUI_WEBVIEW_EVENT_NAVIGATION_FAILED ||
             event == XUI_WEBVIEW_EVENT_CLOSED) {
-        doc_web_fail_provider(provider,
+        return doc_web_fail_provider(provider,
             event == XUI_WEBVIEW_EVENT_FAILED ?
                 "Document renderer browser failed" :
             event == XUI_WEBVIEW_EVENT_NAVIGATION_FAILED ?
@@ -362,6 +452,7 @@ static void doc_web_event(xui_widget widget, int event, int32_t error, void* use
                 "Document renderer browser closed",
             event != XUI_WEBVIEW_EVENT_NAVIGATION_FAILED);
     }
+    return XUI_OK;
 }
 
 static void doc_web_position_worker(xui_doc_web_provider provider, int width, int height)
@@ -400,7 +491,11 @@ static doc_web_entry* doc_web_allocate(xui_doc_web_provider provider)
                 entry->state == DOC_WEB_RENDERING) continue;
         if (!oldest || entry->used < oldest->used) oldest = entry;
     }
-    if (oldest) doc_web_entry_clear(provider, oldest);
+    if(oldest){
+        int status=doc_web_entry_clear(provider,oldest);
+        if(status<0)xuiInternalContextRecordFailure(provider->context,status);
+        if(status!=XUI_OK || !xuiInternalManagerAlive(&provider->owned))return NULL;
+    }
     return oldest;
 }
 
@@ -428,41 +523,40 @@ static int doc_web_reserve_surface(xui_doc_web_provider provider, size_t bytes)
             if (!oldest || entry->used < oldest->used) oldest = entry;
         }
         if (!oldest) return 0;
-        doc_web_entry_clear(provider, oldest);
+        int status=doc_web_entry_clear(provider,oldest);
+        if(status<0)xuiInternalContextRecordFailure(provider->context,status);
+        if(status!=XUI_OK || !xuiInternalManagerAlive(&provider->owned))return 0;
     }
     return 1;
 }
 
 /* CapturePreview returns the whole browser viewport. Keep its dimensions
  * stable for layout, then cache only the measured top-left content region. */
-static int doc_web_crop_surface(xui_doc_web_provider provider,
-    xui_surface* surface, xui_surface_desc_t* desc, int width, int height)
+static int doc_web_crop_surface(xui_doc_web_provider provider,xui_surface_desc_t* desc,int width,int height)
 {
-    xui_surface cropped = NULL;
-    xui_surface_desc_t crop_desc = {0};
-    xui_rect_t bounds;
-    if (desc->iWidth == width && desc->iHeight == height) return 1;
-    if (!provider->proxy.surfaceCreate || !provider->proxy.surfaceDrawTo) return 0;
-    crop_desc.iKind = XUI_SURFACE_KIND_TEXTURE;
-    crop_desc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
-    crop_desc.iWidth = width;
-    crop_desc.iHeight = height;
-    crop_desc.iFlags = XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED;
-    if (provider->proxy.surfaceCreate(&provider->proxy, &cropped, &crop_desc) != XUI_OK ||
-            !cropped) {
-        if (cropped) provider->proxy.surfaceDestroy(&provider->proxy, cropped);
-        return 0;
+    if(desc->iWidth==width && desc->iHeight==height)return XUI_OK;
+    if(!provider->proxy->surfaceCreate || !provider->proxy->surfaceDrawTo)return XUI_ERROR_UNSUPPORTED;
+    if(provider->pending_crop)return XUI_ERROR_BUSY;
+    xui_surface_desc_t crop={.iKind=XUI_SURFACE_KIND_TEXTURE,.iFormat=XUI_SURFACE_FORMAT_RGBA8,.iWidth=width,.iHeight=height,
+        .iFlags=XUI_SURFACE_USAGE_TARGET|XUI_SURFACE_ALPHA_PREMULTIPLIED};
+    int status=provider->proxy->surfaceCreate(provider->proxy,&provider->pending_crop,&crop);
+    if(status==XUI_OK && !provider->pending_crop)status=XUI_ERROR_BACKEND_FAILED;
+    if(status==XUI_OK && provider->proxy_owned &&
+        xuiSurfaceGetProxy(provider->pending_crop)!=provider->proxy)status=XUI_ERROR_INVALID_ARGUMENT;
+    if(status==XUI_OK && !doc_web_business_alive(provider))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK){
+        xui_rect_t bounds={0,0,(float)width,(float)height};
+        status=provider->proxy->surfaceDrawTo(provider->proxy,provider->pending_crop,provider->pending_surface,bounds,bounds,XUI_COLOR_WHITE,0);
     }
-    bounds = (xui_rect_t){0, 0, (float)width, (float)height};
-    if (provider->proxy.surfaceDrawTo(&provider->proxy, cropped, *surface,
-                bounds, bounds, XUI_COLOR_WHITE, 0) != XUI_OK) {
-        provider->proxy.surfaceDestroy(&provider->proxy, cropped);
-        return 0;
-    }
-    provider->proxy.surfaceDestroy(&provider->proxy, *surface);
-    *surface = cropped;
-    *desc = crop_desc;
-    return 1;
+    if(status==XUI_OK && !doc_web_business_alive(provider))status=XUI_ERROR_INVALID_STATE;
+    if(status!=XUI_OK)return status;
+    xerror* first=xrtTakeError();
+    if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    xui_cleanup_prefix_t prefix={0};xuiInternalCleanupPrefixBegin(provider->context,&prefix,status,first);
+    xuiInternalContextCleanupOutcome(provider->context,doc_web_surface_release(provider,&provider->pending_surface),&status,&first);
+    if(status==XUI_OK && provider->pending_surface)status=XUI_ERROR_BUSY;
+    if(status==XUI_OK){provider->pending_surface=provider->pending_crop;provider->pending_crop=NULL;*desc=crop;}
+    xuiInternalCleanupPrefixEnd(&prefix);xrtSetErrorTake(first);return status;
 }
 
 static int doc_web_send(xui_doc_web_provider provider, doc_web_entry* entry)
@@ -526,32 +620,40 @@ static int doc_web_start_worker(xui_doc_web_provider provider)
     desc.sUserDataFolder = provider->user_data_folder;
     desc.onEvent = doc_web_event;
     desc.pUser = provider;
-    result = xuiWebViewCreate(provider->context, &provider->worker, &desc);
+    xui_widget_type type=xuiWebViewGetType(provider->context);
+    result=type ? xuiInternalWidgetCreatePart(provider->parent,type,&provider->worker,&desc):XUI_ERROR_OUT_OF_MEMORY;
     if (result == XUI_OK)
-        result = xuiWidgetAddChild(provider->parent, provider->worker);
+        result=xuiInternalWidgetInsertPart(provider->parent,provider->parent,provider->worker,NULL);
+    if (result == XUI_OK)
+        result=xuiWidgetLifetimeWatch(provider->worker,&provider->worker_watch,doc_web_worker_gone,provider);
     if (result == XUI_OK)
         result = xuiWidgetSetEnabled(provider->worker, 0);
     if (result == XUI_OK) doc_web_position_worker(provider, 512, 350);
     if (result == XUI_OK)
         result = xuiWebViewInitializeAsync(provider->worker);
     if (result != XUI_OK && provider->worker) {
+        xerror* first=xrtTakeError();
+        xui_cleanup_prefix_t prefix={0};
+        xuiInternalCleanupPrefixBegin(provider->context,&prefix,result,first);
         provider->restarting = 1;
-        (void)xuiWebViewClose(provider->worker);
-        xuiWidgetDestroy(provider->worker);
-        provider->worker = NULL;
+        xuiInternalContextCleanupOutcome(provider->context,
+            xuiInternalWidgetDestroyPart(provider->parent,provider->worker),&result,&first);
         provider->restarting = 0;
+        xuiInternalCleanupPrefixEnd(&prefix);xrtSetErrorTake(first);
     }
     return result;
 }
 
-static void doc_web_restart_worker(xui_doc_web_provider provider)
+static int doc_web_restart_worker(xui_doc_web_provider provider)
 {
     int result;
     provider->restarting = 1;
     if (provider->worker) {
-        (void)xuiWebViewClose(provider->worker);
-        xuiWidgetDestroy(provider->worker);
+        xui_widget worker=provider->worker;
+        xuiLifetimeUnwatch(&provider->worker_watch);
         provider->worker = NULL;
+        int status=xuiInternalWidgetDestroyPart(provider->parent,worker);
+        if(status<0)xuiInternalContextRecordFailure(provider->context,status);
     }
     provider->restarting = 0;
     provider->failed = 0;
@@ -561,81 +663,161 @@ static void doc_web_restart_worker(xui_doc_web_provider provider)
     provider->startup_started = xgeClockMicroseconds();
     result = doc_web_start_worker(provider);
     if (result != XUI_OK && !provider->failed)
-        doc_web_fail_provider(provider,
+        return doc_web_fail_provider(provider,
             "Document renderer restart failed", 1);
-}
-
-XUI_API int xuiDocumentWebProviderCreate(const xui_doc_web_provider_desc_t* desc,
-    xui_doc_web_provider* out)
-{
-    xui_doc_web_provider provider;
-    int result;
-    if (out) *out = NULL;
-    if (!out || !desc || desc->iSize < sizeof(*desc) || !desc->pContext ||
-            !desc->pParent || !desc->sAssetsFolder ||
-            xuiWidgetGetContext(desc->pParent) != desc->pContext)
-        return XUI_ERROR_INVALID_ARGUMENT;
-    provider = calloc(1, sizeof(*provider));
-    if (!provider) return XUI_ERROR_OUT_OF_MEMORY;
-    provider->context = desc->pContext;
-    provider->parent = desc->pParent;
-    provider->on_invalidate = desc->onInvalidate;
-    provider->user = desc->pUser;
-    provider->foreground = XUI_COLOR_RGBA(17, 17, 17, 255);
-    provider->background = XUI_COLOR_WHITE;
-    provider->palette_generation = 1;
-    provider->timeout_ms = desc->iTimeoutMs ? desc->iTimeoutMs :
-        DOC_WEB_DEFAULT_TIMEOUT_MS;
-    provider->startup_started = xgeClockMicroseconds();
-    provider->assets_folder = malloc(strlen(desc->sAssetsFolder) + 1);
-    if (provider->assets_folder) strcpy(provider->assets_folder, desc->sAssetsFolder);
-    if (desc->sUserDataFolder) {
-        provider->user_data_folder = malloc(strlen(desc->sUserDataFolder) + 1);
-        if (provider->user_data_folder)
-            strcpy(provider->user_data_folder, desc->sUserDataFolder);
-    }
-    if (!provider->assets_folder ||
-            (desc->sUserDataFolder && !provider->user_data_folder)) {
-        free(provider->user_data_folder);
-        free(provider->assets_folder);
-        free(provider);
-        return XUI_ERROR_OUT_OF_MEMORY;
-    }
-    if (xuiGetProxy(provider->context, &provider->proxy) != XUI_OK ||
-            !provider->proxy.surfaceLoadMemory || !provider->proxy.surfaceDestroy ||
-            !provider->proxy.drawSurface) {
-        free(provider->user_data_folder);
-        free(provider->assets_folder); free(provider);
-        return XUI_ERROR_NOT_INITIALIZED;
-    }
-    result = doc_web_start_worker(provider);
-    if (result != XUI_OK) {
-        free(provider->user_data_folder);
-        free(provider->assets_folder); free(provider);
-        return result;
-    }
-    *out = provider;
     return XUI_OK;
 }
 
-XUI_API void xuiDocumentWebProviderRelease(xui_doc_web_provider provider)
+static void doc_web_worker_gone(void* raw)
 {
-    size_t i;
-    if (!provider) return;
-    provider->on_invalidate = NULL;
-    if (provider->worker) {
-        (void)xuiWebViewClose(provider->worker);
-        xuiWidgetDestroy(provider->worker);
-    }
-    if (provider->capture) xuiWebRequestRelease(provider->capture);
-    for (i = 0; i < provider->entry_count; i++)
-        doc_web_entry_clear(provider, &provider->entries[i]);
-    free(provider->user_data_folder);
-    free(provider->assets_folder);
-    free(provider);
+    xui_doc_web_provider provider=raw;provider->worker=NULL;
+    if(!provider->restarting && xuiInternalManagerAlive(&provider->owned))
+        (void)xuiInternalManagerRequestClose(&provider->owned);
 }
+static void doc_web_parent_gone(void* raw)
+{
+    xui_doc_web_provider provider=raw;provider->parent=NULL;
+    if(xuiInternalManagerAlive(&provider->owned))
+        (void)xuiInternalManagerRequestClose(&provider->owned);
+}
+static bool doc_web_trace(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const struct xui_doc_web_provider_t* provider=raw;
+    if(provider->working)return false;
+    if(provider->proxy_owned && !visit(xuiProxyOwnership(provider->proxy),user))return false;
+    for(size_t i=0;i<provider->entry_count;++i)
+        if(provider->proxy_owned && provider->entries[i].surface &&
+            !visit(xuiSurfaceOwnership(provider->entries[i].surface),user))return false;
+    if(provider->proxy_owned && provider->pending_surface && !visit(xuiSurfaceOwnership(provider->pending_surface),user))return false;
+    if(provider->proxy_owned && provider->pending_crop && !visit(xuiSurfaceOwnership(provider->pending_crop),user))return false;
+    return !provider->invalidate_owner.tReference.Data || visit(provider->invalidate_owner.tReference,user);
+}
+static int doc_web_ready(const void* raw)
+{
+    const struct xui_doc_web_provider_t* provider=raw;
+    return provider->working ? XUI_ERROR_BUSY:XUI_OK;
+}
+static int doc_web_prepare(void* raw,bool* complete)
+{
+    xui_doc_web_provider provider=raw;*complete=!provider->working;
+    if(!*complete)return XUI_STATUS_DEFERRED;
+    int status=XUI_OK;xerror* first=NULL;
+    for(size_t i=0;i<provider->entry_count;++i){
+        int next=doc_web_entry_clear(provider,&provider->entries[i]);
+        if(next<0)xuiInternalContextCleanupOutcome(provider->context,next,&status,&first);
+        if(provider->entries[i].surface)*complete=false;
+    }
+    int next=doc_web_surface_release(provider,&provider->pending_surface);
+    if(next<0)xuiInternalContextCleanupOutcome(provider->context,next,&status,&first);
+    next=doc_web_surface_release(provider,&provider->pending_crop);
+    if(next<0)xuiInternalContextCleanupOutcome(provider->context,next,&status,&first);
+    if(provider->pending_surface || provider->pending_crop)*complete=false;
+    if(*complete){provider->entry_count=0;provider->active=NULL;}
+    xrtSetErrorTake(first);return status==XUI_OK && !*complete ? XUI_STATUS_DEFERRED:status;
+}
+static void doc_web_close(void* raw)
+{
+    xui_doc_web_provider provider=raw;provider->restarting=1;
+    xuiLifetimeUnwatch(&provider->parent_watch);
+    if(provider->capture){(void)xuiWebRequestCancel(provider->capture);xuiWebRequestRelease(provider->capture);provider->capture=NULL;}
+    if(provider->worker){
+        xui_widget worker=provider->worker;
+        xuiLifetimeUnwatch(&provider->worker_watch);provider->worker=NULL;
+        /* Internal identity is installed before Init. Public destroy/reparent
+         * cannot detach this worker from its actual native owner. */
+        int status=xuiInternalWidgetDestroyPart((xui_widget)worker->pInternalOwner,worker);
+        if(status<0)xuiInternalContextRecordFailure(provider->context,status);
+    }
+}
+static int doc_web_finalize(void* raw)
+{
+    xui_doc_web_provider provider=raw;xui_context context=provider->context;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&provider->invalidate_owner,receipt.status,receipt.error));
+    if(provider->proxy_owned)xuiInternalCleanupAdd(&receipt,xuiProxyReleaseChecked(provider->proxy));
+    free(provider->user_data_folder);free(provider->assets_folder);free(provider);
+    return xuiInternalCleanupEnd(context,&receipt);
+}
+static const xui_owned_manager_ops_t doc_web_ops={doc_web_trace,doc_web_ready,doc_web_prepare,doc_web_close,doc_web_finalize};
+static void doc_web_construct_gone(void* raw){*(bool*)raw=false;}
+static int doc_web_construct_end(xui_call_scope_t* scope,int status,
+    xui_lifetime_link_t* watch,bool* alive,xui_doc_web_provider provider,xui_doc_web_provider* output)
+{
+    xerror* first=xrtTakeError();if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    if(status==XUI_OK && (!*alive || provider->context->bCloseRequested))status=XUI_ERROR_INVALID_STATE;
+    if(status!=XUI_OK && *alive){
+        xui_cleanup_prefix_t prefix={0};xuiInternalCleanupPrefixBegin(provider->context,&prefix,status,first);
+        (void)xuiInternalManagerRequestClose(&provider->owned);xrtClearError();
+        xuiInternalCleanupPrefixEnd(&prefix);
+    }
+    status=xuiInternalCallScopeEndOutcome(scope,status,&first);xuiLifetimeUnwatch(watch);
+    if(status==XUI_OK && !*alive)status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK)*output=provider;
+    xrtSetErrorTake(first);return status;
+}
+XUI_API int xuiDocumentWebProviderCreate(const xui_doc_web_provider_desc_t* desc,xui_doc_web_provider* out)
+{
+    if(out)*out=NULL;
+    if(!out || !desc || desc->iSize<sizeof(*desc) || !desc->pContext || !desc->pParent ||
+        !desc->sAssetsFolder || xuiWidgetGetContext(desc->pParent)!=desc->pContext)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(desc->pContext,&scope);if(status!=XUI_OK)return status;
+    xui_doc_web_provider provider=calloc(1,sizeof(*provider));
+    if(!provider){xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,XUI_ERROR_OUT_OF_MEMORY,&first);xrtSetErrorTake(first);return status;}
+    provider->context=desc->pContext;provider->parent=desc->pParent;
+    status=xuiInternalManagerRegister(provider->context,&provider->owned,&doc_web_ops,provider);
+    if(status!=XUI_OK){free(provider);xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;}
+    bool alive=true;xui_lifetime_link_t watch={0};
+    if(xuiInternalManagerWatch(&provider->owned,&watch,doc_web_construct_gone,&alive)!=XUI_OK)abort();
+    provider->on_invalidate=desc->onInvalidate;provider->user=desc->pUser;
+    provider->foreground=XUI_COLOR_RGBA(17,17,17,255);provider->background=XUI_COLOR_WHITE;
+    provider->palette_generation=1;provider->timeout_ms=desc->iTimeoutMs ? desc->iTimeoutMs:DOC_WEB_DEFAULT_TIMEOUT_MS;
+    provider->startup_started=xgeClockMicroseconds();
+    provider->proxy=provider->context->pOwnedProxy ? provider->context->pOwnedProxy:xuiInternalContextGetProxy(provider->context);
+    if(!provider->proxy || !provider->proxy->surfaceLoadMemory || !provider->proxy->surfaceDestroy || !provider->proxy->drawSurface)
+        return doc_web_construct_end(&scope,XUI_ERROR_NOT_INITIALIZED,&watch,&alive,provider,out);
+    if(provider->context->pOwnedProxy){
+        status=xuiProxyAddRef(provider->proxy);
+        if(status!=XUI_OK)return doc_web_construct_end(&scope,status,&watch,&alive,provider,out);
+        provider->proxy_owned=true;
+    }
+    provider->assets_folder=malloc(strlen(desc->sAssetsFolder)+1);
+    if(provider->assets_folder)strcpy(provider->assets_folder,desc->sAssetsFolder);
+    if(desc->sUserDataFolder){provider->user_data_folder=malloc(strlen(desc->sUserDataFolder)+1);if(provider->user_data_folder)strcpy(provider->user_data_folder,desc->sUserDataFolder);}
+    if(!provider->assets_folder || (desc->sUserDataFolder && !provider->user_data_folder))
+        return doc_web_construct_end(&scope,XUI_ERROR_OUT_OF_MEMORY,&watch,&alive,provider,out);
+    status=xuiWidgetLifetimeWatch(provider->parent,&provider->parent_watch,doc_web_parent_gone,provider);
+    if(status==XUI_OK)status=doc_web_start_worker(provider);
+    return doc_web_construct_end(&scope,status,&watch,&alive,provider,out);
+}
+XUI_API int xuiDocumentWebProviderReleaseOwnerChecked(xui_doc_web_provider provider,bool* consumed)
+{
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;if(!provider)return XUI_ERROR_INVALID_ARGUMENT;
+    if(provider->owned.pending)return XUI_OK;
+    xui_manager_scope_t scope={0};int status=xuiInternalManagerScopeBegin(&provider->owned,&scope);if(status!=XUI_OK)return status;
+    status=xuiInternalManagerRequestClose(&provider->owned);*consumed=status==XUI_OK;
+    return xuiInternalManagerScopeEnd(&scope,status);
+}
+XUI_API int xuiDocumentWebProviderReleaseChecked(xui_doc_web_provider provider)
+{bool consumed=false;return xuiDocumentWebProviderReleaseOwnerChecked(provider,&consumed);}
+XUI_API void xuiDocumentWebProviderRelease(xui_doc_web_provider provider)
+{if(provider)(void)xuiDocumentWebProviderReleaseChecked(provider);}
+XUI_API xui_context xuiDocumentWebProviderGetContext(xui_doc_web_provider provider)
+{return provider && xuiInternalManagerAlive(&provider->owned) ? provider->context:NULL;}
+XUI_API int xuiDocumentWebProviderLifetimeWatch(xui_doc_web_provider provider,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
+{return provider ? xuiInternalManagerWatch(&provider->owned,link,invalidate,user):XUI_ERROR_INVALID_ARGUMENT;}
+XUI_API int xuiDocumentWebProviderSetInvalidateOwned(xui_doc_web_provider provider,xui_doc_web_invalidate_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    if(!provider)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_manager_callback_update_t update={0};int status=xuiInternalManagerCallbackUpdateBegin(&provider->owned,&provider->invalidate_owner,callback!=NULL,owner,&update);
+    if(status!=XUI_OK)return status;
+    provider->on_invalidate=callback;provider->user=user;
+    xuiInternalManagerCallbackUpdatePublish(&update);return xuiInternalManagerCallbackUpdateEnd(&update,XUI_OK);
+}
+XUI_API int xuiDocumentWebProviderSetInvalidate(xui_doc_web_provider provider,xui_doc_web_invalidate_proc callback,void* user)
+{return xuiDocumentWebProviderSetInvalidateOwned(provider,callback,user,NULL);}
 
-XUI_API int xuiDocumentWebProviderSetPalette(xui_doc_web_provider provider,
+static int xuiDocumentWebProviderSetPalette_impl(xui_doc_web_provider provider,
     uint32_t foreground, uint32_t background)
 {
     size_t i;
@@ -651,35 +833,38 @@ XUI_API int xuiDocumentWebProviderSetPalette(xui_doc_web_provider provider,
     provider->active = NULL;
     provider->stage = DOC_WEB_IDLE;
     provider->stage_frames = 0;
-    for (i = 0; i < provider->entry_count; i++)
-        doc_web_entry_clear(provider, &provider->entries[i]);
+    int cleanup=XUI_OK;xerror* first=NULL;
+    for(i=0;i<provider->entry_count;++i){
+        int next=doc_web_entry_clear(provider,&provider->entries[i]);
+        if(next<0)xuiInternalContextCleanupOutcome(provider->context,next,&cleanup,&first);
+        if(provider->entries[i].surface && cleanup==XUI_OK)cleanup=XUI_ERROR_BUSY;
+    }
+    xrtSetErrorTake(first);if(cleanup!=XUI_OK)return cleanup;
+    if(!doc_web_business_alive(provider))return XUI_ERROR_INVALID_STATE;
     provider->entry_count = 0;
     provider->foreground = foreground;
     provider->background = background;
     provider->palette_generation++;
     if (!provider->palette_generation) provider->palette_generation = 1;
-    if (provider->on_invalidate) provider->on_invalidate(provider->user);
-    return XUI_OK;
+    return doc_web_invalidate(provider);
 }
 
-XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
+static int xuiDocumentWebProviderUpdate_impl(xui_doc_web_provider provider)
 {
     int state, result;
     const void* png;
     size_t bytes, surface_bytes;
-    xui_surface surface = NULL;
     xui_surface_desc_t surface_desc = {0};
     if (!provider) return XUI_ERROR_INVALID_ARGUMENT;
     if (provider->failed) {
         if (provider->restart_at && xgeClockMicroseconds() >= provider->restart_at)
-            doc_web_restart_worker(provider);
+            return doc_web_restart_worker(provider);
         return XUI_OK;
     }
     if (!provider->page_ready) {
         if (doc_web_timed_out(provider, provider->startup_started)) {
-            doc_web_fail_provider(provider,
-                "Document renderer startup timed out",
-                provider->recovering);
+            return doc_web_fail_provider(provider,
+                "Document renderer startup timed out",provider->recovering);
         }
         return XUI_OK;
     }
@@ -688,8 +873,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
         if (state == XUI_WEB_REQUEST_PENDING) {
             if (doc_web_timed_out(provider, provider->stage_started)) {
                 (void)xuiWebRequestCancel(provider->capture);
-                doc_web_active_fail(provider,
-                    "Document renderer screenshot timed out");
+                return doc_web_active_fail(provider,"Document renderer screenshot timed out");
             }
             return XUI_OK;
         }
@@ -701,53 +885,50 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
             provider->stage = DOC_WEB_IDLE;
             return XUI_OK;
         }
-        if (state != XUI_WEB_REQUEST_COMPLETED ||
-                xuiWebRequestGetResultPng(provider->capture, &png, &bytes) != XUI_OK ||
-                bytes > DOC_WEB_MAX_PNG ||
-                provider->proxy.surfaceLoadMemory(&provider->proxy, &surface,
-                    png, (int)bytes, 0) != XUI_OK) {
-            if (surface)
-                provider->proxy.surfaceDestroy(&provider->proxy, surface);
-            doc_web_active_fail(provider,
-                "Document renderer screenshot failed");
-            return XUI_OK;
+        doc_web_entry* entry=provider->active;
+        if(!entry)return XUI_ERROR_INVALID_STATE;
+        if(provider->pending_surface || provider->pending_crop){
+            int cleanup=XUI_OK;xerror* first=NULL;
+            xuiInternalContextCleanupOutcome(provider->context,doc_web_surface_release(provider,&provider->pending_surface),&cleanup,&first);
+            xuiInternalContextCleanupOutcome(provider->context,doc_web_surface_release(provider,&provider->pending_crop),&cleanup,&first);
+            xrtSetErrorTake(first);if(cleanup!=XUI_OK)return cleanup;
+            if(provider->pending_surface || provider->pending_crop)return XUI_ERROR_BUSY;
         }
-        if (!surface || !provider->proxy.surfaceGetDesc ||
-                provider->proxy.surfaceGetDesc(&provider->proxy, surface,
-                    &surface_desc) != XUI_OK ||
-                surface_desc.iWidth != (provider->active->width > 512 ?
-                    provider->active->width : 512) ||
-                surface_desc.iHeight != (provider->active->height > 350 ?
-                    provider->active->height : 350)) {
-            if (surface) provider->proxy.surfaceDestroy(&provider->proxy, surface);
-            doc_web_active_fail(provider,
-                "Document renderer screenshot dimensions are invalid");
-            return XUI_OK;
+        result=state==XUI_WEB_REQUEST_COMPLETED ? xuiWebRequestGetResultPng(provider->capture,&png,&bytes):XUI_ERROR_BACKEND_FAILED;
+        if(result==XUI_OK && bytes>DOC_WEB_MAX_PNG)result=XUI_ERROR_LIMIT_EXCEEDED;
+        if(result==XUI_OK)result=provider->proxy->surfaceLoadMemory(provider->proxy,&provider->pending_surface,png,(int)bytes,0);
+        if(result==XUI_OK && provider->proxy_owned && provider->pending_surface &&
+            xuiSurfaceGetProxy(provider->pending_surface)!=provider->proxy)result=XUI_ERROR_INVALID_ARGUMENT;
+        if(result==XUI_OK && (!doc_web_business_alive(provider) || provider->active!=entry))result=XUI_ERROR_INVALID_STATE;
+        if(result==XUI_OK){
+            if(!provider->pending_surface || !provider->proxy->surfaceGetDesc)result=XUI_ERROR_BACKEND_FAILED;
+            else result=provider->proxy->surfaceGetDesc(provider->proxy,provider->pending_surface,&surface_desc);
         }
-        if (!doc_web_crop_surface(provider, &surface, &surface_desc,
-                    provider->active->width, provider->active->height)) {
-            provider->proxy.surfaceDestroy(&provider->proxy, surface);
-            doc_web_active_fail(provider,
-                "Document renderer screenshot crop failed");
-            return XUI_OK;
+        if(result==XUI_OK && (surface_desc.iWidth!=(entry->width>512 ? entry->width:512) ||
+            surface_desc.iHeight!=(entry->height>350 ? entry->height:350)))result=XUI_ERROR_BACKEND_FAILED;
+        if(result==XUI_OK && (!doc_web_business_alive(provider) || provider->active!=entry))result=XUI_ERROR_INVALID_STATE;
+        if(result==XUI_OK)result=doc_web_crop_surface(provider,&surface_desc,entry->width,entry->height);
+        if(result==XUI_OK && (!doc_web_business_alive(provider) || provider->active!=entry))result=XUI_ERROR_INVALID_STATE;
+        if(result==XUI_OK){
+            surface_bytes=(size_t)surface_desc.iWidth*(size_t)surface_desc.iHeight*4;
+            if(!doc_web_reserve_surface(provider,surface_bytes))result=XUI_ERROR_LIMIT_EXCEEDED;
         }
-        surface_bytes = (size_t)surface_desc.iWidth * (size_t)surface_desc.iHeight * 4;
-        if (!doc_web_reserve_surface(provider, surface_bytes)) {
-            provider->proxy.surfaceDestroy(&provider->proxy, surface);
-            doc_web_active_fail(provider,
-                "Document renderer screenshot cache is full");
-            return XUI_OK;
+        if(result==XUI_OK && (!doc_web_business_alive(provider) || provider->active!=entry))result=XUI_ERROR_INVALID_STATE;
+        if(result!=XUI_OK){
+            xerror* first=xrtTakeError();
+            xui_cleanup_prefix_t prefix={0};xuiInternalCleanupPrefixBegin(provider->context,&prefix,result,first);
+            xuiInternalContextCleanupOutcome(provider->context,doc_web_surface_release(provider,&provider->pending_surface),&result,&first);
+            xuiInternalContextCleanupOutcome(provider->context,doc_web_surface_release(provider,&provider->pending_crop),&result,&first);
+            if(xuiInternalManagerAlive(&provider->owned))doc_web_active_fail(provider,"Document renderer screenshot failed");
+            xuiInternalCleanupPrefixEnd(&prefix);xrtClearError();xrtSetErrorTake(first);return result;
         }
-        provider->active->surface = surface;
-        provider->active->surface_bytes = surface_bytes;
-        provider->cache_bytes += surface_bytes;
-        doc_web_active_finish(provider, 1);
+        entry->surface=provider->pending_surface;provider->pending_surface=NULL;
+        entry->surface_bytes=surface_bytes;provider->cache_bytes+=surface_bytes;
+        result=doc_web_active_finish(provider,1);if(result!=XUI_OK)return result;
     }
     if (provider->stage == DOC_WEB_WAIT_PAINT) {
         if (doc_web_timed_out(provider, provider->stage_started)) {
-            doc_web_active_fail(provider,
-                "Document renderer screenshot request timed out");
-            return XUI_OK;
+            return doc_web_active_fail(provider,"Document renderer screenshot request timed out");
         }
         doc_web_position_worker(provider,
             provider->active->width > 512 ? provider->active->width : 512,
@@ -757,9 +938,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
         if (result == XUI_ERROR_INVALID_STATE ||
                 result == XUI_ERROR_LIMIT_EXCEEDED) return XUI_OK;
         if (result != XUI_OK) {
-            doc_web_active_fail(provider,
-                "Document renderer screenshot request failed");
-            return XUI_OK;
+            return doc_web_active_fail(provider,"Document renderer screenshot request failed");
         }
         provider->stage = DOC_WEB_WAIT_CAPTURE;
         provider->stage_frames = 0;
@@ -768,8 +947,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
     }
     if (provider->stage == DOC_WEB_WAIT_RENDER) {
         if (doc_web_timed_out(provider, provider->stage_started))
-            doc_web_active_fail(provider,
-                "Document renderer response timed out");
+            return doc_web_active_fail(provider,"Document renderer response timed out");
         return XUI_OK;
     }
     if (!provider->active) {
@@ -780,9 +958,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
         doc_web_position_worker(provider, 512, 350);
         result = doc_web_send(provider, next);
         if (result != XUI_OK) {
-            doc_web_active_fail(provider,
-                "Document renderer request failed");
-            return XUI_OK;
+            return doc_web_active_fail(provider,"Document renderer request failed");
         }
         provider->stage = DOC_WEB_WAIT_RENDER;
         provider->stage_started = xgeClockMicroseconds();
@@ -790,7 +966,7 @@ XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
     return XUI_OK;
 }
 
-XUI_API int xuiDocumentWebProviderGetStats(xui_doc_web_provider provider,
+static int xuiDocumentWebProviderGetStats_impl(xui_doc_web_provider provider,
     xui_doc_web_provider_stats_t* out)
 {
     size_t i;
@@ -818,7 +994,7 @@ XUI_API int xuiDocumentWebProviderGetStats(xui_doc_web_provider provider,
     return XUI_OK;
 }
 
-XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,
+static int xuiDocumentWebObjectMeasure_impl(xui_document_snapshot snapshot,
     xui_doc_node_id node, float width, float zoom, xui_vec2_t* size,
     float* baseline, void* user)
 {
@@ -842,6 +1018,9 @@ XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,
     if (entry) {
         entry->used = ++provider->clock;
         if (entry->state == DOC_WEB_READY || entry->state == DOC_WEB_FAILED) {
+            if(entry->state==DOC_WEB_FAILED && entry->height<=0){
+                int status=doc_web_prepare_error_card(provider,entry);if(status!=XUI_OK)return status;
+            }
             size->fX = (float)entry->width;
             size->fY = (float)entry->height;
             *baseline = entry->baseline;
@@ -875,7 +1054,7 @@ XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,
         entry->state = DOC_WEB_FAILED;
         entry->worker_failure = 1;
         strcpy(entry->error_text, provider->worker_error);
-        doc_web_prepare_error_card(provider, entry);
+        int status=doc_web_prepare_error_card(provider,entry);if(status!=XUI_OK)return status;
         size->fX = (float)entry->width;
         size->fY = (float)entry->height;
         *baseline = entry->baseline;
@@ -884,7 +1063,7 @@ XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,
     return XUI_ERROR_UNSUPPORTED;
 }
 
-XUI_API int xuiDocumentWebObjectDraw(xui_document_snapshot snapshot,
+static int xuiDocumentWebObjectDraw_impl(xui_document_snapshot snapshot,
     xui_doc_node_id node, xui_proxy proxy, xui_draw_context draw,
     xui_rect_t bounds, void* user)
 {
@@ -924,6 +1103,8 @@ XUI_API int xuiDocumentWebObjectDraw(xui_document_snapshot snapshot,
                 int result;
                 if (!font || !proxy->drawRectFill || !proxy->drawRectStroke ||
                         !proxy->drawText) return XUI_ERROR_UNSUPPORTED;
+                result=xuiInternalFontAdmit(provider->context,font);
+                if(result!=XUI_OK)return result;
                 result = proxy->drawRectFill(proxy, draw, bounds, fill);
                 if (result == XUI_OK) result = proxy->drawRectStroke(proxy,
                     draw, bounds, 1.0f, border);
@@ -939,7 +1120,12 @@ XUI_API int xuiDocumentWebObjectDraw(xui_document_snapshot snapshot,
                     result = proxy->drawText(proxy, draw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=font, .sText=text, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, detail, ink, XUI_TEXT_CLIP);
                 }
                 if (result == XUI_OK) provider->draw_calls++;
-                return result;
+                xerror* first=xrtTakeError();
+                if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+                xui_cleanup_prefix_t prefix={0};xuiInternalCleanupPrefixBegin(provider->context,&prefix,result,first);
+                xuiInternalContextCleanupOutcome(provider->context,xuiInternalFontRelease(provider->context,font),&result,&first);
+                xuiInternalCleanupPrefixEnd(&prefix);
+                xrtSetErrorTake(first);return result;
             }
             int result = proxy->drawSurface(proxy, draw, entry->surface,
                 (xui_rect_t){0, 0, (float)entry->width, (float)entry->height},
@@ -949,6 +1135,49 @@ XUI_API int xuiDocumentWebObjectDraw(xui_document_snapshot snapshot,
         }
     }
     return XUI_ERROR_UNSUPPORTED;
+}
+
+static int doc_web_business_begin(xui_doc_web_provider provider,xui_manager_scope_t* scope)
+{
+    if(!provider)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=xuiInternalManagerScopeBegin(&provider->owned,scope);if(status!=XUI_OK)return status;
+    if(provider->working)return xuiInternalManagerScopeEnd(scope,XUI_ERROR_BUSY);
+    provider->working=1;return XUI_OK;
+}
+static int doc_web_business_end(xui_doc_web_provider provider,xui_manager_scope_t* scope,int status)
+{
+    if(status==XUI_OK && !doc_web_business_alive(provider))status=XUI_ERROR_INVALID_STATE;
+    provider->working=0;return xuiInternalManagerScopeEnd(scope,status);
+}
+XUI_API int xuiDocumentWebProviderSetPalette(xui_doc_web_provider provider,uint32_t foreground,uint32_t background)
+{
+    xui_manager_scope_t scope={0};int status=doc_web_business_begin(provider,&scope);if(status!=XUI_OK)return status;
+    return doc_web_business_end(provider,&scope,xuiDocumentWebProviderSetPalette_impl(provider,foreground,background));
+}
+XUI_API int xuiDocumentWebProviderUpdate(xui_doc_web_provider provider)
+{
+    xui_manager_scope_t scope={0};int status=doc_web_business_begin(provider,&scope);if(status!=XUI_OK)return status;
+    xui_web_request retained=provider->capture;if(retained)xuiWebRequestRetain(retained);
+    status=xuiDocumentWebProviderUpdate_impl(provider);
+    if(retained)xuiWebRequestRelease(retained);
+    return doc_web_business_end(provider,&scope,status);
+}
+XUI_API int xuiDocumentWebProviderGetStats(xui_doc_web_provider provider,xui_doc_web_provider_stats_t* output)
+{
+    /* Pure copies do not dispatch or drain the Context at their return tail. */
+    if(!provider || !doc_web_business_alive(provider))return XUI_ERROR_INVALID_STATE;
+    if(provider->owned.creatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    return xuiDocumentWebProviderGetStats_impl(provider,output);
+}
+XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,xui_doc_node_id node,float width,float zoom,xui_vec2_t* size,float* baseline,void* raw)
+{
+    xui_doc_web_provider provider=raw;xui_manager_scope_t scope={0};int status=doc_web_business_begin(provider,&scope);if(status!=XUI_OK)return status;
+    return doc_web_business_end(provider,&scope,xuiDocumentWebObjectMeasure_impl(snapshot,node,width,zoom,size,baseline,raw));
+}
+XUI_API int xuiDocumentWebObjectDraw(xui_document_snapshot snapshot,xui_doc_node_id node,xui_proxy proxy,xui_draw_context draw,xui_rect_t bounds,void* raw)
+{
+    xui_doc_web_provider provider=raw;xui_manager_scope_t scope={0};int status=doc_web_business_begin(provider,&scope);if(status!=XUI_OK)return status;
+    return doc_web_business_end(provider,&scope,xuiDocumentWebObjectDraw_impl(snapshot,node,proxy,draw,bounds,raw));
 }
 
 #endif

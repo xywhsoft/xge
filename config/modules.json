@@ -127,6 +127,7 @@
     "src/xui/code/xui_code_edit.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/core/xui_proxy_resource.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_owned_resource_slots.c": "XGE_ENABLE_XUI",
+    "src/xui/core/xui_owned_manager.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_proxy_xge.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_edit.c": "XGE_ENABLE_XUI",
     "src/xui/core/xui_drag_drop.c": "XGE_ENABLE_XUI",

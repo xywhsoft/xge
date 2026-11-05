@@ -110,6 +110,7 @@ typedef struct doc_render_paint_seed {
  * and its uniformly styled glyph spans. Published rows borrow it together. */
 struct doc_render_paint_variant {
     doc_render_paint_variant* next;
+    doc_render_paint_variant* work_next; /* candidate owner link, not a published alias */
     doc_shape_context* context;
     size_t first_fragment,end_fragment;
     char* text;
@@ -138,6 +139,7 @@ typedef struct doc_render_block {
     xui_font admonition_font; /* Resolved while measuring a decorative quote title. */
     int measured, ever_measured, virtual_gap, source_line, code_slice, slice_last, reflow;
     int admonition_title;
+    int retirement_pending; /* outgoing payload not yet fully consumed */
     int line_lazy, line_partial; /* A printable ASCII code line has exact height and a horizontal prefix. */
     int height_uncertain; /* SOURCE text needing shaping to settle its row height. */
     uint64_t line_cutoff;
@@ -247,6 +249,26 @@ typedef struct doc_sized_font { xui_font source, font; float size; } doc_sized_f
 typedef struct doc_source_row doc_source_row;
 struct xui_document_renderer_t {
     xui_context context;
+    struct xui_document_renderer_t* lifecycle; /* Canonical owner; temporaries borrow it. */
+    uint64_t creator_thread;
+    xui_lifetime_link_t context_link;
+    xui_lifetime_link_t* lifetime_links;
+    xui_proxy owned_proxy;
+    size_t calls;
+    uint8_t owned_font_mask;
+    bool destroying,retiring;
+    bool work_shape_active,work_blocked;
+    doc_render_paint_variant* work_variants;
+    doc_render_paint_group* work_groups;
+    size_t work_group_capacity;
+    xui_text_shape_t work_shape; /* one real synchronous shaping scratch owner */
+    xui_doc_font_owned_proc font_resolver;
+    xui_doc_object_measure_owned_proc object_measure;
+    xui_doc_object_draw_owned_proc object_draw;
+    void* callback_users[3];
+    xui_callback_owner_t callback_owners[3];
+    uint64_t callback_generation[3];
+    uint8_t callback_owned_modes;
     uint64_t resource_registry_generation;
     float dpi_scale;
     int has_named_images;
@@ -286,10 +308,22 @@ struct xui_document_renderer_t {
 };
 int doc_render_reserve(void**, size_t*, size_t, size_t);
 /* Shared effective font/foreground rules for layout and text attributes. */
-xui_font doc_layout_text_font(xui_document_renderer, const xui_doc_attributes_t*, uint32_t);
+int doc_layout_text_font(xui_document_renderer,const xui_doc_attributes_t*,uint32_t,xui_font*);
+int doc_render_resolve_font(xui_document_renderer,const char*,uint32,float,xui_font*);
+int doc_render_measure_object(xui_document_renderer,xui_doc_node_id,float,xui_vec2_t*,float*);
 uint32_t doc_render_text_foreground(xui_document_renderer, const xui_doc_attributes_t*);
-void doc_render_block_free(doc_render_block*);
-void doc_render_block_reflow(doc_render_block*);
+bool doc_render_work_trace(xui_document_renderer,xrtownershipvisitor,void*);
+int doc_render_work_ready(xui_document_renderer);
+int doc_render_work_prepare(xui_document_renderer,bool*);
+int doc_render_work_shape_begin(xui_document_renderer,xui_text_shape_t**);
+int doc_render_work_shape_end(xui_document_renderer,xui_text_shape_t*,int);
+void doc_render_work_shape_move(xui_document_renderer,xui_text_shape_t*,xui_text_shape_t*);
+int doc_render_block_free(xui_document_renderer,doc_render_block*);
+int doc_render_block_prepare(xui_document_renderer,doc_render_block*,bool*);
+int doc_render_block_ready(const doc_render_block*,bool);
+int doc_render_destroy_ready(xui_document_renderer);
+int doc_render_destroy_prepare(xui_document_renderer,bool*);
+int doc_render_block_reflow(xui_document_renderer,doc_render_block*);
 size_t doc_render_block_cache_bytes(const doc_render_block*);
 int doc_render_image_measure(xui_document_renderer, doc_node*, double, xui_vec2_t*);
 int doc_render_image_draw(xui_document_renderer, doc_node*, xui_draw_context, xui_rect_t);

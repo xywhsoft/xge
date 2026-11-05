@@ -5,7 +5,7 @@
 
 /* Shared native storage. Backends embed this prefix, then their payload in
  * the same allocation. No method dispatch or language object is added here. */
-enum { XUI_OWNED_PROXY=1, XUI_OWNED_FONT=2, XUI_OWNED_SURFACE=3, XUI_OWNED_DRAW=4 };
+enum { XUI_OWNED_PROXY=1, XUI_OWNED_FONT=2, XUI_OWNED_SURFACE=3, XUI_OWNED_DRAW=4, XUI_OWNED_TEXT_SHAPE=5 };
 typedef int (*xui_owned_payload_finalize_proc)(xui_proxy,void*);
 typedef struct xui_owned_resource_t {
     _Alignas(max_align_t) uint32_t iMagic;
@@ -26,9 +26,19 @@ typedef struct xui_owned_resource_t {
 typedef struct xui_owned_draw_t {
     xui_owned_resource_t tResource;
     xui_surface pTarget;
+    xui_proxy_payload_ready_proc onCanEnd;
 } xui_owned_draw_t;
 
+/* A KindShape handle is the actual immutable C record at header+80. These
+ * cold functions accept only this typed factory's handles, never arbitrary
+ * legacy stack records. Native text owns the precise payload protocol. */
+int xuiInternalTextShapeAllocateOwned(xui_proxy,xui_text_shape_t**);
+bool xuiInternalOwnedTextShapeReady(const void*);
+bool xuiInternalOwnedTextShapeTrace(const void*,xrtownershipvisitor,void*);
+int xuiInternalOwnedTextShapeFinalize(xui_proxy,void*);
 int xuiInternalProxyCreateOwned(const xui_proxy_t*,const xui_callback_owner_t*,bool,uint32_t,xui_proxy*);
+xui_proxy xuiInternalProxyCanonical(const xui_proxy_t*);
+bool xuiInternalProxyReady(const xui_proxy_t*);
 bool xuiInternalProxyResourceManaged(const void*,unsigned);
 bool xuiInternalProxyResourceReady(const void*,unsigned);
 int xuiInternalProxyResourcePin(void*,unsigned);

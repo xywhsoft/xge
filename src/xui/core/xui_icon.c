@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_proxy_resource.h"
 
 #include <limits.h>
 #include <string.h>
@@ -252,6 +253,12 @@ static void __xuiIconDestroySurface(xui_icon pIcon, xui_surface pSurface)
 	     !pIcon->pContext->bHasProxy ) {
 		return;
 	}
+    if(pIcon->pContext->pOwnedProxy){
+        /* The bound backend's synchronous Surface producer owns one creator-
+         * affine reference; finalizer status and owner consumption are separate.
+         * Normal slots receiving an external Surface acquire their own AddRef. */
+        (void)xuiInternalSurfaceRelease(pIcon->pContext,pSurface);return;
+    }
 	pProxy = &pIcon->pContext->tProxy;
 	if ( pProxy->surfaceDestroy != NULL ) {
 		pProxy->surfaceDestroy(pProxy, pSurface);
@@ -1129,6 +1136,21 @@ XUI_API void xuiIconDrawDescDefault(xui_icon_draw_desc_t* pDesc)
 	pDesc->iFitMode = -1;
 }
 
+bool xuiInternalContextTraceIcons(xui_context context,xrtownershipvisitor visit,void* user)
+{
+    if(!context || !visit)return false;
+    if(!context->pOwnedProxy)return true;
+    /* This Context physically owns every Icon carrier, including unregistered
+     * alias-retained instances. Visit each actual Surface owner exactly once;
+     * category/alias handles do not duplicate the Surface ownership slot. */
+    for(xui_icon icon=context->pIcons;icon;icon=icon->pNextAll){
+        if(icon->bOwnSurface && icon->pSurface && !visit(xuiSurfaceOwnership(icon->pSurface),user))return false;
+        for(int i=0;i<icon->iCacheCount;++i)
+            if(icon->pCache[i].pSurface && !visit(xuiSurfaceOwnership(icon->pCache[i].pSurface),user))return false;
+    }
+    return true;
+}
+
 static void __xuiIconContextDestroyObjects(xui_context pContext)
 {
 	if ( pContext == NULL ) return;
@@ -1565,11 +1587,26 @@ XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xu
 	     (iSurfaceFlags & ~XUI_ICON_SURFACE_TAKE_OWNERSHIP) != 0u ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    if(!__xuiIconCategoryValid(pCategory))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=pCategory->pContext;
+    bool retained=false;
+    if(context->pOwnedProxy){
+        if(iSurfaceFlags&XUI_ICON_SURFACE_TAKE_OWNERSHIP){
+            if(xuiSurfaceGetProxy(pSurface)!=context->pOwnedProxy ||
+               !xuiInternalProxyResourceReady(pSurface,XUI_OWNED_SURFACE))return XUI_ERROR_INVALID_ARGUMENT;
+        }else{
+            iRet=xuiInternalSurfaceAdmit(context,pSurface);if(iRet!=XUI_OK)return iRet;retained=true;
+        }
+    }
 	iRet = __xuiIconRegister(pCategory, sName, XUI_ICON_SOURCE_SURFACE, pDesc, &pIcon);
-	if ( iRet != XUI_OK ) return iRet;
+    if(iRet!=XUI_OK){
+        xerror* first=xrtTakeError();
+        if(retained)(void)xuiInternalSurfaceRelease(context,pSurface);
+        xrtClearError();xrtSetErrorTake(first);return iRet;
+    }
 	pIcon->pSurface = pSurface;
 	pIcon->tSource = tSource;
-	pIcon->bOwnSurface = ((iSurfaceFlags & XUI_ICON_SURFACE_TAKE_OWNERSHIP) != 0);
+    pIcon->bOwnSurface=context->pOwnedProxy || (iSurfaceFlags&XUI_ICON_SURFACE_TAKE_OWNERSHIP);
 	if ( ppIcon != NULL ) *ppIcon = pIcon;
 	return XUI_OK;
 }

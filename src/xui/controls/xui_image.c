@@ -578,6 +578,8 @@ XUI_API xui_widget_type xuiImageGetType(xui_context pContext)
 	}
 	__xuiImageRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiImageAccessible;
+    static const size_t surfaceOffsets[]={offsetof(xui_image_data_t,pSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
 	return pType;
 }
 
@@ -620,10 +622,12 @@ XUI_API int xuiImageSetSurface(xui_widget pWidget, xui_surface pSurface)
 	if ( pData->pSurface == pSurface ) {
 		return XUI_OK;
 	}
-	pData->pSurface = pSurface;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->pSurface,pSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+    if(surfaceStatus!=XUI_OK)return surfaceStatus;
 	pData->bSurfaceGenerationValid = __xuiImageReadSurfaceGeneration(pWidget,
 		pData->pSurface, &pData->iSurfaceGeneration);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_surface xuiImageGetSurface(xui_widget pWidget)

@@ -28,8 +28,11 @@ static inline int __xuiTextItemNormalize(const xui_text_item_t* item, xui_text_i
         if(item->pShape && (item->pShape->iSize<sizeof(*item->pShape) ||
             item->pShape->iTextSize!=bytes || (item->pShape->iFlags & XUI_TEXT_SHAPE_RANGE)))
             return XUI_ERROR_INVALID_ARGUMENT;
-    }else if(item->iRangeStart || item->iRangeEnd || item->pShape || item->pPaintSpans || item->iPaintSpanCount)return XUI_ERROR_INVALID_ARGUMENT;
+    }else if(item->iRangeStart || item->iRangeEnd || item->pShape || item->iPaintSpanCount)return XUI_ERROR_INVALID_ARGUMENT;
     *output=*item;output->iTextSize=bytes;
+    /* A zero-element span has no readable storage, independently of its
+     * pointer value. Keep downstream optional-span checks unambiguous. */
+    if(!item->iPaintSpanCount)output->pPaintSpans=NULL;
     /* Keep implicit context implicit. A reduced native backend can accept
      * ordinary text while correctly rejecting explicit contextual requests. */
     output->iContextSize=item->sContext ? context_bytes : 0;

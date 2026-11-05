@@ -1,0 +1,16 @@
+/* Preserved display/source, ligature, Unicode and linearity oracles. */
+#define main unused_owned_fonts_main
+#include "xui_owned_fonts_test.c"
+#undef main
+#include "../../src/xui/core/xui_text_internal.h"
+#include "../../src/xui/document/xui_document_layout_internal.h"
+#undef xrtMalloc
+#undef xrtRealloc
+#include "xui_message_list_audit_test.c"
+int main(void)
+{
+    const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
+    assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
+    char* arguments[]={"native_message_display","Display",NULL};
+    return native_message_display_main(2,arguments);
+}

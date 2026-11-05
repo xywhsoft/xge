@@ -1722,6 +1722,14 @@ static void __xuiToolbarDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 	}
 }
 
+static void __xuiToolbarSurfaceSlots(xui_widget widget,void* raw,xui_surface_slot_array_t* slots)
+{
+    (void)widget;
+    xui_toolbar_data_t* data=raw;
+    static const size_t offsets[]={offsetof(xui_toolbar_item_t,pIcon)};
+    *slots=(xui_surface_slot_array_t){data->arrItems,XUI_TOOLBAR_ITEM_CAPACITY,sizeof(data->arrItems[0]),offsets,1};
+}
+
 static xui_toolbar_data_t* __xuiToolbarGetData(xui_widget pWidget)
 {
 	xui_context pContext;
@@ -1835,6 +1843,7 @@ XUI_API xui_widget_type xuiToolbarGetType(xui_context pContext)
 	pType->onPreparePaint = __xuiToolbarPreparePaint;
 	    static const size_t fontOffsets[]={offsetof(xui_toolbar_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    pType->onSurfaceSlots=__xuiToolbarSurfaceSlots;
     return pType;
 }
 
@@ -1977,6 +1986,9 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 	char* arrTooltips[XUI_TOOLBAR_ITEM_CAPACITY] = {0};
 	char* arrOldTexts[XUI_TOOLBAR_ITEM_CAPACITY];
 	char* arrOldTooltips[XUI_TOOLBAR_ITEM_CAPACITY];
+    xui_surface_slot_update_t surfaces[XUI_TOOLBAR_ITEM_CAPACITY]={0};
+    xui_surface* slots[XUI_TOOLBAR_ITEM_CAPACITY];
+    xui_surface values[XUI_TOOLBAR_ITEM_CAPACITY];
 	xui_rect_t tOldOverflowRect;
 	int iOldCount;
 	int iOldHover;
@@ -2013,6 +2025,9 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 		arrNew[i].sText = arrTexts[i] != NULL ? arrTexts[i] : "";
 		arrNew[i].sTooltip = arrTooltips[i] != NULL ? arrTooltips[i] : "";
 	}
+    for(i=0;i<XUI_TOOLBAR_ITEM_CAPACITY;++i){slots[i]=&pData->arrItems[i].pIcon;values[i]=arrNew[i].pIcon;}
+    iRet=xuiInternalSurfaceSlotsPrepare(pWidget,XUI_TOOLBAR_ITEM_CAPACITY,slots,values,surfaces);
+    if(iRet!=XUI_OK)goto failed_new;
 	__xuiToolbarDismissTooltip(pWidget);
 	iRet = __xuiToolbarCancelPress(pWidget, pData);
 	if ( iRet != XUI_OK ) goto failed_new;
@@ -2029,6 +2044,8 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 	iOldOverflowActive = pData->bOverflowActive;
 	tOldOverflowRect = pData->tOverflowRect;
 	iOldChangeCount = pData->iChangeCount;
+    iRet=xuiInternalSurfaceSlotsPublish(surfaces,XUI_TOOLBAR_ITEM_CAPACITY);
+    if(iRet!=XUI_OK)goto failed_new;
 	memcpy(pData->arrItems, arrNew, sizeof(arrNew));
 	memcpy(pData->arrOwnedTexts, arrTexts, sizeof(arrTexts));
 	memcpy(pData->arrOwnedTooltips, arrTooltips, sizeof(arrTooltips));
@@ -2043,7 +2060,12 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		memcpy(pData->arrItems, arrOld, sizeof(arrOld));
+        /* All non-Surface fields are restored before the common transaction
+         * restores every pointer and only then runs resource finalizers. */
+        for(i=0;i<XUI_TOOLBAR_ITEM_CAPACITY;++i){
+            xui_surface current=pData->arrItems[i].pIcon;
+            pData->arrItems[i]=arrOld[i];pData->arrItems[i].pIcon=current;
+        }
 		memcpy(pData->arrOwnedTexts, arrOldTexts, sizeof(arrOldTexts));
 		memcpy(pData->arrOwnedTooltips, arrOldTooltips, sizeof(arrOldTooltips));
 		pData->iItemCount = iOldCount;
@@ -2060,16 +2082,16 @@ XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pIt
 	__xuiToolbarFreeCopiedItems(arrOldTexts, arrOldTooltips, iOldCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	return XUI_OK;
+	return xuiInternalSurfaceSlotsEnd(surfaces,XUI_TOOLBAR_ITEM_CAPACITY,true,XUI_OK);
 
 out_of_memory:
 	iRet = XUI_ERROR_OUT_OF_MEMORY;
 failed_new:
 	__xuiToolbarFreeCopiedItems(arrTexts, arrTooltips, iCount);
-	return iRet;
+	return xuiInternalSurfaceSlotsEnd(surfaces,XUI_TOOLBAR_ITEM_CAPACITY,false,iRet);
 abandoned_new:
 	__xuiToolbarFreeCopiedItems(arrTexts, arrTooltips, iCount);
-	return XUI_OK;
+	return xuiInternalSurfaceSlotsEnd(surfaces,XUI_TOOLBAR_ITEM_CAPACITY,false,XUI_OK);
 }
 
 XUI_API int xuiToolbarAddItem(xui_widget pWidget, const char* sText, int iType, int iValue)
@@ -2318,28 +2340,27 @@ XUI_API int xuiToolbarGetItemChecked(xui_widget pWidget, int iIndex)
 XUI_API int xuiToolbarSetItemIcon(xui_widget pWidget, int iIndex, xui_surface pIcon, xui_rect_t tSrc)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
-	xui_surface pOldIcon;
 	xui_rect_t tOldSrc;
 	int iOldChangeCount;
 	int iRet;
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ||
 	     !__xuiToolbarRectNonnegative(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->arrItems[iIndex].pIcon == pIcon && __xuiToolbarRectEqual(pData->arrItems[iIndex].tIconSrc, tSrc) ) return XUI_OK;
-	pOldIcon = pData->arrItems[iIndex].pIcon;
 	tOldSrc = pData->arrItems[iIndex].tIconSrc;
 	iOldChangeCount = pData->iChangeCount;
-	pData->arrItems[iIndex].pIcon = pIcon;
+    xui_surface_slot_update_t surface={.widget=pWidget};
+    iRet=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->arrItems[iIndex].pIcon,pIcon,pWidget->bTypeInitialized!=0,&surface);
+    if(iRet!=XUI_OK)return iRet;
 	pData->arrItems[iIndex].tIconSrc = tSrc;
 	__xuiToolbarMarkChanged(pData);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		pData->arrItems[iIndex].pIcon = pOldIcon;
 		pData->arrItems[iIndex].tIconSrc = tOldSrc;
 		pData->iChangeCount = iOldChangeCount;
-		return iRet;
+		return xuiInternalSurfaceSlotEnd(&surface,false,iRet);
 	}
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return XUI_OK;
+	return xuiInternalSurfaceSlotEnd(&surface,true,XUI_OK);
 }
 
 XUI_API int xuiToolbarGetHoverIndex(xui_widget pWidget)

@@ -65,6 +65,7 @@ typedef struct xui_dock_window_slot_t {
 	int iAutoHideLabelWidth;
 	int iAutoHideLabelHeight;
 	int bAutoHideLabelDirty;
+    int bAutoHideLabelUpdating;
 	void* pUser;
 	xui_dock_panel_data_t* pOwner;
 } xui_dock_window_slot_t;
@@ -752,16 +753,35 @@ static int __xuiDockDrawBuiltinAsset(xui_widget pWidget, xui_proxy pProxy, xui_d
 	return pProxy->drawSurface(pProxy, pDraw, pSurface, tSrc, xuiInternalSnapRect(tDst), iColor, 0);
 }
 
-static void __xuiDockReleaseAutoHideLabel(xui_proxy pProxy, xui_dock_window_slot_t* pWin)
+static int __xuiDockReleaseAutoHideLabel(xui_proxy pProxy, xui_dock_window_slot_t* pWin)
 {
-	if ( pWin == NULL ) return;
-	if ( pWin->pAutoHideLabelSurface != NULL && pProxy != NULL && pProxy->surfaceDestroy != NULL ) {
-		pProxy->surfaceDestroy(pProxy, pWin->pAutoHideLabelSurface);
-	}
-	pWin->pAutoHideLabelSurface = NULL;
+    if(pWin==NULL)return XUI_OK;
+    if(pProxy && xuiProxyIsOwned(pProxy) && !xuiInternalProxyCreator(pProxy))return XUI_ERROR_BUSY;
+    if(pWin->bAutoHideLabelUpdating){
+        if(pWin->pOwner && pWin->pOwner->pWidget)xuiInternalContextRecordOutcome(pWin->pOwner->pWidget->pContext,XUI_ERROR_BUSY,xrtGetError());
+        return XUI_ERROR_BUSY;
+    }
+    int status=XUI_OK;bool consumed=true;
+    xui_surface surface=pWin->pAutoHideLabelSurface;
+    pWin->bAutoHideLabelUpdating=1;
+    /* The cache owns the producer's reference, unlike external icon slots.
+     * Detach before a finalizer can reenter, but keep an unconsumed owner. */
+    pWin->pAutoHideLabelSurface=NULL;
+    if(surface && pProxy){
+        if(xuiProxyIsOwned(pProxy))status=xuiSurfaceReleaseOwnerChecked(surface,&consumed);
+        else if(pProxy->surfaceDestroy)pProxy->surfaceDestroy(pProxy,surface);
+        else{status=XUI_ERROR_UNSUPPORTED;consumed=false;}
+    }else if(surface){status=XUI_ERROR_INVALID_STATE;consumed=false;}
+    if(!consumed)pWin->pAutoHideLabelSurface=surface;
+    pWin->bAutoHideLabelUpdating=0;
+    if(!consumed && status==XUI_OK)status=XUI_ERROR_BUSY;
+    if(status!=XUI_OK && pWin->pOwner && pWin->pOwner->pWidget)
+        xuiInternalContextRecordOutcome(pWin->pOwner->pWidget->pContext,status,xrtGetError());
+    if(!consumed)return status==XUI_OK ? XUI_ERROR_BUSY:status;
 	pWin->iAutoHideLabelWidth = 0;
 	pWin->iAutoHideLabelHeight = 0;
 	pWin->bAutoHideLabelDirty = 1;
+    return status;
 }
 
 static int __xuiDockPrepareAutoHideLabel(xui_proxy pProxy, xui_font pFont, xui_dock_window_slot_t* pWin)
@@ -773,6 +793,8 @@ static int __xuiDockPrepareAutoHideLabel(xui_proxy pProxy, xui_font pFont, xui_d
 	int iRet;
 
 	if ( pProxy == NULL || pFont == NULL || pWin == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiProxyIsOwned(pProxy) && !xuiInternalProxyCreator(pProxy))return XUI_ERROR_BUSY;
+    if(pWin->bAutoHideLabelUpdating)return XUI_ERROR_BUSY;
 	if ( pWin->iState != XUI_DOCK_PANEL_WINDOW_AUTO_HIDE ||
 	     (__xuiDockWindowAutoHideRegion(pWin) != XUI_DOCK_PANEL_REGION_LEFT &&
 	      __xuiDockWindowAutoHideRegion(pWin) != XUI_DOCK_PANEL_REGION_RIGHT) ) return XUI_OK;
@@ -781,21 +803,24 @@ static int __xuiDockPrepareAutoHideLabel(xui_proxy pProxy, xui_font pFont, xui_d
 	iWidth = xuiInternalPixelCeil(__xuiDockMax(0.0f, pWin->tAutoHideRect.fH - 26.0f));
 	iHeight = xuiInternalPixelCeil(__xuiDockMax(0.0f, pWin->tAutoHideRect.fW - 6.0f));
 	if ( iWidth <= 0 || iHeight <= 0 ) {
-		__xuiDockReleaseAutoHideLabel(pProxy, pWin);
-		return XUI_OK;
+		return __xuiDockReleaseAutoHideLabel(pProxy, pWin);
 	}
 	if ( pWin->pAutoHideLabelSurface == NULL ||
 	     pWin->iAutoHideLabelWidth != iWidth || pWin->iAutoHideLabelHeight != iHeight ) {
-		__xuiDockReleaseAutoHideLabel(pProxy, pWin);
+        iRet=__xuiDockReleaseAutoHideLabel(pProxy,pWin);
+        if(iRet!=XUI_OK)return iRet;
 		memset(&tDesc, 0, sizeof(tDesc));
 		tDesc.iKind = XUI_SURFACE_KIND_TEXTURE;
 		tDesc.iFormat = XUI_SURFACE_FORMAT_RGBA8;
 		tDesc.iWidth = iWidth;
 		tDesc.iHeight = iHeight;
 		tDesc.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
+        pWin->bAutoHideLabelUpdating=1;
 		iRet = pProxy->surfaceCreate(pProxy, &pWin->pAutoHideLabelSurface, &tDesc);
+        pWin->bAutoHideLabelUpdating=0;
 		if ( iRet != XUI_OK ) {
-			__xuiDockReleaseAutoHideLabel(pProxy, pWin);
+			if(pWin->pOwner && pWin->pOwner->pWidget)xuiInternalContextRecordOutcome(pWin->pOwner->pWidget->pContext,iRet,xrtGetError());
+            (void)__xuiDockReleaseAutoHideLabel(pProxy,pWin);
 			return iRet;
 		}
 		pWin->iAutoHideLabelWidth = iWidth;
@@ -803,13 +828,16 @@ static int __xuiDockPrepareAutoHideLabel(xui_proxy pProxy, xui_font pFont, xui_d
 		pWin->bAutoHideLabelDirty = 1;
 	}
 	if ( !pWin->bAutoHideLabelDirty ) return XUI_OK;
+    pWin->bAutoHideLabelUpdating=1;
 	iRet = pProxy->surfaceClear(pProxy, pWin->pAutoHideLabelSurface, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( iRet == XUI_OK ) {
 		tTextRect = __xuiDockRect(0.0f, 0.0f, (float)iWidth, (float)iHeight);
 		iRet = pProxy->textDraw(pProxy, pWin->pAutoHideLabelSurface, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pWin->sTitle, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tTextRect, XUI_COLOR_WHITE, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
+    pWin->bAutoHideLabelUpdating=0;
 	if ( iRet != XUI_OK ) {
-		__xuiDockReleaseAutoHideLabel(pProxy, pWin);
+        if(pWin->pOwner && pWin->pOwner->pWidget)xuiInternalContextRecordOutcome(pWin->pOwner->pWidget->pContext,iRet,xrtGetError());
+		(void)__xuiDockReleaseAutoHideLabel(pProxy,pWin);
 		return iRet;
 	}
 	pWin->bAutoHideLabelDirty = 0;
@@ -6407,6 +6435,49 @@ static void __xuiDockPanelDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	}
 }
 
+static void __xuiDockSurfaceSlots(xui_widget widget,void* raw,xui_surface_slot_array_t* slots)
+{
+    (void)widget;
+    xui_dock_panel_data_t* data=raw;
+    static const size_t offsets[]={offsetof(xui_dock_window_slot_t,pIconSurface)};
+    *slots=(xui_surface_slot_array_t){data->arrWindows,XUI_DOCK_PANEL_WINDOW_CAPACITY,sizeof(data->arrWindows[0]),offsets,1};
+}
+static bool __xuiDockTraceCaches(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const xui_dock_panel_data_t* data=raw;
+    if(!widget->pContext->pOwnedProxy)return true;
+    for(size_t i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i){
+        const xui_dock_window_slot_t* window=&data->arrWindows[i];
+        if(window->bAutoHideLabelUpdating)return false;
+        if(window->pAutoHideLabelSurface && !visit(xuiSurfaceOwnership(window->pAutoHideLabelSurface),user))return false;
+    }
+    return true;
+}
+static int __xuiDockDestroyReady(xui_widget widget,const void* raw)
+{
+    (void)widget;const xui_dock_panel_data_t* data=raw;
+    for(size_t i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i)
+        if(data->arrWindows[i].bAutoHideLabelUpdating)return XUI_ERROR_BUSY;
+    return XUI_OK;
+}
+static int __xuiDockDestroyPrepare(xui_widget widget,void* raw,bool* complete)
+{
+    xui_dock_panel_data_t* data=raw;
+    xui_proxy proxy=xuiInternalContextGetProxy(widget->pContext);
+    if(proxy && xuiProxyIsOwned(proxy) && !xuiInternalProxyCreator(proxy)){
+        *complete=false;return XUI_ERROR_BUSY;
+    }
+    int status=XUI_OK;xerror* first=NULL;*complete=true;
+    for(size_t i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i){
+        int next=__xuiDockReleaseAutoHideLabel(proxy,&data->arrWindows[i]);
+        xuiInternalContextCleanupOutcome(widget->pContext,next,&status,&first);
+        if(data->arrWindows[i].pAutoHideLabelSurface || data->arrWindows[i].bAutoHideLabelUpdating){
+            *complete=false;break;
+        }
+    }
+    xrtSetErrorTake(first);return status;
+}
+
 static xui_dock_panel_data_t* __xuiDockPanelGetData(xui_widget pWidget)
 {
 	xui_context pContext;
@@ -6507,6 +6578,10 @@ XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext)
 	__xuiDockRegisterStyleProperties(pContext, pType);
 	    static const size_t fontOffsets[]={offsetof(xui_dock_panel_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    pType->onSurfaceSlots=__xuiDockSurfaceSlots;
+    pType->onTraceOwnership=__xuiDockTraceCaches;
+    pType->onDestroyReady=__xuiDockDestroyReady;
+    pType->onDestroyPrepare=__xuiDockDestroyPrepare;
     return pType;
 }
 
@@ -6552,8 +6627,21 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
     int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pData->pFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
     if(fontStatus!=XUI_OK)return fontStatus;
     fontUpdate.widget=pWidget;
+    xui_surface_slot_update_t surfaces[XUI_DOCK_PANEL_WINDOW_CAPACITY]={0};
+    xui_surface* slots[XUI_DOCK_PANEL_WINDOW_CAPACITY];
+    xui_surface values[XUI_DOCK_PANEL_WINDOW_CAPACITY]={0};
+    for(i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i)slots[i]=&pData->arrWindows[i].pIconSurface;
+    int surfaceStatus=xuiInternalSurfaceSlotsPrepare(pWidget,XUI_DOCK_PANEL_WINDOW_CAPACITY,slots,values,surfaces);
+    if(surfaceStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
 	(void)__xuiDockCancelPointerInteraction(pWidget, pData);
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+    for(i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i){
+        surfaceStatus=__xuiDockReleaseAutoHideLabel(pProxy,&pData->arrWindows[i]);
+        if(surfaceStatus!=XUI_OK){
+            surfaceStatus=xuiInternalSurfaceSlotsEnd(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY,false,surfaceStatus);
+            return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
+        }
+    }
 	pLayoutContext = pData->pLayoutContext;
 	pFont = pData->pFont;
 	metrics = pData->tMetrics;
@@ -6580,7 +6668,6 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	(void)xuiMenuClear(pOptionMenu);
 	(void)xuiMenuClear(pOverflowMenu);
 	for ( i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; i++ ) {
-		__xuiDockReleaseAutoHideLabel(pProxy, &pData->arrWindows[i]);
 		if ( pData->arrWindows[i].bUsed ) {
 			if ( pData->arrWindows[i].pClientWidget != NULL && xuiWidgetGetParent(pData->arrWindows[i].pClientWidget) == pData->arrWindows[i].pHostWidget ) {
 				__xuiDockSetWidgetTreeLayer(pData->arrWindows[i].pClientWidget, XUI_LAYER_NORMAL, 0);
@@ -6592,8 +6679,12 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	if ( xLayoutNodeIsValid(pData->pLayoutContext, pData->iRegionLayoutRoot) ) {
 		xLayoutNodeDestroy(pData->pLayoutContext, pData->iRegionLayoutRoot);
 	}
-    fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
-    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
+    surfaceStatus=xuiInternalSurfaceSlotsPublish(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY);
+    if(surfaceStatus==XUI_OK)surfaceStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(surfaceStatus!=XUI_OK){
+        surfaceStatus=xuiInternalSurfaceSlotsEnd(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY,false,surfaceStatus);
+        return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
+    }
 	__xuiDockDefaults(pData);
 	pData->pWidget = pWidget;
 	pData->pLayoutContext = pLayoutContext;
@@ -6621,7 +6712,8 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	(void)__xuiDockSetDragPreview(pWidget, pData, NULL);
 	__xuiDockInvalidate(pWidget, 1);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
-	return xuiInternalFontSlotEnd(&fontUpdate,true,XUI_OK);
+    surfaceStatus=xuiInternalSurfaceSlotsEnd(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY,true,XUI_OK);
+	return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
 }
 
 XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_widget pClient, int* pWindow)
@@ -6947,13 +7039,17 @@ XUI_API int xuiDockPanelSetWindowIcon(xui_widget pWidget, int iWindow,
 	xui_dock_window_slot_t* w = __xuiDockWindowAt(__xuiDockPanelGetData(pWidget), iWindow);
 	if ( w == NULL || !__xuiDockRectValid(tSrc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( w->pIconSurface == pSurface && memcmp(&w->tIconSrc, &tSrc, sizeof(tSrc)) == 0 ) return XUI_OK;
-	w->pIconSurface = pSurface;
+    xui_rect_t previous=w->tIconSrc;int hadIcon=w->bHasIcon;
+    xui_surface_slot_update_t update={.widget=pWidget};
+    int status=xuiInternalSurfaceSlotBegin(pWidget->pContext,&w->pIconSurface,pSurface,pWidget->bTypeInitialized!=0,&update);
+    if(status!=XUI_OK)return status;
 	w->tIconSrc = tSrc;
 	w->bHasIcon = pSurface != NULL;
 	if ( w->pHostWidget != NULL ) {
-		(void)xuiWidgetInvalidate(w->pHostWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		status=xuiWidgetInvalidate(w->pHostWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
-	return XUI_OK;
+    if(status!=XUI_OK){w->tIconSrc=previous;w->bHasIcon=hadIcon;}
+	return xuiInternalSurfaceSlotEnd(&update,status==XUI_OK,status);
 }
 
 XUI_API xui_surface xuiDockPanelGetWindowIconSurface(xui_widget pWidget, int iWindow)

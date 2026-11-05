@@ -2,6 +2,7 @@
 #if XUI_ENABLE_DOCUMENT_VIEW
 #include "xui_document_layout_internal.h"
 #include "xui_text_internal.h"
+#include "xui_internal.h"
 #include "xui_unicode_core.h"
 #include <float.h>
 #include <math.h>
@@ -51,21 +52,51 @@ static int doc_layout_context_acquire(xui_document_renderer r,doc_render_block* 
     if(result!=XUI_OK)return result;
     return doc_context_acquire(block,node,source,bytes,spans,count,!!(caps.iCaps & XUI_PROXY_CAP_TEXT_CONTEXT),out);
 }
-static void doc_layout_variant_free(doc_render_paint_variant* variant)
+static int doc_layout_cleanup_shape(xui_document_renderer renderer,xui_text_shape_t* shape,int prior)
 {
-    size_t i;
-    if(!variant)return;
-    for(i=0;i<variant->span_count;i++){
-        free(variant->spans[i].widths);free(variant->spans[i].offsets);
-        xuiTextShapeFree(&variant->spans[i].shape);
-    }
-    free(variant->spans);free(variant->span_map);free(variant->hyphens);
-    free(variant->offsets);free(variant->bidi_offsets);free(variant->text);
-    xuiInternalTextBidiFree(variant->bidi);free(variant);
+    xui_context context=renderer->context;xerror* first=xrtTakeError();
+    xuiInternalContextCleanupOutcome(context,xuiTextShapeFreeChecked(shape),&prior,&first);
+    xrtSetErrorTake(first);return prior;
 }
-static void doc_layout_variants_free(doc_render_paint_variant* variants)
+static int doc_layout_cleanup_end(xui_document_renderer renderer,xui_cleanup_receipt_t* receipt)
 {
-    while(variants){doc_render_paint_variant* next=variants->next;doc_layout_variant_free(variants);variants=next;}
+    return xuiInternalCleanupEnd(NULL,receipt);
+}
+static xui_document_renderer doc_layout_owner(xui_document_renderer r)
+{return r->lifecycle ? r->lifecycle:r;}
+static void doc_layout_variant_unlink(xui_document_renderer r,doc_render_paint_variant* variant)
+{
+    doc_render_paint_variant** link=&doc_layout_owner(r)->work_variants;
+    while(*link && *link!=variant)link=&(*link)->work_next;
+    if(*link)*link=variant->work_next;
+    variant->work_next=NULL;
+}
+static int doc_layout_variant_free(xui_document_renderer r,doc_render_paint_variant* variant)
+{
+    if(!variant)return XUI_OK;
+    xui_document_renderer root=doc_layout_owner(r);bool waiting=false;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    for(size_t i=0;i<variant->span_count;++i){
+        if(variant->spans[i].source_run)continue;
+        bool consumed=false,called=false;int status=xuiInternalTextShapeFreeOutcome(&variant->spans[i].shape,&consumed,&called);
+        if(!consumed && !called && status==XUI_ERROR_BUSY){waiting=true;continue;}
+        if(called)xuiInternalContextCleanupOutcome(r->context,status,&receipt.status,&receipt.error);
+        else xuiInternalCleanupAdd(&receipt,status);
+        if(!consumed)waiting=true;
+    }
+    if(waiting){root->work_blocked=true;int status=xuiInternalCleanupEnd(NULL,&receipt);return status==XUI_OK ? XUI_STATUS_DEFERRED:status;}
+    doc_layout_variant_unlink(root,variant);
+    for(size_t i=0;i<variant->span_count;++i){free(variant->spans[i].widths);free(variant->spans[i].offsets);}
+    free(variant->spans);free(variant->span_map);free(variant->hyphens);free(variant->offsets);free(variant->bidi_offsets);free(variant->text);
+    xuiInternalTextBidiFree(variant->bidi);free(variant);return doc_layout_cleanup_end(r,&receipt);
+}
+
+static int doc_layout_variants_free(xui_document_renderer r,doc_render_paint_variant* variants)
+{
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    while(variants){doc_render_paint_variant* next=variants->next;
+        xuiInternalCleanupAdd(&receipt,doc_layout_variant_free(r,variants));variants=next;}
+    return doc_layout_cleanup_end(r,&receipt);
 }
 static const doc_render_paint_variant* doc_layout_line_variant(const doc_render_block* block,size_t first,size_t end)
 {
@@ -74,25 +105,63 @@ static const doc_render_paint_variant* doc_layout_line_variant(const doc_render_
         if(first>=variant->first_fragment && end<=variant->end_fragment)return variant;
     return NULL;
 }
-void doc_render_block_free(doc_render_block* b)
+/* Clear real payload owners before freeing a block directory. Readiness
+ * may change after an earlier arbitrary Drop, so retain every unconsumed
+ * record and report pure waiting independently from consuming failures. */
+static void doc_layout_prepare_shape(xui_document_renderer renderer,xui_text_shape_t* shape,
+    xui_cleanup_receipt_t* receipt,bool* waiting)
 {
-    size_t i;
+    bool consumed=false,called=false;
+    int status=xuiInternalTextShapeFreeOutcome(shape,&consumed,&called);
+    if(!consumed && !called && status==XUI_ERROR_BUSY){*waiting=true;return;}
+    if(called)xuiInternalContextCleanupOutcome(renderer->context,status,&receipt->status,&receipt->error);
+    else xuiInternalCleanupAdd(receipt,status);
+    if(!consumed)*waiting=true;
+}
+static int doc_layout_block_prepare(xui_document_renderer renderer,doc_render_block* block,bool* complete,bool full)
+{
+    if(!complete || !renderer || !block)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;bool waiting=false;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    if(full){
+        for(size_t i=0;i<block->run_count;++i)doc_layout_prepare_shape(renderer,&block->runs[i].shape,&receipt,&waiting);
+        for(size_t i=0;i<block->paint_seed_count;++i)
+            if(!block->paint_seeds[i].source_run)doc_layout_prepare_shape(renderer,&block->paint_seeds[i].shape,&receipt,&waiting);
+    }
+    for(size_t i=0;i<block->paint_group_count;++i)
+        if(!block->paint_groups[i].shared_seed && !block->paint_groups[i].variant_span)
+            doc_layout_prepare_shape(renderer,&block->paint_groups[i].shape,&receipt,&waiting);
+    for(doc_render_paint_variant* variant=block->variants;variant;variant=variant->next)
+        for(size_t i=0;i<variant->span_count;++i)
+            if(!variant->spans[i].source_run)doc_layout_prepare_shape(renderer,&variant->spans[i].shape,&receipt,&waiting);
+    block->measured=0;block->retirement_pending=waiting;block->cache_bytes=doc_render_block_cache_bytes(block);*complete=!waiting;
+    int status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:waiting ? XUI_STATUS_DEFERRED:XUI_OK;
+}
+int doc_render_block_prepare(xui_document_renderer renderer,doc_render_block* block,bool* complete)
+{return doc_layout_block_prepare(renderer,block,complete,true);}
+
+int doc_render_block_free(xui_document_renderer r,doc_render_block* b)
+{
+    size_t i;bool complete=false;int prepared=doc_render_block_prepare(r,b,&complete);
+    if(!complete)return prepared;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,prepared);
     for (i = 0; i < b->run_count; i++) {
-        xuiTextShapeFree(&b->runs[i].shape);
+        xuiInternalContextCleanupOutcome(r->context,xuiTextShapeFreeChecked(&b->runs[i].shape),&receipt.status,&receipt.error);
         free(b->runs[i].text);
     }
     for (i = 0; i < b->paint_group_count; i++) {
         free(b->paint_groups[i].text); free(b->paint_groups[i].display_ends);
-        xuiTextShapeFree(&b->paint_groups[i].shape);
+        xuiInternalContextCleanupOutcome(r->context,xuiTextShapeFreeChecked(&b->paint_groups[i].shape),&receipt.status,&receipt.error);
     }
     for (i = 0; i < b->paint_seed_count; i++) {
         free(b->paint_seeds[i].widths);free(b->paint_seeds[i].offsets);
-        xuiTextShapeFree(&b->paint_seeds[i].shape);
+        xuiInternalContextCleanupOutcome(r->context,xuiTextShapeFreeChecked(&b->paint_seeds[i].shape),&receipt.status,&receipt.error);
     }
     free(b->runs); free(b->fragments); free(b->lines); free(b->boxes);
     free(b->paint_groups);
     free(b->paint_seeds);
-    doc_layout_variants_free(b->variants);b->variants=NULL;
+    xuiInternalCleanupAdd(&receipt,doc_layout_variants_free(r,b->variants));b->variants=NULL;
     free(b->visual_fragments);
     for(i=0;i<b->context_count;i++)doc_context_free(b->contexts[i]);
     free(b->contexts);b->contexts=NULL;
@@ -122,6 +191,7 @@ void doc_render_block_free(doc_render_block* b)
     b->shaped_revision = 0;
     b->admonition_font = NULL;
     b->cache_bytes = 0;
+    return doc_layout_cleanup_end(r,&receipt);
 }
 size_t doc_render_block_cache_bytes(const doc_render_block* b)
 {
@@ -194,15 +264,17 @@ size_t doc_render_block_cache_bytes(const doc_render_block* b)
     }
     return bytes;
 }
-void doc_render_block_reflow(doc_render_block* b)
+int doc_render_block_reflow(xui_document_renderer r,doc_render_block* b)
 {
-    size_t i;
+    size_t i;bool complete=false;int prepared=doc_layout_block_prepare(r,b,&complete,false);
+    if(!complete)return prepared;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,prepared);
     for (i = 0; i < b->paint_group_count; i++) {
         free(b->paint_groups[i].text); free(b->paint_groups[i].display_ends);
-        xuiTextShapeFree(&b->paint_groups[i].shape);
+        xuiInternalContextCleanupOutcome(r->context,xuiTextShapeFreeChecked(&b->paint_groups[i].shape),&receipt.status,&receipt.error);
     }
     free(b->paint_groups);
-    doc_layout_variants_free(b->variants);b->variants=NULL;
+    xuiInternalCleanupAdd(&receipt,doc_layout_variants_free(r,b->variants));b->variants=NULL;
     b->paint_groups = NULL;
     b->paint_group_count = b->paint_group_capacity = 0;
     free(b->fragments); free(b->lines); free(b->boxes);
@@ -217,32 +289,47 @@ void doc_render_block_reflow(doc_render_block* b)
     b->measured = 0;
     b->reflow = 1;
     b->cache_bytes = doc_render_block_cache_bytes(b);
+    return doc_layout_cleanup_end(r,&receipt);
 }
-xui_font doc_layout_text_font(xui_document_renderer r, const xui_doc_attributes_t* a, uint32_t heading)
+int doc_layout_text_font(xui_document_renderer r,const xui_doc_attributes_t* a,uint32_t heading,xui_font* output)
 {
-    xui_font source = r->desc.tFonts.normal, font = NULL; xui_font_metrics_t m = {0};
-    float size = a->fFontSize; uint32_t marks = a->iMarks; size_t i;
-    if (heading) marks |= XUI_DOC_BOLD;
-    if (marks & XUI_DOC_CODE && r->desc.tFonts.monospace) source = r->desc.tFonts.monospace;
-    else if ((marks & (XUI_DOC_BOLD | XUI_DOC_ITALIC)) == (XUI_DOC_BOLD | XUI_DOC_ITALIC) && r->desc.tFonts.boldItalic) source = r->desc.tFonts.boldItalic;
-    else if (marks & XUI_DOC_BOLD && r->desc.tFonts.bold) source = r->desc.tFonts.bold;
-    else if (marks & XUI_DOC_ITALIC && r->desc.tFonts.italic) source = r->desc.tFonts.italic;
-    if (r->proxy->fontGetMetrics) r->proxy->fontGetMetrics(r->proxy, source, &m);
-    if (size <= 0) size = m.fSize > 0 ? m.fSize : 16;
-    if (heading && a->fFontSize <= 0) size *= heading == 1 ? 1.8f : heading == 2 ? 1.5f : heading == 3 ? 1.3f : 1.1f;
-    if (marks & (XUI_DOC_SUBSCRIPT | XUI_DOC_SUPERSCRIPT)) size *= .75f;
-    size *= r->desc.fZoom;
-    if (r->desc.onFont) font = r->desc.onFont(r->context, a->sFontFamily, marks, size, r->desc.pUser);
-    if (font) return font;
-    if (fabsf(m.fSize - size) < .01f) return source;
-    for (i = 0; i < r->font_count; i++) if (r->fonts[i].source == source && fabsf(r->fonts[i].size - size) < .01f) return r->fonts[i].font;
-    if (!r->proxy->fontCreateSized || r->proxy->fontCreateSized(r->proxy, &font, source, size) != XUI_OK) return source;
-    if (doc_render_reserve((void**)&r->fonts, &r->font_capacity, r->font_count + 1, sizeof(*r->fonts)) != XUI_OK) {
-        if (r->proxy->fontDestroy) r->proxy->fontDestroy(r->proxy, font);
-        return NULL;
+    xui_document_renderer root=r->lifecycle ? r->lifecycle:r;
+    xui_font source=r->desc.tFonts.normal,font=NULL;xui_font_metrics_t metrics={0};
+    float size=a->fFontSize;uint32_t marks=a->iMarks;int status;
+    *output=NULL;
+    if(heading)marks|=XUI_DOC_BOLD;
+    if(marks & XUI_DOC_CODE && r->desc.tFonts.monospace)source=r->desc.tFonts.monospace;
+    else if((marks & (XUI_DOC_BOLD|XUI_DOC_ITALIC))==(XUI_DOC_BOLD|XUI_DOC_ITALIC) && r->desc.tFonts.boldItalic)source=r->desc.tFonts.boldItalic;
+    else if(marks & XUI_DOC_BOLD && r->desc.tFonts.bold)source=r->desc.tFonts.bold;
+    else if(marks & XUI_DOC_ITALIC && r->desc.tFonts.italic)source=r->desc.tFonts.italic;
+    if(r->proxy->fontGetMetrics){status=r->proxy->fontGetMetrics(r->proxy,source,&metrics);if(status!=XUI_OK)return status;}
+    if(size<=0)size=metrics.fSize>0 ? metrics.fSize:16;
+    if(heading && a->fFontSize<=0)size*=heading==1 ? 1.8f:heading==2 ? 1.5f:heading==3 ? 1.3f:1.1f;
+    if(marks & (XUI_DOC_SUBSCRIPT|XUI_DOC_SUPERSCRIPT))size*=.75f;
+    size*=r->desc.fZoom;
+    status=doc_render_resolve_font(r,a->sFontFamily,marks,size,&font);if(status!=XUI_OK)return status;
+    if(!font && r->desc.onFont)font=r->desc.onFont(r->context,a->sFontFamily,marks,size,r->desc.pUser);
+    if(font){*output=font;return XUI_OK;}
+    if(!r->context || r->context->bDestroyPending || r->context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    if(fabsf(metrics.fSize-size)<.01f){*output=source;return XUI_OK;}
+    for(size_t i=0;i<root->font_count;++i)
+        if(root->fonts[i].source==source && fabsf(root->fonts[i].size-size)<.01f){*output=root->fonts[i].font;return XUI_OK;}
+    if(!r->proxy->fontCreateSized){*output=source;return XUI_OK;}
+    status=r->proxy->fontCreateSized(r->proxy,&font,source,size);
+    if(status==XUI_ERROR_UNSUPPORTED){*output=source;return XUI_OK;}
+    if(status!=XUI_OK)return status;
+    if(!font)return XUI_ERROR_INVALID_STATE;
+    status=doc_render_reserve((void**)&root->fonts,&root->font_capacity,root->font_count+1,sizeof(*root->fonts));
+    if(status!=XUI_OK){
+        xerror* first=xrtTakeError();
+        int cleanup=XUI_OK;
+        if(root->owned_proxy)cleanup=xuiFontReleaseChecked(font);
+        else if(r->proxy->fontDestroy)r->proxy->fontDestroy(r->proxy,font);
+        xuiInternalContextCleanupOutcome(r->context,cleanup,&status,&first);xrtSetErrorTake(first);return status;
     }
-    r->fonts[r->font_count++] = (doc_sized_font){source, font, size}; return font;
+    root->fonts[root->font_count++]=(doc_sized_font){source,font,size};*output=font;return XUI_OK;
 }
+
 static int doc_layout_fragment(doc_render_block* b, const doc_fragment* f)
 {
     int result = doc_render_reserve((void**)&b->fragments, &b->fragment_capacity, b->fragment_count + 1, sizeof(*b->fragments));
@@ -317,8 +404,8 @@ static int doc_layout_run(xui_document_renderer r, doc_render_block* b, doc_node
             run->base_offset != base_offset) return XUI_DOC_ERROR_STALE;
         if (n->kind == XUI_DOC_CODE_BLOCK || n->kind == XUI_DOC_DIAGRAM || n->kind == XUI_DOC_FRONT_MATTER)
             attrs.iMarks |= XUI_DOC_CODE;
-        font = doc_layout_text_font(r, &attrs, heading);
-        if (!font) return XUI_ERROR_UNSUPPORTED;
+        result=doc_layout_text_font(r,&attrs,heading,&font);
+        if(result!=XUI_OK)return result;
         if (font != run->font || !doc_language_equal(attrs.sLanguage, run->attrs.sLanguage)) return XUI_DOC_ERROR_STALE;
         run->attrs = attrs;
     } else {
@@ -330,8 +417,8 @@ static int doc_layout_run(xui_document_renderer r, doc_render_block* b, doc_node
         run->bytes = bytes;
         run->base_offset = base_offset;
         if (n->kind == XUI_DOC_CODE_BLOCK || n->kind == XUI_DOC_DIAGRAM || n->kind == XUI_DOC_FRONT_MATTER) run->attrs.iMarks |= XUI_DOC_CODE;
-        run->font = doc_layout_text_font(r, &run->attrs, heading);
-        if (!run->font) return XUI_ERROR_UNSUPPORTED;
+        result=doc_layout_text_font(r,&run->attrs,heading,&run->font);
+        if(result!=XUI_OK)return result;
         run->text = malloc((size_t)bytes + 1); if (!run->text) return XUI_ERROR_OUT_OF_MEMORY;
         if (generated) memcpy(run->text, generated, (size_t)bytes); else doc_seq_read(n->text, 0, run->text, bytes);
         run->text[bytes] = 0;
@@ -378,15 +465,13 @@ static int doc_layout_run(xui_document_renderer r, doc_render_block* b, doc_node
         if (cluster->iTextEnd - cluster->iTextStart == 2 &&
             !memcmp(run->text + cluster->iTextStart, "\xc2\xad", 2)) {
             if (!run->hyphen_measured) {
-                xui_text_shape_t hyphen = {0};
-                result = xuiTextShape(r->context, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=run->font, .sText="-", .iTextSize=1, .sLanguage=run->attrs.sLanguage, .iFlags=XUI_TEXT_SHAPE_DEFAULT}, &hyphen);
-                if (result == XUI_OK) {
-                    run->hyphen_width = hyphen.fWidth;
-                    if (!isfinite(run->hyphen_width) || run->hyphen_width < 0) result = XUI_ERROR_INVALID_ARGUMENT;
-                    if (result == XUI_OK) run->hyphen_measured = 1;
-                    r->stats.iShapedBytes++;
-                }
-                xuiTextShapeFree(&hyphen);
+                xui_vec2_t hyphen={0};
+                if(!r->proxy->textMeasure)return XUI_ERROR_UNSUPPORTED;
+                result=r->proxy->textMeasure(r->proxy,&(xui_text_item_t){.iSize=sizeof(xui_text_item_t),.pFont=run->font,.sText="-",.iTextSize=1,.sLanguage=run->attrs.sLanguage},&hyphen);
+                if(result==XUI_OK){run->hyphen_width=hyphen.fX;
+                    if(!isfinite(run->hyphen_width) || run->hyphen_width<0)result=XUI_ERROR_INVALID_ARGUMENT;
+                    if(result==XUI_OK)run->hyphen_measured=1;
+                    r->stats.iShapedBytes++;}
                 if (result != XUI_OK) return result;
             }
             f.hyphen_width = run->hyphen_width;
@@ -422,7 +507,7 @@ static int doc_layout_inline(xui_document_renderer r, doc_render_block* b, doc_n
     f.height = 20 * r->desc.fZoom; f.baseline = f.height * .8;
     {
         xui_vec2_t size = {0}; float baseline = 0;
-        int result = r->desc.onObjectMeasure ? r->desc.onObjectMeasure(r->snapshot, n->id, (float)width, r->desc.fZoom, &size, &baseline, r->desc.pUser) : XUI_ERROR_UNSUPPORTED;
+        int result = doc_render_measure_object(r,n->id,(float)width,&size,&baseline);
         if (result == XUI_ERROR_UNSUPPORTED && n->kind == XUI_DOC_IMAGE)
             result = doc_render_image_measure(r, n, width, &size);
         if (result != XUI_OK && result != XUI_ERROR_UNSUPPORTED) return result;
@@ -863,16 +948,83 @@ static size_t doc_layout_plan_lines(const doc_render_block* block,
     }
     return count;
 }
-static void doc_layout_pending_paint_free(doc_render_paint_group* groups,
-    size_t count)
+static int doc_layout_pending_paint_free(xui_document_renderer r,doc_render_paint_group* groups,size_t count)
 {
-    size_t i;
-    if (!groups) return;
-    for (i = 0; i < count; i++) {
-        free(groups[i].text); free(groups[i].display_ends);xuiTextShapeFree(&groups[i].shape);
+    if(!groups)return XUI_OK;
+    xui_document_renderer root=doc_layout_owner(r);bool waiting=false;
+    if(root->work_groups==groups)count=root->work_group_capacity;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    for(size_t i=0;i<count;++i){
+        if(groups[i].shared_seed || groups[i].variant_span)continue;
+        bool consumed=false,called=false;int status=xuiInternalTextShapeFreeOutcome(&groups[i].shape,&consumed,&called);
+        if(!consumed && !called && status==XUI_ERROR_BUSY){waiting=true;continue;}
+        if(called)xuiInternalContextCleanupOutcome(r->context,status,&receipt.status,&receipt.error);
+        else xuiInternalCleanupAdd(&receipt,status);
+        if(!consumed)waiting=true;
     }
+    if(waiting){root->work_blocked=true;int status=xuiInternalCleanupEnd(NULL,&receipt);return status==XUI_OK ? XUI_STATUS_DEFERRED:status;}
+    for(size_t i=0;i<count;++i){free(groups[i].text);free(groups[i].display_ends);}
+    if(root->work_groups==groups){root->work_groups=NULL;root->work_group_capacity=0;}
+    free(groups);return xuiInternalCleanupEnd(NULL,&receipt);
+}
+static int doc_layout_pending_paint_allocate(xui_document_renderer r,size_t count,doc_render_paint_group** output)
+{
+    xui_document_renderer root=doc_layout_owner(r);*output=NULL;
+    if(root->work_blocked)return XUI_ERROR_BUSY;
+    if(root->work_groups){int status=doc_layout_pending_paint_free(root,root->work_groups,root->work_group_capacity);if(status!=XUI_OK)return status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:status;}
+    if(count>SIZE_MAX/sizeof(**output))return XUI_DOC_ERROR_LIMIT;
+    *output=calloc(count,sizeof(**output));if(!*output)return XUI_ERROR_OUT_OF_MEMORY;
+    root->work_groups=*output;root->work_group_capacity=count;return XUI_OK;
+}
+static void doc_layout_pending_paint_moved(xui_document_renderer r,doc_render_paint_group* groups)
+{
+    xui_document_renderer root=doc_layout_owner(r);
+    if(root->work_groups==groups){root->work_groups=NULL;root->work_group_capacity=0;}
     free(groups);
 }
+static bool doc_layout_variant_trace(const doc_render_paint_variant* variant,xrtownershipvisitor visit,void* user)
+{
+    for(size_t i=0;i<variant->span_count;++i)if(!variant->spans[i].source_run && !xuiInternalTextShapeTraceOwnership(&variant->spans[i].shape,visit,user))return false;
+    return true;
+}
+bool doc_render_work_trace(xui_document_renderer r,xrtownershipvisitor visit,void* user)
+{
+    xui_document_renderer root=doc_layout_owner(r);
+    if(!xuiInternalTextShapeTraceOwnership(&root->work_shape,visit,user))return false;
+    for(const doc_render_paint_variant* v=root->work_variants;v;v=v->work_next)if(!doc_layout_variant_trace(v,visit,user))return false;
+    for(size_t i=0;i<root->work_group_capacity;++i)if(!root->work_groups[i].shared_seed && !root->work_groups[i].variant_span &&
+       !xuiInternalTextShapeTraceOwnership(&root->work_groups[i].shape,visit,user))return false;
+    return true;
+}
+int doc_render_work_ready(xui_document_renderer r)
+{
+    xui_document_renderer root=doc_layout_owner(r);bool managed=root->owned_proxy!=NULL;
+    if(root->work_shape_active)return XUI_ERROR_BUSY;
+    int status=xuiInternalTextShapeReady(&root->work_shape,managed);if(status!=XUI_OK)return status;
+    for(const doc_render_paint_variant* v=root->work_variants;v;v=v->work_next)for(size_t i=0;i<v->span_count;++i)
+        if(!v->spans[i].source_run){status=xuiInternalTextShapeReady(&v->spans[i].shape,managed);if(status!=XUI_OK)return status;}
+    for(size_t i=0;i<root->work_group_capacity;++i)if(!root->work_groups[i].shared_seed && !root->work_groups[i].variant_span){status=xuiInternalTextShapeReady(&root->work_groups[i].shape,managed);if(status!=XUI_OK)return status;}
+    return XUI_OK;
+}
+int doc_render_work_prepare(xui_document_renderer r,bool* complete)
+{
+    xui_document_renderer root=doc_layout_owner(r);*complete=false;
+    if(root->work_shape_active)return XUI_STATUS_DEFERRED;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);bool waiting=false;
+    bool consumed=false,called=false;int status=xuiInternalTextShapeFreeOutcome(&root->work_shape,&consumed,&called);
+    if(!consumed && !called && status==XUI_ERROR_BUSY)waiting=true;
+    else {if(called)xuiInternalContextCleanupOutcome(r->context,status,&receipt.status,&receipt.error);else xuiInternalCleanupAdd(&receipt,status);if(!consumed)waiting=true;}
+    for(doc_render_paint_variant* v=root->work_variants;v;){
+        doc_render_paint_variant* next=v->work_next;status=doc_layout_variant_free(root,v);
+        if(status==XUI_STATUS_DEFERRED)waiting=true;else xuiInternalCleanupAdd(&receipt,status);
+        v=next;
+    }
+    if(root->work_groups){status=doc_layout_pending_paint_free(root,root->work_groups,root->work_group_capacity);if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);}
+    *complete=!waiting && !root->work_variants && !root->work_groups && !root->work_shape.pPaint;
+    root->work_blocked=!*complete;status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:*complete ? XUI_OK:XUI_STATUS_DEFERRED;
+}
+
 /* A full-line shaper can merge an emoji sequence that was split into several
  * Text nodes, or split a run's original cluster. Account for every advance
  * once at its ending fragment. Only Unicode grapheme interiors may cross an
@@ -1065,36 +1217,34 @@ static int doc_layout_shape_paint(xui_document_renderer r,
     double* widths, size_t width_base, doc_render_paint_group* group, int* match, size_t hyphen,
     xui_text_shape_t* captured, doc_render_paint_variant* variant)
 {
-    xui_text_shape_t shape = {0};
+    xui_text_shape_t* shape=captured;
     size_t i, bytes; double advance = 0; int result;
     *match = 0;
-    if(captured)memset(captured,0,sizeof(*captured));
     result=doc_layout_paint_input(r,block,first,end,group,hyphen,variant);
     if(result!=XUI_OK)return result;
+    if(!shape){result=doc_render_work_shape_begin(r,&shape);if(result!=XUI_OK)return result;}
     bytes=(size_t)group->bytes;
     {xui_text_item_t item;doc_hyphen_lease lease;
         result=doc_render_group_item(group,
             block->runs[doc_fragment_paint_run(&block->fragments[group->origin_fragment])].attrs.sLanguage,&item,&lease);
         if(result==XUI_OK){
             if(captured)item.iFlags|=XUI_TEXT_SHAPE_RETAIN_PAINT;
-            result=xuiTextShape(r->context,&item,&shape);
+            result=xuiTextShape(r->context,&item,shape);
         }
         doc_context_hyphen_release(&lease);}
     if (result == XUI_OK) {
         r->stats.iShapedBytes += bytes;
-        result = xuiInternalTextShapeCaretFragments(group->text, (int)bytes, &shape);
+        result = xuiInternalTextShapeCaretFragments(group->text, (int)bytes, shape);
     }
     if (result == XUI_OK) {
-        if (shape.fLineHeight > 0 && isfinite(shape.fLineHeight) && isfinite(shape.fAscent))
-            *match = doc_layout_shape_widths(block, first, end, &shape, widths, width_base, group->display_ends);
+        if (shape->fLineHeight > 0 && isfinite(shape->fLineHeight) && isfinite(shape->fAscent))
+            *match = doc_layout_shape_widths(block, first, end, shape, widths, width_base, group->display_ends);
         for (i = first; *match && i < end; i++) advance += widths[i - width_base];
-        group->paint_width = fmax(advance, shape.fWidth);
-        group->line_height = shape.fLineHeight; group->ascent = shape.fAscent;
+        group->paint_width = fmax(advance, shape->fWidth);
+        group->line_height = shape->fLineHeight; group->ascent = shape->fAscent;
         if (block->layout_bidi && !*match) result = XUI_ERROR_UNSUPPORTED;
     }
-    if(captured && result==XUI_OK && *match){*captured=shape;memset(&shape,0,sizeof(shape));}
-    xuiTextShapeFree(&shape);
-    return result;
+    return captured ? result:doc_render_work_shape_end(r,shape,result);
 }
 #include "xui_document_hyphen_variant.inl"
 /* Measure exactly the terminal strings, including the selected hyphen's
@@ -1111,7 +1261,7 @@ static int doc_layout_hyphen_fits(doc_line_plan_context* context,
     if(context->selected){
         doc_render_paint_variant* candidate=NULL;
         context->result=doc_layout_variant_probe(context,first,end,&total,&candidate);
-        doc_layout_variant_free(candidate);return context->result==XUI_OK && total<=width;
+        doc_layout_variant_free(context->renderer,candidate);return context->result==XUI_OK && total<=width;
     }
     context->result = doc_layout_bidi_levels(block, first, end, hyphen,NULL);
     if (context->result != XUI_OK) return 0;
@@ -1143,7 +1293,7 @@ static int doc_layout_shared_measure(xui_document_renderer r,const doc_render_bl
     size_t index,size_t first,size_t end,uint32_t start,uint32_t stop,xui_vec2_t* measured)
 {
     const doc_render_paint_seed* seed=&block->paint_seeds[index-1];
-    doc_render_paint_group group={0};xui_text_item_t item;doc_hyphen_lease lease;xui_text_shape_t selected={0};int result;
+    doc_render_paint_group group={0};xui_text_item_t item;doc_hyphen_lease lease;xui_text_shape_t* selected=NULL;int result;
     if(r->proxy->textShapeRangeMeasure){
         result=r->proxy->textShapeRangeMeasure(r->proxy,doc_render_seed_shape(block,seed),(int)start,(int)stop,measured);
         if(result!=XUI_ERROR_UNSUPPORTED)return result;
@@ -1153,10 +1303,10 @@ static int doc_layout_shared_measure(xui_document_renderer r,const doc_render_bl
     if(!(group.input_caps & XUI_PROXY_CAP_TEXT_RANGE)){result=XUI_ERROR_UNSUPPORTED;goto done;}
     group.shared_seed=index;group.shape_start=start;group.shape_end=stop;
     result=doc_render_seed_range_item(block,&group,block->runs[doc_fragment_paint_run(&block->fragments[group.origin_fragment])].attrs.sLanguage,&item,&lease);
-    if(result==XUI_OK){result=xuiTextShape(r->context,&item,&selected);doc_context_hyphen_release(&lease);}
-    if(result==XUI_OK){measured->fX=selected.fWidth;measured->fY=selected.fHeight;}
+    if(result==XUI_OK){result=doc_render_work_shape_begin(r,&selected);if(result==XUI_OK)result=xuiTextShape(r->context,&item,selected);doc_context_hyphen_release(&lease);}
+    if(result==XUI_OK){measured->fX=selected->fWidth;measured->fY=selected->fHeight;}
 done:
-    free(group.text);free(group.display_ends);xuiTextShapeFree(&selected);return result;
+    free(group.text);free(group.display_ends);return doc_render_work_shape_end(r,selected,result);
 }
 static int doc_layout_exact_measure(xui_document_renderer r, const doc_render_block* block,
     size_t first, size_t end, size_t paragraph_end, double* scratch, size_t base,
@@ -1224,7 +1374,7 @@ static int doc_layout_variant_probe(doc_line_plan_context* context,size_t first,
             context->scratch,context->base,total,&match,context->shared);
         if(result==XUI_OK && !match)result=XUI_ERROR_UNSUPPORTED;
     }
-    if(result!=XUI_OK){doc_layout_variant_free(*candidate);*candidate=NULL;}
+    if(result!=XUI_OK){doc_layout_variant_free(context->renderer,*candidate);*candidate=NULL;}
     return result;
 }
 static size_t doc_layout_exact_boundary(const doc_render_block* block,
@@ -1402,18 +1552,18 @@ static int doc_layout_variant_choose(doc_line_plan_context* context,size_t first
         result=doc_layout_variant_probe(context,first,next,&total,&candidate);
         if(result!=XUI_OK)goto fail;
         if(total<=width){
-            *stop=next;doc_layout_variant_free(*chosen);*chosen=candidate;candidate=NULL;
+            *stop=next;doc_layout_variant_free(context->renderer,*chosen);*chosen=candidate;candidate=NULL;
             if(next==end || (context->block->fragments[next-1].flags & DOC_FORCED_BREAK))break;
             probe=next;continue;
         }
-        doc_layout_variant_free(candidate);
+        doc_layout_variant_free(context->renderer,candidate);
         {size_t hyphen=doc_layout_hyphen_after(context,context->block->fragments,first,next-1,context->end,
             context->scratch,context->base,width);
             if(context->result!=XUI_OK){result=context->result;goto fail;}
             if(hyphen>first && hyphen<=end){
                 result=doc_layout_variant_probe(context,first,hyphen,&total,&candidate);
                 if(result!=XUI_OK)goto fail;
-                *stop=hyphen;doc_layout_variant_free(*chosen);*chosen=candidate;break;
+                *stop=hyphen;doc_layout_variant_free(context->renderer,*chosen);*chosen=candidate;break;
             }
         }
         if(*stop==first){
@@ -1423,8 +1573,8 @@ static int doc_layout_variant_choose(doc_line_plan_context* context,size_t first
                 size_t boundary=doc_layout_variant_boundary(context,first,probe,next,1);
                 candidate=NULL;result=doc_layout_variant_probe(context,first,boundary,&total,&candidate);
                 if(result!=XUI_OK)goto fail;
-                if(total>width){doc_layout_variant_free(candidate);break;}
-                *stop=boundary;doc_layout_variant_free(*chosen);*chosen=candidate;probe=boundary;
+                if(total>width){doc_layout_variant_free(context->renderer,candidate);break;}
+                *stop=boundary;doc_layout_variant_free(context->renderer,*chosen);*chosen=candidate;probe=boundary;
             }
             if(*stop==first){
                 if(unit>first+1 && (context->block->fragments[unit-1].flags & DOC_SOFT_HYPHEN) &&
@@ -1436,7 +1586,7 @@ static int doc_layout_variant_choose(doc_line_plan_context* context,size_t first
     }
     return XUI_OK;
 fail:
-    doc_layout_variant_free(*chosen);*chosen=NULL;return result;
+    doc_layout_variant_free(context->renderer,*chosen);*chosen=NULL;return result;
 }
 /* Prior committed insertions feed later candidate glyphs. After all choices,
  * validate the rows against that final pattern. A future insertion that makes
@@ -1454,7 +1604,7 @@ static int doc_layout_variant_lines(xui_document_renderer r,doc_render_block* bl
     if(!selected || !forbidden || !limits || !widths){result=XUI_ERROR_OUT_OF_MEMORY;goto done;}
     for(;;){
         size_t at=first,count=0,groups=0,line,retry=SIZE_MAX;int retry_marker=0;
-        memset(selected,0,n);doc_layout_variant_free(variant);variant=NULL;context.variant=NULL;context.result=XUI_OK;
+        memset(selected,0,n);doc_layout_variant_free(r,variant);variant=NULL;context.variant=NULL;context.result=XUI_OK;
         /* Continuation may already have committed a marker before first. */
         result=doc_layout_variant_build(r,block,first,end,selected,&variant);
         if(result!=XUI_OK)goto done;
@@ -1464,13 +1614,13 @@ static int doc_layout_variant_lines(xui_document_renderer r,doc_render_block* bl
             result=doc_layout_variant_choose(&context,at,limit,width,&stop,&chosen);
             if(result!=XUI_OK)goto done;
             if(chosen){
-                doc_layout_variant_free(variant);variant=chosen;context.variant=variant;
+                doc_layout_variant_free(r,variant);variant=chosen;context.variant=variant;
                 memcpy(selected,variant->hyphens,n);
             }
             cuts[count++]=stop;at=stop;
         }
         if(!variant && !attempt){result=XUI_ERROR_NOT_FOUND;goto done;}
-        pending=calloc(n,sizeof(*pending));if(!pending){result=XUI_ERROR_OUT_OF_MEMORY;goto done;}
+        result=doc_layout_pending_paint_allocate(r,n,&pending);if(result!=XUI_OK)goto done;
         at=first;
         if(!variant){int match;size_t groups_base=0;
             result=doc_layout_shape_lines(r,block,first,end,cuts,count,widths,pending,&groups_base,&match,shared);
@@ -1491,7 +1641,7 @@ static int doc_layout_variant_lines(xui_document_renderer r,doc_render_block* bl
                     doc_render_paint_variant* probe=NULL;double measured;
                     size_t boundary=doc_layout_variant_boundary(&context,at,j,stop,1);
                     if(boundary==stop)break;
-                    result=doc_layout_variant_probe(&context,at,boundary,&measured,&probe);doc_layout_variant_free(probe);
+                    result=doc_layout_variant_probe(&context,at,boundary,&measured,&probe);doc_layout_variant_free(r,probe);
                     if(result!=XUI_OK)goto pending_done;
                     if(measured<=width && (!limits[at-first] || boundary<limits[at-first])){
                         retry=at;limits[at-first]=boundary;break;
@@ -1505,18 +1655,18 @@ static int doc_layout_variant_lines(xui_document_renderer r,doc_render_block* bl
         if(retry==SIZE_MAX){
             result=doc_layout_publish_lines(block,first,end,widths,cuts,count,pending,groups);
             if(result==XUI_OK){
-                free(pending);pending=NULL;
-                if(variant){variant->next=block->variants;block->variants=variant;variant=NULL;}
+                doc_layout_pending_paint_moved(r,pending);pending=NULL;
+                if(variant){doc_layout_variant_unlink(r,variant);variant->next=block->variants;block->variants=variant;variant=NULL;}
             }
         }
 pending_done:
-        if(pending){doc_layout_pending_paint_free(pending,groups);pending=NULL;}
+        if(pending){doc_layout_pending_paint_free(r,pending,groups);pending=NULL;}
         if(result!=XUI_OK || retry==SIZE_MAX)break;
         if(retry_marker)forbidden[retry-first]=1;
         attempt++;
     }
 done:
-    doc_layout_variant_free(variant);free(selected);free(forbidden);free(limits);free(widths);return result;
+    doc_layout_variant_free(r,variant);free(selected);free(forbidden);free(limits);free(widths);return result;
 }
 /* Shape the exact strings that will be drawn on each visual line. Replan after
  * shaping because a kerning change at a style or wrap boundary may change the
@@ -1617,7 +1767,7 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
     }
     for (i = first; i < end; ) {
         doc_render_paint_group seed = {0}; int match;
-        xui_text_shape_t captured={0};uint32_t source_run=0;
+        xui_text_shape_t* captured=NULL;uint32_t source_run=0;
         const doc_render_run* run;
         size_t cached;
         size_t span_end;
@@ -1663,29 +1813,31 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
                 (!block->layout_context || !block->layout_context->scripts))
                 source_run=doc_fragment_paint_run(&block->fragments[i])+1;
             else{
+                if(shared){result=doc_render_work_shape_begin(r,&captured);if(result!=XUI_OK)goto done;}
                 result = doc_layout_shape_paint(r, block, i, span_end, widths, first, &seed, &match,
-                    SIZE_MAX, shared?&captured:NULL,NULL);
+                    SIZE_MAX, captured,NULL);
                 free(seed.text); free(seed.display_ends);
-                if (result != XUI_OK || !match) {xuiTextShapeFree(&captured);goto done;}
+                if (result != XUI_OK || !match) {result=doc_render_work_shape_end(r,captured,result);captured=NULL;goto done;}
             }
             saved = malloc((span_end - i) * sizeof(*saved));
-            if (!saved) {xuiTextShapeFree(&captured);result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
-            if(source_run || captured.pPaint || (range_input && captured.iSize)){
+            if (!saved) {result=doc_render_work_shape_end(r,captured,XUI_ERROR_OUT_OF_MEMORY);captured=NULL;goto done; }
+            if(source_run || (captured && captured->pPaint) || (range_input && (captured && captured->iSize))){
                 size_t at;
                 offsets=calloc(span_end-i+1,sizeof(*offsets));
-                if(!offsets){free(saved);xuiTextShapeFree(&captured);result=XUI_ERROR_OUT_OF_MEMORY;goto done;}
+                if(!offsets){free(saved);result=doc_render_work_shape_end(r,captured,XUI_ERROR_OUT_OF_MEMORY);captured=NULL;goto done;}
                 for(at=i;at<span_end;at++)offsets[at-i+1]=offsets[at-i]+
                     (uint32_t)doc_layout_display_bytes(block,&block->fragments[at]);
             }
             result = doc_render_reserve((void**)&block->paint_seeds, &block->paint_seed_capacity,
                 block->paint_seed_count + 1, sizeof(*block->paint_seeds));
-            if (result != XUI_OK) { free(saved);free(offsets);xuiTextShapeFree(&captured);goto done; }
+            if (result != XUI_OK) { free(saved);free(offsets);result=doc_render_work_shape_end(r,captured,result);captured=NULL;goto done; }
             memcpy(saved, widths + i - first, (span_end - i) * sizeof(*saved));
             block->paint_seeds[block->paint_seed_count++] = (doc_render_paint_seed){
                 .first_fragment = i, .end_fragment = span_end, .font = run->font,
                 .vertical_marks = doc_layout_vertical_marks(run->attrs.iMarks), .widths = saved,
-                .bidi_level = block->fragments[i].bidi_level,.shape=captured,
+                .bidi_level = block->fragments[i].bidi_level,.shape={0},
                 .source_run=source_run,.offsets=offsets};
+            if(captured){doc_render_work_shape_move(r,captured,&block->paint_seeds[block->paint_seed_count-1].shape);captured=NULL;}
         }
         if(shared && block->paint_seeds[cached].offsets){
             size_t at;
@@ -1711,15 +1863,15 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
          * hyphen that was invisible in the seed span. Budget both groups. */
         if (count > (SIZE_MAX - spans) / 2 ||
             count * 2 + spans > SIZE_MAX / sizeof(*pending)) { result = XUI_DOC_ERROR_LIMIT; goto done; }
-        pending = calloc(block->layout_bidi ? fragments : count * 2 + spans, sizeof(*pending));
-        if (!pending) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+        result=doc_layout_pending_paint_allocate(r,block->layout_bidi ? fragments:count*2+spans,&pending);
+        if(result!=XUI_OK)goto done;
         /* Text shaping replaces only text advances. Measured object widths,
          * soft-break spaces and zero-width controls survive every replan. */
         memcpy(next_widths, widths, fragments * sizeof(*widths));
         result = doc_layout_shape_lines(r, block, first, end, cuts, count,
             next_widths, pending, &group_count, &match, shared);
         if (result != XUI_OK || !match) {
-            doc_layout_pending_paint_free(pending, group_count);
+            doc_layout_pending_paint_free(r,pending, group_count);
             pending = NULL;
             if (result == XUI_OK) break;
             goto done;
@@ -1729,7 +1881,7 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
                 width, next_widths, next_cuts, fragments, contextual);
             if (plan_context.result != XUI_OK) {
                 result = plan_context.result;
-                doc_layout_pending_paint_free(pending, group_count);
+                doc_layout_pending_paint_free(r,pending, group_count);
                 pending = NULL;
                 goto done;
             }
@@ -1738,15 +1890,15 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
                 result = doc_layout_publish_lines(block, first, end, next_widths,
                     cuts, count, pending, group_count);
                 if (result != XUI_OK) {
-                    doc_layout_pending_paint_free(pending, group_count);
+                    doc_layout_pending_paint_free(r,pending, group_count);
                     pending = NULL;
                     goto done;
                 }
-                free(pending); pending = NULL;
+                doc_layout_pending_paint_moved(r,pending); pending = NULL;
                 break;
             }
         }
-        doc_layout_pending_paint_free(pending, group_count);
+        doc_layout_pending_paint_free(r,pending, group_count);
         pending = NULL;
         { double* swap = widths; widths = next_widths; next_widths = swap; }
     }
@@ -1757,17 +1909,17 @@ static int doc_layout_paint_group(xui_document_renderer r, doc_render_block* blo
         if (count > (SIZE_MAX - spans) / 2 || count * 2 + spans > SIZE_MAX / sizeof(*pending)) {
             result = XUI_DOC_ERROR_LIMIT; goto done;
         }
-        pending = calloc(block->layout_bidi ? fragments : count * 2 + spans, sizeof(*pending));
-        if (!pending) { result = XUI_ERROR_OUT_OF_MEMORY; goto done; }
+        result=doc_layout_pending_paint_allocate(r,block->layout_bidi ? fragments:count*2+spans,&pending);
+        if(result!=XUI_OK)goto done;
         memcpy(next_widths, widths, fragments * sizeof(*widths));
         result = doc_layout_shape_lines(r, block, first, end, cuts, count,
             next_widths, pending, &group_count, &match, shared);
         if (result == XUI_OK && match) {
             result = doc_layout_publish_lines(block, first, end, next_widths,
                 cuts, count, pending, group_count);
-            if (result == XUI_OK) { free(pending); pending = NULL; }
+            if (result == XUI_OK) { doc_layout_pending_paint_moved(r,pending); pending = NULL; }
         }
-        if (pending) { doc_layout_pending_paint_free(pending, group_count); pending = NULL; }
+        if (pending) { doc_layout_pending_paint_free(r,pending, group_count); pending = NULL; }
     }
 done:
     free(widths); free(next_widths); free(cuts); free(next_cuts); free(plan_context.scratch);free(shared);
@@ -2005,6 +2157,7 @@ static double doc_layout_committed_width(const doc_render_block* b,
 int doc_layout_block_prefix(xui_document_renderer r, doc_render_block* b,
     double width, double required_bottom)
 {
+    if(b->retirement_pending){int cleanup=doc_render_block_free(r,b);if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;}
     doc_node* paragraph = doc_index_get(r->snapshot->state->index, b->node);
     doc_paragraph_projection projection = {0};
     doc_paragraph_projection* saved;
@@ -2040,7 +2193,7 @@ int doc_layout_block_prefix(xui_document_renderer r, doc_render_block* b,
         paragraph->attrs->fParagraphSpacing > 0 ? paragraph->attrs->fParagraphSpacing :
         r->desc.fParagraphGap) * r->desc.fZoom;
     if (!reuse) {
-        doc_render_block_free(b);
+        doc_render_block_free(r,b);
         result=doc_layout_context_acquire(r,b,paragraph->id,projection.text,(size_t)projection.bytes,
             projection.spans,(size_t)projection.count,&projection.shaping);
         if(result!=XUI_OK)goto done;
@@ -2088,7 +2241,7 @@ int doc_layout_block_prefix(xui_document_renderer r, doc_render_block* b,
 done:
     b->layout_bidi = NULL; b->layout_context = NULL;
     if (result != XUI_OK) {
-        doc_render_block_free(b);
+        doc_render_block_free(r,b);
         b->height = previous_height;
     }
     doc_layout_projection_free(&projection);
@@ -2102,6 +2255,7 @@ done:
 int doc_layout_block_extend(xui_document_renderer r, doc_render_block* b,
     double width, double required_bottom)
 {
+    if(b->retirement_pending){int cleanup=doc_render_block_free(r,b);if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;}
     doc_node* paragraph = doc_index_get(r->snapshot->state->index, b->node);
     doc_paragraph_projection* projection = b->continuation;
     size_t old_runs = b->run_count, old_fragments = b->fragment_count;
@@ -2212,7 +2366,9 @@ rollback:
     doc_layout_replace_paint_tail(b, old_paint_count, b->paint_group_count);
     while(b->variants!=old_variants){
         doc_render_paint_variant* variant=b->variants;
-        b->variants=variant->next;doc_layout_variant_free(variant);
+        b->variants=variant->next;
+        variant->next=NULL;variant->work_next=doc_layout_owner(r)->work_variants;doc_layout_owner(r)->work_variants=variant;
+        doc_layout_variant_free(r,variant);
     }
     while (b->run_count > old_runs) {
         doc_render_run* run = &b->runs[--b->run_count];
@@ -2281,6 +2437,7 @@ static void doc_layout_line_size(xui_document_renderer r, doc_render_block* b,
 int doc_layout_line_prefix(xui_document_renderer r, doc_render_block* b,
     double width)
 {
+    if(b->retirement_pending){int cleanup=doc_render_block_free(r,b);if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;}
     doc_node source_node = {0};
     doc_node* node;
     double inner_width, line_height, old_height;
@@ -2300,7 +2457,7 @@ int doc_layout_line_prefix(xui_document_renderer r, doc_render_block* b,
     old_height = b->height;
     inner_width = fmax(1, width - b->indent);
     cutoff = b->text_start + 8192;
-    doc_render_block_free(b);
+    doc_render_block_free(r,b);
     b->lines_sorted = 1;
     b->width = 0;
     result = doc_layout_line_chunk(r, b, node, b->text_start, cutoff);
@@ -2326,7 +2483,7 @@ int doc_layout_line_prefix(xui_document_renderer r, doc_render_block* b,
     r->stats.iFragments += b->fragment_count;
     return XUI_OK;
 fail:
-    doc_render_block_free(b);
+    doc_render_block_free(r,b);
     b->height = old_height;
     return result;
 }
@@ -2562,10 +2719,11 @@ static int doc_layout_node(xui_document_renderer r, doc_render_block* b, uint64_
 }
 int doc_layout_block(xui_document_renderer r, doc_render_block* b, double width)
 {
+    if(b->retirement_pending){int cleanup=doc_render_block_free(r,b);if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;}
     int result, previous_object_dependent = b->object_dependent;
     xui_text_bidi row_bidi = NULL;
     if (b->reflow) { b->run_cursor = 0; b->context_cursor = 0; }
-    else doc_render_block_free(b);
+    else {int cleanup=doc_render_block_free(r,b);if(cleanup!=XUI_OK)return cleanup==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:cleanup;}
     b->lines_sorted = 1;
     b->object_dependent = 0;
     b->width = 0;
@@ -2583,8 +2741,8 @@ int doc_layout_block(xui_document_renderer r, doc_render_block* b, double width)
             return XUI_DOC_ERROR_STALE;
         attrs = doc_effective_text_attrs(r->snapshot->state, quote);
         attrs.iMarks |= XUI_DOC_BOLD;
-        b->admonition_font = doc_layout_text_font(r, &attrs, 0);
-        if (!b->admonition_font) return XUI_ERROR_UNSUPPORTED;
+        result=doc_layout_text_font(r,&attrs,0,&b->admonition_font);
+        if(result!=XUI_OK)return result;
         if (r->proxy->fontGetMetrics)
             r->proxy->fontGetMetrics(r->proxy, b->admonition_font, &metrics);
         b->height = fmax(20 * r->desc.fZoom, metrics.fLineHeight) + 4 * r->desc.fZoom;
@@ -2639,11 +2797,11 @@ int doc_layout_block(xui_document_renderer r, doc_render_block* b, double width)
     if (result == XUI_OK && b->reflow && (b->run_cursor != b->run_count ||
         b->context_cursor != b->context_count)) result = XUI_DOC_ERROR_STALE;
     if (result == XUI_DOC_ERROR_STALE && b->reflow) {
-        doc_render_block_free(b);
+        doc_render_block_free(r,b);
         return doc_layout_block(r, b, width);
     }
     if (result != XUI_OK) {
-        doc_render_block_free(b);
+        doc_render_block_free(r,b);
         b->object_dependent = previous_object_dependent;
         return result;
     }

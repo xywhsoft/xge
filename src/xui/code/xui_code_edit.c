@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_code_document_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_code_provider_internal.h"
@@ -40,6 +41,7 @@ typedef struct xui_code_edit_caret_stop_t {
 } xui_code_edit_caret_stop_t;
 
 typedef struct xui_code_edit_line_layout_t {
+    int bValid; /* only a complete geometry payload may be reused */
 	uint32_t iDocumentVersion;
 	uint32_t iDpiGeneration;
 	xui_font pFont;
@@ -63,6 +65,8 @@ typedef struct xui_code_edit_line_layout_t {
 } xui_code_edit_line_layout_t;
 
 typedef struct xui_code_edit_data_t {
+    int iCacheActivity; /* 1 native mutation, 2 whole native consumer */
+    int bProducingLineLayout; /* uses the previous pointer-alignment padding */
 	xui_context pContext;
 	xui_widget pOwner;
 	xui_code_document pDocument;
@@ -298,7 +302,8 @@ static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont,
 	const char* sText, int iStart, int iEnd, float fFallbackWidth);
 static int __xuiCodeEditReadRange(xui_code_edit_data_t* pData,
 	int iStart, int iEnd, const char** psText);
-static void __xuiCodeEditLineLayoutsClear(xui_code_edit_data_t* pData);
+static int __xuiCodeEditLineLayoutClear(xui_context,xui_code_edit_line_layout_t*,bool*);
+static int __xuiCodeEditLineLayoutsClear(xui_code_edit_data_t* pData);
 static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(
 	xui_proxy pProxy, xui_font pFont, xui_code_edit_data_t* pData,
 	const char* sText, int iTextSize, float fColumnWidth);
@@ -460,6 +465,33 @@ static void __xuiCodeEditClearFindResults(xui_code_edit_data_t* pData)
 	}
 }
 
+static int __xuiCodeEditDocumentPrepare(xui_code_document document,int start,int end,
+    const char* text,int bytes,bool reset,void* user)
+{
+    xui_code_edit_data_t* data=user;
+    if(!data || data->pDocument!=document || !data->pOwner || !xuiInternalWidgetIsValid(data->pOwner))return XUI_ERROR_INVALID_STATE;
+    if(data->iCacheActivity)return XUI_ERROR_BUSY;
+    data->iCacheActivity=1;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    for(int i=0;i<data->iLineLayoutCount;++i){
+        xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
+        if(!reset && (line->iLineStart<0 || (int64_t)line->iLineStart+line->iTextSize<start || line->iLineStart>end))continue;
+        int localStart=start-line->iLineStart,localEnd=end-line->iLineStart;
+        bool within=!reset && localStart>=0 && localEnd>=localStart && localEnd<=line->iTextSize &&
+            !data->bWordWrap && line->bChunked && line->iSegmentCount==1 && line->pSegments[0].bChunked &&
+            (!bytes || (!memchr(text,'\n',(size_t)bytes) && !memchr(text,'\r',(size_t)bytes) && !memchr(text,'\t',(size_t)bytes)));
+        int status;
+        if(within)status=xuiInternalTextChunkCachePrepareEdit(data->pContext,&line->pSegments[0].tChunks,localStart,localEnd,localStart+bytes);
+        else {bool complete=false;status=__xuiCodeEditLineLayoutClear(data->pContext,line,&complete);}
+        if(status==XUI_STATUS_DEFERRED)status=XUI_ERROR_BUSY;
+        xuiInternalCleanupAdd(&receipt,status);
+        if(status!=XUI_OK)break;
+        if(!xuiInternalWidgetIsValid(data->pOwner) || data->pContext->bCloseRequested || data->pContext->bDestroyPending){xuiInternalCleanupAdd(&receipt,XUI_ERROR_INVALID_STATE);break;}
+    }
+    if(receipt.status!=XUI_OK)for(int i=0;i<data->iLineLayoutCount;++i)
+        for(int j=0;j<data->pLineLayouts[i].iSegmentCount;++j)xuiInternalTextChunkCacheCancelEdit(&data->pLineLayouts[i].pSegments[j].tChunks);
+    data->iCacheActivity=0;return xuiInternalCleanupEnd(NULL,&receipt);
+}
 static void __xuiCodeEditDocumentEdited(xui_code_document pDocument,
 	int iStartOffset, int iEndOffset, int iNewEndOffset,
 	int iStartLine, int iEndLine, int iNewEndLine, int bReset, void* pUser)
@@ -1094,35 +1126,46 @@ static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont, con
 	return tSize.fX;
 }
 
-static void __xuiCodeEditLineLayoutClear(xui_code_edit_line_layout_t* pLayout)
+static int __xuiCodeEditLineLayoutClear(xui_context context,xui_code_edit_line_layout_t* layout,bool* complete)
 {
-	int i;
-
-	if ( pLayout == NULL ) return;
-	for ( i = 0; i < pLayout->iSegmentCount; i++ ) {
-		xuiTextShapeFree(&pLayout->pSegments[i].tShape);
-		xuiInternalTextChunkCacheClear(&pLayout->pSegments[i].tChunks);
-	}
-	xrtFree(pLayout->sText);
-	xrtFree(pLayout->pSegments);
-	xrtFree(pLayout->pStops);
-	xrtFree(pLayout->pWrapOffsets);
-	memset(pLayout, 0, sizeof(*pLayout));
+    *complete=false;if(!layout)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);bool waiting=false;
+    for(int i=0;i<layout->iSegmentCount;++i){
+        bool consumed=false,called=false,chunks=false;
+        int status=xuiInternalTextShapeFreeOutcome(&layout->pSegments[i].tShape,&consumed,&called);
+        if(!consumed && !called && status==XUI_ERROR_BUSY)waiting=true;
+        else {if(called)xuiInternalContextCleanupOutcome(context,status,&receipt.status,&receipt.error);else xuiInternalCleanupAdd(&receipt,status);if(!consumed)waiting=true;}
+        status=xuiInternalTextChunkCacheDestroyPrepare(context,&layout->pSegments[i].tChunks,&chunks);
+        if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+        if(!chunks)waiting=true;
+    }
+    if(!waiting && layout->pFont && context && context->pOwnedProxy) {
+        bool consumed=false;int status=xuiFontReleaseOwnerChecked(layout->pFont,&consumed);
+        xuiInternalContextCleanupOutcome(context,status,&receipt.status,&receipt.error);
+        if(consumed)layout->pFont=NULL;else waiting=true;
+    }
+    if(waiting){
+        layout->bValid=0; /* partial owner directory is never a cache hit */
+        int result=xuiInternalCleanupEnd(NULL,&receipt);return result==XUI_OK ? XUI_STATUS_DEFERRED:result;
+    }
+    xrtFree(layout->sText);xrtFree(layout->pSegments);xrtFree(layout->pStops);xrtFree(layout->pWrapOffsets);
+    memset(layout,0,sizeof(*layout));*complete=true;return xuiInternalCleanupEnd(NULL,&receipt);
 }
-
-static void __xuiCodeEditLineLayoutsClear(xui_code_edit_data_t* pData)
+static int __xuiCodeEditLineLayoutsClear(xui_code_edit_data_t* data)
 {
-	int i;
-
-	if ( pData == NULL ) return;
-	for ( i = 0; i < pData->iLineLayoutCount; i++ ) __xuiCodeEditLineLayoutClear(&pData->pLineLayouts[i]);
-	xrtFree(pData->pLineLayouts);
-	pData->pLineLayouts = NULL;
-	pData->iLineLayoutCount = 0;
-	pData->iLineLayoutCapacity = 0;
-	pData->iLineLayoutUseStamp = 0;
-	pData->iLineLayoutDpiGeneration = 0;
+    if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    int previous=data->iCacheActivity;
+    data->iCacheActivity=1;xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);bool all=true;
+    for(int i=0;i<data->iLineLayoutCount;++i){bool complete=false;
+        int status=__xuiCodeEditLineLayoutClear(data->pContext,&data->pLineLayouts[i],&complete);
+        if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+        if(!complete)all=false;
+    }
+    if(all){xrtFree(data->pLineLayouts);data->pLineLayouts=NULL;data->iLineLayoutCount=data->iLineLayoutCapacity=0;data->iLineLayoutUseStamp=0;}
+    data->iCacheActivity=previous;int status=xuiInternalCleanupEnd(NULL,&receipt);return status!=XUI_OK ? status:all ? XUI_OK:XUI_ERROR_BUSY;
 }
+static int __xuiCodeEditDiscardLine(xui_code_edit_data_t* data,xui_code_edit_line_layout_t* line)
+{bool complete=false;int status=__xuiCodeEditLineLayoutClear(data->pContext,line,&complete);return status==XUI_STATUS_DEFERRED ? XUI_ERROR_BUSY:status;}
 
 static int __xuiCodeEditLineLayoutReserveSegments(xui_code_edit_line_layout_t* pLayout, int iCapacity)
 {
@@ -1360,7 +1403,7 @@ static int __xuiCodeEditLineLayoutTryPatch(
 		return XUI_ERROR_UNSUPPORTED;
 	}
 	pSegment = &pLayout->pSegments[0];
-	if ( !pSegment->tChunks.bValid ) return XUI_ERROR_UNSUPPORTED;
+	if ( !pSegment->tChunks.bValid && pSegment->tChunks.iPreparation!=2 ) return XUI_ERROR_UNSUPPORTED;
 	iMinSize = pLayout->iTextSize < iTextSize ? pLayout->iTextSize : iTextSize;
 	for ( iPrefix = 0; iPrefix < iMinSize; iPrefix++ ) {
 		if ( pLayout->sText[iPrefix] != sText[iPrefix] ) break;
@@ -1384,10 +1427,14 @@ static int __xuiCodeEditLineLayoutTryPatch(
 		iOldEnd++;
 		iNewEnd++;
 	}
+    if(pSegment->tChunks.iPreparation==2){
+        iPrefix=pSegment->tChunks.iEditStart;iOldEnd=pSegment->tChunks.iEditOldEnd;iNewEnd=pSegment->tChunks.iEditNewEnd;
+    }
 	sNew = (char*)xrtMalloc((size_t)iTextSize + 1u);
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memcpy(sNew, sText, (size_t)iTextSize);
 	sNew[iTextSize] = '\0';
+    pLayout->bValid=0;
 	iRet = xuiInternalTextChunkCachePatch(pData->pContext,
 		&pSegment->tChunks, sNew, iTextSize, iPrefix, iOldEnd, iNewEnd);
 	if ( iRet != XUI_OK ) {
@@ -1412,31 +1459,20 @@ static int __xuiCodeEditLineLayoutTryPatch(
 		iRet = __xuiCodeEditLineLayoutAddStop(pLayout, iTextSize,
 			pLayout->fWidth);
 	}
+	if(iRet==XUI_OK)pLayout->bValid=1;
 	return iRet;
 }
 
-static float __xuiCodeEditShapedTextOffsetX(xui_proxy pProxy, xui_font pFont,
-	const char* sText, int iTextSize, int iOffset, float fFallbackWidth)
+static float __xuiCodeEditShapedTextOffsetX(xui_proxy proxy,xui_font font,
+    xui_code_edit_data_t* data,const char* text,int bytes,int offset,float column,float fallback)
 {
-	xui_text_shape_t tShape;
-	float fX;
-	int i;
-
-	if ( sText == NULL || iTextSize <= 0 || iOffset <= 0 ) return 0.0f;
-	if ( iOffset > iTextSize ) iOffset = iTextSize;
-	memset(&tShape, 0, sizeof(tShape));
-	if ( __xuiCodeEditShapeText(pProxy, pFont, sText, iTextSize, &tShape) != XUI_OK ) return fFallbackWidth;
-	fX = 0.0f;
-	for ( i = 0; i < tShape.iClusterCount; i++ ) {
-		if ( tShape.pClusters[i].iTextStart >= iOffset ) break;
-		fX += tShape.pClusters[i].fAdvance;
-		if ( tShape.pClusters[i].iTextEnd >= iOffset ) break;
-	}
-	xuiTextShapeFree(&tShape);
-	return fX;
+    if(!text || bytes<=0 || offset<=0)return 0;
+    if(offset>bytes)offset=bytes;
+    xui_code_edit_line_layout_t* layout=__xuiCodeEditLineLayoutEnsure(proxy,font,data,text,bytes,column);
+    return layout ? __xuiCodeEditLineLayoutOffsetX(layout,offset):fallback;
 }
 
-static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(xui_proxy pProxy, xui_font pFont,
+static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsureImpl(xui_proxy pProxy, xui_font pFont,
 	xui_code_edit_data_t* pData, const char* sText, int iTextSize, float fColumnWidth)
 {
 	xui_code_edit_line_layout_t* pLayout;
@@ -1457,13 +1493,13 @@ static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(xui_proxy pPro
 	iVersion = xuiCodeDocumentGetVersion(pData->pDocument);
 	iDpiGeneration = pData->pContext != NULL ? pData->pContext->iDpiGeneration : 0u;
 	if ( pData->iLineLayoutDpiGeneration != iDpiGeneration ) {
-		__xuiCodeEditLineLayoutsClear(pData);
+        if(__xuiCodeEditLineLayoutsClear(pData)!=XUI_OK)return NULL;
 		pData->iLineLayoutDpiGeneration = iDpiGeneration;
 	}
 	iLineStart = __xuiCodeEditLineLayoutSourceStart(pData, sText, iTextSize);
 	for ( i = 0; i < pData->iLineLayoutCount; i++ ) {
 		pLayout = &pData->pLineLayouts[i];
-		if ( pLayout->pFont == pFont &&
+		if ( pLayout->bValid && pLayout->pFont == pFont &&
 		     pLayout->iDpiGeneration == iDpiGeneration &&
 		     pLayout->iTabColumns == pData->iTabColumns && pLayout->iTextSize == iTextSize &&
 		     pLayout->sText != NULL &&
@@ -1515,13 +1551,15 @@ static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(xui_proxy pPro
 		iSlot = iOldest;
 	}
 	pLayout = &pData->pLineLayouts[iSlot];
-	__xuiCodeEditLineLayoutClear(pLayout);
+    if(__xuiCodeEditDiscardLine(pData,pLayout)!=XUI_OK)return NULL;
 	pLayout->sText = (char*)xrtMalloc((size_t)iTextSize + 1u);
 	if ( pLayout->sText == NULL ) return NULL;
 	memcpy(pLayout->sText, sText, (size_t)iTextSize);
 	pLayout->sText[iTextSize] = '\0';
 	pLayout->iDocumentVersion = iVersion;
 	pLayout->iDpiGeneration = iDpiGeneration;
+    iRet=xuiInternalFontAdmit(pData->pContext,pFont);
+    if(iRet!=XUI_OK){__xuiCodeEditDiscardLine(pData,pLayout);return NULL;}
 	pLayout->pFont = pFont;
 	pLayout->iTabColumns = pData->iTabColumns;
 	pLayout->iLineStart = iLineStart;
@@ -1531,73 +1569,85 @@ static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(xui_proxy pPro
 	if ( fTabWidth <= 0.0f ) fTabWidth = fColumnWidth > 0.0f ? fColumnWidth : 8.0f;
 	fX = 0.0f;
 	iRet = __xuiCodeEditLineLayoutAddStop(pLayout, 0, fX);
-	if ( iRet != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
+	if ( iRet != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
 	for ( i = 0; i < iTextSize; ) {
 		if ( pLayout->sText[i] == '\t' ) {
 			fX = (floorf(fX / fTabWidth) + 1.0f) * fTabWidth;
 			iRet = __xuiCodeEditLineLayoutAddStop(pLayout, i + 1, fX);
-			if ( iRet != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
+			if ( iRet != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
 			i++;
 			continue;
 		}
 		iStart = i;
 		while ( i < iTextSize && pLayout->sText[i] != '\t' ) i++;
 		iRet = __xuiCodeEditLineLayoutReserveSegments(pLayout, pLayout->iSegmentCount + 1);
-		if ( iRet != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
-		memset(&pLayout->pSegments[pLayout->iSegmentCount], 0, sizeof(*pLayout->pSegments));
-		pLayout->pSegments[pLayout->iSegmentCount].iStart = iStart;
-		pLayout->pSegments[pLayout->iSegmentCount].iEnd = i;
-		pLayout->pSegments[pLayout->iSegmentCount].fX = fX;
+		if ( iRet != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
+        int segmentIndex=pLayout->iSegmentCount++;
+		memset(&pLayout->pSegments[segmentIndex], 0, sizeof(*pLayout->pSegments));
+		pLayout->pSegments[segmentIndex].iStart = iStart;
+		pLayout->pSegments[segmentIndex].iEnd = i;
+		pLayout->pSegments[segmentIndex].fX = fX;
 		if ( !pData->bWordWrap && pData->pContext != NULL &&
 		     i - iStart >= XUI_INTERNAL_TEXT_CHUNK_THRESHOLD ) {
 			iRet = xuiInternalTextChunkCacheEnsure(pData->pContext,
-				&pLayout->pSegments[pLayout->iSegmentCount].tChunks,
+				&pLayout->pSegments[segmentIndex].tChunks,
 				pFont, pLayout->sText + iStart, i - iStart,
 				iDpiGeneration);
 			if ( iRet == XUI_OK ) {
-				pLayout->pSegments[pLayout->iSegmentCount].bChunked = 1;
-				pLayout->pSegments[pLayout->iSegmentCount].fWidth =
+				pLayout->pSegments[segmentIndex].bChunked = 1;
+				pLayout->pSegments[segmentIndex].fWidth =
 					xuiInternalTextChunkCacheWidth(
-						&pLayout->pSegments[pLayout->iSegmentCount].tChunks);
+						&pLayout->pSegments[segmentIndex].tChunks);
 				pLayout->bChunked = 1;
 				iRet = __xuiCodeEditLineLayoutAddStop(pLayout, iStart, fX);
-				fX += pLayout->pSegments[pLayout->iSegmentCount].fWidth;
+				fX += pLayout->pSegments[segmentIndex].fWidth;
 				if ( iRet == XUI_OK ) {
 					iRet = __xuiCodeEditLineLayoutAddStop(pLayout, i, fX);
 				}
 				if ( iRet != XUI_OK ) {
-					__xuiCodeEditLineLayoutClear(pLayout);
+					__xuiCodeEditDiscardLine(pData,pLayout);
 					return NULL;
 				}
-				pLayout->iSegmentCount++;
 				continue;
 			}
-			xuiInternalTextChunkCacheClear(
-				&pLayout->pSegments[pLayout->iSegmentCount].tChunks);
+            bool chunksDone=false;
+            int cleanup=xuiInternalTextChunkCacheDestroyPrepare(pData->pContext,&pLayout->pSegments[segmentIndex].tChunks,&chunksDone);
+            if(cleanup!=XUI_OK || !chunksDone){__xuiCodeEditDiscardLine(pData,pLayout);return NULL;}
 			if ( iRet != XUI_ERROR_UNSUPPORTED ) {
-				__xuiCodeEditLineLayoutClear(pLayout);
+				__xuiCodeEditDiscardLine(pData,pLayout);
 				return NULL;
 			}
 		}
 		iRet = __xuiCodeEditShapeText(pProxy, pFont, pLayout->sText + iStart, i - iStart,
-			&pLayout->pSegments[pLayout->iSegmentCount].tShape);
-		if ( iRet != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
-		for ( iStart = 0; iStart < pLayout->pSegments[pLayout->iSegmentCount].tShape.iClusterCount; iStart++ ) {
-			xui_text_cluster_t* pCluster = &pLayout->pSegments[pLayout->iSegmentCount].tShape.pClusters[iStart];
+			&pLayout->pSegments[segmentIndex].tShape);
+		if ( iRet != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
+		for ( iStart = 0; iStart < pLayout->pSegments[segmentIndex].tShape.iClusterCount; iStart++ ) {
+			xui_text_cluster_t* pCluster = &pLayout->pSegments[segmentIndex].tShape.pClusters[iStart];
 			float fEnd = fX + pCluster->fAdvance;
-			iRet = __xuiCodeEditLineLayoutAddStop(pLayout, pLayout->pSegments[pLayout->iSegmentCount].iStart + pCluster->iTextStart, fX);
-			if ( iRet == XUI_OK ) iRet = __xuiCodeEditLineLayoutAddStop(pLayout, pLayout->pSegments[pLayout->iSegmentCount].iStart + pCluster->iTextEnd, fEnd);
-			if ( iRet != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
+			iRet = __xuiCodeEditLineLayoutAddStop(pLayout, pLayout->pSegments[segmentIndex].iStart + pCluster->iTextStart, fX);
+			if ( iRet == XUI_OK ) iRet = __xuiCodeEditLineLayoutAddStop(pLayout, pLayout->pSegments[segmentIndex].iStart + pCluster->iTextEnd, fEnd);
+			if ( iRet != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
 			fX = fEnd;
 		}
-		pLayout->pSegments[pLayout->iSegmentCount].fWidth =
-			fX - pLayout->pSegments[pLayout->iSegmentCount].fX;
-		pLayout->iSegmentCount++;
+		pLayout->pSegments[segmentIndex].fWidth =
+			fX - pLayout->pSegments[segmentIndex].fX;
 	}
 	pLayout->fWidth = fX;
-	if ( __xuiCodeEditLineLayoutAddStop(pLayout, iTextSize, fX) != XUI_OK ) { __xuiCodeEditLineLayoutClear(pLayout); return NULL; }
+	if ( __xuiCodeEditLineLayoutAddStop(pLayout, iTextSize, fX) != XUI_OK ) { __xuiCodeEditDiscardLine(pData,pLayout); return NULL; }
+    pLayout->bValid=1;
 	return pLayout;
 }
+static xui_code_edit_line_layout_t* __xuiCodeEditLineLayoutEnsure(xui_proxy proxy,xui_font font,
+    xui_code_edit_data_t* data,const char* text,int bytes,float column)
+{
+    if(!data || data->iCacheActivity==1 || data->bProducingLineLayout)return NULL;
+    int previous=data->iCacheActivity;data->iCacheActivity=2;data->bProducingLineLayout=1;
+    xui_code_edit_line_layout_t* result=__xuiCodeEditLineLayoutEnsureImpl(proxy,font,data,text,bytes,column);
+    data->bProducingLineLayout=0;data->iCacheActivity=previous;
+    if(data->pContext && (data->pContext->bCloseRequested || data->pContext->bDestroyPending))return NULL;
+    return result;
+}
+
 
 static float __xuiCodeEditLineLayoutOffsetX(const xui_code_edit_line_layout_t* pLayout, int iOffset)
 {
@@ -2173,10 +2223,11 @@ static xui_code_edit_data_t* __xuiCodeEditGetData(xui_widget pWidget)
 
 	if ( !xuiInternalWidgetIsValid(pWidget) ) return NULL;
 	pContext = xuiWidgetGetContext(pWidget);
-	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
+	if ( !xuiInternalContextIsValid(pContext) || pContext->bCloseRequested ) return NULL;
 	pType = xuiWidgetFindType(pContext, "codeedit");
 	if ( (pType == NULL) || !xuiWidgetIsType(pWidget, pType) ) return NULL;
-	return (xui_code_edit_data_t*)xuiWidgetGetTypeData(pWidget);
+    xui_code_edit_data_t* data=xuiWidgetGetTypeData(pWidget);
+    return data && data->iCacheActivity!=1 ? data:NULL;
 }
 
 static int __xuiCodeEditAlive(xui_context pContext, xui_widget pWidget,
@@ -2409,7 +2460,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	xuiCodeFoldStateDestroy(pData->pFoldState);
 	xuiCodeThemeDestroy(pData->pTheme);
 	xuiCodeSelectionDestroy(pData->pSelection);
-	xuiCodeDocumentDestroy(pData->pDocument);
+    if(pData->pDocument)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeDocumentDestroyOwned(pWidget,pData->pDocument));
 	pData->pCommandMap = NULL;
 	pData->pMargins = NULL;
 	pData->pProviders = NULL;
@@ -2895,6 +2946,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	int iRet;
 
 	iRet = xuiCodeDocumentCreate(&pData->pDocument);
+    if(iRet==XUI_OK)iRet=xuiInternalCodeDocumentClaimOwner(pData->pDocument,pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionCreate(&pData->pSelection);
 	if ( iRet == XUI_OK ) iRet = xuiCodeThemeCreate(&pData->pTheme);
 	if ( iRet == XUI_OK ) iRet = xuiCodeFoldStateCreate(&pData->pFoldState);
@@ -2906,8 +2958,8 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryCreate(&pData->pLanguages);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryLoadDefaults(pData->pLanguages);
 	if ( iRet == XUI_OK ) {
-		iRet = xuiInternalCodeDocumentSetEditObserver(pData->pDocument,
-			__xuiCodeEditDocumentEdited, pData);
+        iRet=xuiInternalCodeDocumentSetEditObserverChecked(pData->pDocument,pWidget->pContext,__xuiCodeEditDocumentPrepare,
+            __xuiCodeEditDocumentEdited,pData);
 	}
 	if ( iRet == XUI_OK ) {
 		iRet = xuiCodeMarginModelLoadDefaults(
@@ -3578,8 +3630,8 @@ static xui_rect_t __xuiCodeEditImeCandidateRect(xui_widget pWidget, void* pUser)
 	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
 	fColumnWidth = __xuiCodeEditColumnWidth(pWidget, pData);
 	if ( pData->bImeComposing && pData->sImeComposition != NULL ) {
-		tWorld.fX += __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData->sImeComposition,
-			(int)strlen(pData->sImeComposition), pData->iImeCursor, (float)pData->iImeCursor * fColumnWidth);
+		tWorld.fX += __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData, pData->sImeComposition,
+			(int)strlen(pData->sImeComposition), pData->iImeCursor, fColumnWidth, (float)pData->iImeCursor * fColumnWidth);
 	}
 	return tWorld;
 }
@@ -5218,7 +5270,7 @@ static void __xuiCodeEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData != NULL ) memset(pData, 0, sizeof(*pData));
 }
 
-static int __xuiCodeEditMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+static int __xuiCodeEditMeasureImpl(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
 	(void)pUser;
@@ -5236,6 +5288,20 @@ static int __xuiCodeEditMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_
 	}
 	return XUI_OK;
 }
+static int __xuiCodeEditMeasure(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* size,void* user)
+{
+    xui_code_edit_data_t* data=__xuiCodeEditGetData(widget);
+    if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->iCacheActivity)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    data->iCacheActivity=2;
+    status=__xuiCodeEditMeasureImpl(widget,constraint,size,user);
+    data->iCacheActivity=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
+
 
 static void __xuiCodeEditDefaultLayout(xui_layout_t* pLayout)
 {
@@ -6253,7 +6319,7 @@ static int __xuiCodeEditRenderMinimap(xui_widget pWidget, xui_proxy pProxy,
 	return XUI_OK;
 }
 
-static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_code_edit_data_t* pData;
 	xui_context pContext;
@@ -6556,15 +6622,15 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					int iImeEndLine = iCaretLine;
 					int iSuffixStart = iCaretEnd;
 					float fImeAnchorX = tCaret.fX;
-					float fImeWidth = __xuiCodeEditShapedTextOffsetX(pProxy, pFont,
-						pData->sImeComposition, iImeLength, iImeLength, (float)iImeLength * fColumnWidth);
-					float fImeCursorX = __xuiCodeEditShapedTextOffsetX(pProxy, pFont,
-						pData->sImeComposition, iImeLength, pData->iImeCursor, (float)pData->iImeCursor * fColumnWidth);
-					float fImeSelectX0 = __xuiCodeEditShapedTextOffsetX(pProxy, pFont,
-						pData->sImeComposition, iImeLength, pData->iImeSelectionStart,
+					float fImeWidth = __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData,
+						pData->sImeComposition, iImeLength, iImeLength, fColumnWidth, (float)iImeLength * fColumnWidth);
+					float fImeCursorX = __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData,
+						pData->sImeComposition, iImeLength, pData->iImeCursor, fColumnWidth, (float)pData->iImeCursor * fColumnWidth);
+					float fImeSelectX0 = __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData,
+						pData->sImeComposition, iImeLength, pData->iImeSelectionStart, fColumnWidth,
 						(float)pData->iImeSelectionStart * fColumnWidth);
-					float fImeSelectX1 = __xuiCodeEditShapedTextOffsetX(pProxy, pFont,
-						pData->sImeComposition, iImeLength, pData->iImeSelectionEnd,
+					float fImeSelectX1 = __xuiCodeEditShapedTextOffsetX(pProxy, pFont, pData,
+						pData->sImeComposition, iImeLength, pData->iImeSelectionEnd, fColumnWidth,
 						(float)pData->iImeSelectionEnd * fColumnWidth);
 
 					(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument,
@@ -6620,6 +6686,20 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
 }
+static int __xuiCodeEditCacheRender(xui_widget widget,xui_draw_context draw,uint32_t state,void* user)
+{
+    xui_code_edit_data_t* data=__xuiCodeEditGetData(widget);
+    if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->iCacheActivity)return XUI_ERROR_BUSY;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
+    data->iCacheActivity=2;
+    status=__xuiCodeEditCacheRenderImpl(widget,draw,state,user);
+    data->iCacheActivity=0;
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
+
 
 static void __xuiCodeEditRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
 {
@@ -6686,6 +6766,48 @@ static void __xuiCodeEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, XUI_WIDGET_DIRTY_LAYOUT | iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
+static int __xuiCodeEditDestroyPrepare(xui_widget widget,void* raw,bool* complete)
+{
+    if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    *complete=false;xui_code_edit_data_t* data=raw;bool waiting=false;
+    if(data->iCacheActivity)return XUI_STATUS_DEFERRED;
+    data->iCacheActivity=1;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+
+    for(int i=0;i<data->iLineLayoutCount;++i) {
+        bool done=false;int status=__xuiCodeEditLineLayoutClear(widget->pContext,&data->pLineLayouts[i],&done);
+        if(status!=XUI_STATUS_DEFERRED)xuiInternalCleanupAdd(&receipt,status);
+        if(!done)waiting=true;
+    }
+
+    data->iCacheActivity=0;*complete=!waiting;int status=xuiInternalCleanupEnd(NULL,&receipt);
+    return status!=XUI_OK ? status:waiting ? XUI_STATUS_DEFERRED:XUI_OK;
+}
+static int __xuiCodeEditDestroyReady(xui_widget widget,const void* raw)
+{
+    const xui_code_edit_data_t* data=raw;bool managed=widget->pContext->pOwnedProxy!=NULL;int status;
+    if(data->iCacheActivity)return XUI_ERROR_BUSY;
+    for(int i=0;i<data->iLineLayoutCount;++i){
+        const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
+        for(int j=0;j<line->iSegmentCount;++j){
+            status=xuiInternalTextShapeReady(&line->pSegments[j].tShape,managed);if(status!=XUI_OK)return status;
+            status=xuiInternalTextChunkCacheReady(&line->pSegments[j].tChunks,managed);if(status!=XUI_OK)return status;
+        }
+    }
+    return XUI_OK;
+}
+static bool __xuiCodeEditTraceOwnership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    const xui_code_edit_data_t* data=raw;if(data->iCacheActivity)return false;
+    for(int i=0;i<data->iLineLayoutCount;++i){
+        const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
+        if(widget->pContext->pOwnedProxy && line->pFont && !visit(xuiFontOwnership(line->pFont),user))return false;
+        for(int j=0;j<line->iSegmentCount;++j)
+            if(!xuiInternalTextShapeTraceOwnership(&line->pSegments[j].tShape,visit,user) ||
+                !xuiInternalTextChunkCacheTraceOwnership(&line->pSegments[j].tChunks,visit,user))return false;
+    }
+    return true;
+}
 XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -6716,6 +6838,7 @@ XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiCodeEditRegisterStyleProperties(pContext, pType);
 	    static const size_t fontOffsets[]={offsetof(xui_code_edit_data_t,pFont)};
+    pType->onTraceOwnership=__xuiCodeEditTraceOwnership;pType->onDestroyReady=__xuiCodeEditDestroyReady;pType->onDestroyPrepare=__xuiCodeEditDestroyPrepare;
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
     return pType;
 }
@@ -6955,12 +7078,15 @@ XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)
 	pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	xui_font_slot_update_t fontUpdate={0};
-    int fontStatus=xuiInternalFontSlotBegin(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,&fontUpdate);
+    if(pData->iCacheActivity)return XUI_ERROR_BUSY;
+    int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pFont,pWidget->bTypeInitialized!=0,false,&fontUpdate);
     if(fontStatus!=XUI_OK)return fontStatus;
+    fontStatus=__xuiCodeEditLineLayoutsClear(pData);
+    if(fontStatus==XUI_OK)fontStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(fontStatus!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,fontStatus);
 	pData->iMaxLineLengthVersion = 0;
 	pData->iMaxLineLengthTabColumns = 0;
 	pData->iCachedMaxLineLength = 0;
-	__xuiCodeEditLineLayoutsClear(pData);
 	__xuiCodeEditWrapIndexClear(pData);
 	if ( pData->pMenu != NULL ) (void)xuiMenuSetFont(pData->pMenu, pFont);
 	if ( pData->pFindWindow != NULL ) {
@@ -7748,7 +7874,7 @@ static void __xuiCodeEditShowCompletionDocumentation(xui_code_edit_data_t* pData
 	(void)xuiPopupSetOpen(pData->pAssistPopup, 1);
 }
 
-XUI_API int xuiCodeEditGetOffsetRect(xui_widget pWidget, int iOffset, xui_rect_t* pRect)
+static int __xuiCodeEditGetOffsetRectImpl(xui_widget pWidget, int iOffset, xui_rect_t* pRect)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	xui_context pContext;
@@ -7804,6 +7930,17 @@ XUI_API int xuiCodeEditGetOffsetRect(xui_widget pWidget, int iOffset, xui_rect_t
 	};
 	return XUI_OK;
 }
+XUI_API int xuiCodeEditGetOffsetRect(xui_widget widget,int offset,xui_rect_t* rect)
+{
+    xui_code_edit_data_t* data=__xuiCodeEditGetData(widget);
+    if(!data || !rect)return XUI_ERROR_INVALID_ARGUMENT;
+    if(data->bProducingLineLayout)return XUI_ERROR_BUSY;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
+    int previous=data->iCacheActivity;data->iCacheActivity=2;
+    status=__xuiCodeEditGetOffsetRectImpl(widget,offset,rect);data->iCacheActivity=previous;
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+}
+
 
 XUI_API int xuiCodeEditGetTextOffsetRect(xui_widget pWidget, int iByteOffset,
 	xui_rect_t* pRect)

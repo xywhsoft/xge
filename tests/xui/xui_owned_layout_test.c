@@ -1,114 +1,122 @@
-/* Share the native owner fixture; this gate runs the new sparse publishers. */
-#define main xui_owned_event_regression_main
-#include "xui_owned_callback_test.c"
+/* CPU-only actual native unique Layout lifetime and resource ownership. */
+#define main xui_unused_owned_fonts_main
+#include "xui_owned_fonts_test.c"
 #undef main
 
-enum { LAYOUT_CLEAR=100,LAYOUT_CLOSE,LAYOUT_NEST };
-static unsigned prepared,children,completed;
-static int measure_owned(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output,void* user)
+typedef struct LayoutProvider {
+    xui_test_proxy_state_t state;
+    Owner owner;
+    xui_proxy proxy;
+    xui_context context;
+    xui_text_layout layout;
+    unsigned fontDrops,paintDrops,shapes,draws,invalidations;
+    bool ready,closeDuringDraw,busyNextShape,oomAfterShape,dropMakesBusy;
+    int paintStatus;
+    xerror* paintError;
+} LayoutProvider;
+typedef struct LayoutPaint {xui_font font;LayoutProvider* provider;} LayoutPaint;
+static bool layoutPaintReady(const void* raw){return ((const LayoutPaint*)raw)->provider->ready;}
+static bool layoutPaintTrace(const void* raw,xrtownershipvisitor visit,void* user)
+{return visit(xuiFontOwnership(((const LayoutPaint*)raw)->font),user);}
+static int layoutPaintDrop(void* raw)
 {
-    (void)constraint;Owner* owner=user;assert(owner->refs>=2 && !owner->released);
-    bool nested=owner->inCall;owner->inCall=true;++owner->calls;
-    if(owner->action==LAYOUT_CLEAR)assert(xuiWidgetSetContentMeasureCallback(widget,NULL,NULL)==XUI_OK);
-    else if(owner->action==LAYOUT_CLOSE)xuiDestroy(owner->context);
-    else if(owner->action==LAYOUT_NEST && !nested){xui_vec2_t size={0};assert(xuiWidgetMeasureContent(widget,(xui_vec2_t){100,100},&size)==XUI_OK);}
-    *output=(xui_vec2_t){12,13};assert(owner->refs && !owner->released);owner->inCall=nested;return XUI_OK;
+    LayoutPaint* paint=raw;LayoutProvider* p=paint->provider;++p->paintDrops;
+    assert(xuiFontReleaseChecked(paint->font)==XUI_OK);xrtFree(paint);
+    if(p->dropMakesBusy){p->dropMakesBusy=false;p->ready=false;}
+    if(p->paintError)xrtSetErrorTake(xrtErrorRef(p->paintError));
+    return p->paintStatus;
 }
-typedef struct MeasureUser {unsigned marker;Owner* owner;} MeasureUser;
-static int measure_with_distinct_user(xui_widget widget,xui_vec2_t constraint,xui_vec2_t* output,void* raw)
+static const xui_text_paint_ownership_v1_t layoutPaintOps={sizeof(layoutPaintOps),XUI_TEXT_PAINT_OWNERSHIP_V1_TAG,layoutPaintReady,layoutPaintTrace,layoutPaintDrop};
+static int layoutShape(xui_proxy proxy,const xui_text_item_t* item,xui_text_shape_t* shape)
 {
-    MeasureUser* user=raw;assert(user->marker==0xCE11U);
-    return measure_owned(widget,constraint,output,user->owner);
-}
-static int prepare_owned(xui_widget widget,void* user)
-{(void)widget;Owner* owner=user;assert(owner->refs>=2 && !owner->released);++owner->calls;++prepared;return XUI_OK;}
-static int rect_owned(xui_widget widget,xui_rect_t rect,void* user)
-{(void)widget;(void)rect;Owner* owner=user;assert(owner->refs>=2 && !owner->released);++owner->calls;++completed;return XUI_OK;}
-static int children_owned(xui_widget widget,xui_rect_t rect,void* user)
-{
-    Owner* owner=user;assert(owner->refs>=2 && !owner->released);++owner->calls;++children;
-    for(xui_widget child=widget->pFirstChild;child;child=child->pNextSibling)
-        if(xuiLayoutArrangeChild(widget,child,rect)!=XUI_OK)return XUI_ERROR_INVALID_STATE;
+    LayoutProvider* p=proxy->pUser;int n=item->iTextSize<0 ? (int)strlen(item->sText):item->iTextSize;
+    *shape=(xui_text_shape_t){.iSize=sizeof(*shape),.iTextSize=n,.iFlags=item->iFlags,.fAscent=12,.fDescent=4,.fLineHeight=16,.fHeight=16,.fWidth=n*8};
+    if(n){shape->pClusters=xrtCalloc(n,sizeof(*shape->pClusters));if(!shape->pClusters)return XUI_ERROR_OUT_OF_MEMORY;}
+    shape->iClusterCount=n;
+    for(int i=0;i<n;++i)shape->pClusters[i]=(xui_text_cluster_t){.iSize=sizeof(xui_text_cluster_t),.iTextStart=i,.iTextEnd=i+1,.fAdvance=8};
+    LayoutPaint* paint=xrtMalloc(sizeof(*paint));if(!paint){xuiTextShapeFree(shape);return XUI_ERROR_OUT_OF_MEMORY;}
+    int status=xuiFontAddRef(item->pFont);if(status!=XUI_OK){xrtFree(paint);xuiTextShapeFree(shape);return status;}
+    *paint=(LayoutPaint){item->pFont,p};shape->pPaint=paint;shape->pPaintOwnership=&layoutPaintOps;++p->shapes;
+    if(p->busyNextShape){p->busyNextShape=false;p->ready=false;}
+    if(p->oomAfterShape){p->oomAfterShape=false;assert(xrtMemDebugFailAfter(0));}
     return XUI_OK;
 }
-static void measure_lifetimes(void)
+static int layoutDraw(xui_proxy proxy,xui_surface target,const xui_text_item_t* item,xui_rect_t rect,uint32_t color,uint32_t flags)
 {
-    for(int action=LAYOUT_CLEAR;action<=LAYOUT_NEST;++action){
-        xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
-        Owner owner={.refs=1,.context=context,.action=action};xui_callback_owner_t ref=descriptor(&owner);
-        xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-        assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_owned,&owner,&ref)==XUI_OK);
-        xrtMemDebugSnapshot(&after);assert(after.AllocCount-before.AllocCount==2 &&
-            after.LiveBytes-before.LiveBytes==sizeof(xui_event_owners_t)+sizeof(xui_callback_binding_t));
-        assert(drop(&owner));xui_vec2_t output={0};
-        assert(xuiWidgetMeasureContent(widget,(xui_vec2_t){100,100},&output)==XUI_OK);
-        assert(owner.calls==(action==LAYOUT_NEST ? 2u : 1u));
-        if(action!=LAYOUT_CLOSE){xuiDestroy(context);}
-        assert(owner.released==1 && !owner.refs);
+    (void)rect;(void)color;(void)flags;LayoutProvider* p=proxy->pUser;
+    assert(xuiSurfaceGetProxy(target) && item->sText && item->pFont);++p->draws;
+    assert(!strcmp(xuiTextLayoutGetText(p->layout),"abc") && xuiTextLayoutGetSize(p->layout).fX==24);
+    if(p->closeDuringDraw){
+        bool consumed=true;assert(xuiTextLayoutDestroyOwnerChecked(p->layout,&consumed)==XUI_STATUS_DEFERRED && !consumed);
+        assert(xuiDestroyChecked(p->context)==XUI_STATUS_DEFERRED);
+        assert(xuiTextLayoutGetContext(p->layout)==p->context);
     }
+    return XUI_OK;
 }
-static void sparse_graph_and_calls(void)
+static void layoutInvalidated(void* raw)
 {
-    xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
-    Owner owner={.refs=1,.context=context};xui_callback_owner_t ref=descriptor(&owner);
-    MeasureUser user={0xCE11U,&owner};
-    assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_with_distinct_user,&user,&ref)==XUI_OK);
-    assert(xuiWidgetSetLayoutPrepareCallbackOwned(widget,prepare_owned,&owner,&ref)==XUI_OK);
-    assert(xuiWidgetSetLayoutChildrenCallbackOwned(widget,children_owned,&owner,&ref)==XUI_OK);
-    assert(xuiWidgetSetLayoutCompleteCallbackOwned(widget,rect_owned,&owner,&ref)==XUI_OK && owner.refs==5);
-    xrtownershipscope freeze={0};unsigned edges=0;assert(xrtOwnershipFreezeTryBegin(&freeze));
-    assert(xuiContextTraceOwnership(context,visit,&edges) && edges==4);
-    assert(xrtOwnershipScopeEnd(&freeze));
-    xui_widget child=NULL;assert(xuiWidgetCreate(context,&child)==XUI_OK && xuiWidgetAddChild(widget,child)==XUI_OK);
-    assert(xuiSetViewportSize(context,200,100)==XUI_OK && xuiSetRootWidget(context,widget)==XUI_OK);
-    assert(xuiLayout(context)==XUI_OK && prepared && children && completed);
-    xui_vec2_t output={0};assert(xuiWidgetMeasureContent(widget,(xui_vec2_t){100,100},&output)==XUI_OK);
-    xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    for(unsigned i=0;i<200;++i){assert(xuiWidgetMeasureContent(widget,(xui_vec2_t){100,100},&output)==XUI_OK && output.fX==12 && output.fY==13);}
-    xrtMemDebugSnapshot(&after);assert(before.AllocCount==after.AllocCount && before.FreeCount==after.FreeCount && before.ReallocCount==after.ReallocCount);
-    assert(drop(&owner));xuiDestroy(context);assert(owner.released==1);
+    LayoutProvider* p=raw;++p->invalidations;bool consumed=true;
+    assert(xuiTextLayoutDestroyOwnerChecked(p->layout,&consumed)==XUI_ERROR_INVALID_STATE && !consumed);
 }
-static void sparse_registration_reentry(void)
+static void layoutSetup(LayoutProvider* p,xui_font* font)
 {
-    xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
-    Owner nested={.refs=1,.context=context};Owner owner={.refs=1,.context=context,.widget=widget,.nested=&nested,.holdAction=1};
-    xui_callback_owner_t ref=descriptor(&owner);
-    assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_owned,&owner,&ref)==XUI_OK && owner.refs==2 && nested.refs==2);
-    xrtownershipscope freeze={0};unsigned edges=0;assert(xrtOwnershipFreezeTryBegin(&freeze));
-    assert(xuiContextTraceOwnership(context,visit,&edges) && edges==2);assert(xrtOwnershipScopeEnd(&freeze));
-    xuiDestroy(context);assert(owner.refs==1 && nested.refs==1 && drop(&owner) && drop(&nested));
-    for(int action=3;action<=4;++action){
-        create(&context,&widget);owner=(Owner){.refs=1,.context=context,.widget=widget,.holdAction=action};ref=descriptor(&owner);
-        assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_owned,&owner,&ref)==XUI_ERROR_INVALID_STATE);
-        assert(owner.refs==1 && drop(&owner));if(action==3)xuiDestroy(context);
-    }
+    p->ready=true;p->owner.refs=1;xuiTestProxyInit(&p->state);
+    p->state.tProxy.pUser=p;p->state.tProxy.fontGetMetrics=metrics;p->state.tProxy.textMeasure=measure;
+    p->state.tProxy.textShape=layoutShape;p->state.tProxy.textDraw=layoutDraw;
+    xui_callback_owner_t binding=ownerRef(&p->owner);
+    assert(xuiProxyCreateOwned(&p->state.tProxy,&binding,&p->proxy)==XUI_OK);
+    assert(xuiCreate(&p->context)==XUI_OK && xuiSetProxyOwned(p->context,p->proxy)==XUI_OK);
+    *font=fontCreate(p->proxy,&p->fontDrops,XUI_OK);
 }
-static void sparse_failures(void)
+static xui_text_layout_desc_t layoutDesc(xui_font font,const char* text)
+{return (xui_text_layout_desc_t){.iSize=sizeof(xui_text_layout_desc_t),.pFont=font,.sText=text,.iTextSize=-1,.iWrapMode=XUI_TEXT_WRAP_NONE,.fMaxWidth=1000,.fMaxHeight=1000};}
+static bool layoutVisit(xrtownershipref ref,void* raw){assert(ref.Data && ref.Ops);++*(unsigned*)raw;return true;}
+static void layoutBasicAndReset(void)
 {
-    for(int64_t point=0;point<2;++point){
-        xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
-        Owner owner={.refs=1,.context=context};xui_callback_owner_t ref=descriptor(&owner);
-        assert(xrtMemDebugFailAfter(point));
-        assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_owned,&owner,&ref)==XUI_ERROR_OUT_OF_MEMORY);
-        assert(xrtMemDebugFailAfter(-1));xrtClearError();assert(owner.refs==1 && !widget->onContentMeasure && !widget->pEventOwners);
-        xuiDestroy(context);assert(drop(&owner));
+    LayoutProvider p={0};xui_font font;layoutSetup(&p,&font);xui_text_layout_desc_t desc=layoutDesc(font,"abcde");
+    assert(xuiTextLayoutCreate(p.context,&p.layout,&desc)==XUI_OK && refs(xuiFontOwnership(font))==3);
+    unsigned edges=0;xrtownershipscope frozen={0};assert(xrtOwnershipFreezeTryBegin(&frozen));
+    assert(xuiTextLayoutTraceOwnership(p.layout,layoutVisit,&edges) && edges==2);assert(xrtOwnershipScopeEnd(&frozen));
+    const char* previous=xuiTextLayoutGetText(p.layout);assert(!strcmp(previous,"abcde"));
+    p.ready=false;desc.sText="uncommitted";assert(xuiTextLayoutReset(p.layout,&desc)==XUI_ERROR_BUSY);
+    assert(xuiTextLayoutGetText(p.layout)==previous && !p.paintDrops && p.shapes==1);p.ready=true;
+    desc.sText=previous+1;assert(xuiTextLayoutReset(p.layout,&desc)==XUI_OK && !strcmp(xuiTextLayoutGetText(p.layout),"bcde"));
+    assert(p.paintDrops==1 && refs(xuiFontOwnership(font))==3);
+    unsigned failures=0,successes=0;
+    for(int budget=0;budget<16;++budget){
+        const char* before=xuiTextLayoutGetText(p.layout);desc.sText="0123456789";
+        assert(xrtMemDebugFailAfter(budget));int status=xuiTextLayoutReset(p.layout,&desc);xrtMemDebugFailClear();xrtClearError();
+        if(status!=XUI_OK){++failures;assert(xuiTextLayoutGetText(p.layout)==before);}else{++successes;assert(!strcmp(xuiTextLayoutGetText(p.layout),desc.sText));}
+        assert(refs(xuiFontOwnership(font))==3);
     }
-    for(unsigned holdFailure=0;holdFailure<2;++holdFailure){
-        xui_context context=NULL;xui_widget widget=NULL;create(&context,&widget);
-        Owner owner={.refs=1,.context=context,.action=holdFailure ? READ : LAYOUT_CLEAR};xui_callback_owner_t ref=descriptor(&owner);
-        assert(xuiWidgetSetContentMeasureCallbackOwned(widget,measure_owned,&owner,&ref)==XUI_OK && drop(&owner));
-        if(holdFailure)owner.failHold=true;else owner.failDrop=true;
-        xui_call_scope_t scope={0};assert(xuiCallScopeBegin(context,&scope)==XUI_OK);xui_vec2_t output={0};
-        assert(xuiWidgetMeasureContent(widget,(xui_vec2_t){100,100},&output)==XUI_OK);
-        assert(xuiCallScopeEnd(&scope)==XUI_ERROR_CALLBACK_FAILED && !xrtGetError());
-        xuiDestroy(context);assert(owner.released==1);
-    }
+    assert(failures && successes);
+    xui_lifetime_link_t watch={0};assert(xuiTextLayoutLifetimeWatch(p.layout,&watch,layoutInvalidated,&p)==XUI_OK);
+    assert(xuiDestroyChecked(p.context)==XUI_OK && xuiTextLayoutGetContext(p.layout)==NULL && !p.invalidations);
+    assert(xuiTextLayoutGetText(p.layout)==NULL && xuiTextLayoutReset(p.layout,&desc)==XUI_ERROR_INVALID_STATE);
+    assert(xuiTextLayoutDestroyChecked(p.layout)==XUI_OK && p.invalidations==1 && !watch.ppPrevious);
+    assert(refs(xuiFontOwnership(font))==1 && p.paintDrops==p.shapes);
+    assert(xuiFontReleaseChecked(font)==XUI_OK && p.fontDrops==1 && xuiProxyReleaseChecked(p.proxy)==XUI_OK && drop(&p.owner) && !p.owner.refs);
 }
+static int layoutSurfaceFinalize(xui_proxy proxy,void* raw){(void)proxy;(void)raw;return XUI_OK;}
+static void layoutDrawReentry(void)
+{
+    LayoutProvider p={0};xui_font font;layoutSetup(&p,&font);xui_text_layout_desc_t desc=layoutDesc(font,"abc");
+    assert(xuiTextLayoutCreate(p.context,&p.layout,&desc)==XUI_OK);
+    xui_surface target=NULL;void* payload=NULL;assert(xuiSurfaceCreateOwned(p.proxy,0,layoutSurfaceFinalize,&target,&payload)==XUI_OK);
+    assert(xuiTextLayoutDraw(p.layout,target,(xui_rect_t){0,0,200,40},0,0)==XUI_OK && p.draws==1);
+    p.closeDuringDraw=true;assert(xuiTextLayoutDraw(p.layout,target,(xui_rect_t){0,0,200,40},0,0)==XUI_ERROR_INVALID_STATE && p.draws==2);
+    xrtClearError();assert(xuiDestroyChecked(p.context)==XUI_OK && xuiTextLayoutGetContext(p.layout)==NULL);
+    assert(xuiTextLayoutDestroyChecked(p.layout)==XUI_OK);
+    assert(xuiSurfaceReleaseChecked(target)==XUI_OK && xuiFontReleaseChecked(font)==XUI_OK && xuiProxyReleaseChecked(p.proxy)==XUI_OK && drop(&p.owner));
+}
+#ifndef XUI_OWNED_LAYOUT_HELPERS
 int main(void)
 {
-    assert(xrtMemDebugEnable(true));xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    measure_lifetimes();sparse_graph_and_calls();sparse_registration_reentry();sparse_failures();xrtClearError();xrtMemDebugSnapshot(&after);
-    assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes &&
-        before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
-    puts("owned layout callbacks: exact native publishers, graph, reentry, return-tail pins, OOM, checked cleanup and 200 allocation-free measurements passed");return 0;
+    const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
+    assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK && xrtMemDebugEnable(true));
+    xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);layoutBasicAndReset();layoutDrawReentry();xrtClearError();xrtMemDebugSnapshot(&after);
+    assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
+    puts("unique Layout: true Font/paint ownership, alias-safe/OOM reset, BUSY preflight, context expiry, draw/close reentry passed");return 0;
 }
+
+#endif /* XUI_OWNED_LAYOUT_HELPERS */

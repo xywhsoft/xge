@@ -1495,7 +1495,7 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 	if ( pType != NULL ) {
 		__xuiButtonRegisterStyleProperties(pContext, pType);
 		pType->onPreparePaint = __xuiButtonPreparePaint;
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1518,6 +1518,10 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiButtonAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_button_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_button_data_t,pIconSurface),offsetof(xui_button_data_t,pBadgeSurface),offsetof(xui_button_data_t,arrPatch[0].pSurface),offsetof(xui_button_data_t,arrPatch[1].pSurface),offsetof(xui_button_data_t,arrPatch[2].pSurface),offsetof(xui_button_data_t,arrPatch[3].pSurface),offsetof(xui_button_data_t,arrPatch[4].pSurface),offsetof(xui_button_data_t,arrPatch[5].pSurface)};
+    _Static_assert(XUI_BUTTON_VISUAL_COUNT==6,"Update Button Surface ownership slots");
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
@@ -1846,9 +1850,11 @@ XUI_API int xuiButtonSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_
 	}
 	if ( pData->pIconSurface == pSurface &&
 	     __xuiButtonRectEqual(pData->tIconSrc, tSrc) ) return XUI_OK;
-	pData->pIconSurface = pSurface;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->pIconSurface,pSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+    if(surfaceStatus!=XUI_OK)return surfaceStatus;
 	pData->tIconSrc = tSrc;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiButtonGetIcon(xui_widget pWidget, xui_surface* ppSurface, xui_rect_t* pSrc)
@@ -2036,6 +2042,8 @@ XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nin
 	xui_button_data_t* pData;
 	xui_nine_patch_t tPatch;
 	int iIndex;
+    int surfaceStatus;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
 
 	if ( !__xuiButtonPatchValid(pPatch) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2047,6 +2055,8 @@ XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nin
 	iIndex = __xuiButtonStateIndex(iState);
 	if ( pPatch == NULL ) {
 		if ( !pData->arrHasPatch[iIndex] ) return XUI_OK;
+        surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->arrPatch[iIndex].pSurface,NULL,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+        if(surfaceStatus!=XUI_OK)return surfaceStatus;
 		memset(&pData->arrPatch[iIndex], 0, sizeof(pData->arrPatch[iIndex]));
 		pData->arrHasPatch[iIndex] = 0;
 	} else {
@@ -2055,10 +2065,12 @@ XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nin
 		if ( tPatch.iColor == 0 ) tPatch.iColor = XUI_COLOR_WHITE;
 		if ( pData->arrHasPatch[iIndex] &&
 		     __xuiButtonPatchEqual(&pData->arrPatch[iIndex], &tPatch) ) return XUI_OK;
+        surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->arrPatch[iIndex].pSurface,tPatch.pSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+        if(surfaceStatus!=XUI_OK)return surfaceStatus;
 		pData->arrPatch[iIndex] = tPatch;
 		pData->arrHasPatch[iIndex] = 1;
 	}
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiButtonGetPatch(xui_widget pWidget, uint32_t iState, xui_nine_patch_t* pPatch)
@@ -2212,9 +2224,11 @@ XUI_API int xuiButtonSetBadgeSurface(xui_widget pWidget, xui_surface pSurface, x
 	}
 	if ( pData->pBadgeSurface == pSurface &&
 	     __xuiButtonRectEqual(pData->tBadgeSrc, tSrc) ) return XUI_OK;
-	pData->pBadgeSurface = pSurface;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->pBadgeSurface,pSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+    if(surfaceStatus!=XUI_OK)return surfaceStatus;
 	pData->tBadgeSrc = tSrc;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiButtonGetBadgeSurface(xui_widget pWidget, xui_surface* ppSurface, xui_rect_t* pSrc)

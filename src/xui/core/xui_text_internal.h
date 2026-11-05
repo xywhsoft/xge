@@ -19,6 +19,7 @@ int xuiInternalTextBreakMap(const char* text, int bytes, unsigned char* boundari
  * at least bytes bytes. It does not append a terminator. */
 int xuiInternalTextCopyDisplay(const char* text, int bytes, char* output);
 int xuiInternalTextDisplayGraphemes(const char* text, int bytes, unsigned char* boundaries);
+int xuiInternalTextShapeFreeOutcome(xui_text_shape_t*,bool*,bool*);
 int xuiInternalTextShapeProjection(xui_context context, xui_font font,
     const char* text, int bytes, const char* language, xui_text_shape_t* shape);
 /* Normalize ordered glyph clusters into Document caret fragments. Consumes
@@ -56,9 +57,18 @@ typedef struct xui_internal_text_chunk_cache_t {
 	xui_font pFont;
 	uint32_t iDpiGeneration;
 	int bValid;
+    /* 1: releasing the affected window; 2: reserved for the exact edit.
+     * The ordinary read/draw path rejects either nonzero state. */
+    int iPreparation,iEditStart,iEditOldEnd,iEditNewEnd;
 } xui_internal_text_chunk_cache_t;
 
 void xuiInternalTextChunkCacheClear(xui_internal_text_chunk_cache_t* pCache);
+bool xuiInternalTextChunkCacheTraceOwnership(const xui_internal_text_chunk_cache_t*,xrtownershipvisitor,void*);
+int xuiInternalTextChunkCacheReady(const xui_internal_text_chunk_cache_t*,bool);
+int xuiInternalTextChunkCacheClearChecked(xui_context,xui_internal_text_chunk_cache_t*);
+int xuiInternalTextChunkCacheDestroyPrepare(xui_context,xui_internal_text_chunk_cache_t*,bool*);
+int xuiInternalTextChunkCachePrepareEdit(xui_context,xui_internal_text_chunk_cache_t*,int,int,int);
+void xuiInternalTextChunkCacheCancelEdit(xui_internal_text_chunk_cache_t*);
 int xuiInternalTextChunkCacheEnsure(xui_context pContext,
 	xui_internal_text_chunk_cache_t* pCache, xui_font pFont,
 	const char* sText, int iTextSize, uint32_t iDpiGeneration);
@@ -78,6 +88,10 @@ int xuiInternalTextChunkCacheDrawSpans(xui_proxy pProxy, xui_draw_context pDraw,
 	float fOriginX, float fY, float fHeight, uint32_t iColor, uint32_t iFlags,
 	const xui_text_paint_span_t* pSpans, int iSpanCount);
 
+/* A true owner slot, reusable after ordinary failures. A failed native
+ * factory may still publish a partial carrier, which stays here until its
+ * checked cleanup completes; no local owner is discarded on error. */
+int xuiInternalTextLayoutEnsure(xui_context,xui_text_layout*,const xui_text_layout_desc_t*);
 /* Raw GetText/GetLine offsets always refer to the original UTF-8 source.
  * This borrowed, NUL-terminated display string omits SHY/ZWSP/WJ/FEFF and
  * adds '-' for a selected WORD soft-hyphen break. Valid until the next

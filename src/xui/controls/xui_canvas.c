@@ -13,6 +13,11 @@ typedef struct xui_canvas_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_surface pSurface;
+	/* These are real producer owners, including partial failure outputs. They
+	 * remain traced until checked cleanup explicitly consumes them. */
+	xui_surface pPendingSurface;
+	xui_draw_context pPendingDraw;
+	int bSurfaceMutationActive;
 	float fCanvasWidth;
 	float fCanvasHeight;
 	float fPenWidth;
@@ -122,7 +127,9 @@ static int __xuiCanvasNoDraw(xui_widget pWidget)
 
 static xui_proxy __xuiCanvasProxy(xui_widget pWidget)
 {
-	return xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	/* Cleanup also runs after the widget has become logically invalid. Its
+	 * physical Context/Proxy carrier remains alive until Prepare completes. */
+	return xuiInternalContextGetProxy(pWidget ? pWidget->pContext:NULL);
 }
 
 static int __xuiCanvasStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
@@ -234,45 +241,130 @@ static int __xuiCanvasPreparePaint(xui_widget pWidget)
 	return bInvalidate ? __xuiCanvasInvalidateViewport(pData) : XUI_OK;
 }
 
-static int __xuiCanvasClearSurface(xui_proxy pProxy, xui_surface pSurface, float fWidth,
+static int __xuiCanvasHealth(xui_widget widget)
+{
+	if (!xuiInternalWidgetIsValid(widget) || widget->pContext->bCloseRequested) return XUI_ERROR_INVALID_STATE;
+	if (widget->pContext->pCallScopes && widget->pContext->pCallScopes->iResult != XUI_OK)
+		return widget->pContext->pCallScopes->iResult;
+	return xrtGetError() ? XUI_ERROR_CALLBACK_FAILED : XUI_OK;
+}
+
+static int __xuiCanvasReleaseSurface(xui_widget widget,xui_surface* slot)
+{
+	if (!*slot) return XUI_OK;
+	xui_proxy proxy=__xuiCanvasProxy(widget);
+	bool consumed=false;int status;
+	if (proxy && xuiProxyIsOwned(proxy)) status=xuiSurfaceReleaseOwnerChecked(*slot,&consumed);
+	else if (proxy && proxy->surfaceDestroy) {proxy->surfaceDestroy(proxy,*slot);consumed=true;status=XUI_OK;}
+	else status=XUI_ERROR_NOT_INITIALIZED;
+	if (consumed) *slot=NULL;
+	return !consumed && status==XUI_OK ? XUI_ERROR_BUSY : status;
+}
+
+static int __xuiCanvasEndDraw(xui_widget widget,xui_canvas_data_t* data)
+{
+	if (!data->pPendingDraw) return XUI_OK;
+	xui_proxy proxy=__xuiCanvasProxy(widget);
+	bool consumed=false;int status=XUI_OK;xerror* first=NULL;
+	if (proxy && xuiProxyIsOwned(proxy)) {
+		status=xuiDrawEndChecked(data->pPendingDraw);first=xrtTakeError();
+		if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+		/* A non-top/wrong-thread rejection has not requested End. Preserve the
+		 * owner for retry. A finalized draw may still report its backend error. */
+		if (status==XUI_OK || xuiDrawEnded(data->pPendingDraw))
+			xuiInternalContextCleanupOutcome(widget->pContext,xuiDrawReleaseOwnerChecked(data->pPendingDraw,&consumed),&status,&first);
+	} else if (proxy && proxy->drawEnd) {
+		status=proxy->drawEnd(proxy,data->pPendingDraw);first=xrtTakeError();
+		consumed=status!=XUI_ERROR_BUSY;
+	} else status=XUI_ERROR_NOT_INITIALIZED;
+	if (consumed) data->pPendingDraw=NULL;
+	if (status==XUI_OK && !consumed) status=XUI_ERROR_BUSY;
+	xrtSetErrorTake(first);return status;
+}
+
+static int __xuiCanvasCleanup(xui_widget widget,xui_canvas_data_t* data,int status,bool releaseSurface)
+{
+	xerror* first=xrtTakeError();
+	if (status==XUI_OK && first) status=XUI_ERROR_CALLBACK_FAILED;
+	xui_cleanup_prefix_t prefix={0};
+	int begun=status!=XUI_OK ? xuiInternalCleanupPrefixBegin(widget->pContext,&prefix,status,first):XUI_OK;
+	xuiInternalContextCleanupOutcome(widget->pContext,__xuiCanvasEndDraw(widget,data),&status,&first);
+	/* A still-active draw keeps its target owner and all partial output
+	 * carriers. Do not release a surface out from under an unfinished pass. */
+	if (releaseSurface && !data->pPendingDraw)
+		xuiInternalContextCleanupOutcome(widget->pContext,__xuiCanvasReleaseSurface(widget,&data->pPendingSurface),&status,&first);
+	if (prefix.self && begun==XUI_OK)
+		xuiInternalContextCleanupOutcome(widget->pContext,xuiInternalCleanupPrefixEnd(&prefix),&status,&first);
+	xrtSetErrorTake(first);return status;
+}
+
+static int __xuiCanvasDrainPending(xui_widget widget,xui_canvas_data_t* data,int status)
+{
+	return __xuiCanvasCleanup(widget,data,status,true);
+}
+
+static int __xuiCanvasOperationBegin(xui_widget widget,xui_canvas_data_t* data,xui_call_scope_t* scope)
+{
+	xui_proxy proxy=__xuiCanvasProxy(widget);
+	if(proxy && xuiProxyIsOwned(proxy) && !xuiInternalProxyCreator(proxy))return XUI_ERROR_BUSY;
+	if (data->bSurfaceMutationActive) return XUI_ERROR_BUSY;
+	int status=xuiCallScopeBegin(widget->pContext,scope);
+	if (status!=XUI_OK) return status;
+	data->bSurfaceMutationActive=1;
+	return __xuiCanvasDrainPending(widget,data,XUI_OK);
+}
+
+static int __xuiCanvasOperationEnd(xui_widget widget,xui_canvas_data_t* data,xui_call_scope_t* scope,int status)
+{
+	if (status==XUI_OK) status=__xuiCanvasHealth(widget);
+	xerror* first=xrtTakeError();
+	data->bSurfaceMutationActive=0;
+	status=xuiInternalCallScopeEndOutcome(scope,status,&first);
+	xrtSetErrorTake(first);return status;
+}
+
+static int __xuiCanvasClearSurface(xui_widget widget,xui_canvas_data_t* data,xui_surface pSurface,float fWidth,
 	float fHeight, uint32_t iColor)
 {
-	xui_draw_context pDraw;
+	xui_proxy pProxy=__xuiCanvasProxy(widget);
 	xui_rect_t tRect;
 	int iRet;
-	int iEndRet;
 
 	if ( (pProxy == NULL) || (pSurface == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pProxy->surfaceClear != NULL ) {
 		iRet = pProxy->surfaceClear(pProxy, pSurface, iColor);
-		if ( iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
+		if ( iRet != XUI_ERROR_UNSUPPORTED ) return iRet==XUI_OK ? __xuiCanvasHealth(widget):iRet;
+		iRet=__xuiCanvasHealth(widget);if(iRet!=XUI_OK)return iRet;
 	}
 	if ( (pProxy->drawBegin == NULL) || (pProxy->drawClearRect == NULL) || (pProxy->drawEnd == NULL) ) {
 		return XUI_ERROR_UNSUPPORTED;
 	}
-	pDraw = NULL;
-	iRet = pProxy->drawBegin(pProxy, &pDraw, pSurface);
-	if ( iRet != XUI_OK ) return iRet;
+	if (data->pPendingDraw) return XUI_ERROR_BUSY;
+	iRet = pProxy->drawBegin(pProxy, &data->pPendingDraw, pSurface);
+	if (iRet==XUI_OK) iRet=__xuiCanvasHealth(widget);
+	if (iRet==XUI_OK && !data->pPendingDraw) iRet=XUI_ERROR_NOT_INITIALIZED;
+	if(iRet==XUI_OK && xuiProxyIsOwned(pProxy) &&
+	   (xuiDrawGetProxy(data->pPendingDraw)!=xuiInternalProxyCanonical(pProxy) || xuiDrawGetTarget(data->pPendingDraw)!=pSurface))iRet=XUI_ERROR_INVALID_ARGUMENT;
+	if (iRet!=XUI_OK) return __xuiCanvasDrainPending(widget,data,iRet);
 	tRect = (xui_rect_t){0, 0, __xuiCanvasToIntSize(fWidth), __xuiCanvasToIntSize(fHeight)};
-	iRet = pProxy->drawClearRect(pProxy, pDraw, tRect, iColor);
-	iEndRet = pProxy->drawEnd(pProxy, pDraw);
-	return (iRet != XUI_OK) ? iRet : iEndRet;
+	iRet = pProxy->drawClearRect(pProxy, data->pPendingDraw, tRect, iColor);
+	if(iRet==XUI_OK)iRet=__xuiCanvasHealth(widget);
+	return __xuiCanvasCleanup(widget,data,iRet,false);
 }
 
-static int __xuiCanvasCreateSurface(xui_widget pWidget, float fWidth, float fHeight,
-	uint32_t iClearColor, int bClear, xui_surface* ppSurface)
+static int __xuiCanvasCreateSurface(xui_widget pWidget,xui_canvas_data_t* data,float fWidth,float fHeight,
+	uint32_t iClearColor,int bClear)
 {
 	xui_surface_desc_t tDesc;
-	xui_surface pSurface;
 	xui_proxy pProxy;
 	int iRet;
 
-	if ( (pWidget == NULL) || (ppSurface == NULL) || !isfinite(fWidth) || !isfinite(fHeight) ||
+	if ( (pWidget == NULL) || (data == NULL) || !isfinite(fWidth) || !isfinite(fHeight) ||
 	     (fWidth <= 0.0f) || (fHeight <= 0.0f) ||
 	     (fWidth > XUI_CANVAS_MAX_SURFACE_SIZE) || (fHeight > XUI_CANVAS_MAX_SURFACE_SIZE) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*ppSurface = NULL;
+	if(data->pPendingSurface || data->pPendingDraw)return XUI_ERROR_BUSY;
 	pProxy = __xuiCanvasProxy(pWidget);
 	if ( (pProxy == NULL) || (pProxy->surfaceCreate == NULL) || (pProxy->surfaceDestroy == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
@@ -283,31 +375,24 @@ static int __xuiCanvasCreateSurface(xui_widget pWidget, float fWidth, float fHei
 	tDesc.iWidth = __xuiCanvasToIntSize(fWidth);
 	tDesc.iHeight = __xuiCanvasToIntSize(fHeight);
 	tDesc.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
-	pSurface = NULL;
-	iRet = pProxy->surfaceCreate(pProxy, &pSurface, &tDesc);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( pSurface == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	if ( bClear ) iRet = __xuiCanvasClearSurface(pProxy, pSurface, fWidth, fHeight, iClearColor);
-	if ( iRet != XUI_OK ) {
-		if ( pProxy->surfaceDestroy != NULL ) pProxy->surfaceDestroy(pProxy, pSurface);
-		return iRet;
-	}
-	*ppSurface = pSurface;
+	iRet = pProxy->surfaceCreate(pProxy, &data->pPendingSurface, &tDesc);
+	if(iRet==XUI_OK)iRet=__xuiCanvasHealth(pWidget);
+	if(iRet==XUI_OK && !data->pPendingSurface)iRet=XUI_ERROR_NOT_INITIALIZED;
+	if(iRet==XUI_OK && xuiProxyIsOwned(pProxy) && xuiSurfaceGetProxy(data->pPendingSurface)!=xuiInternalProxyCanonical(pProxy))iRet=XUI_ERROR_INVALID_ARGUMENT;
+	if(iRet==XUI_OK && bClear)iRet=__xuiCanvasClearSurface(pWidget,data,data->pPendingSurface,fWidth,fHeight,iClearColor);
+	if(iRet!=XUI_OK)return __xuiCanvasDrainPending(pWidget,data,iRet);
 	return XUI_OK;
 }
 
 static int __xuiCanvasEnsureSurface(xui_widget pWidget, xui_canvas_data_t* pData, int bClear)
 {
-	xui_surface pSurface;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->pSurface != NULL ) return XUI_OK;
-	pSurface = NULL;
-	iRet = __xuiCanvasCreateSurface(pWidget, pData->fCanvasWidth, pData->fCanvasHeight,
-		pData->iClearColor, bClear, &pSurface);
+	iRet = __xuiCanvasCreateSurface(pWidget,pData,pData->fCanvasWidth,pData->fCanvasHeight,pData->iClearColor,bClear);
 	if ( iRet != XUI_OK ) return iRet;
-	pData->pSurface = pSurface;
+	pData->pSurface = pData->pPendingSurface;pData->pPendingSurface=NULL;
 	__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 	return XUI_OK;
 }
@@ -318,28 +403,29 @@ static int __xuiCanvasWithDraw(xui_widget pWidget, int (*onDraw)(xui_proxy, xui_
 {
 	xui_canvas_data_t* pData;
 	xui_proxy pProxy;
-	xui_draw_context pDraw;
 	int iRet;
-	int iEndRet;
 
 	pData = __xuiCanvasGetData(pWidget);
 	if ( (pData == NULL) || (onDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = __xuiCanvasProxy(pWidget);
 	if ( (pProxy == NULL) || (pProxy->drawBegin == NULL) || (pProxy->drawEnd == NULL) ) return XUI_ERROR_NOT_INITIALIZED;
+	xui_call_scope_t scope={0};iRet=__xuiCanvasOperationBegin(pWidget,pData,&scope);
+	if(iRet!=XUI_OK)return scope.pSelf ? __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet):iRet;
 	iRet = __xuiCanvasEnsureSurface(pWidget, pData, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	pDraw = NULL;
-	iRet = pProxy->drawBegin(pProxy, &pDraw, pData->pSurface);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = onDraw(pProxy, pDraw, pUser);
-	iEndRet = pProxy->drawEnd(pProxy, pDraw);
-	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if (iRet==XUI_OK)iRet=pProxy->drawBegin(pProxy,&pData->pPendingDraw,pData->pSurface);
+	if (iRet==XUI_OK)iRet=__xuiCanvasHealth(pWidget);
+	if (iRet==XUI_OK && !pData->pPendingDraw)iRet=XUI_ERROR_NOT_INITIALIZED;
+	if(iRet==XUI_OK && xuiProxyIsOwned(pProxy) &&
+	   (xuiDrawGetProxy(pData->pPendingDraw)!=xuiInternalProxyCanonical(pProxy) || xuiDrawGetTarget(pData->pPendingDraw)!=pData->pSurface))iRet=XUI_ERROR_INVALID_ARGUMENT;
+	if (iRet==XUI_OK)iRet=onDraw(pProxy,pData->pPendingDraw,pUser);
+	if(iRet==XUI_OK)iRet=__xuiCanvasHealth(pWidget);
+	iRet=__xuiCanvasDrainPending(pWidget,pData,iRet);
 	if ( iRet == XUI_OK ) {
 		__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
 		pData->iDrawCount++;
 		iRet = __xuiCanvasInvalidateViewport(pData);
 	}
-	return iRet;
+	return __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet);
 }
 
 static void __xuiCanvasFrameChanged(xui_widget pFrame, float fOffsetX, float fOffsetY, void* pUser)
@@ -358,7 +444,7 @@ static void __xuiCanvasFrameChanged(xui_widget pFrame, float fOffsetX, float fOf
 	(void)__xuiCanvasInvalidateViewport(pData);
 }
 
-static int __xuiCanvasViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiCanvasViewportRenderOperation(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_widget pWidget;
 	xui_canvas_data_t* pData;
@@ -404,6 +490,15 @@ static int __xuiCanvasViewportRender(xui_widget pViewport, xui_draw_context pDra
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, tViewport, 1.0f, tResolved.iBorderColor);
 	}
 	return iRet;
+}
+
+static int __xuiCanvasViewportRender(xui_widget viewport,xui_draw_context draw,uint32_t state,void* user)
+{
+	xui_widget widget=user;xui_canvas_data_t* data=__xuiCanvasGetData(widget);
+	if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope={0};int status=__xuiCanvasOperationBegin(widget,data,&scope);
+	if(status==XUI_OK)status=__xuiCanvasViewportRenderOperation(viewport,draw,state,user);
+	return scope.pSelf ? __xuiCanvasOperationEnd(widget,data,&scope,status):status;
 }
 
 static int __xuiCanvasEventToContent(xui_canvas_data_t* pData,
@@ -779,18 +874,60 @@ cleanup_frame:
 static void __xuiCanvasDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_canvas_data_t* pData;
-	xui_proxy pProxy;
 
 	(void)pUser;
 	pData = (xui_canvas_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		__xuiCanvasCancelPen(pWidget, pData);
-		pProxy = (pWidget != NULL) ? __xuiCanvasProxy(pWidget) : NULL;
-		if ( (pProxy != NULL) && (pProxy->surfaceDestroy != NULL) && (pData->pSurface != NULL) ) {
-			pProxy->surfaceDestroy(pProxy, pData->pSurface);
+		/* Prepare has already consumed all native owners. A void destructor
+		 * must not erase an unconsumed owner after a checked cleanup failure. */
+		if(pData->pSurface || pData->pPendingSurface || pData->pPendingDraw){
+			xuiInternalContextRecordFailure(pWidget->pContext,XUI_ERROR_BUSY);return;
 		}
 		memset(pData, 0, sizeof(*pData));
 	}
+}
+
+static bool __xuiCanvasTrace(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+	const xui_canvas_data_t* data=raw;
+	if(data->bSurfaceMutationActive)return false;
+	if(!widget->pContext->pOwnedProxy)return true;
+	if(data->pSurface && !visit(xuiSurfaceOwnership(data->pSurface),user))return false;
+	if(data->pPendingSurface && !visit(xuiSurfaceOwnership(data->pPendingSurface),user))return false;
+	return !data->pPendingDraw || visit(xuiDrawOwnership(data->pPendingDraw),user);
+}
+
+static int __xuiCanvasDestroyReady(xui_widget widget,const void* raw)
+{
+	const xui_canvas_data_t* data=raw;
+	if(data->bSurfaceMutationActive)return XUI_ERROR_BUSY;
+	if(widget->pContext->pOwnedProxy && data->pPendingDraw &&
+	   xuiProxyResourceOwnershipBusy(xuiDrawOwnership(data->pPendingDraw)))return XUI_ERROR_BUSY;
+	return XUI_OK;
+}
+
+static int __xuiCanvasDestroyPrepare(xui_widget widget,void* raw,bool* complete)
+{
+	xui_canvas_data_t* data=raw;*complete=false;
+	if(data->bSurfaceMutationActive)return XUI_ERROR_BUSY;
+	xui_proxy proxy=__xuiCanvasProxy(widget);
+	if(proxy && xuiProxyIsOwned(proxy) && !xuiInternalProxyCreator(proxy))return XUI_ERROR_BUSY;
+	data->bSurfaceMutationActive=1;
+	int status=__xuiCanvasDrainPending(widget,data,XUI_OK);xerror* first=xrtTakeError();
+	if(!data->pPendingDraw && !data->pPendingSurface)
+		xuiInternalContextCleanupOutcome(widget->pContext,__xuiCanvasReleaseSurface(widget,&data->pSurface),&status,&first);
+	data->bSurfaceMutationActive=0;
+	*complete=!data->pPendingDraw && !data->pPendingSurface && !data->pSurface;
+	xrtSetErrorTake(first);return status;
+}
+
+static void __xuiCanvasLifetimeHooks(xui_widget_type type)
+{
+	type->onPreparePaint=__xuiCanvasPreparePaint;
+	type->onTraceOwnership=__xuiCanvasTrace;
+	type->onDestroyReady=__xuiCanvasDestroyReady;
+	type->onDestroyPrepare=__xuiCanvasDestroyPrepare;
 }
 
 static void __xuiCanvasRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
@@ -827,7 +964,7 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "canvas");
 	if ( pType != NULL ) {
-		pType->onPreparePaint = __xuiCanvasPreparePaint;
+		__xuiCanvasLifetimeHooks(pType);
 		__xuiCanvasRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
@@ -844,7 +981,7 @@ XUI_API xui_widget_type xuiCanvasGetType(xui_context pContext)
 	__xuiCanvasDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
-	pType->onPreparePaint = __xuiCanvasPreparePaint;
+	__xuiCanvasLifetimeHooks(pType);
 	__xuiCanvasRegisterStyleProperties(pContext, pType);
 	return pType;
 }
@@ -880,20 +1017,31 @@ XUI_API xui_scroll_model_t* xuiCanvasGetModel(xui_widget pWidget)
 	return (pData != NULL && pData->pFrame != NULL) ? xuiScrollFrameGetModel(pData->pFrame) : NULL;
 }
 
+typedef struct xui_canvas_output_watch_t {xui_surface* output;} xui_canvas_output_watch_t;
+static void __xuiCanvasOutputInvalidated(void* raw)
+{
+	xui_canvas_output_watch_t* watch=raw;*watch->output=NULL;
+}
+
 XUI_API xui_surface xuiCanvasGetSurface(xui_widget pWidget)
 {
 	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
 	if ( pData == NULL ) return NULL;
-	(void)__xuiCanvasEnsureSurface(pWidget, pData, 1);
-	return pData->pSurface;
+	xui_surface result=NULL;xui_lifetime_link_t link={0};xui_canvas_output_watch_t watch={&result};
+	xui_call_scope_t scope={0};int status=__xuiCanvasOperationBegin(pWidget,pData,&scope);
+	if(status==XUI_OK)status=xuiWidgetLifetimeWatch(pWidget,&link,__xuiCanvasOutputInvalidated,&watch);
+	if(status==XUI_OK)status=__xuiCanvasEnsureSurface(pWidget,pData,1);
+	if(status==XUI_OK)result=pData->pSurface;
+	if(status!=XUI_OK && scope.pSelf)xuiInternalContextRecordOutcome(pWidget->pContext,status,xrtGetError());
+	if(scope.pSelf)status=__xuiCanvasOperationEnd(pWidget,pData,&scope,status);
+	xuiLifetimeUnwatch(&link);
+	if(status!=XUI_OK)return NULL;
+	return result;
 }
 
 XUI_API int xuiCanvasSetCanvasSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_canvas_data_t* pData;
-	xui_proxy pProxy;
-	xui_surface pOldSurface;
-	xui_surface pNewSurface;
 	float fOldOffsetX;
 	float fOldOffsetY;
 	float fNewWidth;
@@ -909,35 +1057,34 @@ XUI_API int xuiCanvasSetCanvasSize(xui_widget pWidget, float fWidth, float fHeig
 	fNewWidth = __xuiCanvasCanonicalSize(fWidth);
 	fNewHeight = __xuiCanvasCanonicalSize(fHeight);
 	if ( (pData->fCanvasWidth == fNewWidth) && (pData->fCanvasHeight == fNewHeight) ) return XUI_OK;
+	xui_call_scope_t scope={0};iRet=__xuiCanvasOperationBegin(pWidget,pData,&scope);
+	if(iRet!=XUI_OK)return scope.pSelf ? __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet):iRet;
 	iRet = xuiScrollFrameGetOffset(pData->pFrame, &fOldOffsetX, &fOldOffsetY);
-	if ( iRet != XUI_OK ) return iRet;
-	pProxy = __xuiCanvasProxy(pWidget);
-	pNewSurface = NULL;
-	if ( pData->pSurface != NULL ) {
-		iRet = __xuiCanvasCreateSurface(pWidget, fNewWidth, fNewHeight,
-			pData->iClearColor, 1, &pNewSurface);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = xuiScrollFrameSetContentSize(pData->pFrame, fNewWidth, fNewHeight);
-	if ( iRet != XUI_OK ) {
-		if ( pNewSurface != NULL ) pProxy->surfaceDestroy(pProxy, pNewSurface);
-		return iRet;
-	}
-	iRet = __xuiCanvasInvalidateViewport(pData);
-	if ( iRet != XUI_OK ) {
+	if(iRet==XUI_OK && pData->pSurface)
+		iRet=__xuiCanvasCreateSurface(pWidget,pData,fNewWidth,fNewHeight,pData->iClearColor,1);
+	if(iRet!=XUI_OK)return __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet);
+	iRet=xuiScrollFrameSetContentSize(pData->pFrame,fNewWidth,fNewHeight);
+	if(iRet==XUI_OK)iRet=__xuiCanvasHealth(pWidget);
+	if(iRet==XUI_OK)iRet=__xuiCanvasInvalidateViewport(pData);
+	if(iRet==XUI_OK)iRet=__xuiCanvasHealth(pWidget);
+	if(iRet!=XUI_OK){
+		xerror* first=xrtTakeError();xui_cleanup_prefix_t prefix={0};
+		int begun=xuiInternalCleanupPrefixBegin(pWidget->pContext,&prefix,iRet,first);
 		(void)xuiScrollFrameSetContentSize(pData->pFrame, pData->fCanvasWidth, pData->fCanvasHeight);
 		(void)xuiScrollFrameSetOffset(pData->pFrame, fOldOffsetX, fOldOffsetY);
-		if ( pNewSurface != NULL ) pProxy->surfaceDestroy(pProxy, pNewSurface);
-		return iRet;
+		if(begun==XUI_OK)(void)xuiInternalCleanupPrefixEnd(&prefix);
+		xrtClearError();xrtSetErrorTake(first);
+		iRet=__xuiCanvasDrainPending(pWidget,pData,iRet);
+		return __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet);
 	}
 	__xuiCanvasCancelPen(pWidget, pData);
-	pOldSurface = pData->pSurface;
-	pData->pSurface = pNewSurface;
+	xui_surface old=pData->pSurface;
+	pData->pSurface=pData->pPendingSurface;pData->pPendingSurface=old;
 	pData->fCanvasWidth = fNewWidth;
 	pData->fCanvasHeight = fNewHeight;
 	__xuiCanvasRememberSurfaceGeneration(pWidget, pData);
-	if ( pOldSurface != NULL ) pProxy->surfaceDestroy(pProxy, pOldSurface);
-	return XUI_OK;
+	iRet=__xuiCanvasDrainPending(pWidget,pData,__xuiCanvasHealth(pWidget));
+	return __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet);
 }
 
 XUI_API int xuiCanvasGetCanvasSize(xui_widget pWidget, float* pWidth, float* pHeight)
@@ -1034,21 +1181,19 @@ XUI_API int xuiCanvasClear(xui_widget pWidget, uint32_t iColor)
 {
 	xui_canvas_data_t* pData;
 	xui_proxy pProxy;
-	xui_surface pSurface;
 	int iRet;
 
 	pData = __xuiCanvasGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = __xuiCanvasProxy(pWidget);
 	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	xui_call_scope_t scope={0};iRet=__xuiCanvasOperationBegin(pWidget,pData,&scope);
+	if(iRet!=XUI_OK)return scope.pSelf ? __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet):iRet;
 	if ( pData->pSurface == NULL ) {
-		pSurface = NULL;
-		iRet = __xuiCanvasCreateSurface(pWidget, pData->fCanvasWidth, pData->fCanvasHeight,
-			iColor, 1, &pSurface);
-		if ( iRet != XUI_OK ) return iRet;
-		pData->pSurface = pSurface;
+		iRet=__xuiCanvasCreateSurface(pWidget,pData,pData->fCanvasWidth,pData->fCanvasHeight,iColor,1);
+		if(iRet==XUI_OK){pData->pSurface=pData->pPendingSurface;pData->pPendingSurface=NULL;}
 	} else {
-		iRet = __xuiCanvasClearSurface(pProxy, pData->pSurface, pData->fCanvasWidth,
+		iRet = __xuiCanvasClearSurface(pWidget,pData,pData->pSurface,pData->fCanvasWidth,
 			pData->fCanvasHeight, iColor);
 	}
 	if ( iRet == XUI_OK ) {
@@ -1057,7 +1202,7 @@ XUI_API int xuiCanvasClear(xui_widget pWidget, uint32_t iColor)
 		pData->iDrawCount++;
 		iRet = __xuiCanvasInvalidateViewport(pData);
 	}
-	return iRet;
+	return __xuiCanvasOperationEnd(pWidget,pData,&scope,iRet);
 }
 
 typedef struct xui_canvas_clear_rect_args_t { xui_rect_t tRect; uint32_t iColor; } xui_canvas_clear_rect_args_t;

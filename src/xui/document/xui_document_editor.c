@@ -74,6 +74,7 @@ static atomic_uint_fast64_t doc_editor_clipboard_image_sequence = 1;
 static void doc_editor_break_group(doc_editor_data* e) { e->group = 0; e->group_kind = 0; }
 static doc_editor_data* doc_editor_get(xui_widget w)
 {
+    if(w && xuiInternalWidgetIsValid(w) && w->pContext->bCloseRequested)return NULL;
     xui_widget_type type = w ? xuiWidgetFindType(xuiWidgetGetContext(w), "document-editor") : NULL;
     return type && xuiWidgetIsType(w, type) ? xuiWidgetGetTypeData(w) : NULL;
 }
@@ -3906,6 +3907,24 @@ static void doc_editor_destroy(xui_widget w, void* data, void* user)
     xuiDocumentPrepareRelease(e->view.renderer->input); e->view.renderer->input = NULL;
     doc_editor_forget_input(e); doc_input_worker_destroy(e->worker); doc_editor_clear_bookmarks(e);
 }
+static int doc_editor_destroy_prepare(xui_widget widget,void* raw,bool* complete)
+{
+    (void)widget;doc_editor_data* data=raw;
+    if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!data->projection){*complete=true;return XUI_OK;}
+    return doc_render_destroy_prepare(data->projection,complete);
+}
+static int doc_editor_destroy_ready(xui_widget widget,const void* raw)
+{
+    (void)widget;const doc_editor_data* editor=raw;
+    return editor->projection ? doc_render_destroy_ready(editor->projection):XUI_OK;
+}
+static bool doc_editor_trace_ownership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    (void)widget;const doc_editor_data* editor=raw;
+    /* The inherited DocumentView layer traces view.renderer exactly once. */
+    return !editor->projection || xuiDocumentRendererTraceOwnership(editor->projection,visit,user);
+}
 XUI_API xui_widget_type xuiDocumentEditorGetType(xui_context context)
 {
     xui_widget_type type = xuiWidgetFindType(context, "document-editor"); xui_widget_type_desc_t desc = {0};
@@ -3913,7 +3932,8 @@ XUI_API xui_widget_type xuiDocumentEditorGetType(xui_context context)
     desc.iSize = sizeof(desc); desc.sName = "document-editor"; desc.pParent = xuiDocumentViewGetType(context); desc.iTypeDataSize = sizeof(doc_editor_data);
     if (!desc.pParent) return NULL;
     desc.onInit = doc_editor_init; desc.onDestroy = doc_editor_destroy; desc.onCacheRender = doc_editor_render; desc.onUpdate = doc_editor_update;
-    return xuiWidgetRegisterType(context, &type, &desc) == XUI_OK ? type : NULL;
+    if(xuiWidgetRegisterType(context,&type,&desc)!=XUI_OK)return NULL;
+    type->onTraceOwnership=doc_editor_trace_ownership;type->onDestroyReady=doc_editor_destroy_ready;type->onDestroyPrepare=doc_editor_destroy_prepare;return type;
 }
 XUI_API int xuiDocumentEditorCreate(xui_context context, const xui_doc_editor_desc_t* desc, xui_widget* out)
 {

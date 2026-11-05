@@ -71,7 +71,7 @@ static void doc_view_register_styles(xui_context context, xui_widget_type type)
 doc_view_data* doc_view_get(xui_widget widget)
 {
     xui_widget_type type;
-    if (!widget) return NULL;
+    if (!widget || !xuiInternalWidgetIsValid(widget) || widget->pContext->bCloseRequested) return NULL;
     type = xuiWidgetFindType(xuiWidgetGetContext(widget), "document-view");
     return type && xuiWidgetIsType(widget, type) ? xuiWidgetGetTypeData(widget) : NULL;
 }
@@ -1406,6 +1406,23 @@ void doc_view_destroy(xui_widget widget, void* data, void* user)
     doc_view_find_clear(v);
     xuiDocumentRendererRelease(v->renderer); memset(v, 0, sizeof(*v));
 }
+static int doc_view_destroy_prepare(xui_widget widget,void* raw,bool* complete)
+{
+    (void)widget;doc_view_data* data=raw;
+    if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!data->renderer){*complete=true;return XUI_OK;}
+    return doc_render_destroy_prepare(data->renderer,complete);
+}
+static int doc_view_destroy_ready(xui_widget widget,const void* raw)
+{
+    (void)widget;const doc_view_data* view=raw;
+    return view->renderer ? doc_render_destroy_ready(view->renderer):XUI_OK;
+}
+static bool doc_view_trace_ownership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
+{
+    (void)widget;const doc_view_data* view=raw;
+    return !view->renderer || xuiDocumentRendererTraceOwnership(view->renderer,visit,user);
+}
 XUI_API xui_widget_type xuiDocumentViewGetType(xui_context context)
 {
     xui_widget_type type = xuiWidgetFindType(context, "document-view"); xui_widget_type_desc_t desc = {0};
@@ -1420,6 +1437,7 @@ XUI_API xui_widget_type xuiDocumentViewGetType(xui_context context)
     desc.tLayout.iTableRowSpan = desc.tLayout.iTableColumnSpan = desc.tLayout.iGridColumnCount = 1;
     desc.tCachePolicy.iSize = sizeof(desc.tCachePolicy); desc.tCachePolicy.iPolicy = XUI_CACHE_POLICY_SELF; desc.tCachePolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
     if (xuiWidgetRegisterType(context, &type, &desc) != XUI_OK) return NULL;
+    type->onTraceOwnership=doc_view_trace_ownership;type->onDestroyReady=doc_view_destroy_ready;type->onDestroyPrepare=doc_view_destroy_prepare;
     doc_view_register_styles(context, type);
     return type;
 }

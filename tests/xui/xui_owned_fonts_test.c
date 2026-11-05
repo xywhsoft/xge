@@ -36,14 +36,14 @@ static int finalize(xui_proxy proxy,void* raw)
 {
     (void)proxy;Payload* p=raw;++*p->finalized;
     if(p->sameStatus){
-        xui_context context=p->widget->pContext;assert(context->pActiveFontUpdates);
+        xui_context context=p->widget->pContext;assert(context->pActiveResourceUpdates);
         *p->sameStatus=xuiButtonSetFont(p->widget,p->replacement);
-        assert(context->pActiveFontUpdates);
+        assert(context->pActiveResourceUpdates);
     }
     if(p->otherStatus){
-        xui_font_slot_update_t* outer=p->widget->pContext->pActiveFontUpdates;
+        xui_font_slot_update_t* outer=p->widget->pContext->pActiveResourceUpdates;
         *p->otherStatus=xuiLabelSetFont(p->other,p->replacement);
-        assert(p->widget->pContext->pActiveFontUpdates==outer);
+        assert(p->widget->pContext->pActiveResourceUpdates==outer);
     }
     return p->status;
 }
@@ -202,19 +202,19 @@ static void mutator_stack_and_oom(void)
     unsigned finalized=0;xui_font a=fontCreate(proxy,&finalized,0),b=fontCreate(proxy,&finalized,0),c=fontCreate(proxy,&finalized,0);
     xui_context context=NULL;assert(xuiCreate(&context)==XUI_OK && xuiSetProxyOwned(context,proxy)==XUI_OK && xuiSetDefaultFont(context,a)==XUI_OK);
     xui_widget button=NULL,label=NULL;assert(xuiButtonCreate(context,&button,NULL)==XUI_OK && xuiLabelCreate(context,&label,NULL)==XUI_OK);
-    assert(xuiButtonSetFont(button,b)==XUI_OK && !context->pActiveFontUpdates);
+    assert(xuiButtonSetFont(button,b)==XUI_OK && !context->pActiveResourceUpdates);
     xui_font retiring=fontCreate(proxy,&finalized,XUI_ERROR_CALLBACK_FAILED);
     Payload* payload=xuiInternalProxyResourcePayload(retiring);int same=-1,other=-1;
     payload->widget=button;payload->other=label;payload->replacement=c;payload->sameStatus=&same;payload->otherStatus=&other;
     assert(xuiButtonSetFont(button,retiring)==XUI_OK && xuiFontReleaseChecked(retiring)==XUI_OK);
     assert(xuiButtonSetFont(button,b)==XUI_ERROR_CALLBACK_FAILED && !xrtGetError());
-    assert(same==XUI_ERROR_BUSY && other==XUI_OK && !context->pActiveFontUpdates && xuiButtonGetFont(button)==b && xuiLabelGetFont(label)==c);
+    assert(same==XUI_ERROR_BUSY && other==XUI_OK && !context->pActiveResourceUpdates && xuiButtonGetFont(button)==b && xuiLabelGetFont(label)==c);
     for(int budget=0;budget<20;++budget){
         xui_widget candidate=NULL;assert(xrtMemDebugFailAfter(budget));
         int status=xuiButtonCreate(context,&candidate,NULL);assert(xrtMemDebugFailAfter(-1));xrtClearError();
         if(status==XUI_OK)assert(candidate && xuiWidgetDestroyChecked(candidate)==XUI_OK);
         else assert(!candidate);
-        assert(!context->pActiveFontUpdates);
+        assert(!context->pActiveResourceUpdates);
     }
     assert(xuiWidgetDestroyChecked(button)==XUI_OK && xuiWidgetDestroyChecked(label)==XUI_OK);
     assert(refs(xuiFontOwnership(a))==2 && refs(xuiFontOwnership(b))==1 && refs(xuiFontOwnership(c))==1);

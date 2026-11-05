@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','parts','grid','port','fonts','paint','receipt'),default='remaining')
+    p.add_argument('--case',choices=('remaining','groups','tree','cell','table','context','parts','grid','port','fonts','paint','receipt','surfaces'),default='remaining')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     metadata=json.loads((engine/'build-report.json').read_text())
@@ -20,29 +20,42 @@ def main():
     regression_names={'tree':('xui_tree_view_test.c','xui_tree_adapter_lifetime_test.c'),'table':('xui_table_view_test.c','xui_table_provider_lifetime_test.c'),'grid':('xui_table_grid_test.c',),'parts':tuple('xui_'+name+'_test.c' for name in ('widget','widget_type','panel','popup','menu','scroll_frame','scroll_view','tabs','split_layout','carousel','accordion','table_grid','window','combobox','numeric_input'))}
     regressions=[root/'tests/xui'/name for name in regression_names.get(a.case,())]
     library=engine/('xge.lib' if os.name=='nt' else 'libxge.so');native=engine/('xge.dll' if os.name=='nt' else 'libxge.so')
+    # The Surface transaction rollback fixture exercises private slots. Link
+    # the exact production native objects instead of exporting test hooks in
+    # the DLL or recompiling a different implementation into the client.
+    staticNative=a.case=='surfaces'
+    nativeObjects=[]
+    if staticNative:
+        nativeObjects=[engine/'obj'/(name.replace('/','_').replace('\\','_')+'.o') for name in metadata['sources']]
+        if 'XGE_ENABLE_HARFBUZZ' in metadata['features']:
+            nativeObjects.append(root/'build/shared/obj/extlibs_harfbuzz_src_harfbuzz.cc.o')
+        assert all(path.is_file() for path in nativeObjects)
     pins={Path(__file__).resolve(),Path(cc),source,header,library,native,runtime,engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'include/xge_host_xrt.h',root/'extlibs/xrt/xrt.h'}
-    pins.update(regressions);
+    pins.update(regressions);pins.update(nativeObjects)
     if a.case=='receipt':pins.add(root/'tests/xui/xui_owned_fonts_test.c')
-    if regressions or a.case in ('table','parts','grid','fonts','receipt'):pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
+    if regressions or a.case in ('table','parts','grid','fonts','receipt','surfaces'):pins.update(root/'tests/xui'/name for name in ('xui_test_proxy.h','xui_test_proxy.c'))
     pins.update(root/x for x in metadata['sources']);pins.add(root/'src/xui/core/xui_internal.h');pins.add(root/'src/xui/core/xui_xrt_port.h');pins.add(root/'include/xui_config.h');pins.update(x for x in (engine/'host-xrt').iterdir() if x.is_file());inputs={str(x):sha(x) for x in pins}
     out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
     env=dict(os.environ,TEMP=str(out/'tmp'),TMP=str(out/'tmp'),TMPDIR=str(out/'tmp'))
     if os.name=='nt':shutil.copy2(runtime,out/runtime.name);shutil.copy2(native,out/native.name)
     else:env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+str(engine)+':'+env.get('LD_LIBRARY_PATH','')
-    report=dict(complete=False,passed=False,scope=__doc__,networkTests=False,inputs=inputs,rows=[])
+    report=dict(complete=False,passed=False,scope=__doc__,networkTests=False,staticProductionNativeObjects=staticNative,inputs=inputs,rows=[])
     def save():(out/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')
     def run(name,command):
         start=time.monotonic();q=subprocess.run(list(map(str,command)),cwd=root,env=env,capture_output=True,timeout=240)
         log=out/(name+'.log');log.write_bytes(q.stdout+q.stderr);report['rows'].append(dict(name=name,command=list(map(str,command)),exitCode=q.returncode,seconds=round(time.monotonic()-start,3),logSha256=sha(log)));save();print(name,q.returncode,flush=True);assert not q.returncode,log
     flags=['-std=c11','-Wall','-Wextra','-Werror','-Wno-cast-function-type','-Wno-unused-parameter','-DXGE_XRT_HOST=1','-include',str(engine/'xge_build_config.h')]
     flags+=['-I'+str(x) for x in (root,root/'include',engine/'host-xrt')]
-    if os.name=='nt':flags+=['-DXGE_DLL','-DXUI_DLL']
+    if os.name=='nt' and not staticNative:flags+=['-DXGE_DLL','-DXUI_DLL']
     systems=['-Wl,-rpath,'+str(runtime.parent),'-Wl,-rpath,'+str(engine),'-pthread','-ldl','-lm'] if os.name!='nt' else []
+    if staticNative:
+        systems+=['-lm','-lws2_32','-liphlpapi','-lgdi32','-luser32','-lshell32','-lole32','-loleaut32','-luuid','-limm32','-lwinmm','-lavrt'] if os.name=='nt' else ['-lX11','-lXi','-lXcursor','-lGL']
+    nativeLink=nativeObjects if staticNative else [library]
     for opt in ('O0','O2'):
         exe=out/('owned-'+opt+('.exe' if os.name=='nt' else ''))
-        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case in ('table','parts','grid','fonts','receipt') else []
-        if a.case in ('parts','fonts','receipt'):test_extra+=['-Wno-unused-function']
-        run(opt+'-build',[cc,*flags,'-'+opt,source,*test_extra,library,runtime,*systems,'-o',exe]);run(opt+'-run',[exe])
+        test_extra=['-I'+str(root/'tests/xui'),root/'tests/xui/xui_test_proxy.c'] if a.case in ('table','parts','grid','fonts','receipt','surfaces') else []
+        if a.case in ('parts','fonts','receipt','surfaces'):test_extra+=['-Wno-unused-function']
+        run(opt+'-build',[cc,*flags,'-'+opt,source,*test_extra,*nativeLink,runtime,*systems,'-o',exe]);run(opt+'-run',[exe])
     if regressions:
         prefix=source.read_text(encoding='utf8').split('typedef struct TreeState' if a.case=='tree' else '#include "xui_test_proxy.h"')[0]
         for regression in regressions:

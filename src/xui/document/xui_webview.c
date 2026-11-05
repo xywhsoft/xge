@@ -2,6 +2,7 @@
 #if XUI_ENABLE_WEBVIEW
 /* Generic XUI WebView widget. WebView2 is an optional Windows backend. */
 #include "xui_webview_internal.h"
+#include "xui_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,6 +43,7 @@ struct xui_webview_data {
     char* folder;
     int state;
     int32_t error;
+    int retiring;
 #if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
     LONG refs;
     DWORD thread;
@@ -86,6 +88,8 @@ struct xui_webview_data {
     int focus_gained_registered;
     int focus_lost_registered;
     int move_focus_registered;
+#else
+    int refs; /* portable CPU/backend delegates obey the same physical tail */
 #endif
 };
 
@@ -127,11 +131,53 @@ static xui_webview_data* webview_get(xui_widget widget)
 
 static void webview_emit(xui_webview_data* data, int event, int32_t error)
 {
-    xui_webview_event_proc callback = data->on_event;
+    if (!data || !data->widget || data->retiring) return;
     xui_widget widget = data->widget;
+    xui_call_scope_t scope = {0};
+    if (xuiCallScopeBegin(widget->pContext, &scope) != XUI_OK) return;
+    xui_webview_event_proc callback = data->on_event;
     void* user = data->user;
-    if (callback && widget) callback(widget, event, error, user);
+    int result = XUI_OK;
+    if (callback) {
+        xui_callback_snapshot_t snapshot = {0};
+        result = xuiInternalCallbackSnapshotBeginReported(widget,
+            &data->on_event, &user, &snapshot);
+        if (result == XUI_OK) {
+            callback(widget, event, error, user);
+            result = xuiInternalCallbackSnapshotEnd(&snapshot, XUI_OK);
+        }
+    }
+    xerror* first = xrtTakeError();
+    (void)xuiInternalCallScopeEndOutcome(&scope, result, &first);
+    xrtSetErrorTake(first);
+    /* Scope End may destroy the Widget, its type data and the Context. */
 }
+
+#if (defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)) || defined(XUI_WEBVIEW_TEST_EXPORTS)
+static void webview_deliver_message(xui_webview_data* data, const char* source,
+    const char* json, size_t bytes)
+{
+    if (!data || !data->widget || data->state != XUI_WEBVIEW_READY) return;
+    xui_widget widget = data->widget;
+    xui_call_scope_t scope = {0};
+    if (xuiCallScopeBegin(widget->pContext, &scope) != XUI_OK) return;
+    xui_webview_message_proc callback = data->on_message;
+    void* user = data->message_user;
+    int result = XUI_OK;
+    if (callback) {
+        xui_callback_snapshot_t snapshot = {0};
+        result = xuiInternalCallbackSnapshotBeginReported(widget,
+            &data->on_message, &user, &snapshot);
+        if (result == XUI_OK) {
+            callback(widget, source, json, bytes, user);
+            result = xuiInternalCallbackSnapshotEnd(&snapshot, XUI_OK);
+        }
+    }
+    xerror* first = xrtTakeError();
+    (void)xuiInternalCallScopeEndOutcome(&scope, result, &first);
+    xrtSetErrorTake(first);
+}
+#endif
 
 #if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
 static void webview_retain(xui_webview_data* data)
@@ -795,7 +841,7 @@ static HRESULT STDMETHODCALLTYPE message_invoke(
             FAILED(webview_utf8_result(source, &source_utf8, &source_bytes)) ||
             FAILED(webview_utf8_result(wide_json, &json, &json_bytes)) ||
             json_bytes > XUI_WEBVIEW_MAX_MESSAGE_BYTES) goto done;
-    data->on_message(data->widget, source_utf8, json, json_bytes, data->message_user);
+    webview_deliver_message(data, source_utf8, json, json_bytes);
 done:
     CoTaskMemFree(source);
     CoTaskMemFree(current);
@@ -1237,10 +1283,16 @@ failed:
     return XUI_ERROR_BACKEND_FAILED;
 }
 #else
+static void webview_retain(xui_webview_data* data)
+{
+    ++data->refs;
+}
 static void webview_release(xui_webview_data* data)
 {
-    free(data->folder);
-    free(data);
+    if (--data->refs == 0) {
+        free(data->folder);
+        free(data);
+    }
 }
 #endif
 
@@ -1287,8 +1339,8 @@ static int webview_init(xui_widget widget, void* type_data, const void* create, 
     data->on_event = desc->onEvent;
     data->user = desc->pUser;
     data->state = XUI_WEBVIEW_CREATED;
-#if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
     data->refs = 1;
+#if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
     data->page_epoch = 1;
 #endif
     if (desc->sUserDataFolder) {
@@ -1316,9 +1368,44 @@ static void webview_destroy(xui_widget widget, void* type_data, void* user)
     data->widget = NULL;
     data->state = XUI_WEBVIEW_CLOSED;
 #if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
-    webview_stop_backend(data);
+    if(!data->retiring)webview_stop_backend(data);
 #endif
     webview_release(data);
+}
+
+static int webview_reference_count(const xui_webview_data* data)
+{
+#if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
+    return (int)InterlockedCompareExchange((LONG*)&data->refs,0,0);
+#else
+    return data->refs;
+#endif
+}
+static int webview_destroy_ready(xui_widget widget,const void* type_data)
+{
+    (void)widget;
+    const xui_webview_data* data=*(xui_webview_data* const*)type_data;
+    /* The initial Prepare must run to revoke registrations, which themselves
+     * own delegate references. Once revoked, pure readiness waits for their
+     * real in-flight/pending references to return to the Widget's sole owner. */
+    return data && data->retiring && webview_reference_count(data)!=1 ? XUI_ERROR_BUSY:XUI_OK;
+}
+static int webview_destroy_prepare(xui_widget widget,void* type_data,bool* complete)
+{
+    (void)widget;xui_webview_data* data=*(xui_webview_data**)type_data;
+    if(!data){*complete=true;return XUI_OK;}
+    if(!data->retiring){
+        data->retiring=1;data->state=XUI_WEBVIEW_CLOSED;
+        data->on_event=NULL;data->user=NULL;data->on_message=NULL;data->message_user=NULL;
+#if defined(_WIN32) && defined(XUI_ENABLE_WEBVIEW2)
+        webview_stop_backend(data);
+#endif
+    }
+    *complete=webview_reference_count(data)==1;
+    /* Delegate Release only decreases RC. It never destroys the Widget or
+     * unloads its code from its own COM-vtable return frame. A later host/UI
+     * checked boundary retries the existing pending Widget/Context carrier. */
+    return *complete ? XUI_OK:XUI_STATUS_DEFERRED;
 }
 
 static int webview_update(xui_widget widget, float delta, void* user)
@@ -1373,7 +1460,10 @@ XUI_API xui_widget_type xuiWebViewGetType(xui_context context)
     desc.tLayout.iTableRowSpan = desc.tLayout.iTableColumnSpan = desc.tLayout.iGridColumnCount = 1;
     desc.tCachePolicy.iSize = sizeof(desc.tCachePolicy);
     desc.tCachePolicy.iPolicy = XUI_CACHE_POLICY_SELF;
-    return xuiWidgetRegisterType(context, &type, &desc) == XUI_OK ? type : NULL;
+    if(xuiWidgetRegisterType(context,&type,&desc)!=XUI_OK)return NULL;
+    type->onDestroyReady=webview_destroy_ready;
+    type->onDestroyPrepare=webview_destroy_prepare;
+    return type;
 }
 
 XUI_API int xuiWebViewCreate(xui_context context, xui_widget* out, const xui_webview_desc_t* desc)
@@ -1397,6 +1487,27 @@ XUI_API int xuiWebViewInitializeAsync(xui_widget widget)
 #else
     return XUI_ERROR_UNSUPPORTED;
 #endif
+}
+
+XUI_API int xuiWebViewSetEventOwned(xui_widget widget,
+    xui_webview_event_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_webview_data* data = webview_get(widget);
+    if (!data) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update = {0};
+    int result = xuiInternalCallbackUpdateBegin(widget, &data->on_event,
+        callback != NULL, user, owner, &update);
+    if (result != XUI_OK) return result;
+    data->on_event = callback;
+    data->user = user;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
+XUI_API int xuiWebViewSetEvent(xui_widget widget,
+    xui_webview_event_proc callback, void* user)
+{
+    return xuiWebViewSetEventOwned(widget, callback, user, NULL);
 }
 
 XUI_API int xuiWebViewFocus(xui_widget widget)
@@ -1983,7 +2094,7 @@ XUI_WEBVIEW_INTERNAL_API int xuiWebViewTestBrowserProcessId(
 }
 #endif
 
-XUI_API int xuiWebViewClose(xui_widget widget)
+static int webview_close(xui_widget widget)
 {
     xui_webview_data* data = webview_get(widget);
     if (!data) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2003,6 +2114,19 @@ XUI_API int xuiWebViewClose(xui_widget widget)
     webview_release(data);
 #endif
     return XUI_OK;
+}
+
+XUI_API int xuiWebViewClose(xui_widget widget)
+{
+    if (!xuiInternalWidgetIsValid(widget)) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope = {0};
+    int result = xuiCallScopeBegin(widget->pContext, &scope);
+    if (result != XUI_OK) return result;
+    result = webview_close(widget);
+    xerror* first = xrtTakeError();
+    result = xuiInternalCallScopeEndOutcome(&scope, result, &first);
+    xrtSetErrorTake(first);
+    return result;
 }
 
 #endif

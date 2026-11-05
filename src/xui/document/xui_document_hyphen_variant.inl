@@ -17,11 +17,15 @@ static int doc_layout_variant_build(xui_document_renderer r,const doc_render_blo
     uint32_t* positions=NULL;size_t count=0,group=0,at,i,old=0,written=0,markers=0;
     int result=XUI_OK;
     *output=NULL;
+    xui_document_renderer root=doc_layout_owner(r);
+    if(root->work_blocked)return XUI_ERROR_BUSY;
     if(!context || first>=end)return XUI_ERROR_INVALID_STATE;
     for(i=0;i<end;i++)if(doc_layout_variant_marker(block,i,first,selected,&group))count++;
     if(!count)return XUI_OK;
     if(count>(size_t)INT_MAX-context->bytes)return XUI_DOC_ERROR_LIMIT;
-    variant=calloc(1,sizeof(*variant));positions=calloc(count,sizeof(*positions));
+    variant=calloc(1,sizeof(*variant));
+    if(variant){variant->work_next=root->work_variants;root->work_variants=variant;}
+    positions=calloc(count,sizeof(*positions));
     if(!variant || !positions){result=XUI_ERROR_OUT_OF_MEMORY;goto fail;}
     variant->context=context;variant->first_fragment=first;variant->end_fragment=end;
     variant->bytes=context->bytes+(uint32_t)count;
@@ -112,7 +116,7 @@ static int doc_layout_variant_build(xui_document_renderer r,const doc_render_blo
     }
     free(positions);*output=variant;return XUI_OK;
 fail:
-    free(positions);doc_layout_variant_free(variant);return result;
+    free(positions);doc_layout_variant_free(r,variant);return result;
 }
 /* Use the same range and direction as publication. A ligature interior or an
  * L1 direction change gets an owned row shape with the full variant context. */
@@ -141,15 +145,15 @@ static int doc_layout_variant_row(xui_document_renderer r,const doc_render_block
                 result=start==finish && r->proxy->textShapeRangeMeasure && r->proxy->drawTextShapeRangeSpans?XUI_OK:span->shape.pPaint && r->proxy->textShapeRangeMeasure && r->proxy->drawTextShapeRangeSpans?
                     r->proxy->textShapeRangeMeasure(r->proxy,&span->shape,(int)start,(int)finish,&measured):XUI_ERROR_UNSUPPORTED;
                 if(result==XUI_ERROR_UNSUPPORTED){
-                    xui_text_item_t item;doc_hyphen_lease lease;xui_text_shape_t selected={0};
+                    xui_text_item_t item;doc_hyphen_lease lease;xui_text_shape_t* selected=NULL;
                     result=doc_layout_paint_input(r,block,at,stop,row,hyphen,variant);
                     if(result!=XUI_OK)goto row_done;
                     if(row->input_caps & XUI_PROXY_CAP_TEXT_RANGE){
                         row->range_input=1;row->variant_span=index;row->shape_start=start;row->shape_end=finish;
                         result=doc_render_group_item(row,block->runs[doc_fragment_paint_run(&block->fragments[row->origin_fragment])].attrs.sLanguage,&item,&lease);
-                        if(result==XUI_OK){result=xuiTextShape(r->context,&item,&selected);doc_context_hyphen_release(&lease);}
-                        if(result==XUI_OK){measured.fX=selected.fWidth;measured.fY=selected.fHeight;}
-                        xuiTextShapeFree(&selected);
+                        if(result==XUI_OK){result=doc_render_work_shape_begin(r,&selected);if(result==XUI_OK)result=xuiTextShape(r->context,&item,selected);doc_context_hyphen_release(&lease);}
+                        if(result==XUI_OK){measured.fX=selected->fWidth;measured.fY=selected->fHeight;}
+                        result=doc_render_work_shape_end(r,selected,result);
                         if(result!=XUI_OK){row->range_input=0;row->variant_span=0;}
                     }else result=XUI_ERROR_UNSUPPORTED;
                 }

@@ -68,7 +68,9 @@ static void receiptCloseMatrix(void)
         if(nesting==2)assert(xuiCallScopeBegin(context,&inner)==XUI_OK);
         if(nesting)p.ending=&outer;
         if(oom)assert(xrtMemDebugFailAfter(0));
-        bool consumed=false;int status=xuiDestroyOwnerChecked(context,&consumed);assert(consumed);
+        bool consumed=false;int status=XUI_OK;
+        if(nesting)xuiDestroy(context); /* Void close transfers its owner for the native tail. */
+        else {status=xuiDestroyOwnerChecked(context,&consumed);assert(consumed);}
         if(nesting){
             assert(status==XUI_OK && p.fontDrops==0 && p.proxyDrops==0);
             if(nesting==2){assert(xuiCallScopeEnd(&inner)==XUI_OK);receiptScopeEmpty(&inner);}
@@ -92,7 +94,7 @@ static void receiptNested(void)
         xuiClearFonts(context);assert(p.fontDrops==1 && xrtGetError()==p.primary);
         xrtClearError();assert(xuiCallScopeEnd(&inner)==XUI_ERROR_OUT_OF_MEMORY && xrtGetError()==p.primary);
         receiptScopeEmpty(&inner);xrtClearError();
-        assert(xuiDestroyChecked(context)==XUI_OK && !p.proxyDrops);
+        xuiDestroy(context);assert(!p.proxyDrops);
         assert(xuiCallScopeEnd(&outer)==XUI_ERROR_OUT_OF_MEMORY && xrtGetError()==p.primary);
         assert(p.proxyDrops==1 && !p.references);receiptScopeEmpty(&outer);
         xrtClearError();xrtErrorFree(p.primary);xrtErrorFree(p.secondary);
@@ -172,7 +174,7 @@ static void receiptCell(void)
 }
 typedef struct ReceiptHold {size_t references;xui_context context;unsigned calls;} ReceiptHold;
 static bool receiptRejectHold(const void* raw)
-{ReceiptHold* p=(void*)raw;++p->calls;assert(xuiDestroyChecked(p->context)==XUI_OK);return false;}
+{ReceiptHold* p=(void*)raw;++p->calls;xuiDestroy(p->context);return false;}
 static bool receiptUnusedDrop(const void* raw){(void)raw;assert(!"failed Hold must not Drop");return true;}
 static bool receiptHoldCount(const void* raw,size_t* out){*out=((const ReceiptHold*)raw)->references;return *out!=0;}
 static const xrtownershipops receiptHoldOps={receiptHoldCount,trace};

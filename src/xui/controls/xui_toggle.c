@@ -1292,7 +1292,7 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 		__xuiToggleRegisterStyleProperties(pContext, pType);
 		pType->onPreparePaint = __xuiTogglePreparePaint;
 		pType->pAccessibleAdapter = &g_xuiToggleAccessible;
-		return pType;
+	return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1315,6 +1315,9 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 	pType->pAccessibleAdapter = &g_xuiToggleAccessible;
 	    static const size_t fontOffsets[]={offsetof(xui_toggle_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+
+	    static const size_t surfaceOffsets[]={offsetof(xui_toggle_data_t,pUncheckedSurface),offsetof(xui_toggle_data_t,pCheckedSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
     return pType;
 }
 
@@ -1660,13 +1663,20 @@ XUI_API int xuiToggleSetIndicatorSurface(xui_widget pWidget, xui_surface pUnchec
 	if ( pData->pUncheckedSurface == pUncheckedSurface && pData->pCheckedSurface == pCheckedSurface &&
 	     __xuiToggleRectEqual(pData->tUncheckedSrc, tUncheckedSrc) &&
 	     __xuiToggleRectEqual(pData->tCheckedSrc, tCheckedSrc) ) return XUI_OK;
+    xui_surface_slot_update_t surfaces[2];memset(surfaces,0,sizeof(surfaces));
+    xui_surface* slots[]={&pData->pUncheckedSurface,&pData->pCheckedSurface};
+    xui_surface values[]={pUncheckedSurface,pCheckedSurface};
+    iRet=xuiInternalSurfaceSlotsPrepare(pWidget,2,slots,values,surfaces);
+    if(iRet!=XUI_OK)return iRet;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->pUncheckedSurface = pUncheckedSurface;
+	if ( iRet != XUI_OK ) return xuiInternalSurfaceSlotsEnd(surfaces,2,false,iRet);
+    iRet=xuiInternalSurfaceSlotsPublish(surfaces,2);
+    if(iRet!=XUI_OK)return xuiInternalSurfaceSlotsEnd(surfaces,2,false,iRet);
+
 	pData->tUncheckedSrc = tUncheckedSrc;
-	pData->pCheckedSurface = pCheckedSurface;
+
 	pData->tCheckedSrc = tCheckedSrc;
-	return XUI_OK;
+	return xuiInternalSurfaceSlotsEnd(surfaces,2,true,XUI_OK);
 }
 
 XUI_API int xuiToggleGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)

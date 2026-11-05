@@ -2297,6 +2297,14 @@ static void __xuiTabsDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	}
 }
 
+static void __xuiTabsSurfaceSlots(xui_widget widget,void* raw,xui_surface_slot_array_t* slots)
+{
+    (void)widget;
+    xui_tabs_data_t* data=raw;
+    static const size_t offsets[]={offsetof(xui_tabs_page_t,pIcon)};
+    *slots=(xui_surface_slot_array_t){data->arrPages,XUI_TABS_PAGE_CAPACITY,sizeof(data->arrPages[0]),offsets,1};
+}
+
 static void __xuiTabsRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
 {
 	xui_style_property_info_t tInfo;
@@ -2401,6 +2409,7 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext)
 	__xuiTabsRegisterStyleProperties(pContext, pType);
 	    static const size_t fontOffsets[]={offsetof(xui_tabs_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+    pType->onSurfaceSlots=__xuiTabsSurfaceSlots;
     return pType;
 }
 
@@ -2570,6 +2579,11 @@ XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
 	xui_tabs_data_t* pData;
 	xui_tabs_page_t arrOldPages[XUI_TABS_PAGE_CAPACITY];
 	xui_tabs_page_t tRemoved;
+    xui_tabs_page_t arrNewPages[XUI_TABS_PAGE_CAPACITY];
+    xui_surface_slot_update_t surfaces[XUI_TABS_PAGE_CAPACITY]={0};
+    xui_surface* slots[XUI_TABS_PAGE_CAPACITY];
+    xui_surface values[XUI_TABS_PAGE_CAPACITY];
+    bool committed=false;
 	xui_context pContext;
 	float fOldScroll;
 	int iOldPageCount;
@@ -2600,11 +2614,20 @@ XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
 	iOldSelected = pData->iSelected;
 	iOldChangeCount = pData->iChangeCount;
 	fOldScroll = pData->fScrollX;
+    memcpy(arrNewPages,arrOldPages,sizeof(arrNewPages));
+	for(i=iIndex;i<XUI_TABS_PAGE_CAPACITY-1;++i)arrNewPages[i]=arrOldPages[i+1];
+    arrNewPages[XUI_TABS_PAGE_CAPACITY-1]=tRemoved;
+    arrNewPages[XUI_TABS_PAGE_CAPACITY-1].pIcon=NULL;
+    for(i=0;i<XUI_TABS_PAGE_CAPACITY;++i){slots[i]=&pData->arrPages[i].pIcon;values[i]=arrNewPages[i].pIcon;}
+    iRet=xuiInternalSurfaceSlotsPrepare(pWidget,XUI_TABS_PAGE_CAPACITY,slots,values,surfaces);
+    if(iRet!=XUI_OK)goto done;
+    iRet=xuiInternalSurfaceSlotsPublish(surfaces,XUI_TABS_PAGE_CAPACITY);
+    if(iRet!=XUI_OK)goto done;
 	for ( i = iIndex; i < XUI_TABS_PAGE_CAPACITY - 1; i++ ) {
-		pData->arrPages[i] = pData->arrPages[i + 1];
+		pData->arrPages[i] = arrNewPages[i];
 	}
 	/* Keep the removed widgets discoverable until their detach callbacks finish. */
-	pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1] = tRemoved;
+	pData->arrPages[XUI_TABS_PAGE_CAPACITY - 1] = arrNewPages[XUI_TABS_PAGE_CAPACITY-1];
 	pData->iPageCount--;
 	bSelectionChanged = 0;
 	if ( iOldSelected == iIndex ) {
@@ -2624,12 +2647,30 @@ XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
 	if ( pData->iSelected >= 0 ) __xuiTabsEnsureVisibleInternal(pData, pData->iSelected);
 	iRet = __xuiTabsSyncPages(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		memcpy(pData->arrPages, arrOldPages, sizeof(arrOldPages));
+        /* Keep current slots until the common transaction restores every
+         * pointer; restore all other fields before any retired owner drops. */
+        for(i=0;i<XUI_TABS_PAGE_CAPACITY;++i){
+            xui_surface current=pData->arrPages[i].pIcon;
+            pData->arrPages[i]=arrOldPages[i];pData->arrPages[i].pIcon=current;
+        }
 		pData->iPageCount = iOldPageCount;
 		pData->iSelected = iOldSelected;
 		pData->iChangeCount = iOldChangeCount;
 		pData->fScrollX = fOldScroll;
-		(void)__xuiTabsSyncPages(pWidget, pData);
+        /* Restore all resource pointers before even the best-effort widget
+         * synchronization can run callbacks or release unrelated resources. */
+        xerror* first=xrtTakeError();
+        for(size_t n=XUI_TABS_PAGE_CAPACITY;n>0;--n){
+            xui_surface_slot_update_t* update=&surfaces[n-1];
+            if(update->prepared && update->published && !update->restored)
+                xuiInternalContextCleanupOutcome(pContext,xuiInternalSurfaceSlotRestore(update),&iRet,&first);
+        }
+        xui_cleanup_prefix_t prefix={0};
+        int prefixStatus=xuiInternalCleanupPrefixBegin(pContext,&prefix,iRet,first);
+        xuiInternalContextCleanupOutcome(pContext,__xuiTabsSyncPages(pWidget,pData),&iRet,&first);
+        if(prefixStatus==XUI_OK)prefixStatus=xuiInternalCleanupPrefixEnd(&prefix);
+        xuiInternalContextCleanupOutcome(pContext,prefixStatus,&iRet,&first);
+        xrtSetErrorTake(first);
 		goto done;
 	}
 	(void)xuiInternalWidgetDestroyPart(pWidget,tRemoved.pButton);
@@ -2641,8 +2682,10 @@ XUI_API int xuiTabsRemovePage(xui_widget pWidget, int iIndex)
 	if ( bSelectionChanged ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	}
+    committed=true;
 
 done:
+    iRet=xuiInternalSurfaceSlotsEnd(surfaces,XUI_TABS_PAGE_CAPACITY,committed,iRet);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -2792,6 +2835,10 @@ XUI_API int xuiTabsSetIcons(xui_widget pWidget, xui_surface* arrIcons, const xui
 {
 	xui_tabs_data_t* pData;
 	int i;
+    xui_surface_slot_update_t surfaces[XUI_TABS_PAGE_CAPACITY]={0};
+    xui_surface* slots[XUI_TABS_PAGE_CAPACITY];
+    xui_surface values[XUI_TABS_PAGE_CAPACITY];
+    xui_rect_t previous[XUI_TABS_PAGE_CAPACITY],next[XUI_TABS_PAGE_CAPACITY];
 
 	pData = __xuiTabsGetData(pWidget);
 	if ( (pData == NULL) || (iItemCount < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2800,11 +2847,22 @@ XUI_API int xuiTabsSetIcons(xui_widget pWidget, xui_surface* arrIcons, const xui
 			if ( !__xuiTabsIconRectValid(arrSrc[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
-	for ( i = 0; i < pData->iPageCount; i++ ) {
-		pData->arrPages[i].pIcon = (arrIcons != NULL && i < iItemCount) ? arrIcons[i] : NULL;
-		pData->arrPages[i].tIconSrc = (arrSrc != NULL && i < iItemCount) ? arrSrc[i] : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
-	}
-	return __xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    size_t count=(size_t)pData->iPageCount;
+    if(!count)return __xuiTabsInvalidateAll(pWidget,pData,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+    for(i=0;i<pData->iPageCount;++i){
+        slots[i]=&pData->arrPages[i].pIcon;values[i]=arrIcons && i<iItemCount ? arrIcons[i]:NULL;
+        previous[i]=pData->arrPages[i].tIconSrc;
+        next[i]=arrSrc && i<iItemCount ? arrSrc[i]:(xui_rect_t){0};
+    }
+    int status=xuiInternalSurfaceSlotsPrepare(pWidget,count,slots,values,surfaces);
+    if(status!=XUI_OK)return status;
+    status=xuiInternalSurfaceSlotsPublish(surfaces,count);
+    if(status==XUI_OK){
+        for(size_t n=0;n<count;++n)pData->arrPages[n].tIconSrc=next[n];
+        status=__xuiTabsInvalidateAll(pWidget,pData,XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+        if(status!=XUI_OK)for(size_t n=0;n<count;++n)pData->arrPages[n].tIconSrc=previous[n];
+    }
+    return xuiInternalSurfaceSlotsEnd(surfaces,count,status==XUI_OK,status);
 }
 
 XUI_API int xuiTabsSetFont(xui_widget pWidget, xui_font pFont)

@@ -39,7 +39,7 @@ static void contract(void)
         xui_text_shape_t shape={0};shape.iSize=sizeof(shape);shape.pPaint=paint;shape.pPaintOwnership=&protocol;
         shape.pClusters=xrtCalloc(2,sizeof(*shape.pClusters));shape.pCarets=xrtCalloc(2,sizeof(*shape.pCarets));assert(shape.pClusters && shape.pCarets);
         xui_text_shape_t before=shape;
-        assert(xuiTextShapeFreeChecked(&shape)==XUI_ERROR_BUSY && !memcmp(&shape,&before,sizeof(shape)) && !dropped);
+        assert(xuiTextShapeFreeChecked(&shape)==XUI_STATUS_DEFERRED && !memcmp(&shape,&before,sizeof(shape)) && !dropped && !xrtGetError());
         paint->ready=true;xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
         edges=0;assert(shape.pPaintOwnership->TraceRaw(shape.pPaint,visit,NULL) && edges==1);assert(xrtOwnershipScopeEnd(&freeze));
         if(failure)assert(xrtMemDebugFailAfter(0));
@@ -72,5 +72,5 @@ int main(void)
     const xge_host_xrt_contract_t contractValue=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;assert(xgeHostXrtBind(&contractValue,resolve,NULL,NULL)==XGE_HOST_XRT_OK);assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);contract();raw_retry_and_malformed();xrtClearError();xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes && before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
-    puts("typed custom paint: real value edge, exact metadata, Ready BUSY preserves full output, consumed false-NULL/OOM and raw retry passed");return 0;
+    puts("typed custom paint: real value edge, exact metadata, Ready DEFERRED preserves full output, consumed false-NULL/OOM and raw retry passed");return 0;
 }

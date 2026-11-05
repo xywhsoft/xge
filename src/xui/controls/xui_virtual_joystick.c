@@ -1423,6 +1423,8 @@ XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext)
 	}
 	__xuiVirtualJoystickRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiVirtualJoystickPreparePaint;
+    static const size_t surfaceOffsets[]={offsetof(xui_virtual_joystick_data_t,pBaseSurface),offsetof(xui_virtual_joystick_data_t,pBaseActiveSurface),offsetof(xui_virtual_joystick_data_t,pKnobSurface),offsetof(xui_virtual_joystick_data_t,pKnobActiveSurface),offsetof(xui_virtual_joystick_data_t,pRippleSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
 	return pType;
 }
 
@@ -1727,7 +1729,7 @@ XUI_API int xuiVirtualJoystickSetSurface(xui_widget pWidget, int iPart, xui_surf
 	xui_virtual_joystick_data_t* pData;
 	xui_surface* ppDataSurface;
 	xui_rect_t* pDataSrc;
-	xui_surface pOldSurface;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
 	xui_rect_t tOldSrc;
 	int iRet;
 
@@ -1760,16 +1762,17 @@ XUI_API int xuiVirtualJoystickSetSurface(xui_widget pWidget, int iPart, xui_surf
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (*ppDataSurface == pSurface) && __xuiVirtualJoystickRectEqual(*pDataSrc, tSrc) ) return XUI_OK;
-	pOldSurface = *ppDataSurface;
+    iRet=xuiInternalSurfaceSlotBegin(pWidget->pContext,ppDataSurface,pSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+    if(iRet!=XUI_OK)return iRet;
 	tOldSrc = *pDataSrc;
-	*ppDataSurface = pSurface;
+
 	*pDataSrc = tSrc;
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
-		*ppDataSurface = pOldSurface;
+
 		*pDataSrc = tOldSrc;
 	}
-	return iRet;
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,iRet==XUI_OK,iRet);
 }
 
 XUI_API int xuiVirtualJoystickGetSurface(xui_widget pWidget, int iPart, xui_surface* ppSurface, xui_rect_t* pSrc)

@@ -1212,6 +1212,8 @@ XUI_API xui_widget_type xuiQrCodeGetType(xui_context pContext)
 	}
 	__xuiQrCodeRegisterStyleProperties(pContext, pType);
 	pType->pAccessibleAdapter = &g_xuiQrCodeAccessible;
+    static const size_t surfaceOffsets[]={offsetof(xui_qrcode_data_t,pIconSurface)};
+    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
 	return pType;
 }
 
@@ -1345,12 +1347,14 @@ XUI_API int xuiQrCodeSetIcon(xui_widget pWidget, xui_surface pIconSurface, xui_r
 	}
 	if ( (pData->pIconSurface == pIconSurface) && __xuiQrCodeRectEqual(pData->tIconSrc, tIconSrc) &&
 	     (pData->fIconSize == fIconSize) ) return XUI_OK;
-	pData->pIconSurface = pIconSurface;
+    xui_surface_slot_update_t surfaceUpdate={.widget=pWidget};
+    int surfaceStatus=xuiInternalSurfaceSlotBegin(pWidget->pContext,&pData->pIconSurface,pIconSurface,pWidget->bTypeInitialized!=0,&surfaceUpdate);
+    if(surfaceStatus!=XUI_OK)return surfaceStatus;
 	pData->tIconSrc = tIconSrc;
 	pData->fIconSize = fIconSize;
 	pData->bIconSurfaceGenerationValid = __xuiQrCodeReadSurfaceGeneration(pWidget,
 		pData->pIconSurface, &pData->iIconSurfaceGeneration);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalSurfaceSlotEnd(&surfaceUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API xui_surface xuiQrCodeGetIcon(xui_widget pWidget)

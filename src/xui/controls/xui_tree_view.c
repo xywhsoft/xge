@@ -2639,7 +2639,7 @@ XUI_API xui_widget_type xuiTreeViewGetType(xui_context pContext)
     return pType;
 }
 
-XUI_API int xuiTreeViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_tree_view_desc_t* pDesc)
+static int __xuiTreeViewCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_tree_view_desc_t* pDesc, xui_widget pOwner)
 {
 	xui_widget_type pType;
 
@@ -2654,7 +2654,15 @@ XUI_API int xuiTreeViewCreate(xui_context pContext, xui_widget* ppWidget, const 
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	return pOwner ? xuiInternalWidgetCreatePart(pOwner,pType,ppWidget,pDesc) : xuiWidgetCreateTyped(pContext,pType,ppWidget,pDesc);
+}
+XUI_API int xuiTreeViewCreate(xui_context pContext,xui_widget* ppWidget,const xui_tree_view_desc_t* pDesc)
+{return __xuiTreeViewCreateWithOwner(pContext,ppWidget,pDesc,NULL);}
+int xuiInternalTreeViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_tree_view_desc_t* pDesc)
+{
+    if(ppWidget)*ppWidget=NULL;
+    xui_context context=xuiWidgetGetContext(pOwner);
+    return context ? __xuiTreeViewCreateWithOwner(context,ppWidget,pDesc,pOwner):XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiTreeViewSetSelectOwned(xui_widget pWidget, xui_tree_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner)
