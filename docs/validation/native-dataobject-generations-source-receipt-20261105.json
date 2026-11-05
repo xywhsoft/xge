@@ -1,0 +1,41 @@
+{
+  "format": "source-receipt-1",
+  "passed": true,
+  "sourceCandidate": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-final-overlay-r1\\manifest.json",
+  "candidateSha256": "da14bfdec18aae214b7f7d0b69689a37b8b16bfc777130339fe2538a2ab97c8a",
+  "acceptanceSha256": "6ba551a6dc20413f33d3e1ac8ef9d17ff30c78a8436b1eb8dd9aa8b661e3768e",
+  "files": [
+    {
+      "path": "src/xge/input/xge_drag_drop.c",
+      "acceptedSha256": "7b233560106da0847da933e5ce81e5c6fd2b49db58d84957574d6d4b530e2b7f",
+      "committedSha256": "7b233560106da0847da933e5ce81e5c6fd2b49db58d84957574d6d4b530e2b7f"
+    },
+    {
+      "path": "src/xui/core/xui_drag_drop.c",
+      "acceptedSha256": "93fe684cd1e74167f643a4114a23d8136ef5f400f2b9b6a02c78c4b3c09fc9fb",
+      "committedSha256": "93fe684cd1e74167f643a4114a23d8136ef5f400f2b9b6a02c78c4b3c09fc9fb"
+    },
+    {
+      "path": "tests/xui/xui_data_object_generation_test.c",
+      "acceptedSha256": "cda16752253ec13fede39bb2e2c4b53a9b471666735883b7c3da465012b39013",
+      "committedSha256": "cda16752253ec13fede39bb2e2c4b53a9b471666735883b7c3da465012b39013"
+    },
+    {
+      "path": "tools/test/check_dataobject_generations.py",
+      "acceptedSha256": "95d7bcf3e7837b198756152f040a398114e62fc16a199bd9bf9a074789a86883",
+      "committedSha256": "95d7bcf3e7837b198756152f040a398114e62fc16a199bd9bf9a074789a86883"
+    },
+    {
+      "path": "docs/native-dataobject-generations.md",
+      "acceptedSha256": "ab337f4c9f5ca641d2804e73c6886f76a6f0f6a71cc5e779f8c56257259ac7bb",
+      "committedSha256": "ab337f4c9f5ca641d2804e73c6886f76a6f0f6a71cc5e779f8c56257259ac7bb"
+    },
+    {
+      "path": "docs/validation/native-dataobject-generations-r1.json",
+      "acceptedSha256": "6ba551a6dc20413f33d3e1ac8ef9d17ff30c78a8436b1eb8dd9aa8b661e3768e",
+      "committedSha256": "6ba551a6dc20413f33d3e1ac8ef9d17ff30c78a8436b1eb8dd9aa8b661e3768e"
+    }
+  ],
+  "scope": "Native stable-generation/raw reentry layer only. Not managed provenance, COM code residency, typed Owned providers/DataOutput, atomic clipboard, or final xlang binding acceptance.",
+  "normalization": "Project source CRLF converted to LF only; captured acceptance JSON bytes unchanged."
+}

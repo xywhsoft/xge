@@ -3,236 +3,252 @@
 #include "xui_internal.h"
 
 #include <limits.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #define XUI_DATA_OBJECT_MAGIC 0x5855444Fu
 #define XUI_DRAG_EFFECT_MASK \
 	(XUI_DRAG_EFFECT_COPY | XUI_DRAG_EFFECT_MOVE | XUI_DRAG_EFFECT_LINK)
 
-typedef struct xui_data_slot_t {
+/* A slot owns one immutable payload generation. A provider invocation owns a
+ * second real reference until its complete C return; replacement never leaves
+ * a reader holding a pointer into the movable slot array. Mutable operations
+ * retain their existing caller-serialized C contract. Atomic references only
+ * protect actual lifetime, not arbitrary concurrent container mutations. */
+typedef struct xui_data_generation_t {
+	atomic_uint iRefs;
 	char* sFormat;
 	void* pValue;
 	size_t iSize;
 	xui_data_provider_proc onRead;
 	xui_data_provider_free_proc onFree;
 	void* pUser;
-} xui_data_slot_t;
+} xui_data_generation_t;
 
 struct xui_data_object_t {
 	uint32_t iMagic;
-	int iRefCount;
-	xui_data_slot_t* pSlots;
+	atomic_uint iRefCount;
+	xui_data_generation_t** pSlots;
 	int iCount;
 	int iCapacity;
+	atomic_uint iActivity;
+	unsigned bDestroying;
 };
 
 static int __xuiDataObjectValid(xui_data_object pData)
 {
 	return pData != NULL && pData->iMagic == XUI_DATA_OBJECT_MAGIC &&
-		pData->iRefCount > 0;
+		atomic_load_explicit(&pData->iRefCount,memory_order_acquire)>0u &&
+		!pData->bDestroying;
 }
 
 static char* __xuiDataStringCopy(const char* sText)
 {
-	char* sCopy;
-	size_t iLength;
-
-	if ( sText == NULL || sText[0] == '\0' ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	if(!sText || !sText[0])return NULL;
+	size_t length=strlen(sText);
+	if(length==SIZE_MAX)return NULL;
+	char* copy=(char*)xrtMalloc(length+1u);
+	if(copy)memcpy(copy,sText,length+1u);
+	return copy;
 }
 
-static void __xuiDataSlotClear(xui_data_slot_t* pSlot)
+static bool __xuiDataGenerationHold(xui_data_generation_t* generation)
 {
-	if ( pSlot == NULL ) return;
-	if ( pSlot->onFree != NULL ) pSlot->onFree(pSlot->pUser);
-	if ( pSlot->pValue != NULL ) xrtFree(pSlot->pValue);
-	if ( pSlot->sFormat != NULL ) xrtFree(pSlot->sFormat);
-	memset(pSlot, 0, sizeof(*pSlot));
+	unsigned refs=atomic_load_explicit(&generation->iRefs,memory_order_relaxed);
+	do {if(!refs || refs==UINT_MAX)return false;}
+	while(!atomic_compare_exchange_weak_explicit(&generation->iRefs,&refs,refs+1u,memory_order_relaxed,memory_order_relaxed));
+	return true;
 }
 
-static int __xuiDataSlotFind(xui_data_object pData, const char* sFormat)
+static void __xuiDataGenerationDrop(xui_data_generation_t* generation)
 {
-	int i;
+	if(!generation || atomic_fetch_sub_explicit(&generation->iRefs,1u,memory_order_acq_rel)!=1u)return;
+	/* The record is detached from its publisher before arbitrary cleanup. Its
+	 * fields cannot be reconfigured by that cleanup, including self-reentry. */
+	if(generation->onFree)generation->onFree(generation->pUser);
+	xrtFree(generation);
+}
 
-	if ( !__xuiDataObjectValid(pData) || sFormat == NULL ) return -1;
-	for ( i = 0; i < pData->iCount; i++ ) {
-		if ( strcmp(pData->pSlots[i].sFormat, sFormat) == 0 ) return i;
-	}
+static int __xuiDataSlotFind(xui_data_object pData,const char* format)
+{
+	if(!__xuiDataObjectValid(pData) || !format)return -1;
+	for(int i=0;i<pData->iCount;++i)
+		if(strcmp(pData->pSlots[i]->sFormat,format)==0)return i;
 	return -1;
 }
 
-static int __xuiDataSlotReserve(xui_data_object pData, int iCapacity)
+static int __xuiDataSlotReserve(xui_data_object pData,int capacity)
 {
-	xui_data_slot_t* pNew;
-	int iNewCapacity;
-
-	if ( iCapacity <= pData->iCapacity ) return XUI_OK;
-	iNewCapacity = pData->iCapacity > 0 ? pData->iCapacity * 2 : 4;
-	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
-	pNew = (xui_data_slot_t*)xrtRealloc(pData->pSlots,
-		sizeof(*pNew) * (size_t)iNewCapacity);
-	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memset(pNew + pData->iCapacity, 0,
-		sizeof(*pNew) * (size_t)(iNewCapacity - pData->iCapacity));
-	pData->pSlots = pNew;
-	pData->iCapacity = iNewCapacity;
+	if(capacity<=pData->iCapacity)return XUI_OK;
+	if(capacity<0 || (size_t)capacity>SIZE_MAX/sizeof(*pData->pSlots))return XUI_ERROR_OUT_OF_MEMORY;
+	int next=pData->iCapacity>0 ? pData->iCapacity:4;
+	while(next<capacity){if(next>INT_MAX/2){next=capacity;break;}next*=2;}
+	if((size_t)next>SIZE_MAX/sizeof(*pData->pSlots))return XUI_ERROR_OUT_OF_MEMORY;
+	xui_data_generation_t** slots=(xui_data_generation_t**)xrtRealloc(pData->pSlots,sizeof(*slots)*(size_t)next);
+	if(!slots)return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pSlots=slots;pData->iCapacity=next;
 	return XUI_OK;
 }
 
-static int __xuiDataSlotPrepare(xui_data_object pData, const char* sFormat,
-	xui_data_slot_t** ppSlot)
+XUI_API int xuiDataObjectCreate(xui_data_object* output)
 {
-	xui_data_slot_t* pSlot;
-	char* sCopy;
-	int iIndex;
-	int iRet;
+	if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+	*output=NULL;
+	xui_data_object object=(xui_data_object)xrtCalloc(1u,sizeof(*object));
+	if(!object)return XUI_ERROR_OUT_OF_MEMORY;
+	object->iMagic=XUI_DATA_OBJECT_MAGIC;
+	atomic_init(&object->iRefCount,1u);atomic_init(&object->iActivity,0u);
+	*output=object;return XUI_OK;
+}
 
-	if ( !__xuiDataObjectValid(pData) || sFormat == NULL ||
-		sFormat[0] == '\0' || ppSlot == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+XUI_API int xuiDataObjectAddRef(xui_data_object object)
+{
+	if(!__xuiDataObjectValid(object))return XUI_ERROR_INVALID_ARGUMENT;
+	unsigned refs=atomic_load_explicit(&object->iRefCount,memory_order_relaxed);
+	do {if(!refs || refs>=INT_MAX)return XUI_ERROR_INVALID_ARGUMENT;}
+	while(!atomic_compare_exchange_weak_explicit(&object->iRefCount,&refs,refs+1u,memory_order_relaxed,memory_order_relaxed));
+	return XUI_OK;
+}
+
+XUI_API void xuiDataObjectRelease(xui_data_object object)
+{
+	if(!__xuiDataObjectValid(object))return;
+	if(atomic_fetch_sub_explicit(&object->iRefCount,1u,memory_order_acq_rel)!=1u)return;
+	/* No owning field remains attached while provider cleanup can reenter. A
+	 * real active operation still owns a reference and cannot reach this tail. */
+	object->bDestroying=1u;
+	xui_data_generation_t** slots=object->pSlots;
+	int count=object->iCount;
+	object->pSlots=NULL;object->iCount=0;object->iCapacity=0;
+	for(int i=0;i<count;++i)__xuiDataGenerationDrop(slots[i]);
+	xrtFree(slots);object->iMagic=0u;xrtFree(object);
+}
+
+static int __xuiDataOperationBegin(xui_data_object object)
+{
+	int status=xuiDataObjectAddRef(object);
+	if(status!=XUI_OK)return status;
+	unsigned active=atomic_fetch_add_explicit(&object->iActivity,1u,memory_order_relaxed);
+	if(active==UINT_MAX){
+		atomic_fetch_sub_explicit(&object->iActivity,1u,memory_order_relaxed);
+		xuiDataObjectRelease(object);return XUI_ERROR_INVALID_STATE;
 	}
-	iIndex = __xuiDataSlotFind(pData, sFormat);
-	if ( iIndex >= 0 ) {
-		pSlot = &pData->pSlots[iIndex];
-		if ( pSlot->onFree != NULL ) pSlot->onFree(pSlot->pUser);
-		if ( pSlot->pValue != NULL ) xrtFree(pSlot->pValue);
-		pSlot->pValue = NULL;
-		pSlot->iSize = 0u;
-		pSlot->onRead = NULL;
-		pSlot->onFree = NULL;
-		pSlot->pUser = NULL;
-		*ppSlot = pSlot;
+	return XUI_OK;
+}
+
+static void __xuiDataOperationEnd(xui_data_object object)
+{
+	atomic_fetch_sub_explicit(&object->iActivity,1u,memory_order_release);
+	xuiDataObjectRelease(object);
+}
+
+static xui_data_generation_t* __xuiDataGenerationCreate(const char* format,const void* value,size_t size)
+{
+	size_t length=strlen(format);
+	if(length>=SIZE_MAX-sizeof(xui_data_generation_t) ||
+		size>SIZE_MAX-sizeof(xui_data_generation_t)-length-1u)return NULL;
+	/* Metadata, stable format and optional bytes are one actual allocation.
+	 * pValue is byte storage; no typed/aligned payload pointer is exposed. */
+	xui_data_generation_t* generation=(xui_data_generation_t*)xrtCalloc(1u,sizeof(*generation)+length+1u+size);
+	if(!generation)return NULL;
+	atomic_init(&generation->iRefs,1u);
+	generation->sFormat=(char*)(generation+1);memcpy(generation->sFormat,format,length+1u);
+	if(size){generation->pValue=generation->sFormat+length+1u;memcpy(generation->pValue,value,size);}
+	generation->iSize=size;
+	return generation;
+}
+
+static int __xuiDataPublish(xui_data_object object,xui_data_generation_t* next)
+{
+	int index=__xuiDataSlotFind(object,next->sFormat);
+	xui_data_generation_t* previous=NULL;
+	if(index<0){
+		if(object->iCount==INT_MAX)return XUI_ERROR_OUT_OF_MEMORY;
+		int status=__xuiDataSlotReserve(object,object->iCount+1);
+		if(status!=XUI_OK)return status;
+		index=object->iCount++;
+	}else previous=object->pSlots[index];
+	object->pSlots[index]=next;
+	__xuiDataGenerationDrop(previous);
+	return XUI_OK;
+}
+
+XUI_API int xuiDataObjectSet(xui_data_object object,const char* format,const void* value,size_t size)
+{
+	if(!format || !format[0] || (size && !value))return XUI_ERROR_INVALID_ARGUMENT;
+	int status=__xuiDataOperationBegin(object);
+	if(status!=XUI_OK)return status;
+	xui_data_generation_t* next=__xuiDataGenerationCreate(format,value,size);
+	if(!next)status=XUI_ERROR_OUT_OF_MEMORY;
+	else {
+		status=__xuiDataPublish(object,next);
+		if(status!=XUI_OK)__xuiDataGenerationDrop(next);
+	}
+	__xuiDataOperationEnd(object);return status;
+}
+
+XUI_API int xuiDataObjectSetProvider(xui_data_object object,const char* format,
+	xui_data_provider_proc read,xui_data_provider_free_proc release,void* user)
+{
+	if(!format || !format[0] || !read)return XUI_ERROR_INVALID_ARGUMENT;
+	int status=__xuiDataOperationBegin(object);
+	if(status!=XUI_OK)return status;
+	xui_data_generation_t* next=__xuiDataGenerationCreate(format,NULL,0u);
+	if(!next)status=XUI_ERROR_OUT_OF_MEMORY;
+	else {
+		next->onRead=read;next->onFree=release;next->pUser=user;
+		status=__xuiDataPublish(object,next);
+		if(status!=XUI_OK){next->onFree=NULL;__xuiDataGenerationDrop(next);}
+	}
+	__xuiDataOperationEnd(object);return status;
+}
+
+XUI_API int xuiDataObjectFormatCount(xui_data_object object)
+{return __xuiDataObjectValid(object) ? object->iCount:0;}
+
+XUI_API const char* xuiDataObjectFormatAt(xui_data_object object,int index)
+{
+	return __xuiDataObjectValid(object) && index>=0 && index<object->iCount ? object->pSlots[index]->sFormat:NULL;
+}
+
+XUI_API int xuiDataObjectHas(xui_data_object object,const char* format)
+{return __xuiDataSlotFind(object,format)>=0;}
+
+XUI_API int xuiDataObjectGet(xui_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+{
+	if(!outputSize || (capacity && !output))return XUI_ERROR_INVALID_ARGUMENT;
+	*outputSize=0u;
+	int index=__xuiDataSlotFind(object,format);
+	xui_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
+	/* Raw containers are caller-serialized. Pure byte reads do not call user
+	 * code and cannot invalidate their slot; keep their direct copy hot path.
+	 * Provider reads below pin both actual objects across arbitrary reentry. */
+	if(generation && !generation->onRead){
+		*outputSize=generation->iSize;
+		if(output && capacity<generation->iSize)return XUI_ERROR_BUFFER_TOO_SMALL;
+		if(output && generation->iSize)memcpy(output,generation->pValue,generation->iSize);
 		return XUI_OK;
 	}
-	iRet = __xuiDataSlotReserve(pData, pData->iCount + 1);
-	if ( iRet != XUI_OK ) return iRet;
-	sCopy = __xuiDataStringCopy(sFormat);
-	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pSlot = &pData->pSlots[pData->iCount++];
-	pSlot->sFormat = sCopy;
-	*ppSlot = pSlot;
-	return XUI_OK;
-}
-
-XUI_API int xuiDataObjectCreate(xui_data_object* ppData)
-{
-	xui_data_object pData;
-
-	if ( ppData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	*ppData = NULL;
-	pData = (xui_data_object)xrtMalloc(sizeof(*pData));
-	if ( pData == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memset(pData, 0, sizeof(*pData));
-	pData->iMagic = XUI_DATA_OBJECT_MAGIC;
-	pData->iRefCount = 1;
-	*ppData = pData;
-	return XUI_OK;
-}
-
-XUI_API int xuiDataObjectAddRef(xui_data_object pData)
-{
-	if ( !__xuiDataObjectValid(pData) || pData->iRefCount == INT_MAX ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+	int status=__xuiDataOperationBegin(object);
+	if(status!=XUI_OK)return status;
+	if(!generation)status=XUI_ERROR_NOT_FOUND;
+	else if(!__xuiDataGenerationHold(generation))status=XUI_ERROR_INVALID_STATE;
+	else {
+		if(generation->onRead)status=generation->onRead(generation->sFormat,output,capacity,outputSize,generation->pUser);
+		else {
+			*outputSize=generation->iSize;
+			if(output && capacity<generation->iSize)status=XUI_ERROR_BUFFER_TOO_SMALL;
+			else if(output && generation->iSize)memcpy(output,generation->pValue,generation->iSize);
+		}
+		/* A failing provider's nullable first diagnostic must survive its final
+		 * generation cleanup and a self-released object's final native cleanup. */
+		xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+		__xuiDataGenerationDrop(generation);
+		__xuiDataOperationEnd(object);
+		if(status!=XUI_OK){xrtClearError();xrtSetErrorTake(first);}
+		return status;
 	}
-	pData->iRefCount++;
-	return XUI_OK;
-}
-
-XUI_API void xuiDataObjectRelease(xui_data_object pData)
-{
-	int i;
-
-	if ( !__xuiDataObjectValid(pData) ) return;
-	pData->iRefCount--;
-	if ( pData->iRefCount > 0 ) return;
-	for ( i = 0; i < pData->iCount; i++ ) __xuiDataSlotClear(&pData->pSlots[i]);
-	if ( pData->pSlots != NULL ) xrtFree(pData->pSlots);
-	pData->iMagic = 0u;
-	xrtFree(pData);
-}
-
-XUI_API int xuiDataObjectSet(xui_data_object pData, const char* sFormat,
-	const void* pValue, size_t iSize)
-{
-	xui_data_slot_t* pSlot;
-	void* pCopy = NULL;
-	int iRet;
-
-	if ( iSize > 0u && pValue == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iSize > 0u ) {
-		pCopy = xrtMalloc(iSize);
-		if ( pCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		memcpy(pCopy, pValue, iSize);
-	}
-	iRet = __xuiDataSlotPrepare(pData, sFormat, &pSlot);
-	if ( iRet != XUI_OK ) {
-		if ( pCopy != NULL ) xrtFree(pCopy);
-		return iRet;
-	}
-	pSlot->pValue = pCopy;
-	pSlot->iSize = iSize;
-	return XUI_OK;
-}
-
-XUI_API int xuiDataObjectSetProvider(xui_data_object pData,
-	const char* sFormat, xui_data_provider_proc onRead,
-	xui_data_provider_free_proc onFree, void* pUser)
-{
-	xui_data_slot_t* pSlot;
-	int iRet;
-
-	if ( onRead == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiDataSlotPrepare(pData, sFormat, &pSlot);
-	if ( iRet != XUI_OK ) return iRet;
-	pSlot->onRead = onRead;
-	pSlot->onFree = onFree;
-	pSlot->pUser = pUser;
-	return XUI_OK;
-}
-
-XUI_API int xuiDataObjectFormatCount(xui_data_object pData)
-{
-	return __xuiDataObjectValid(pData) ? pData->iCount : 0;
-}
-
-XUI_API const char* xuiDataObjectFormatAt(xui_data_object pData, int iIndex)
-{
-	if ( !__xuiDataObjectValid(pData) || iIndex < 0 ||
-		iIndex >= pData->iCount ) return NULL;
-	return pData->pSlots[iIndex].sFormat;
-}
-
-XUI_API int xuiDataObjectHas(xui_data_object pData, const char* sFormat)
-{
-	return __xuiDataSlotFind(pData, sFormat) >= 0;
-}
-
-XUI_API int xuiDataObjectGet(xui_data_object pData, const char* sFormat,
-	void* pOutput, size_t iCapacity, size_t* pOutputSize)
-{
-	xui_data_slot_t* pSlot;
-	int iIndex;
-
-	if ( pOutputSize == NULL || (pOutput == NULL && iCapacity != 0u) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	*pOutputSize = 0u;
-	iIndex = __xuiDataSlotFind(pData, sFormat);
-	if ( iIndex < 0 ) return XUI_ERROR_NOT_FOUND;
-	pSlot = &pData->pSlots[iIndex];
-	if ( pSlot->onRead != NULL ) {
-		return pSlot->onRead(sFormat, pOutput, iCapacity,
-			pOutputSize, pSlot->pUser);
-	}
-	*pOutputSize = pSlot->iSize;
-	if ( pOutput == NULL ) return XUI_OK;
-	if ( iCapacity < pSlot->iSize ) return XUI_ERROR_BUFFER_TOO_SMALL;
-	if ( pSlot->iSize > 0u ) memcpy(pOutput, pSlot->pValue, pSlot->iSize);
-	return XUI_OK;
+	__xuiDataOperationEnd(object);return status;
 }
 
 static int __xuiDragEffectValid(uint32_t iEffect, uint32_t iAllowed)

@@ -1,0 +1,133 @@
+{
+  "scope": "Native stable-generation/raw reentry layer only. Not managed provenance, COM code residency, typed Owned providers/DataOutput, atomic clipboard, or final xlang binding acceptance.",
+  "passed": true,
+  "leafRows": 24,
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-win-r3\\results.json",
+      "sha256": "acd5e253676f0f42593fc82d3c2801382cd55af4533ad74c2a1d81a2910e53c8",
+      "rows": 12
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-linux-r3.results.json",
+      "sha256": "593eb976b3690e1c2af14fc078d547078b2dd04992c0011656842436339fc487",
+      "rows": 12
+    }
+  ],
+  "baselineReproduction": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-baseline-repro-linux-r1.results.json",
+    "sha256": "9c790cfd6dd6559ea1eed007df4254024cc17631c90eb6c32ba95382c8006091",
+    "expectedFailure": "Legacy O0/O2 provider frees userdata while that provider is still running; same fixture passes after fix."
+  },
+  "performance": [
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-perf-win-r2\\results.json",
+      "sha256": "2dc950cca3ff70c9d8bdd96ee1c3fe5284408c8d56ee02528bf301ae60341a25",
+      "summary": [
+        {
+          "family": "xge",
+          "kind": "bytes",
+          "medianMillisecondsPerMillion": {
+            "baseline": 11.3391,
+            "generation": 8.9143
+          },
+          "generationToBaseline": 0.7861558677496451
+        },
+        {
+          "family": "xge",
+          "kind": "provider",
+          "medianMillisecondsPerMillion": {
+            "baseline": 7.5983,
+            "generation": 13.0522
+          },
+          "generationToBaseline": 1.7177789768764065
+        },
+        {
+          "family": "xui",
+          "kind": "bytes",
+          "medianMillisecondsPerMillion": {
+            "baseline": 9.3256,
+            "generation": 8.463
+          },
+          "generationToBaseline": 0.9075019301707128
+        },
+        {
+          "family": "xui",
+          "kind": "provider",
+          "medianMillisecondsPerMillion": {
+            "baseline": 8.0752,
+            "generation": 14.1627
+          },
+          "generationToBaseline": 1.7538512978006735
+        }
+      ]
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-perf-linux-r1.results.json",
+      "sha256": "315eb4dcb56d64b31fdf8dce2811ca00ec868050beac38bd86a4a8d6f5fd4dab",
+      "summary": [
+        {
+          "family": "xge",
+          "kind": "bytes",
+          "medianMillisecondsPerMillion": {
+            "baseline": 8.7942,
+            "generation": 7.8473
+          },
+          "generationToBaseline": 0.8923267608196311
+        },
+        {
+          "family": "xge",
+          "kind": "provider",
+          "medianMillisecondsPerMillion": {
+            "baseline": 7.6238,
+            "generation": 15.581
+          },
+          "generationToBaseline": 2.0437314724940316
+        },
+        {
+          "family": "xui",
+          "kind": "bytes",
+          "medianMillisecondsPerMillion": {
+            "baseline": 8.7275,
+            "generation": 8.4268
+          },
+          "generationToBaseline": 0.9655456889143513
+        },
+        {
+          "family": "xui",
+          "kind": "provider",
+          "medianMillisecondsPerMillion": {
+            "baseline": 7.6854,
+            "generation": 14.9974
+          },
+          "generationToBaseline": 1.9514143701043538
+        }
+      ]
+    }
+  ],
+  "sizes": [
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-sizes-win-r1\\results.json",
+      "sha256": "6af5b740cec308ee1b92a5097af5eb2b2c82886d7b5e4cce62fbf9010ea4a2b6"
+    },
+    {
+      "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-sizes-linux-r1.results.json",
+      "sha256": "4dcbd696197903ca40f4ca43fe2540f5fa4c580b3266a64b3381905ef04802bc"
+    }
+  ],
+  "nativeSources": {
+    "windows": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-source-r2",
+    "linux": "/home/ubuntu/xlang-validation/native-dataobject-b-source-r2"
+  },
+  "nativeEngines": {
+    "windows": "F:\\xlang-validation\\foreign-completion-20261103\\native-dataobject-b-host-win-r3",
+    "linux": "/home/ubuntu/xlang-validation/native-dataobject-b-host-linux-r2"
+  },
+  "buildScope": "Exact GCC .d content comparison: two affected production TUs rebuilt plus host shim rederived normally from nm; other 141 production objects referenced by SHA. No hand-copied ABI fingerprint or imports.",
+  "nativeHostImports": {
+    "windows": 194,
+    "linux": 192
+  },
+  "networkTests": false,
+  "desktopTests": false
+}

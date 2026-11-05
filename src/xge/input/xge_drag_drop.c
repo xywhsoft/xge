@@ -1,20 +1,29 @@
+#include <stdatomic.h>
 #define XGE_DATA_OBJECT_MAGIC 0x5847444Fu
 
-typedef struct xge_data_slot_t {
+/* A slot owns one immutable payload generation. A provider invocation owns a
+ * second real reference until its complete C return; replacement never leaves
+ * a reader holding a pointer into the movable slot array. Mutable operations
+ * retain their existing caller-serialized C contract. Atomic references only
+ * protect actual lifetime, not arbitrary concurrent container mutations. */
+typedef struct xge_data_generation_t {
+	atomic_uint iRefs;
 	char* sFormat;
 	void* pValue;
 	size_t iSize;
 	xge_data_provider_proc onRead;
 	xge_data_provider_free_proc onFree;
 	void* pUser;
-} xge_data_slot_t;
+} xge_data_generation_t;
 
 struct xge_data_object_t {
 	uint32_t iMagic;
-	int iRefCount;
-	xge_data_slot_t* pSlots;
+	atomic_uint iRefCount;
+	xge_data_generation_t** pSlots;
 	int iCount;
 	int iCapacity;
+	atomic_uint iActivity;
+	unsigned bDestroying;
 };
 
 static xge_drag_event_proc g_xgeDragEventProc;
@@ -49,206 +58,217 @@ static void __xgeDragDropUnit(void)
 static int __xgeDataObjectValid(xge_data_object pData)
 {
 	return pData != NULL && pData->iMagic == XGE_DATA_OBJECT_MAGIC &&
-		pData->iRefCount > 0;
+		atomic_load_explicit(&pData->iRefCount,memory_order_acquire)>0u &&
+		!pData->bDestroying;
 }
 
 static char* __xgeDataStringCopy(const char* sText)
 {
-	char* sCopy;
-	size_t iLength;
-
-	if ( sText == NULL || sText[0] == '\0' ) return NULL;
-	iLength = strlen(sText);
-	sCopy = (char*)xrtMalloc(iLength + 1u);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, iLength + 1u);
-	return sCopy;
+	if(!sText || !sText[0])return NULL;
+	size_t length=strlen(sText);
+	if(length==SIZE_MAX)return NULL;
+	char* copy=(char*)xrtMalloc(length+1u);
+	if(copy)memcpy(copy,sText,length+1u);
+	return copy;
 }
 
-static void __xgeDataSlotClear(xge_data_slot_t* pSlot)
+static bool __xgeDataGenerationHold(xge_data_generation_t* generation)
 {
-	if ( pSlot == NULL ) return;
-	if ( pSlot->onFree != NULL ) pSlot->onFree(pSlot->pUser);
-	if ( pSlot->pValue != NULL ) xrtFree(pSlot->pValue);
-	if ( pSlot->sFormat != NULL ) xrtFree(pSlot->sFormat);
-	memset(pSlot, 0, sizeof(*pSlot));
+	unsigned refs=atomic_load_explicit(&generation->iRefs,memory_order_relaxed);
+	do {if(!refs || refs==UINT_MAX)return false;}
+	while(!atomic_compare_exchange_weak_explicit(&generation->iRefs,&refs,refs+1u,memory_order_relaxed,memory_order_relaxed));
+	return true;
 }
 
-static int __xgeDataSlotFind(xge_data_object pData, const char* sFormat)
+static void __xgeDataGenerationDrop(xge_data_generation_t* generation)
 {
-	int i;
+	if(!generation || atomic_fetch_sub_explicit(&generation->iRefs,1u,memory_order_acq_rel)!=1u)return;
+	/* The record is detached from its publisher before arbitrary cleanup. Its
+	 * fields cannot be reconfigured by that cleanup, including self-reentry. */
+	if(generation->onFree)generation->onFree(generation->pUser);
+	xrtFree(generation);
+}
 
-	if ( !__xgeDataObjectValid(pData) || sFormat == NULL ) return -1;
-	for ( i = 0; i < pData->iCount; i++ ) {
-		if ( strcmp(pData->pSlots[i].sFormat, sFormat) == 0 ) return i;
-	}
+static int __xgeDataSlotFind(xge_data_object pData,const char* format)
+{
+	if(!__xgeDataObjectValid(pData) || !format)return -1;
+	for(int i=0;i<pData->iCount;++i)
+		if(strcmp(pData->pSlots[i]->sFormat,format)==0)return i;
 	return -1;
 }
 
-static int __xgeDataSlotReserve(xge_data_object pData, int iCapacity)
+static int __xgeDataSlotReserve(xge_data_object pData,int capacity)
 {
-	xge_data_slot_t* pNew;
-	int iNewCapacity;
-
-	if ( iCapacity <= pData->iCapacity ) return XGE_OK;
-	iNewCapacity = pData->iCapacity > 0 ? pData->iCapacity * 2 : 4;
-	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
-	pNew = (xge_data_slot_t*)xrtRealloc(pData->pSlots,
-		sizeof(*pNew) * (size_t)iNewCapacity);
-	if ( pNew == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	memset(pNew + pData->iCapacity, 0,
-		sizeof(*pNew) * (size_t)(iNewCapacity - pData->iCapacity));
-	pData->pSlots = pNew;
-	pData->iCapacity = iNewCapacity;
+	if(capacity<=pData->iCapacity)return XGE_OK;
+	if(capacity<0 || (size_t)capacity>SIZE_MAX/sizeof(*pData->pSlots))return XGE_ERROR_OUT_OF_MEMORY;
+	int next=pData->iCapacity>0 ? pData->iCapacity:4;
+	while(next<capacity){if(next>INT_MAX/2){next=capacity;break;}next*=2;}
+	if((size_t)next>SIZE_MAX/sizeof(*pData->pSlots))return XGE_ERROR_OUT_OF_MEMORY;
+	xge_data_generation_t** slots=(xge_data_generation_t**)xrtRealloc(pData->pSlots,sizeof(*slots)*(size_t)next);
+	if(!slots)return XGE_ERROR_OUT_OF_MEMORY;
+	pData->pSlots=slots;pData->iCapacity=next;
 	return XGE_OK;
 }
 
-static int __xgeDataSlotPrepare(xge_data_object pData, const char* sFormat,
-	xge_data_slot_t** ppSlot)
+ int xgeDataObjectCreate(xge_data_object* output)
 {
-	xge_data_slot_t* pSlot;
-	char* sCopy;
-	int iIndex;
-	int iRet;
+	if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+	*output=NULL;
+	xge_data_object object=(xge_data_object)xrtCalloc(1u,sizeof(*object));
+	if(!object)return XGE_ERROR_OUT_OF_MEMORY;
+	object->iMagic=XGE_DATA_OBJECT_MAGIC;
+	atomic_init(&object->iRefCount,1u);atomic_init(&object->iActivity,0u);
+	*output=object;return XGE_OK;
+}
 
-	if ( !__xgeDataObjectValid(pData) || sFormat == NULL || sFormat[0] == '\0' ||
-		ppSlot == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	iIndex = __xgeDataSlotFind(pData, sFormat);
-	if ( iIndex >= 0 ) {
-		pSlot = &pData->pSlots[iIndex];
-		if ( pSlot->onFree != NULL ) pSlot->onFree(pSlot->pUser);
-		if ( pSlot->pValue != NULL ) xrtFree(pSlot->pValue);
-		pSlot->pValue = NULL;
-		pSlot->iSize = 0u;
-		pSlot->onRead = NULL;
-		pSlot->onFree = NULL;
-		pSlot->pUser = NULL;
-		*ppSlot = pSlot;
+ int xgeDataObjectAddRef(xge_data_object object)
+{
+	if(!__xgeDataObjectValid(object))return XGE_ERROR_INVALID_ARGUMENT;
+	unsigned refs=atomic_load_explicit(&object->iRefCount,memory_order_relaxed);
+	do {if(!refs || refs>=INT_MAX)return XGE_ERROR_INVALID_ARGUMENT;}
+	while(!atomic_compare_exchange_weak_explicit(&object->iRefCount,&refs,refs+1u,memory_order_relaxed,memory_order_relaxed));
+	return XGE_OK;
+}
+
+ void xgeDataObjectRelease(xge_data_object object)
+{
+	if(!__xgeDataObjectValid(object))return;
+	if(atomic_fetch_sub_explicit(&object->iRefCount,1u,memory_order_acq_rel)!=1u)return;
+	/* No owning field remains attached while provider cleanup can reenter. A
+	 * real active operation still owns a reference and cannot reach this tail. */
+	object->bDestroying=1u;
+	xge_data_generation_t** slots=object->pSlots;
+	int count=object->iCount;
+	object->pSlots=NULL;object->iCount=0;object->iCapacity=0;
+	for(int i=0;i<count;++i)__xgeDataGenerationDrop(slots[i]);
+	xrtFree(slots);object->iMagic=0u;xrtFree(object);
+}
+
+static int __xgeDataOperationBegin(xge_data_object object)
+{
+	int status=xgeDataObjectAddRef(object);
+	if(status!=XGE_OK)return status;
+	unsigned active=atomic_fetch_add_explicit(&object->iActivity,1u,memory_order_relaxed);
+	if(active==UINT_MAX){
+		atomic_fetch_sub_explicit(&object->iActivity,1u,memory_order_relaxed);
+		xgeDataObjectRelease(object);return XGE_ERROR_INVALID_STATE;
+	}
+	return XGE_OK;
+}
+
+static void __xgeDataOperationEnd(xge_data_object object)
+{
+	atomic_fetch_sub_explicit(&object->iActivity,1u,memory_order_release);
+	xgeDataObjectRelease(object);
+}
+
+static xge_data_generation_t* __xgeDataGenerationCreate(const char* format,const void* value,size_t size)
+{
+	size_t length=strlen(format);
+	if(length>=SIZE_MAX-sizeof(xge_data_generation_t) ||
+		size>SIZE_MAX-sizeof(xge_data_generation_t)-length-1u)return NULL;
+	/* Metadata, stable format and optional bytes are one actual allocation.
+	 * pValue is byte storage; no typed/aligned payload pointer is exposed. */
+	xge_data_generation_t* generation=(xge_data_generation_t*)xrtCalloc(1u,sizeof(*generation)+length+1u+size);
+	if(!generation)return NULL;
+	atomic_init(&generation->iRefs,1u);
+	generation->sFormat=(char*)(generation+1);memcpy(generation->sFormat,format,length+1u);
+	if(size){generation->pValue=generation->sFormat+length+1u;memcpy(generation->pValue,value,size);}
+	generation->iSize=size;
+	return generation;
+}
+
+static int __xgeDataPublish(xge_data_object object,xge_data_generation_t* next)
+{
+	int index=__xgeDataSlotFind(object,next->sFormat);
+	xge_data_generation_t* previous=NULL;
+	if(index<0){
+		if(object->iCount==INT_MAX)return XGE_ERROR_OUT_OF_MEMORY;
+		int status=__xgeDataSlotReserve(object,object->iCount+1);
+		if(status!=XGE_OK)return status;
+		index=object->iCount++;
+	}else previous=object->pSlots[index];
+	object->pSlots[index]=next;
+	__xgeDataGenerationDrop(previous);
+	return XGE_OK;
+}
+
+ int xgeDataObjectSet(xge_data_object object,const char* format,const void* value,size_t size)
+{
+	if(!format || !format[0] || (size && !value))return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeDataOperationBegin(object);
+	if(status!=XGE_OK)return status;
+	xge_data_generation_t* next=__xgeDataGenerationCreate(format,value,size);
+	if(!next)status=XGE_ERROR_OUT_OF_MEMORY;
+	else {
+		status=__xgeDataPublish(object,next);
+		if(status!=XGE_OK)__xgeDataGenerationDrop(next);
+	}
+	__xgeDataOperationEnd(object);return status;
+}
+
+ int xgeDataObjectSetProvider(xge_data_object object,const char* format,
+	xge_data_provider_proc read,xge_data_provider_free_proc release,void* user)
+{
+	if(!format || !format[0] || !read)return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeDataOperationBegin(object);
+	if(status!=XGE_OK)return status;
+	xge_data_generation_t* next=__xgeDataGenerationCreate(format,NULL,0u);
+	if(!next)status=XGE_ERROR_OUT_OF_MEMORY;
+	else {
+		next->onRead=read;next->onFree=release;next->pUser=user;
+		status=__xgeDataPublish(object,next);
+		if(status!=XGE_OK){next->onFree=NULL;__xgeDataGenerationDrop(next);}
+	}
+	__xgeDataOperationEnd(object);return status;
+}
+
+ int xgeDataObjectFormatCount(xge_data_object object)
+{return __xgeDataObjectValid(object) ? object->iCount:0;}
+
+ const char* xgeDataObjectFormatAt(xge_data_object object,int index)
+{
+	return __xgeDataObjectValid(object) && index>=0 && index<object->iCount ? object->pSlots[index]->sFormat:NULL;
+}
+
+ int xgeDataObjectHas(xge_data_object object,const char* format)
+{return __xgeDataSlotFind(object,format)>=0;}
+
+ int xgeDataObjectGet(xge_data_object object,const char* format,void* output,size_t capacity,size_t* outputSize)
+{
+	if(!outputSize || (capacity && !output))return XGE_ERROR_INVALID_ARGUMENT;
+	*outputSize=0u;
+	int index=__xgeDataSlotFind(object,format);
+	xge_data_generation_t* generation=index<0 ? NULL:object->pSlots[index];
+	/* Raw containers are caller-serialized. Pure byte reads do not call user
+	 * code and cannot invalidate their slot; keep their direct copy hot path.
+	 * Provider reads below pin both actual objects across arbitrary reentry. */
+	if(generation && !generation->onRead){
+		*outputSize=generation->iSize;
+		if(output && capacity<generation->iSize)return XGE_ERROR_BUFFER_TOO_SMALL;
+		if(output && generation->iSize)memcpy(output,generation->pValue,generation->iSize);
 		return XGE_OK;
 	}
-	iRet = __xgeDataSlotReserve(pData, pData->iCount + 1);
-	if ( iRet != XGE_OK ) return iRet;
-	sCopy = __xgeDataStringCopy(sFormat);
-	if ( sCopy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	pSlot = &pData->pSlots[pData->iCount++];
-	pSlot->sFormat = sCopy;
-	*ppSlot = pSlot;
-	return XGE_OK;
-}
-
-int xgeDataObjectCreate(xge_data_object* ppData)
-{
-	xge_data_object pData;
-
-	if ( ppData == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	*ppData = NULL;
-	pData = (xge_data_object)xrtMalloc(sizeof(*pData));
-	if ( pData == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	memset(pData, 0, sizeof(*pData));
-	pData->iMagic = XGE_DATA_OBJECT_MAGIC;
-	pData->iRefCount = 1;
-	*ppData = pData;
-	return XGE_OK;
-}
-
-int xgeDataObjectAddRef(xge_data_object pData)
-{
-	if ( !__xgeDataObjectValid(pData) || pData->iRefCount == INT_MAX ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeDataOperationBegin(object);
+	if(status!=XGE_OK)return status;
+	if(!generation)status=XGE_ERROR_NOT_FOUND;
+	else if(!__xgeDataGenerationHold(generation))status=XGE_ERROR_INVALID_STATE;
+	else {
+		if(generation->onRead)status=generation->onRead(generation->sFormat,output,capacity,outputSize,generation->pUser);
+		else {
+			*outputSize=generation->iSize;
+			if(output && capacity<generation->iSize)status=XGE_ERROR_BUFFER_TOO_SMALL;
+			else if(output && generation->iSize)memcpy(output,generation->pValue,generation->iSize);
+		}
+		/* A failing provider's nullable first diagnostic must survive its final
+		 * generation cleanup and a self-released object's final native cleanup. */
+		xerror* first=status!=XGE_OK ? xrtTakeError():NULL;
+		__xgeDataGenerationDrop(generation);
+		__xgeDataOperationEnd(object);
+		if(status!=XGE_OK){xrtClearError();xrtSetErrorTake(first);}
+		return status;
 	}
-	pData->iRefCount++;
-	return XGE_OK;
-}
-
-void xgeDataObjectRelease(xge_data_object pData)
-{
-	int i;
-
-	if ( !__xgeDataObjectValid(pData) ) return;
-	pData->iRefCount--;
-	if ( pData->iRefCount > 0 ) return;
-	for ( i = 0; i < pData->iCount; i++ ) __xgeDataSlotClear(&pData->pSlots[i]);
-	if ( pData->pSlots != NULL ) xrtFree(pData->pSlots);
-	pData->iMagic = 0u;
-	xrtFree(pData);
-}
-
-int xgeDataObjectSet(xge_data_object pData, const char* sFormat,
-	const void* pValue, size_t iSize)
-{
-	xge_data_slot_t* pSlot;
-	void* pCopy;
-	int iRet;
-
-	if ( iSize > 0u && pValue == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	pCopy = NULL;
-	if ( iSize > 0u ) {
-		pCopy = xrtMalloc(iSize);
-		if ( pCopy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-		memcpy(pCopy, pValue, iSize);
-	}
-	iRet = __xgeDataSlotPrepare(pData, sFormat, &pSlot);
-	if ( iRet != XGE_OK ) {
-		if ( pCopy != NULL ) xrtFree(pCopy);
-		return iRet;
-	}
-	pSlot->pValue = pCopy;
-	pSlot->iSize = iSize;
-	return XGE_OK;
-}
-
-int xgeDataObjectSetProvider(xge_data_object pData, const char* sFormat,
-	xge_data_provider_proc onRead, xge_data_provider_free_proc onFree, void* pUser)
-{
-	xge_data_slot_t* pSlot;
-	int iRet;
-
-	if ( onRead == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	iRet = __xgeDataSlotPrepare(pData, sFormat, &pSlot);
-	if ( iRet != XGE_OK ) return iRet;
-	pSlot->onRead = onRead;
-	pSlot->onFree = onFree;
-	pSlot->pUser = pUser;
-	return XGE_OK;
-}
-
-int xgeDataObjectFormatCount(xge_data_object pData)
-{
-	return __xgeDataObjectValid(pData) ? pData->iCount : 0;
-}
-
-const char* xgeDataObjectFormatAt(xge_data_object pData, int iIndex)
-{
-	if ( !__xgeDataObjectValid(pData) || iIndex < 0 || iIndex >= pData->iCount ) return NULL;
-	return pData->pSlots[iIndex].sFormat;
-}
-
-int xgeDataObjectHas(xge_data_object pData, const char* sFormat)
-{
-	return __xgeDataSlotFind(pData, sFormat) >= 0;
-}
-
-int xgeDataObjectGet(xge_data_object pData, const char* sFormat,
-	void* pOutput, size_t iCapacity, size_t* pOutputSize)
-{
-	xge_data_slot_t* pSlot;
-	int iIndex;
-
-	if ( pOutputSize == NULL || (pOutput == NULL && iCapacity != 0u) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pOutputSize = 0u;
-	iIndex = __xgeDataSlotFind(pData, sFormat);
-	if ( iIndex < 0 ) return XGE_ERROR_NOT_FOUND;
-	pSlot = &pData->pSlots[iIndex];
-	if ( pSlot->onRead != NULL ) {
-		return pSlot->onRead(sFormat, pOutput, iCapacity, pOutputSize, pSlot->pUser);
-	}
-	*pOutputSize = pSlot->iSize;
-	if ( pOutput == NULL ) return XGE_OK;
-	if ( iCapacity < pSlot->iSize ) return XGE_ERROR_BUFFER_TOO_SMALL;
-	if ( pSlot->iSize > 0u ) memcpy(pOutput, pSlot->pValue, pSlot->iSize);
-	return XGE_OK;
+	__xgeDataOperationEnd(object);return status;
 }
 
 int xgeDragDropCapsGet(xge_drag_drop_caps_t* pCaps)
