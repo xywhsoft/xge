@@ -24,3 +24,5 @@
 *.ttf binary
 *.xrf binary
 
+# Acceptance receipts retain their exact captured bytes.
+/docs/validation/*.json -text whitespace=cr-at-eol

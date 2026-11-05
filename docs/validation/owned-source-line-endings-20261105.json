@@ -1,0 +1,119 @@
+{
+  "format": "source-line-endings-1",
+  "complete": true,
+  "passed": true,
+  "scope": "Canonical LF for project-owned committed sources only; no worktree implementation delta staged. Historical report bytes and dependency snapshots are preserved.",
+  "sourceCommits": [
+    "4d5257f6",
+    "da519296",
+    "b098219b",
+    "be2e0a5d"
+  ],
+  "files": [
+    {
+      "path": "docs/native-document-html-ownership.md",
+      "oldSha256": "0812dbec3ed230674d72c66c453f49f1b8dbe79bb590f1d9904e3d896b5c6178",
+      "newSha256": "30f388a202d21d4ea71fea5d95e716b3adcf51fc42ae4c1d4952f93399e7f9e3",
+      "removedCrBytes": 89
+    },
+    {
+      "path": "src/xui/controls/xui_msgtip.c",
+      "oldSha256": "828d96587f795fd5a54c06293969339a2a53e0e240afd57ee780ad9460cffef7",
+      "newSha256": "adbee25756315d9fad22aefd52507ac2cabf67b2090c92812e5c3332910c930f",
+      "removedCrBytes": 1368
+    },
+    {
+      "path": "src/xui/core/xui_owned_manager.h",
+      "oldSha256": "46103b4cea9ab800e6ed756805698be2afcea3c5de49b5b6fd2f91c70dc57d05",
+      "newSha256": "5a37166f0181870c050189cf67f1ba0ab4804390c4a401df78e272b17232cbe7",
+      "removedCrBytes": 73
+    },
+    {
+      "path": "src/xui/core/xui_proxy_resource.c",
+      "oldSha256": "6b9fb457529522ddaaf4ad5b191b2c1213b1069787069318e97623cd3dfac70b",
+      "newSha256": "b6cd1d0e670b671e4060beb9119174e7f1865d4cdf7106c6c18170a6c4936262",
+      "removedCrBytes": 590
+    },
+    {
+      "path": "src/xui/core/xui_proxy_resource.h",
+      "oldSha256": "bd052e84ff6933d115dc88ebda9d597a0df6c79d14d1b0e8dc01714d08dbb58b",
+      "newSha256": "bc5ae3b91f72cadfb2dfa2b5dc7305237fca7d512c1d8be912bb6117d0bc5387",
+      "removedCrBytes": 51
+    },
+    {
+      "path": "src/xui/document/xui_document_html_interaction.c",
+      "oldSha256": "154b419a744177827b4a084da02fb6e0d848c4e54fa1c3b868cab8ad750e3bed",
+      "newSha256": "f40e4bbf03cccf31592ea2e3797566cbaf348c846696a7e072a5ae9b48181f3d",
+      "removedCrBytes": 468
+    },
+    {
+      "path": "src/xui/document/xui_document_image_resource.c",
+      "oldSha256": "b16c536e59a8009bd280c97e5ef6901a5893636bbf2192ad4f7f82999b8e673e",
+      "newSha256": "31c866633f5b7cf1513eec6cf5684aa9f0bb50c8c4cf43e9b4e0fb64366ef496",
+      "removedCrBytes": 197
+    },
+    {
+      "path": "src/xui/document/xui_document_web_provider.c",
+      "oldSha256": "f42091b814fd26429bf70b0ace575a0b4fbfeb8c1526504358cd3be478731559",
+      "newSha256": "254b105b5af2511eb08b9af585d9b13c468def0c80d40873c59a111a3faffd52",
+      "removedCrBytes": 1183
+    },
+    {
+      "path": "tests/xui/xui_owned_canvas_test.c",
+      "oldSha256": "9210601c613e43c1b998ab3db578b464c4e55a61db1b0bda93995445a026af65",
+      "newSha256": "bedd11787627b055845b2e19ce66c95da8fa157206b7e13ec9e90f1ddc98d5d5",
+      "removedCrBytes": 192
+    },
+    {
+      "path": "tests/xui/xui_owned_doc_ui_callbacks_test.c",
+      "oldSha256": "97183903a9274ebc69b8da8829e9d30e2e71b95c0f75b8196a0678be4dc9eb2e",
+      "newSha256": "c431f439e50144b0f6e8747e6041846693608d4f1e8a2f398d271656a3a93c2e",
+      "removedCrBytes": 212
+    },
+    {
+      "path": "tests/xui/xui_owned_file_dialog_test.c",
+      "oldSha256": "6c577304dfa23f6b8b37e1752fa5b16913ed77aa6b070d75b1f185a609bf9a0c",
+      "newSha256": "f40a267312d9030a90e2c931ce846a970d9215512aa6de9971af217725f28356",
+      "removedCrBytes": 114
+    },
+    {
+      "path": "tests/xui/xui_owned_html_interaction_test.c",
+      "oldSha256": "904205cb32ff6f2dfdebe56c6ca36e83de609a0969be149104fec762b4cb1898",
+      "newSha256": "e7c269a00e6e7d3b266c67a4da3b84dde5d246405fe93e4d38c7e3f863f723a4",
+      "removedCrBytes": 216
+    },
+    {
+      "path": "tests/xui/xui_owned_manager_getters_test.c",
+      "oldSha256": "541521efed159356825abec477d3d82fa29632ac32904d1276b76a83e1b584b9",
+      "newSha256": "0f8ef4c01a1dd5adf08b4d4fcb620aaf1977ebec31e273cee0664bf9f5861537",
+      "removedCrBytes": 96
+    },
+    {
+      "path": "tests/xui/xui_owned_managers_test.c",
+      "oldSha256": "470af534f769188523abc6ff78cebf5a5ed6497d0f9b2a290e96f7f2dc4641ae",
+      "newSha256": "ec852d07fb6bd36afb24cf2575df68e21544cf55734fc312eee0af540de234c4",
+      "removedCrBytes": 184
+    },
+    {
+      "path": "tests/xui/xui_owned_paint_test.c",
+      "oldSha256": "893dd28622b470a248bca77aae647732a55e9b2a912606886aea2b254d15915d",
+      "newSha256": "f0f3ac14567ed7e8dd456243889dddc4a132b7939f47396a22116b1b56acc400",
+      "removedCrBytes": 76
+    },
+    {
+      "path": "tests/xui/xui_owned_web_provider_test.c",
+      "oldSha256": "a80be03bba20cc0ba6d67faaf7f098dfdee2c81637828a165ad097e7fd30c626",
+      "newSha256": "d493ec9b9617983b2851b0faebcfaaef4f2aa1755adf206dfd486e278c72a6c7",
+      "removedCrBytes": 220
+    },
+    {
+      "path": "tools/test/check_xui_owned_managers.py",
+      "oldSha256": "4a6f24ecac3985bdc39e239370c91c059f2de5cb4428bd998ee11140cfa30c75",
+      "newSha256": "13983dee1e4758a549323b80d58e6624fe0ae2e3c1731c0e5c66b289bc20c128",
+      "removedCrBytes": 105
+    }
+  ],
+  "validation": "Every source output equals its exact HEAD input after CRLF-to-LF translation; no other byte differs. No implementation behavior changed; full combined source/SDK acceptance remains separate.",
+  "testsAdded": false,
+  "shippingDelivery": false
+}
