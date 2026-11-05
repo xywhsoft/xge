@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_MESSAGE_LIST
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_document_layout_internal.h"
@@ -38,7 +39,12 @@ typedef struct xui_message_document_binding_t {
 	xui_document pDocument;
 	xui_document_renderer pRenderer;
     xui_document_renderer pWorkRenderer;
-    bool bWorkReady,bRetiring;
+    bool bWorkReady,bRetiring,bTaskOwned;
+    unsigned iCallbackActivity;
+    xui_doc_view_activate_owned_proc onActivateOwned;
+    void* pActivateUser;
+    void* pTaskUser;
+    xui_callback_owner_t tActivateOwner,tTaskOwner;
 	uint64_t iSubscription;
 	int iIndex;
 	int bNeedsSync;
@@ -812,7 +818,9 @@ static int __xuiMessageMetricsValid(const xui_message_list_metrics_t* pMetrics)
 static int __xuiMessageBindingRetire(xui_message_document_binding_t* binding,bool* complete)
 {
     *complete=true;if(!binding)return XUI_OK;
-    binding->bRetiring=true;xui_context context=binding->pList->pContext;
+    binding->bRetiring=true;
+    if(binding->iCallbackActivity){*complete=false;return XUI_STATUS_DEFERRED;}
+    xui_context context=binding->pList->pContext;
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
     xui_document_renderer* owners[]={&binding->pWorkRenderer,&binding->pRenderer};
     for(unsigned i=0;i<2;++i)if(*owners[i]) {
@@ -828,12 +836,80 @@ static int __xuiMessageFreeDocumentBinding(xui_message_document_binding_t** slot
     xui_message_document_binding_t* binding=*slot;if(!binding)return XUI_OK;
     bool complete=false;int status=__xuiMessageBindingRetire(binding,&complete);
     if(!complete)return status;
-    xerror* first=xrtTakeError();
+    xui_context context=binding->pList->pContext;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    ++binding->iCallbackActivity;
+    xui_callback_owner_t activate=binding->tActivateOwner,task=binding->tTaskOwner;
+    binding->tActivateOwner=binding->tTaskOwner=(xui_callback_owner_t){0};
+    if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&activate,receipt.status,receipt.error));
+    xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(context,&task,receipt.status,receipt.error));
     if(binding->iSubscription)xuiDocumentUnsubscribe(binding->pDocument,binding->iSubscription);
-    __xuiMessageAccessibleFreeDocumentNodes(binding);xuiDocumentRelease(binding->pDocument);
-    free(binding);*slot=NULL;xrtSetErrorTake(first);return status;
+    __xuiMessageAccessibleFreeDocumentNodes(binding);xuiDocumentRelease(binding->pDocument);xuiInternalCleanupAdd(&receipt,XUI_OK);
+    if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    --binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    free(binding);*slot=NULL;return xuiInternalCleanupEnd(context,&receipt);
 }
 
+static int __xuiMessageBindingCallbackBegin(xui_message_document_binding_t* binding,xui_call_scope_t* scope,
+    const xui_callback_owner_t* source,xui_callback_snapshot_t* snapshot)
+{
+    if(!binding || binding->bRetiring || binding->iCallbackActivity==UINT_MAX)return XUI_ERROR_INVALID_STATE;
+    xui_widget widget=binding->pList;xui_context context=widget->pContext;
+    int status=xuiCallScopeBegin(context,scope);if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    ++binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    xui_callback_owner_t owner=*source;
+    if(owner.onHold){
+        bool held=false;status=xuiInternalCallbackHoldIsolated(&owner,&held);
+        if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || binding->bRetiring ||
+           context->bCloseRequested || context->bDestroyPending || context->bDestroying))status=XUI_ERROR_INVALID_STATE;
+        if(status==XUI_OK){snapshot->pContext=context;snapshot->tOwner=owner;}
+        else {
+            xerror* first=xrtTakeError();xuiInternalCallScopeRecordOutcome(scope,status,first);
+            if(held){int cleanup=xuiInternalCallbackOwnerDropOutcome(context,&owner,status,first);xuiInternalContextCleanupOutcome(context,cleanup,&status,&first);}
+            if(!xrtOwnershipMutationBegin(&mutation)){abort();}--binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+            status=xuiInternalCallScopeEndOutcome(scope,status,&first);xrtSetErrorTake(first);return status;
+        }
+    }
+    return XUI_OK;
+}
+static int __xuiMessageBindingCallbackEnd(xui_message_document_binding_t* binding,xui_call_scope_t* scope,
+    xui_callback_snapshot_t* snapshot)
+{
+    int status=xuiInternalCallbackSnapshotEnd(snapshot,XUI_OK);
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    --binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}xerror* first=xrtTakeError();
+    status=xuiInternalCallScopeEndOutcome(scope,status,&first);xrtSetErrorTake(first);return status;
+}
+static int __xuiMessageBindingActivate(xui_message_document_binding_t* binding,xui_document_snapshot retained,
+    xui_doc_node_id id)
+{
+    xui_doc_view_activate_owned_proc owned=binding->onActivateOwned;
+    xui_doc_view_event_proc raw=binding->tDesc.onActivate;
+    void* user=owned ? binding->pActivateUser:binding->tDesc.pUser;
+    if(!owned && !raw)return XUI_OK;
+    xui_call_scope_t scope={0};xui_callback_snapshot_t snapshot={0};
+    int status=__xuiMessageBindingCallbackBegin(binding,&scope,&binding->tActivateOwner,&snapshot);if(status!=XUI_OK)return status;
+    const doc_node* node=doc_index_get(retained->state->index,id);
+    xstrview resource={0};
+    if(node){
+        doc_blob* text=node->kind==XUI_DOC_IMAGE && (node->attrs->iMarks & XUI_DOC_LINK) ? node->link_target:node->resource;
+        resource=(xstrview){doc_string(text),text ? text->size:0};
+        if(owned)owned(binding->pList,id,&resource,user);else raw(binding->pList,id,doc_string(text),user);
+    }
+    return __xuiMessageBindingCallbackEnd(binding,&scope,&snapshot);
+}
+static int __xuiMessageBindingToggle(xui_message_document_binding_t* binding,xui_doc_node_id id,int checked)
+{
+    xui_doc_task_toggle_proc callback=binding->tDesc.onTaskToggle;
+    void* user=binding->bTaskOwned ? binding->pTaskUser:binding->tDesc.pUser;
+    if(!callback)return XUI_OK;
+    xui_call_scope_t scope={0};xui_callback_snapshot_t snapshot={0};
+    int status=__xuiMessageBindingCallbackBegin(binding,&scope,&binding->tTaskOwner,&snapshot);if(status!=XUI_OK)return status;
+    callback(binding->pList,id,checked,user);return __xuiMessageBindingCallbackEnd(binding,&scope,&snapshot);
+}
 static void __xuiMessageFreeNode(xui_message_node_data_t* pNode)
 {
 	if ( pNode == NULL ) return;
@@ -1990,7 +2066,7 @@ static int __xuiMessageAccessibleGetDocument(xui_widget pWidget,
 		     pResult->tBounds.fY >= tWorld.fY + tContent.fY + tContent.fH )
 			pResult->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
 	} else pResult->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
-	if ( pBinding->tDesc.onActivate && (pNode->kind == XUI_DOC_IMAGE ||
+	if ( (pBinding->onActivateOwned || pBinding->tDesc.onActivate) && (pNode->kind == XUI_DOC_IMAGE ||
 	     (pNode->kind == XUI_DOC_TEXT && (pNode->attrs->iMarks & XUI_DOC_LINK)) ||
 	     pNode->kind == XUI_DOC_MATH || pNode->kind == XUI_DOC_DIAGRAM ||
 	     pNode->kind == XUI_DOC_HTML) )
@@ -2387,26 +2463,17 @@ static int __xuiMessageAccessibleDocumentAction(xui_widget pWidget,
 	if ( iAction == XUI_ACCESSIBLE_ACTION_TOGGLE &&
 	     pNode->kind == XUI_DOC_LIST_ITEM && (pNode->attrs->iFlags & XUI_DOC_TASK) &&
 	     pBinding->tDesc.onTaskToggle != NULL ) {
-		void (*onToggle)(xui_widget, xui_doc_node_id, int, void*) =
-			pBinding->tDesc.onTaskToggle;
-		void* pUser = pBinding->tDesc.pUser;
-		xui_doc_node_id iTask = pNode->id;
-		int bChecked = (pNode->attrs->iFlags & XUI_DOC_CHECKED) == 0;
-		xuiDocumentSnapshotRelease(pSnapshot);
-		onToggle(pWidget, iTask, bChecked, pUser);
-		return XUI_OK;
+        xui_doc_node_id task=pNode->id;int checked=(pNode->attrs->iFlags & XUI_DOC_CHECKED)==0;
+        int notified=__xuiMessageBindingToggle(pBinding,task,checked);
+        xuiDocumentSnapshotRelease(pSnapshot);return notified;
 	}
-	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE && pBinding->tDesc.onActivate &&
+	if ( iAction == XUI_ACCESSIBLE_ACTION_ACTIVATE && (pBinding->onActivateOwned || pBinding->tDesc.onActivate) &&
 	     (pNode->kind == XUI_DOC_IMAGE ||
 	      (pNode->kind == XUI_DOC_TEXT && (pNode->attrs->iMarks & XUI_DOC_LINK)) ||
 	      pNode->kind == XUI_DOC_MATH || pNode->kind == XUI_DOC_DIAGRAM ||
 	      pNode->kind == XUI_DOC_HTML) ) {
-		pBinding->tDesc.onActivate(pWidget, pNode->id,
-			pNode->kind == XUI_DOC_IMAGE && (pNode->attrs->iMarks & XUI_DOC_LINK) ?
-				doc_string(pNode->link_target) : doc_string(pNode->resource),
-			pBinding->tDesc.pUser);
-		xuiDocumentSnapshotRelease(pSnapshot);
-		return XUI_OK;
+        int notified=__xuiMessageBindingActivate(pBinding,pSnapshot,pNode->id);
+        xuiDocumentSnapshotRelease(pSnapshot);return notified;
 	}
 	if ( iAction == XUI_ACCESSIBLE_ACTION_SET_SELECTION && pPayload == NULL &&
 	     pNode->kind == XUI_DOC_CELL && __xuiMessageNodeCanSelect(pMessage) ) {
@@ -3539,12 +3606,10 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 						doc_node* pTask = doc_index_get(pSnapshot->state->index, iPressed);
 						if ( pTask != NULL && pTask->kind == XUI_DOC_LIST_ITEM &&
 						     (pTask->attrs->iFlags & XUI_DOC_TASK) ) {
-							void (*onToggle)(xui_widget, xui_doc_node_id, int, void*) =
-								pBinding->tDesc.onTaskToggle;
-							void* pCallbackUser = pBinding->tDesc.pUser;
-							int bChecked = (pTask->attrs->iFlags & XUI_DOC_CHECKED) == 0;
-							xuiDocumentSnapshotRelease(pSnapshot);
-							onToggle(pWidget, iPressed, bChecked, pCallbackUser);
+                            int checked=(pTask->attrs->iFlags & XUI_DOC_CHECKED)==0;
+                            int notified=__xuiMessageBindingToggle(pBinding,iPressed,checked);
+                            xuiDocumentSnapshotRelease(pSnapshot);
+                            if(notified!=XUI_OK)return notified;
 							return XUI_EVENT_DISPATCH_STOP;
 						}
 						xuiDocumentSnapshotRelease(pSnapshot);
@@ -3574,7 +3639,7 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 			if ( iDocumentIndex >= 0 &&
 			     iDocumentIndex < pData->iNodeCount &&
 			     (pBinding = pData->arrNodes[iDocumentIndex].pDocumentBinding) != NULL &&
-			     iPressedNode != 0 && pBinding->tDesc.onActivate != NULL &&
+			     iPressedNode != 0 && (pBinding->onActivateOwned || pBinding->tDesc.onActivate) &&
 			     __xuiMessageHitDocument(pWidget, pData, iDocumentIndex,
 			         pEvent->fX, pEvent->fY, 0, &tDocumentHit) == XUI_OK &&
 			     tDocumentHit.iNodeId == iPressedNode ) {
@@ -3582,12 +3647,10 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 				xui_doc_node_info_t tInfo = {0};
 				tInfo.iSize = sizeof(tInfo);
 				if ( xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot) == XUI_OK ) {
-					if ( xuiDocumentSnapshotGetNode(pSnapshot, tDocumentHit.iNodeId, &tInfo) == XUI_OK &&
-					     __xuiMessageDocumentNodeActivatable(&tInfo) )
-						pBinding->tDesc.onActivate(pWidget, tDocumentHit.iNodeId,
-							tInfo.iKind == XUI_DOC_IMAGE && (tInfo.tAttributes.iMarks & XUI_DOC_LINK) ?
-								tInfo.sLinkTarget : tInfo.sResource, pBinding->tDesc.pUser);
-					xuiDocumentSnapshotRelease(pSnapshot);
+                    int notified=XUI_OK;
+                    if(xuiDocumentSnapshotGetNode(pSnapshot,tDocumentHit.iNodeId,&tInfo)==XUI_OK && __xuiMessageDocumentNodeActivatable(&tInfo))
+                        notified=__xuiMessageBindingActivate(pBinding,pSnapshot,tDocumentHit.iNodeId);
+                    xuiDocumentSnapshotRelease(pSnapshot);if(notified!=XUI_OK)return notified;
 				}
 			}
 			return XUI_EVENT_DISPATCH_STOP;
@@ -3909,7 +3972,7 @@ static int __xuiMessageQueryCursor(xui_widget pWidget, int iX, int iY, void* pUs
 		iRet = __xuiMessageHitDocument(pWidget, pData, iIndex,
 			iX, iY, 0, &tPosition);
 		if ( iRet != XUI_OK ) return XUI_CURSOR_ARROW;
-		if ( pBinding->tDesc.onActivate != NULL ) {
+		if ( (pBinding->onActivateOwned || pBinding->tDesc.onActivate) ) {
 			tInfo.iSize = sizeof(tInfo);
 			iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
 			if ( iRet == XUI_OK )
@@ -4285,6 +4348,7 @@ static int __xuiMessageDestroyReady(xui_widget widget,const void* raw)
         if(node->pTitleLayout){status=xuiInternalTextLayoutDestroyReady(node->pTitleLayout);if(status!=XUI_OK)return status;}
         xui_message_document_binding_t* bindings[]={node->pWorkBinding,node->pDocumentBinding};
         for(unsigned k=0;k<2;++k)if(bindings[k]) {
+            if(bindings[k]->iCallbackActivity)return XUI_ERROR_BUSY;
             if(bindings[k]->pRenderer){status=doc_render_destroy_ready(bindings[k]->pRenderer);if(status!=XUI_OK)return status;}
             if(bindings[k]->pWorkRenderer){status=doc_render_destroy_ready(bindings[k]->pWorkRenderer);if(status!=XUI_OK)return status;}
         }
@@ -4301,6 +4365,8 @@ static bool __xuiMessageTraceOwnership(xui_widget widget,const void* raw,xrtowne
         if(node->pTitleLayout && !xuiTextLayoutTraceOwnership(node->pTitleLayout,visit,user))return false;
         xui_message_document_binding_t* bindings[]={node->pWorkBinding,node->pDocumentBinding};
         for(unsigned k=0;k<2;++k)if(bindings[k]) {
+            if(bindings[k]->tActivateOwner.tReference.Data && !visit(bindings[k]->tActivateOwner.tReference,user))return false;
+            if(bindings[k]->tTaskOwner.tReference.Data && !visit(bindings[k]->tTaskOwner.tReference,user))return false;
             if(bindings[k]->pRenderer && !xuiDocumentRendererTraceOwnership(bindings[k]->pRenderer,visit,user))return false;
             if(bindings[k]->pWorkRenderer && !xuiDocumentRendererTraceOwnership(bindings[k]->pWorkRenderer,visit,user))return false;
         }
@@ -4524,6 +4590,64 @@ static int __xuiMessageFindNodeById(const xui_message_list_data_t* pData, const 
 	return -1;
 }
 
+typedef struct xui_message_callback_update_t {
+    xui_call_scope_t scope;
+    xui_message_document_binding_t* binding;
+    xui_callback_owner_t previous;
+    xrtownershipscope mutation;
+} xui_message_callback_update_t;
+static int __xuiMessageCallbackUpdateBegin(xui_widget widget,const char* id,bool has,
+    const xui_callback_owner_t* incoming,unsigned bit,xui_message_callback_update_t* update)
+{
+    if(!id || !xuiInternalCallbackOwnerValid(incoming) || (!has && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_message_list_data_t* data=__xuiMessageListGetData(widget);if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=xuiCallScopeBegin(widget->pContext,&update->scope);if(status!=XUI_OK)return status;
+    int index=__xuiMessageFindNodeById(data,id);xui_message_document_binding_t* binding=index<0 ? NULL:data->arrNodes[index].pDocumentBinding;
+    if(!binding || binding->bRetiring || binding->iCallbackActivity==UINT_MAX){
+        xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&update->scope,!binding ? XUI_ERROR_NOT_FOUND:XUI_ERROR_BUSY,&first);xrtSetErrorTake(first);return status;
+    }
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    ++binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    xui_callback_owner_t candidate=incoming ? *incoming:(xui_callback_owner_t){0};
+    bool held=false;status=xuiInternalCallbackHoldFresh(&candidate,&held);
+    if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || binding->bRetiring || widget->pContext->bCloseRequested ||
+       binding->iIndex<0 || binding->iIndex>=data->iNodeCount || data->arrNodes[binding->iIndex].pDocumentBinding!=binding))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK && !xrtOwnershipMutationBegin(&update->mutation))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK){
+        xui_callback_owner_t* slot=bit==1 ? &binding->tActivateOwner:&binding->tTaskOwner;
+        update->previous=*slot;*slot=candidate;update->binding=binding;return XUI_OK;
+    }
+    xerror* first=xrtTakeError();xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
+    if(held){int cleanup=xuiInternalCallbackOwnerDropOutcome(widget->pContext,&candidate,status,first);xuiInternalContextCleanupOutcome(widget->pContext,cleanup,&status,&first);}
+    if(!xrtOwnershipMutationBegin(&mutation)){abort();}--binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    status=xuiInternalCallScopeEndOutcome(&update->scope,status,&first);xrtSetErrorTake(first);return status;
+}
+static int __xuiMessageCallbackUpdateEnd(xui_message_callback_update_t* update)
+{
+    if(!xrtOwnershipScopeEnd(&update->mutation))abort();
+    xui_message_document_binding_t* binding=update->binding;xui_context context=binding->pList->pContext;
+    int status=XUI_OK;xerror* first=xrtTakeError();if(first)status=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
+    int cleanup=xuiInternalCallbackOwnerDropOutcome(context,&update->previous,status,first);
+    xuiInternalContextCleanupOutcome(context,cleanup,&status,&first);
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation)){abort();}
+    --binding->iCallbackActivity;if(!xrtOwnershipScopeEnd(&mutation)){abort();}
+    status=xuiInternalCallScopeEndOutcome(&update->scope,status,&first);xrtSetErrorTake(first);return status;
+}
+XUI_API int xuiMessageListSetNodeDocumentActivateOwned(xui_widget widget,const char* id,
+    xui_doc_view_activate_owned_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    xui_message_callback_update_t update={0};int status=__xuiMessageCallbackUpdateBegin(widget,id,callback!=NULL,owner,1,&update);if(status!=XUI_OK)return status;
+    update.binding->onActivateOwned=callback;update.binding->pActivateUser=user;update.binding->tDesc.onActivate=NULL;
+    return __xuiMessageCallbackUpdateEnd(&update);
+}
+XUI_API int xuiMessageListSetNodeDocumentTaskToggleOwned(xui_widget widget,const char* id,
+    xui_doc_task_toggle_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    xui_message_callback_update_t update={0};int status=__xuiMessageCallbackUpdateBegin(widget,id,callback!=NULL,owner,2,&update);if(status!=XUI_OK)return status;
+    update.binding->tDesc.onTaskToggle=callback;update.binding->pTaskUser=user;update.binding->bTaskOwned=callback!=NULL;
+    return __xuiMessageCallbackUpdateEnd(&update);
+}
 static int xuiMessageListSetNodeDocumentImpl(xui_widget pWidget, const char* sId,
 	const xui_message_document_desc_t* pDesc)
 {

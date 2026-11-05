@@ -381,6 +381,9 @@ XUI_API int xuiDocumentHtmlInteractionSetOpenLinkOwned(xui_doc_html_interaction 
 #endif
 
 typedef void (*xui_doc_view_event_proc)(xui_widget view, xui_doc_node_id node, const char* resource, void* user);
+/* Resource is an immutable callback-period view; copy explicitly to retain it. */
+typedef void (*xui_doc_view_activate_owned_proc)(xui_widget view, xui_doc_node_id node, const xstrview* resource, void* user);
+typedef void (*xui_doc_task_toggle_proc)(xui_widget list, xui_doc_node_id item, int checked, void* user);
 typedef struct xui_doc_view_desc_t {
     uint32_t iSize;
     xui_document pDocument;
@@ -397,6 +400,7 @@ typedef struct xui_doc_view_desc_t {
 XUI_API xui_widget_type xuiDocumentViewGetType(xui_context context);
 /* Create a DocumentView bound to its configured Document. */
 XUI_API int xuiDocumentViewCreate(xui_context context, const xui_doc_view_desc_t* desc, xui_widget* out);
+XUI_API int xuiDocumentViewSetActivateOwned(xui_widget view, xui_doc_view_activate_owned_proc callback, void* user, const xui_callback_owner_t* owner);
 /* Bind a Document and refresh view state. */
 XUI_API int xuiDocumentViewSetDocument(xui_widget view, xui_document document);
 /* Return the currently bound Document handle. */
@@ -493,6 +497,8 @@ typedef struct xui_message_document_desc_t {
 #if XUI_ENABLE_MESSAGE_LIST
 XUI_API int xuiMessageListSetNodeDocument(xui_widget list, const char* message_id,
     const xui_message_document_desc_t* desc);
+XUI_API int xuiMessageListSetNodeDocumentActivateOwned(xui_widget list, const char* message_id, xui_doc_view_activate_owned_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiMessageListSetNodeDocumentTaskToggleOwned(xui_widget list, const char* message_id, xui_doc_task_toggle_proc callback, void* user, const xui_callback_owner_t* owner);
 /* Return the Document bound to one MessageList item. */
 XUI_API xui_document xuiMessageListGetNodeDocument(xui_widget list, const char* message_id);
 /* Read the bound message's current renderer counters without synchronizing or
@@ -600,6 +606,8 @@ typedef struct xui_doc_paragraph_spacing_state_t {
 XUI_API xui_widget_type xuiDocumentEditorGetType(xui_context context);
 /* Create a DocumentEditor using a DocumentView base. */
 XUI_API int xuiDocumentEditorCreate(xui_context context, const xui_doc_editor_desc_t* desc, xui_widget* out);
+/* Independently owned scalar error notification. */
+XUI_API int xuiDocumentEditorSetErrorOwned(xui_widget editor, xui_doc_editor_error_proc callback, void* user, const xui_callback_owner_t* owner);
 /* Direct InsertText/Execute calls are programmatic transactions. Unpublished
  * SOURCE calls may share their current batch; published calls do not acquire
  * automatic input groups. To deliver interactive input, dispatch text/key/IME

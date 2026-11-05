@@ -10,6 +10,8 @@ typedef struct doc_view_data {
     xui_document_prepare input; /* Borrowed from the editor coordinator. */
     xui_document_prepare visual_input; /* Borrowed immutable semantic input. */
     xui_doc_view_desc_t desc;
+    xui_doc_view_activate_owned_proc onActivateOwned;
+    void* activateUser;
     xui_doc_renderer_desc_t base_renderer; /* Unthemed fallback palette and metrics. */
     int uses_default_font;
     xui_doc_range_t selection;
@@ -66,6 +68,7 @@ int doc_view_set_selection(doc_view_data*, const xui_doc_range_t*);
 int doc_view_set_table_selection(doc_view_data*, const xui_doc_table_selection_t*);
 int doc_view_extend_table_selection(doc_view_data*, int key);
 int doc_view_object_range(doc_view_data*, uint64_t, xui_doc_range_t*);
+int doc_view_activate(doc_view_data*, xui_document_snapshot, xui_doc_node_id);
 int doc_view_event(xui_widget, const xui_event_t*, void*);
 int doc_view_cursor(xui_widget, int, int, void*);
 void doc_view_cancel_pointer(doc_view_data*, int);

@@ -1244,7 +1244,7 @@ static int doc_view_accessible_get(xui_widget w, int index, xui_accessible_node_
         out->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
     if (has_bounds)
         out->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW);
-    if (v->desc.onActivate && (node->kind == XUI_DOC_IMAGE ||
+    if ((v->onActivateOwned || v->desc.onActivate) && (node->kind == XUI_DOC_IMAGE ||
         (node->kind == XUI_DOC_TEXT && (node->attrs->iMarks & XUI_DOC_LINK)) ||
         node->kind == XUI_DOC_MATH || node->kind == XUI_DOC_DIAGRAM || node->kind == XUI_DOC_HTML))
         out->iActions |= XUI_ACCESSIBLE_ACTION_MASK(XUI_ACCESSIBLE_ACTION_ACTIVATE);
@@ -1315,18 +1315,15 @@ static int doc_view_accessible_action(xui_widget w, uint64_t id, int action, con
         else if (rect.y + rect.height > y + content.fH) y = rect.y + rect.height - content.fH;
         return xuiDocumentViewSetScroll(w, x, y);
     }
-    if (action == XUI_ACCESSIBLE_ACTION_ACTIVATE && v->desc.onActivate &&
+    if (action == XUI_ACCESSIBLE_ACTION_ACTIVATE && (v->onActivateOwned || v->desc.onActivate) &&
         (node->kind == XUI_DOC_IMAGE || (node->kind == XUI_DOC_TEXT &&
         (node->attrs->iMarks & XUI_DOC_LINK)) || node->kind == XUI_DOC_MATH ||
         node->kind == XUI_DOC_DIAGRAM || node->kind == XUI_DOC_HTML)) {
         xui_document_snapshot retained = v->renderer->snapshot;
-        const char* resource = node->kind == XUI_DOC_IMAGE &&
-            (node->attrs->iMarks & XUI_DOC_LINK) ?
-            doc_string(node->link_target) : doc_string(node->resource);
         xuiDocumentSnapshotRetain(retained);
-        v->desc.onActivate(w, id, resource, v->desc.pUser);
+        int notified=doc_view_activate(v,retained,id);
         xuiDocumentSnapshotRelease(retained);
-        return XUI_OK;
+        return notified;
     }
     if (action == XUI_ACCESSIBLE_ACTION_TOGGLE && node->kind == XUI_DOC_LIST_ITEM &&
         (node->attrs->iFlags & XUI_DOC_TASK)) {

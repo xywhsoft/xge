@@ -1,0 +1,255 @@
+{
+  "format": "xge-acceptance-1",
+  "passed": true,
+  "complete": true,
+  "scope": "Four Doc UI Owned callback families, depends on separate common Hold outcome delta",
+  "candidate": {
+    "manifest": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-overlay-r4\\manifest.json",
+    "sha256": "83c00e32fb51b77777bf05832775a2b8b2f8c0cc9b71344f7aacf2acd5e4351f",
+    "files": 10
+  },
+  "jointAcceptance": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-acceptance-r2.json",
+    "sha256": "0a571b7f11e00bad28a5e89316f9f0e96119fc1830a3a4a07db354c1dee9fbe8"
+  },
+  "platforms": [
+    {
+      "scope": "Native R13 incremental development CPU acceptance, not final language/DSL/provider or shipping build",
+      "reports": [
+        {
+          "report": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-regressions-win-r1\\results.json",
+          "sha256": "15ed362958efb6ee92f87f4b9173d78f6d8144726d2fa0263aedcd404261809e",
+          "passed": true,
+          "rows": 15,
+          "leafRows": 85,
+          "inputsUnchanged": null,
+          "families": [
+            "remaining",
+            "groups",
+            "cell",
+            "table",
+            "context",
+            "managers",
+            "file_dialog",
+            "manager_getters",
+            "renderer",
+            "renderer_busy",
+            "requested_callbacks",
+            "message_cache",
+            "message_regression",
+            "message_display",
+            "html_interaction"
+          ]
+        },
+        {
+          "report": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-final-win-r1\\results.json",
+          "sha256": "42c6accf121ea298c1cafd413d59f7fe369775b7259ee98e0fb060c110d207ca",
+          "passed": true,
+          "rows": 16,
+          "leafRows": 16,
+          "inputsUnchanged": true,
+          "families": [
+            "hold_outcome-O0-build",
+            "hold_outcome-O0-run",
+            "hold_outcome-O2-build",
+            "hold_outcome-O2-run",
+            "hold_renderer-O0-build",
+            "hold_renderer-O0-run",
+            "hold_renderer-O2-build",
+            "hold_renderer-O2-run",
+            "doc_ui_callbacks-O0-build",
+            "doc_ui_callbacks-O0-run",
+            "doc_ui_callbacks-O2-build",
+            "doc_ui_callbacks-O2-run",
+            "doc_editor_regression-O0-build",
+            "doc_editor_regression-O0-run",
+            "doc_editor_regression-O2-build",
+            "doc_editor_regression-O2-run"
+          ]
+        },
+        {
+          "report": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-public-win-r2\\results.json",
+          "sha256": "894afa8a56b22a42dddbce231dc389c4626caaff171c9bb2b4d4dce01807ef76",
+          "passed": true,
+          "rows": 5,
+          "leafRows": 5,
+          "inputsUnchanged": null,
+          "families": [
+            "c11",
+            "c++11",
+            "c++17",
+            "R12-size-compile",
+            "R13-size-compile"
+          ]
+        }
+      ],
+      "source": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-source-r6",
+      "sourceLayerSHA": "c7f032505729a66d5d45acba8b669b115ceeb3fcc3c1750c74def9fa9f2a5cfa",
+      "engine": "F:\\xlang-validation\\foreign-completion-20261103\\native-doc-ui-r13-host-win-r3",
+      "engineSHA": "c8c62d3f2cecab357168782d5f83334c853b332e4968230d1da4ed61d0c23da1",
+      "buildReportSHA": "7279f9db33c191069de44e53420c923e998d690e8f24fa5c80a625150c904b86",
+      "dependencyPlanSHA": "8b80002fa5a8af2057691de179f196c81100b59988bc703643640aacca7f4ce2",
+      "compiled": 23,
+      "inherited": 120,
+      "imports": 192,
+      "oldR12ObjectsUnchanged": true,
+      "passed": true
+    },
+    {
+      "scope": "Native R13 incremental development CPU acceptance, not final language/DSL/provider or shipping build",
+      "reports": [
+        {
+          "report": "/home/ubuntu/xlang-validation/native-doc-ui-r13-regressions-linux-r1/results.json",
+          "sha256": "2da95518ae52c41170bfbccb8cf50f9b2c0f324ac622bf4dadb057c0752cfcb4",
+          "passed": true,
+          "rows": 15,
+          "leafRows": 85,
+          "inputsUnchanged": null,
+          "families": [
+            "remaining",
+            "groups",
+            "cell",
+            "table",
+            "context",
+            "managers",
+            "file_dialog",
+            "manager_getters",
+            "renderer",
+            "renderer_busy",
+            "requested_callbacks",
+            "message_cache",
+            "message_regression",
+            "message_display",
+            "html_interaction"
+          ]
+        },
+        {
+          "report": "/home/ubuntu/xlang-validation/native-doc-ui-r13-final-linux-r1/results.json",
+          "sha256": "1c184de5ea4392f2c1e32f46f4ffdead34f3a721bca7b7627ae3d13e44d4e11e",
+          "passed": true,
+          "rows": 16,
+          "leafRows": 16,
+          "inputsUnchanged": true,
+          "families": [
+            "hold_outcome-O0-build",
+            "hold_outcome-O0-run",
+            "hold_outcome-O2-build",
+            "hold_outcome-O2-run",
+            "hold_renderer-O0-build",
+            "hold_renderer-O0-run",
+            "hold_renderer-O2-build",
+            "hold_renderer-O2-run",
+            "doc_ui_callbacks-O0-build",
+            "doc_ui_callbacks-O0-run",
+            "doc_ui_callbacks-O2-build",
+            "doc_ui_callbacks-O2-run",
+            "doc_editor_regression-O0-build",
+            "doc_editor_regression-O0-run",
+            "doc_editor_regression-O2-build",
+            "doc_editor_regression-O2-run"
+          ]
+        },
+        {
+          "report": "/home/ubuntu/xlang-validation/native-doc-ui-r13-public-linux-r1/results.json",
+          "sha256": "ba4336611cca565c7fd28db9cdb097313773a782c693de267486817e88a63f34",
+          "passed": true,
+          "rows": 5,
+          "leafRows": 5,
+          "inputsUnchanged": null,
+          "families": [
+            "c11",
+            "c++11",
+            "c++17",
+            "R12-size-compile",
+            "R13-size-compile"
+          ]
+        }
+      ],
+      "source": "/home/ubuntu/xlang-validation/native-doc-ui-r13-source-r6",
+      "sourceLayerSHA": "dec2c38c2e70be5708964b7c7b62ebb51ceecc400313b97b97d563e53c8b40f6",
+      "engine": "/home/ubuntu/xlang-validation/native-doc-ui-r13-host-linux-r3",
+      "engineSHA": "6a8265f49667cbe957d6c57c10dbb714ae6ebeaa39d10497b9b7fbba0f57b7f0",
+      "buildReportSHA": "8b63578487597091ae21d8c51e369e0da37b5cdfc47408a52fb901a0d8d62fa7",
+      "dependencyPlanSHA": "71d7fe6f632345e9d6fa29e7fad7d8200d884e77d7b15b28915916a1ee804f97",
+      "compiled": 23,
+      "inherited": 120,
+      "imports": 190,
+      "oldR12ObjectsUnchanged": true,
+      "passed": true
+    }
+  ],
+  "totalTestFamilies": 38,
+  "totalLeafChecks": 212,
+  "files": [
+    {
+      "path": "include/xui_document_ui.h",
+      "sha256": "e343a8600039805be3c5e481fe1d15dbcd426490ce2ad2b5dca65f78b6574bb2",
+      "blob": "6a0ae3ffc941ead7b5bb05565c1dcb25710072af"
+    },
+    {
+      "path": "src/xui/document/xui_document_view_internal.h",
+      "sha256": "ee4a559a0cd5333054672f72b99e7010c0e740b4af3ece129cda4e3451535395",
+      "blob": "6c5d3ef2758317ba37774aa919c68670f9eee14d"
+    },
+    {
+      "path": "src/xui/document/xui_document_view.c",
+      "sha256": "faf5db284e0b95a1af3afd3b3a2e23107ace571bc3944a06c8c02fbd0cb5a39d",
+      "blob": "09ff8ba3723c358551e53f916792fcb760e122dc"
+    },
+    {
+      "path": "src/xui/document/xui_document_edit_adapter.c",
+      "sha256": "32e4d0413ec3e401d71893a8a629ad62e8af088477b0000ebe11a1665d556a49",
+      "blob": "f1e1c868a27bd20f544d6542644951d19d5874c3"
+    },
+    {
+      "path": "src/xui/document/xui_document_editor.c",
+      "sha256": "77e8325d5234498a789a6e08c40348d4da3bb2e58bac535f6866085264bf47ed",
+      "blob": "5c7041264de3462550eab44d0eaa6db5d2af1a5a"
+    },
+    {
+      "path": "src/xui/controls/xui_message_list.c",
+      "sha256": "1a65905bde8deb71faab2fc6fb646593a24db818256dd6f3e5de44e8f568808d",
+      "blob": "cef1ed632f8aaf40a2fed7e9a9c527654e15c5fd"
+    },
+    {
+      "path": "tests/xui/xui_owned_doc_ui_callbacks_test.c",
+      "sha256": "97183903a9274ebc69b8da8829e9d30e2e71b95c0f75b8196a0678be4dc9eb2e",
+      "blob": "c078ee1b079664482eff150cdf1f0ba2a4307089"
+    },
+    {
+      "path": "tests/xui/xui_owned_doc_editor_regression_test.c",
+      "sha256": "246fc067ee75546fb5f4e1282f7c8f6b527046612e416468cb5269c042843945",
+      "blob": "17564585d12f647b9e3024938b48ea9330bdfb50"
+    },
+    {
+      "path": "tools/test/check_xui_owned_cache.py",
+      "sha256": "c6bf3d9414500225110a29145078973247704020ba934e7735243e9065891006",
+      "blob": "afe08db5117f4a907c409d7281b36f12ee48aeab"
+    },
+    {
+      "path": "docs/xui-owned-doc-ui-callbacks.md",
+      "sha256": "5b917062e66a046c648030838eafb44cea349198ce98f268c16bb22881ca423a",
+      "blob": "36304739980de8580012f8bf52053ef2adcd1437"
+    }
+  ],
+  "publicLayoutSizes": {
+    "view": [
+      1256,
+      1272
+    ],
+    "editor": [
+      2976,
+      2992
+    ],
+    "messageBinding": [
+      440,
+      528
+    ]
+  },
+  "qualification": "Both independent source deltas were accepted together over the immutable R12 engine. Incremental development recompiled 22 affected production TUs and one normally generated host resolver; 120 inherited objects were individually pinned. This is not a clean final SDK/compiler/provider delivery.",
+  "languageCollectorAccepted": false,
+  "shippingDelivery": false,
+  "gpuTests": false,
+  "windowTests": false,
+  "browserTests": false
+}

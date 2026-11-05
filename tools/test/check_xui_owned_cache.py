@@ -25,7 +25,7 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--object-overlay", type=Path)
     parser.add_argument("--fixture-root", type=Path)
-    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer"))
+    parser.add_argument("--case", action="append", choices=("layout", "layout_draft", "chunk_edit", "code_document", "renderer", "renderer_busy", "shape", "simple_layout", "requested_callbacks", "textedit_cache", "textedit_regression", "message_cache", "message_regression", "message_display", "codeedit_cache", "codeedit_regression", "webview_callbacks", "web_provider", "image_resource", "image_regression", "html_interaction", "hold_outcome", "hold_renderer", "doc_ui_callbacks", "doc_editor_regression"))
     args = parser.parse_args()
     source, engine, runtime, out = [value.resolve() for value in (args.source, args.engine, args.runtime, args.out)]
     out.mkdir(parents=True, exist_ok=False)
@@ -76,7 +76,7 @@ def main():
         return code == 0
 
     flags = ["-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-unused-parameter", "-Wno-cast-function-type", "-DXGE_XRT_HOST=1", "-include", engine / "xge_build_config.h"]
-    flags += ["-I" + str(path) for path in (source, source / "include", source / "tests/xui", source / "src/xui/core", source / "src/xui/code", source / "src/xui/document", source / "src/xge/text", source / "src/xge/core", source / "extlibs/xrt", engine / "host-xrt")]
+    flags += ["-I" + str(path) for path in (source, source / "include", source / "tests/xui", source / "tests", source / "src/xui/core", source / "src/xui/accessibility", source / "src/xui/code", source / "src/xui/document", source / "src/xge/text", source / "src/xge/core", source / "extlibs/xrt", engine / "host-xrt")]
     libraries = ["-lm"] + (["-lws2_32", "-liphlpapi", "-lgdi32", "-luser32", "-lshell32", "-lole32", "-loleaut32", "-luuid", "-limm32", "-lwinmm", "-lavrt"] if windows else ["-lX11", "-lXi", "-lXcursor", "-lGL", "-ldl", "-lpthread", "-Wl,-rpath," + str(runtime.parent)])
     env = dict(os.environ)
     if windows:
@@ -85,9 +85,21 @@ def main():
         env["LD_LIBRARY_PATH"] = str(runtime.parent) + ":" + env.get("LD_LIBRARY_PATH", "")
     save()
     for case, test in zip(cases, tests):
+        case_objects = objects
+        if case == "doc_ui_callbacks":
+            # The fixture calls private consumers in these exact production
+            # TUs. Include each once, without its duplicate compiled object.
+            # All other production objects and their normal imports are used.
+            included = {"src_xui_document_xui_document_view.c.o", "src_xui_document_xui_document_editor.c.o",
+                        "src_xui_document_xui_document_edit_adapter.c.o", "src_xui_controls_xui_message_list.c.o"}
+            case_objects = [path for path in objects if path.name not in included]
+            report["docUiIncludedProductionTUs"] = sorted(included)
+        if case == "doc_editor_regression":
+            # The pre-existing CPU fixture saves local files in this directory.
+            (source / "build/document").mkdir(parents=True, exist_ok=True)
         for opt in ("O0", "O2"):
             executable = out / (case + "-" + opt + (".exe" if windows else ""))
-            command = [build["compiler"][0], *flags, "-" + opt, test, source / "tests/xui/xui_test_proxy.c", *objects, runtime, *libraries, "-o", executable]
+            command = [build["compiler"][0], *flags, "-" + opt, test, source / "tests/xui/xui_test_proxy.c", *case_objects, runtime, *libraries, "-o", executable]
             if run(case + "-" + opt + "-build", command):
                 run(case + "-" + opt + "-run", [executable], env)
     report["inputsUnchanged"] = all(Path(name).is_file() and digest(Path(name)) == value for name, value in inputs.items())

@@ -78,6 +78,25 @@ static doc_editor_data* doc_editor_get(xui_widget w)
     xui_widget_type type = w ? xuiWidgetFindType(xuiWidgetGetContext(w), "document-editor") : NULL;
     return type && xuiWidgetIsType(w, type) ? xuiWidgetGetTypeData(w) : NULL;
 }
+static void doc_editor_emit_error(xui_widget widget,doc_editor_data* editor,int error)
+{
+    xui_doc_editor_error_proc callback=editor->desc.onError;void* user=editor->desc.pUser;
+    if(!callback)return;
+    xui_call_scope_t scope={0};xui_context context=widget->pContext;
+    if(xuiCallScopeBegin(context,&scope)!=XUI_OK)return;
+    xui_callback_snapshot_t snapshot={0};int status=xuiInternalCallbackSnapshotBeginReported(widget,&editor->desc.onError,&user,&snapshot);
+    if(status==XUI_OK){callback(widget,error,user);status=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);}
+    if(status<0)xuiInternalContextRecordFailure(context,status);
+    xerror* first=xrtTakeError();(void)xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);
+}
+XUI_API int xuiDocumentEditorSetErrorOwned(xui_widget widget,xui_doc_editor_error_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    doc_editor_data* editor=doc_editor_get(widget);if(!editor)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};int status=xuiInternalCallbackUpdateBegin(widget,&editor->desc.onError,callback!=NULL,user,owner,&update);
+    if(status!=XUI_OK)return status;
+    editor->desc.onError=callback;editor->desc.pUser=user;
+    xuiInternalCallbackUpdatePublish(&update);return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
 static int doc_editor_blocked(doc_editor_data* e)
 {
     return e->view.document->input_barrier && e->view.document->input_barrier != e->origin;
@@ -766,7 +785,7 @@ XUI_API int xuiDocumentEditorFlush(xui_widget w)
             e->event_count--; doc_free(item);
         }
         if (result < 0 && result != XUI_ERROR_NOT_FOUND && e->desc.onError) {
-            e->desc.onError(w, result, e->desc.pUser); if (!xuiInternalWidgetIsValid(w)) return result;
+            doc_editor_emit_error(w,e,result); if (!xuiInternalWidgetIsValid(w)) return result;
         }
         result = XUI_OK;
         if (xgeClockMicroseconds() - started >= 4000) break;
@@ -3478,7 +3497,7 @@ static void doc_editor_menu_select(xui_widget menu, int index, int value, void* 
     result = xuiDocumentEditorExecute(w, (uint32_t)value);
     e = xuiInternalWidgetIsValid(w) ? doc_editor_get(w) : NULL;
     if (result < 0 && e && e->desc.onError)
-        e->desc.onError(w, result, e->desc.pUser);
+        doc_editor_emit_error(w,e,result);
 }
 static int doc_editor_open_menu(doc_editor_data* e, float x, float y)
 {
@@ -3766,7 +3785,7 @@ static int doc_editor_event(xui_widget w, const xui_event_t* event, void* user)
         if (result == XUI_DOC_ERROR_BUSY && e->input && ordered) { queued = 1; result = doc_editor_enqueue(e, event, received); }
     }
     if (!xuiInternalWidgetIsValid(w)) return XUI_EVENT_DISPATCH_STOP;
-    if (result < 0 && result != XUI_ERROR_NOT_FOUND && e->desc.onError) e->desc.onError(w, result, e->desc.pUser);
+    if (result < 0 && result != XUI_ERROR_NOT_FOUND && e->desc.onError) doc_editor_emit_error(w,e,result);
     if (result == XUI_ERROR_NOT_FOUND || !ordered) return XUI_OK;
     if (!queued && result >= 0 && event->iType != XUI_EVENT_KEY_DOWN && event->iType != XUI_EVENT_TEXT && event->iType != XUI_EVENT_IME_COMPOSITION) return result;
     return XUI_EVENT_DISPATCH_STOP;
@@ -3845,7 +3864,7 @@ static int doc_editor_update(xui_widget w, float dt, void* user)
         if (!xuiInternalWidgetIsValid(w)) return XUI_OK;
         if (result != XUI_OK && result != XUI_DOC_ERROR_BUSY && result != e->input_error) {
             e->input_error = result;
-            if (e->desc.onError) e->desc.onError(w, result, e->desc.pUser);
+            if (e->desc.onError) doc_editor_emit_error(w,e,result);
             if (!xuiInternalWidgetIsValid(w)) return XUI_OK;
         }
     }

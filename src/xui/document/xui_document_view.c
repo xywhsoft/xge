@@ -1170,7 +1170,7 @@ int doc_view_cursor(xui_widget widget, int x, int y, void* user)
     info.iSize = sizeof(info);
     has_info = hit.iNodeId &&
         xuiDocumentSnapshotGetNode(v->renderer->snapshot, hit.iNodeId, &info) == XUI_OK;
-    if (v->desc.onActivate && has_info &&
+    if ((v->onActivateOwned || v->desc.onActivate) && has_info &&
         (info.iKind == XUI_DOC_IMAGE || (info.tAttributes.iMarks & XUI_DOC_LINK)))
         return XUI_CURSOR_HAND;
     if (!v->desc.bDisableSelection &&
@@ -1358,17 +1358,15 @@ int doc_view_event(xui_widget widget, const xui_event_t* event, void* user)
         doc_view_cancel_pointer(v, !v->replaying_input);
         if (!doc_view_data_alive(widget, v)) return XUI_EVENT_DISPATCH_STOP;
         if (table_result != XUI_OK) return table_result;
-        if (pressed && v->desc.onActivate) {
+        if (pressed && (v->onActivateOwned || v->desc.onActivate)) {
             xui_doc_node_info_t info = {0}; info.iSize = sizeof(info);
             result = xuiDocumentViewHitTest(widget, event->fX - world.fX, event->fY - world.fY, &hit);
             if (result == XUI_OK && hit.iNodeId == pressed) {
                 xui_document_snapshot retained = v->renderer->snapshot;
                 xuiDocumentSnapshotRetain(retained);
-                if (xuiDocumentSnapshotGetNode(retained, pressed, &info) == XUI_OK)
-                    v->desc.onActivate(widget, pressed,
-                        info.iKind == XUI_DOC_IMAGE && (info.tAttributes.iMarks & XUI_DOC_LINK) ?
-                            info.sLinkTarget : info.sResource, v->desc.pUser);
+                int notified=doc_view_activate(v,retained,pressed);
                 xuiDocumentSnapshotRelease(retained);
+                if(notified!=XUI_OK)return notified;
             }
         }
         return XUI_EVENT_DISPATCH_STOP;
@@ -1422,6 +1420,35 @@ static bool doc_view_trace_ownership(xui_widget widget,const void* raw,xrtowners
 {
     (void)widget;const doc_view_data* view=raw;
     return !view->renderer || xuiDocumentRendererTraceOwnership(view->renderer,visit,user);
+}
+int doc_view_activate(doc_view_data* view,xui_document_snapshot retained,xui_doc_node_id id)
+{
+    xui_doc_view_activate_owned_proc owned=view->onActivateOwned;
+    xui_doc_view_event_proc raw=view->desc.onActivate;
+    void* user=owned ? view->activateUser:view->desc.pUser;
+    if(!owned && !raw)return XUI_OK;
+    xui_widget widget=view->widget;xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
+    xui_callback_snapshot_t snapshot={0};
+    status=xuiInternalCallbackSnapshotBeginReturned(widget,&view->onActivateOwned,&user,&snapshot);
+    if(status==XUI_OK){
+        const doc_node* native=doc_index_get(retained->state->index,id);
+        if(native){
+            doc_blob* text=native->kind==XUI_DOC_IMAGE && (native->attrs->iMarks & XUI_DOC_LINK) ? native->link_target:native->resource;
+            xstrview resource={doc_string(text),text ? text->size:0};
+            if(owned)owned(widget,id,&resource,user);else raw(widget,id,doc_string(text),user);
+            status=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_OK);
+        }else status=xuiInternalCallbackSnapshotEnd(&snapshot,XUI_ERROR_NOT_FOUND);
+    }
+    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
+}
+XUI_API int xuiDocumentViewSetActivateOwned(xui_widget widget,xui_doc_view_activate_owned_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    doc_view_data* view=doc_view_get(widget);if(!view)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};int status=xuiInternalCallbackUpdateBegin(widget,&view->onActivateOwned,callback!=NULL,user,owner,&update);
+    if(status!=XUI_OK)return status;
+    view->onActivateOwned=callback;view->activateUser=user;view->desc.onActivate=NULL;
+    xuiInternalCallbackUpdatePublish(&update);return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
 }
 XUI_API xui_widget_type xuiDocumentViewGetType(xui_context context)
 {
