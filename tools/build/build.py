@@ -27,6 +27,13 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def public_abi_inputs(root):
+    paths = sorted(path.relative_to(root).as_posix() for path in (root / "include").glob("*.h"))
+    paths.append("extlibs/xrt/xrt.h")
+    return "XGE_PUBLIC_ABI_V2\n" + "".join(
+        name + "\0" + (root / name).read_text(encoding="utf-8") + "\0" for name in paths)
+
+
 def stamp(path):
     s = Path(path).stat()
     return [s.st_mtime_ns, s.st_size]
@@ -125,8 +132,7 @@ def main():
         config += "#define XGE_XRT_PROFILE_IDE\n"
     if args.host_xrt:
         config += "#define XGE_XRT_HOST 1\n"
-    abi_inputs = config + "".join((ROOT / path).read_text(encoding="utf-8") for path in
-        ("include/xge.h", "include/xui.h", "include/xge_host_xrt.h", "include/xge_config.h", "include/xui_config.h", "extlibs/xrt/xrt.h"))
+    abi_inputs = config + public_abi_inputs(ROOT)
     abi_value = hashlib.sha256((abi_inputs + version + str(int(args.debug))).encode()).hexdigest()[:16]
     config += f"#define XGE_BUILD_ABI_FINGERPRINT UINT64_C(0x{abi_value})\n"
     flags += [f"-DXGE_BUILD_ABI_FINGERPRINT=0x{abi_value}ULL"]
@@ -257,7 +263,7 @@ def main():
             raise RuntimeError(f"Runtime dependency could not be packaged: {dependency.name}")
         packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
                                  "sha256": expected, "bytes": target.stat().st_size})
-    report = {"api_major": api_major, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
+    report = {"api_major": api_major, "public_abi_schema": 2, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
               "xrt_mode": "host" if args.host_xrt else "embedded", "xrt_host_imports": host_imports,
               "xrt_host_header_sha256": host_metadata["headerSha256"] if host_metadata else None,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,

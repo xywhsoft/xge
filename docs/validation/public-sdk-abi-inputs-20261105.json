@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "shippingDelivery": false,
+  "fullEngineRebuild": false,
+  "scope": "ABI fingerprint schema 2 includes all public headers and exact XRT; pure input mutation qualification only. No complete Native engine or final SDK build implied.",
+  "report": {
+    "path": "F:\\xlang-validation\\foreign-completion-20261103\\native-sdk-fingerprint-r1\\results.json",
+    "sha256": "427102315db7787cd4e235e304ea1c26f8f3a26df862b09622d03f680fcded99",
+    "checks": 13
+  },
+  "files": [
+    {
+      "path": "tools/build/build.py",
+      "canonicalLfSha256": "ce4182bf5c9fd250655117d667bd9238c76f3cdca24891e8acbde6329fac5f7a"
+    }
+  ]
+}
