@@ -64,10 +64,42 @@ typedef struct xui_table_view_cell_lease_t {
     bool owned,reading,textReady;
 } xui_table_view_cell_lease_t;
 
+typedef struct xui_table_column_storage_t {
+    size_t references;
+    size_t bytes;
+    xui_table_view_column_t columns[];
+} xui_table_column_storage_t;
+
+static int __xuiTableColumnStorageRetain(xui_table_column_storage_t* storage)
+{
+    if (!storage) return XUI_OK;
+    if (storage->references == (size_t)-1) return XUI_ERROR_LIMIT_EXCEEDED;
+    ++storage->references;
+    return XUI_OK;
+}
+static void __xuiTableColumnStorageRelease(xui_table_column_storage_t* storage)
+{
+    if (storage && --storage->references == 0) xrtFree(storage);
+}
+static int __xuiTableColumnStorageAliases(const xui_table_column_storage_t* storage,
+    const xui_table_view_column_t* columns, int count)
+{
+    if (!storage) return 0;
+    uintptr_t start = (uintptr_t)storage;
+    for (int i = 0; i < count; ++i) {
+        uintptr_t id = (uintptr_t)columns[i].sId;
+        uintptr_t title = (uintptr_t)columns[i].sTitle;
+        if ((id >= start && id - start < storage->bytes) ||
+            (title >= start && title - start < storage->bytes)) return 1;
+    }
+    return 0;
+}
+
 typedef struct xui_table_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_table_view_column_t arrColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    xui_table_column_storage_t* pColumnStorage;
 	xui_table_view_row_t* arrRows;
 	xui_table_view_row_prefix_t* arrRowPrefix;
 	xui_table_view_merge_column_t arrMergeColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
@@ -2980,6 +3012,27 @@ static int __xuiTableViewAccessibleCount(xui_widget pWidget, void* pUser)
 	return pData->iRowCount * pData->iColumnCount + 1;
 }
 
+static int __xuiTableViewAccessibleFocus(xui_widget pWidget,
+	uint64_t* pNodeId, void* pUser)
+{
+	xui_table_view_data_t* pData = (xui_table_view_data_t*)pUser;
+	int iColumn;
+
+	if ( pData == NULL || pNodeId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNodeId = 1;
+	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) != pWidget ||
+	     pData->iFocusRow < 0 || pData->iFocusRow >= pData->iRowCount ) {
+		return XUI_OK;
+	}
+	iColumn = pData->iSelectionMode == XUI_TABLE_VIEW_SELECTION_CELL ?
+		pData->iFocusColumn : __xuiTableViewFirstVisibleColumn(pData);
+	if ( iColumn >= 0 && iColumn < pData->iColumnCount ) {
+		*pNodeId = (uint64_t)pData->iFocusRow * (uint64_t)pData->iColumnCount +
+			(uint64_t)iColumn + 2u;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTableViewAccessibleGetBody(xui_widget pWidget, int iIndex,
 	xui_accessible_node_t* pNode, void* pUser, xui_table_view_cell_lease_t* pLease)
 {
@@ -3297,6 +3350,9 @@ static int __xuiTableViewInit(xui_widget pWidget, void* pTypeData, const void* p
 		__xuiTableViewAccessibleCount, __xuiTableViewAccessibleGet,
 		__xuiTableViewAccessibleAction, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalAccessibilitySetFocusResolver(pWidget,
+		__xuiTableViewAccessibleFocus);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pDesc != NULL ) {
 		iRet = xuiTableViewSetColumns(pWidget, pDesc->arrColumns, pDesc->iColumnCount);
 		if ( iRet != XUI_OK ) return iRet;
@@ -3330,6 +3386,7 @@ static void __xuiTableViewDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	pData = (xui_table_view_data_t*)pTypeData;
 	if ( pData != NULL ) {
         xrtFree(pData->sResolvedTooltip);pData->sResolvedTooltip=NULL;
+        __xuiTableColumnStorageRelease(pData->pColumnStorage);pData->pColumnStorage=NULL;
 		if ( pData->arrRows != NULL ) {
 			xrtFree(pData->arrRows);
 		}
@@ -3494,7 +3551,7 @@ int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const 
 }
 
 
-static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount)
+static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount, xui_table_column_storage_t* storage)
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_column_t arrNewColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
@@ -3514,6 +3571,7 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pData->onCount != NULL && __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
+    if (!__xuiTableViewWidgetAlive(pWidget,pData)) return XUI_ERROR_INVALID_STATE;
 	memset(arrNewColumns, 0, sizeof(arrNewColumns));
 	for ( i = 0; i < iCount; i++ ) {
 		if ( !__xuiTableViewColumnDescValid(&arrColumns[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -3546,7 +3604,22 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	iOldHoverColumn = pData->iHoverColumn;
 	iOldSortColumn = pData->iSortColumn;
 	bOldSortDescending = pData->bSortDescending;
+    xui_table_column_storage_t* oldStorage = pData->pColumnStorage;
+    if (!storage && __xuiTableColumnStorageAliases(oldStorage,arrColumns,iCount)) storage = oldStorage;
+    if (__xuiTableColumnStorageRetain(oldStorage) != XUI_OK) return XUI_ERROR_LIMIT_EXCEEDED;
+    if (__xuiTableColumnStorageRetain(storage) != XUI_OK) {
+        __xuiTableColumnStorageRelease(oldStorage);
+        return XUI_ERROR_LIMIT_EXCEEDED;
+    }
 	__xuiTableViewCancelPointer(pWidget, pData, 1);
+    if (!__xuiTableViewWidgetAlive(pWidget,pData)) {
+        __xuiTableColumnStorageRelease(oldStorage);
+        __xuiTableColumnStorageRelease(storage);
+        return XUI_ERROR_INVALID_STATE;
+    }
+    xui_table_column_storage_t* previousStorage = pData->pColumnStorage;
+    pData->pColumnStorage = storage; /* transfer the reserved field reference */
+    __xuiTableColumnStorageRelease(previousStorage);
 	memcpy(pData->arrColumns, arrNewColumns, sizeof(arrNewColumns));
 	pData->iColumnCount = iCount;
 	if ( pData->iSelectedColumn >= iCount ) pData->iSelectedColumn = -1;
@@ -3555,7 +3628,14 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	if ( pData->iSortColumn >= iCount ) { pData->iSortColumn = -1; pData->bSortDescending = 0; }
 	__xuiTableViewInvalidateMerges(pData);
 	iRet = __xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
+    if (!__xuiTableViewWidgetAlive(pWidget,pData)) {
+        __xuiTableColumnStorageRelease(oldStorage);
+        return iRet == XUI_OK ? XUI_ERROR_INVALID_STATE : iRet;
+    }
 	if ( iRet != XUI_OK ) {
+        previousStorage = pData->pColumnStorage;
+        pData->pColumnStorage = oldStorage; /* transfer the rollback snapshot */
+        __xuiTableColumnStorageRelease(previousStorage);
 		memcpy(pData->arrColumns, arrOldColumns, sizeof(arrOldColumns));
 		pData->iColumnCount = iOldColumnCount;
 		pData->iSelectedColumn = iOldSelectedColumn;
@@ -3568,6 +3648,7 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 		(void)__xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
 		return iRet;
 	}
+    __xuiTableColumnStorageRelease(oldStorage);
 	pData->iChangeCount++;
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
@@ -4646,9 +4727,56 @@ XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_colu
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	int iRet;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiTableViewSetColumnsOperation(pWidget, arrColumns, iCount);
+	iRet = __xuiTableViewSetColumnsOperation(pWidget, arrColumns, iCount, NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
+}
+
+/* The ordinary setter keeps its existing borrowed-string contract. This
+ * variant owns one contiguous copy of both text fields. Other pointer fields
+ * (callbacks/user data) keep their explicit C borrowing contract. */
+XUI_API int xuiTableViewSetColumnsCopy(xui_widget widget,
+    const xui_table_view_column_t* columns, int count)
+{
+    if (!__xuiTableViewGetData(widget) || count < 0 ||
+        count > XUI_TABLE_VIEW_COLUMN_CAPACITY || (count && !columns))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    size_t bytes = sizeof(xui_table_column_storage_t) + (size_t)count * sizeof(*columns);
+    for (int i = 0; i < count; ++i) {
+        if (!__xuiTableViewColumnDescValid(&columns[i])) return XUI_ERROR_INVALID_ARGUMENT;
+        const char* texts[2] = { columns[i].sId, columns[i].sTitle };
+        for (int field = 0; field < 2; ++field) if (texts[field]) {
+            size_t length = strlen(texts[field]);
+            if (length == (size_t)-1 || length + 1 > (size_t)-1 - bytes)
+                return XUI_ERROR_LIMIT_EXCEEDED;
+            bytes += length + 1;
+        }
+    }
+    xui_table_column_storage_t* storage = count ? xrtMalloc(bytes) : NULL;
+    if (count && !storage) return XUI_ERROR_OUT_OF_MEMORY;
+    if (storage) {
+        storage->references = 1;
+        storage->bytes = bytes;
+        memcpy(storage->columns, columns, (size_t)count * sizeof(*columns));
+        char* text = (char*)(storage->columns + count);
+        for (int i = 0; i < count; ++i) {
+            const char* inputs[2] = { columns[i].sId, columns[i].sTitle };
+            const char** outputs[2] = { &storage->columns[i].sId, &storage->columns[i].sTitle };
+            for (int field = 0; field < 2; ++field) if (inputs[field]) {
+                size_t length = strlen(inputs[field]) + 1;
+                memcpy(text, inputs[field], length);
+                *outputs[field] = text;
+                text += length;
+            }
+        }
+    }
+    xui_context context = xuiWidgetGetContext(widget);
+    xuiInternalOperationEnter(context);
+    int result = __xuiTableViewSetColumnsOperation(widget,
+        storage ? storage->columns : NULL, count, storage);
+    xuiInternalOperationLeave(context);
+    __xuiTableColumnStorageRelease(storage);
+    return result;
 }
 
 XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)

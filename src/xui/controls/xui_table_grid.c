@@ -2174,6 +2174,27 @@ XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_colu
 	return iRet;
 }
 
+/* Same edit boundary as the borrowed setter, with owned column text. */
+XUI_API int xuiTableGridSetColumnsCopy(xui_widget widget,
+    const xui_table_view_column_t* columns, int count)
+{
+    if (!xuiInternalWidgetIsValid(widget) || !__xuiTableGridColumnsValid(columns,count))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=xuiWidgetGetContext(widget);
+    xuiInternalOperationEnter(context);
+    xui_table_grid_data_t* data=__xuiTableGridGetData(widget);
+    int result=XUI_ERROR_INVALID_ARGUMENT;
+    if (data && data->pTable) {
+        if (data->iEditingRow>=0 && xuiTableGridEndEdit(widget,0)==0) result=XUI_ERROR_INVALID_STATE;
+        else {
+            data=__xuiTableGridGetData(widget);
+            if (data && data->pTable) result=xuiTableViewSetColumnsCopy(data->pTable,columns,count);
+        }
+    }
+    xuiInternalOperationLeave(context);
+    return result;
+}
+
 XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
 {
 	xui_context pContext;
