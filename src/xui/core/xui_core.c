@@ -1133,7 +1133,9 @@ xui_proxy xuiInternalContextGetProxy(xui_context pContext)
 	if ( !__xuiContextValid(pContext) || !pContext->bHasProxy ) {
 		return NULL;
 	}
-	return &pContext->tProxy;
+	/* Owned resource factories key their capability by Proxy identity. The
+	 * legacy snapshot is suitable only for a borrowed C backend. */
+	return pContext->pOwnedProxy ? pContext->pOwnedProxy : &pContext->tProxy;
 }
 
 int xuiInternalSurfaceDependencySync(xui_proxy pProxy, xui_surface pSurface,
