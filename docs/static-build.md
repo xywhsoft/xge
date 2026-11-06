@@ -67,3 +67,14 @@ must test those separately. The default Markdown TU has real static TLS
 sections and SECREL relocations; selected reachable TLS code needs correct
 OS-loader PE TLS support. JIT TLS is not qualified by the GCC test and must
 fail closed if unsupported. Historical failed attempts remain separate.
+
+Windows compiler compatibility code is delivered as one deterministic
+`libgcc-mingw-code.a`. Every retained source member keeps its exact bytes and
+source order; archive-qualified ordinal names prevent filename collisions.
+This lets the ordinary archive's fixed-point selector resolve dependencies
+between MinGW32, MinGWex and MSVCRT code without whole-archive or C wrappers.
+OS imports remain separate typed `.def` metadata. Individual intermediate
+code archives are development inputs and are not also shipped in the package.
+The combined member/source hashes and original names are recorded, along with
+the original compiler runtime notices. `check_static.py --support-only`
+audits the complete ordered byte mapping without recompiling Native code.

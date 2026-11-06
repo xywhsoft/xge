@@ -7,10 +7,30 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','build','xlang-root','out'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--import-kinds-only',action='store_true',help='Read-only real System32 export kind/forwarder and unknown-admission tests')
+    p.add_argument('--support-only',action='store_true',help='Audit byte-preserved combined compiler archive without compiling Native code')
     a=p.parse_args();root,build,xlang,out=[v.resolve()for v in(a.root,a.build,a.xlang_root,a.out)]
     if out.exists():p.error('Use a new evidence directory')
     out.mkdir(parents=True);metadata=json.loads((build/'build-report.json').read_text());assert metadata['passed']and metadata['complete']
     archive=build/metadata['archive'];assert sha(archive)==metadata['archive_sha256']
+    if a.support_only:
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'build'))
+        import static_support
+        support=metadata['compiler_support'];combined=support['combinedCodeArchive']
+        assert combined['membersVerified']and sha(combined['path'])==combined['sha256']
+        actual=list(static_support.members(Path(combined['path'])))
+        expected=combined['members'];assert len(actual)==len(expected)==combined['memberCount']
+        assert len({row['member']for row in expected})==len(expected)
+        for (name,body),row in zip(actual,expected):
+            assert name==row['member']and hashlib.sha256(body).hexdigest()==row['sha256']
+            assert not any(s.startswith('.idata$')for s,_ in static_support.sections(body))
+        code=[row for row in support['artifacts']if Path(row['path']).suffix=='.a']
+        assert len(code)==1 and code[0]['sha256']==combined['sha256']
+        assert sum(row['codeMembers']for row in support['archives'])==len(expected)
+        (out/'results.json').write_text(json.dumps(dict(passed=True,scope='Read-only complete compiler-code membership, order, import-fragment exclusion and single-archive delivery audit. No Native compilation, linking, or window/device action.',
+            members=len(expected),sourceArchives=combined['sourceArchives'],
+            combinedSha256=combined['sha256'],nativeArchiveSha256=metadata['archive_sha256'],
+            inputs={str(build/'build-report.json'):sha(build/'build-report.json'),str(Path(__file__)):sha(__file__),str(Path(static_support.__file__)):sha(static_support.__file__)}),indent=2)+'\n')
+        print(out/'results.json');return
     if a.import_kinds_only:
         assert os.name=='nt'
         sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'build'))

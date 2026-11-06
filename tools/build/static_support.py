@@ -78,6 +78,46 @@ def import_thunk(body):
                     relocationType=kind,iatSymbol=name.decode('ascii'),chain=[])
     return None
 
+def combine_code_support(metadata,ar,out,run,inputs):
+    """One code-only archive preserves payloads and closes cross-CRT dependencies."""
+    import copy
+    result=copy.deepcopy(metadata);folder=out/'compiler-support';folder.mkdir(exist_ok=True)
+    objects=folder/'combined-members';objects.mkdir(exist_ok=True);paths=[];rows=[];sources=[]
+    for library in result['archives']:
+        if not library.get('path'):continue
+        source=Path(library['path'])
+        if sha(source)!=library['sha256']:raise RuntimeError('Compiler code archive changed')
+        inputs[str(source)]=sha(source)
+        expected={r['member']:r['sha256']for r in library['members']if r['role']=='code'}
+        actual=list(members(source));prefix=source.stem
+        if not re.fullmatch(r'[A-Za-z0-9_-]+',prefix):raise RuntimeError('Unsafe code archive name')
+        if len(actual)!=library['codeMembers']or len(actual)!=len(expected):raise RuntimeError('Code inventory differs')
+        for index,(name,body)in enumerate(actual):
+            digest=hashlib.sha256(body).hexdigest()
+            if expected.get(name)!=digest:raise RuntimeError('Compiler member bytes changed')
+            if any(section.startswith('.idata$')for section,_ in sections(body)):
+                raise RuntimeError('Import fragments cannot enter combined code')
+            unique=prefix+'--'+format(index,'06d')+'.o';target=objects/unique;target.write_bytes(body)
+            paths.append(target);rows.append(dict(member=unique,sourceMember=name,
+                sourceCodeArchive=str(source),sourceCodeArchiveSha256=library['sha256'],
+                sourceArchive=library['sourceArchive'],sourceArchiveSha256=library['sourceSha256'],
+                sha256=digest,bytes=len(body)))
+        sources.append(dict(path=str(source),sha256=sha(source),members=len(actual)))
+    if not paths:raise RuntimeError('Missing compiler compatibility code')
+    archive=folder/'libgcc-mingw-code.a';rsp=folder/'combined-code.rsp'
+    rsp.write_text('\n'.join('"'+v.as_posix()+'"'for v in paths)+'\n',encoding='utf-8')
+    archive.unlink(missing_ok=True);run('support-combined-code',[ar,'rcsD',archive,'@'+str(rsp)])
+    if [(n,hashlib.sha256(b).hexdigest())for n,b in members(archive)]!=[(r['member'],r['sha256'])for r in rows]:
+        raise RuntimeError('Combined archive did not preserve ordered member bytes')
+    result['combinedCodeArchive']=dict(path=str(archive),sha256=sha(archive),
+        role='compiler-compatibility-code-group',sourceArchives=sources,members=rows,
+        memberCount=len(rows),membersVerified=True,
+        semantics='Original member bytes/order retained; one archive index supplies cross-CRT fixed-point selection. No whole-archive, wrapper, guessed alias or import fragments.')
+    result['artifacts']=[dict(path=str(archive),sha256=sha(archive),role='compiler-compatibility-code-group')]+[
+        row for row in result['artifacts']if Path(row['path']).suffix!='.a']
+    return result
+
+
 def windows_support(cc,ar,out,run,inputs,notices,libraries):
     """Preserve all native-code members. Never emit raw .idata as static code.
 
@@ -160,13 +200,14 @@ def windows_support(cc,ar,out,run,inputs,notices,libraries):
         if not path.is_file():raise RuntimeError('Missing compiler runtime notice '+str(path))
         inputs[str(path)]=sha(path);notice_rows.append(dict(path=str(path.resolve()),sha256=sha(path)))
     inputs.update(classifier.files)
-    return dict(artifacts=artifacts,archives=archives,notices=notice_rows,
+    result=dict(artifacts=artifacts,archives=archives,notices=notice_rows,
         importClassification=dict(method='Executable import thunk; otherwise readonly System32 PE export RVA/section/forwarder evidence. Unknown never implies DATA.',
             dllInputs=classifier.files,unknownInventory=unknown_inventory),
         crt='msvcrt.dll',ansiStdio=True,
         licenses={'libgcc':'GPL-3.0-or-later WITH GCC-exception-3.1','mingw':'COPYING.MinGW-w64-runtime.txt'},
         upstream={'gcc':'https://gcc.gnu.org/releases.html','toolchain':'https://github.com/skeeto/w64devkit'},
         boundary='All CRT FILE pointers and CRT allocation/free pairs must use the same MSVCRT instance. No UCRT FILE/object exchange. XRT allocation remains the sole program XRT allocator.')
+    return combine_code_support(result,ar,out,run,inputs)
 
 
 def linux_support(cc,out,run,inputs,notices):
