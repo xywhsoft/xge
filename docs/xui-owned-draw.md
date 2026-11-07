@@ -46,7 +46,7 @@ outside inherited graph Freeze. XRT MutationBegin is not an exclusion test
 for a caller already holding Freeze.
 
 The safe language binding uses `xl6Xui3DrawPolicy`: its Native Scope pins,
-Trace and checked owner consumption are common lifecycle work. `.end` maps
+Trace and checked owner consumption are common lifecycle work. `.finish()` maps
 to `xuiDrawEndChecked`; `.close` releases the managed owning reference.
 It must not expose the old provider `drawEnd(proxy, draw)` as an owning class
 method, because that C function consumes an actual native reference.

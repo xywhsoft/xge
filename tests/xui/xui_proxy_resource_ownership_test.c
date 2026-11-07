@@ -264,9 +264,31 @@ static void finalizedHeaderAffinity(void)
     assert(xrtThreadWaitFor(thread,10000)==XWAIT_OK);xrtThreadDestroy(thread);
     assert(xuiProxyReleaseChecked(proxy)==XUI_OK && calls==1 && owner.refs==1 && owner.drops==1);
 }
+static int32 proxyReadyWorker(ptr raw)
+{
+    xui_proxy proxy=raw;assert(xuiInternalProxyCanonical(proxy)==proxy);
+    assert(!xuiInternalProxyReady(proxy));return 0;
+}
+static void canonicalProxy(void)
+{
+    Owner owner={.refs=1};xui_proxy proxy=createFlags(&owner,0);xui_proxy_t copy=*proxy;int calls=0;
+    assert(xuiInternalProxyCanonical(&copy)==proxy && xuiInternalProxyReady(&copy));
+    xui_font a=font(&copy,&calls,0,false);xui_surface b=NULL;void* payload=NULL;xui_draw_context draw=NULL;
+    assert(xuiSurfaceCreateOwned(&copy,sizeof(Payload),finalize,&b,&payload)==XUI_OK);
+    *(Payload*)payload=(Payload){&calls,0,false,false,NULL};
+    assert(xuiDrawCreateOwned(&copy,b,sizeof(Payload),finalize,&draw,&payload)==XUI_OK);
+    *(Payload*)payload=(Payload){&calls,0,false,false,NULL};
+    memset(&copy,0,sizeof(copy));assert(!xuiInternalProxyCanonical(&copy) && !xuiInternalProxyReady(&copy));
+    assert(xuiFontGetProxy(a)==proxy && xuiSurfaceGetProxy(b)==proxy && xuiDrawGetProxy(draw)==proxy);
+    xthread* thread=xrtThreadCreate(proxyReadyWorker,proxy,0);assert(thread);assert(xrtThreadWaitFor(thread,10000)==XWAIT_OK);xrtThreadDestroy(thread);
+    assert(xuiProxyReleaseChecked(proxy)==XUI_OK); /* Only resources now own it. */
+    assert(xuiDrawEndChecked(draw)==XUI_OK && xuiDrawReleaseChecked(draw)==XUI_OK);
+    assert(xuiFontReleaseChecked(a)==XUI_OK && xuiSurfaceReleaseChecked(b)==XUI_OK);
+    assert(calls==3 && owner.refs==1 && owner.drops==1);
+}
 int main(void)
 {
-    releaseOrder();failures();lifecycle();oom();failedFinalizeAbort();checkedSnapshotDrop();concurrentReferences();concurrentFinalization();creatorAffinity(false);creatorAffinity(true);finalizedHeaderAffinity();
+    canonicalProxy();releaseOrder();failures();lifecycle();oom();failedFinalizeAbort();checkedSnapshotDrop();concurrentReferences();concurrentFinalization();creatorAffinity(false);creatorAffinity(true);finalizedHeaderAffinity();
     printf("native storage bytes: header=%zu proxyTable=%zu owner=%zu\n",sizeof(xui_owned_resource_t),sizeof(xui_proxy_t),sizeof(xui_callback_owner_t));
     puts("native proxy/resource storage: shared owners, NULL first failure, at-most-once Finalize, freeze-only Clear, physical pins and OOM: PASS");return 0;
 }

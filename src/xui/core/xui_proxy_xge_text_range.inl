@@ -131,7 +131,7 @@ static int __xuiProxyXgeTextRangeSurfaceDraw(xui_proxy proxy,xui_surface target,
     xui_rect_t rect,uint32_t color,uint32_t flags)
 {
     xui_text_item_t item;xui_text_shape_t owned;const xui_text_shape_t* shape;xui_vec2_t size;
-    xui_draw_context draw;int result,ended;
+    xui_draw_context draw;int result;
     result=__xuiProxyXgeRangeAcquire(proxy,input,&item,&owned,&shape,&size);
     if(result!=XUI_OK)return result;
     result=__xuiProxyXgeRangePaintFlags(flags);
@@ -139,7 +139,7 @@ static int __xuiProxyXgeTextRangeSurfaceDraw(xui_proxy proxy,xui_surface target,
         result=__xuiProxyXgeDrawBegin(proxy,&draw,target);
         if(result==XUI_OK){
             result=__xuiProxyXgeRangeDrawAcquired(proxy,draw,&item,shape,size,rect,color,flags,NULL,0);
-            ended=__xuiProxyXgeDrawEnd(proxy,draw);if(result==XUI_OK)result=ended;
+            result=__xuiProxyXgeDrawEndOutcome(proxy,draw,result);
         }
     }
     xuiTextShapeFree(&owned);return result;

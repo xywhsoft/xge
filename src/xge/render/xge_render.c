@@ -446,25 +446,17 @@ static int __xgeRenderFloatToInt(double fValue)
 	return (int)fValue;
 }
 
-void xgeViewportSet(xge_rect_t tRect)
+/* Apply already-published CPU state. Pass restoration must not recursively
+ * Flush while its ending reservation owns the target transition. */
+static void __xgeViewportApplyCurrent(void)
 {
+    xge_rect_t tRect=g_xge.bViewportEnabled ? g_xge.tViewportRect :
+        (xge_rect_t){0,0,(float)g_xge.iWidth,(float)g_xge.iHeight};
 	GLint iX;
 	GLint iY;
 	GLsizei iW;
 	GLsizei iH;
 
-	(void)xgeFlush();
-	if ( !__xgeRenderRectFinite(tRect) ) {
-		memset(&tRect, 0, sizeof(tRect));
-	}
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
-	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
-	}
-	g_xge.bViewportEnabled = 1;
-	g_xge.tViewportRect = tRect;
 	if ( (g_xge.bSokolRunning == 0) || (xge_glViewport == NULL) ) {
 		return;
 	}
@@ -474,6 +466,14 @@ void xgeViewportSet(xge_rect_t tRect)
 	iW = (GLsizei)__xgeRenderFloatToInt((double)tRect.fW);
 	iH = (GLsizei)__xgeRenderFloatToInt((double)tRect.fH);
 	xge_glViewport(iX, iY, iW, iH);
+ }
+void xgeViewportSet(xge_rect_t tRect)
+{
+    (void)xgeFlush();
+    if(!__xgeRenderRectFinite(tRect))memset(&tRect,0,sizeof(tRect));
+    if(tRect.fW<0)tRect.fW=0;
+    if(tRect.fH<0)tRect.fH=0;
+    g_xge.bViewportEnabled=1;g_xge.tViewportRect=tRect;__xgeViewportApplyCurrent();
 }
 
 xge_rect_t xgeViewportGet(void)
@@ -492,16 +492,8 @@ xge_rect_t xgeViewportGet(void)
 
 void xgeViewportClear(void)
 {
-	xge_rect_t tRect;
-
-	(void)xgeFlush();
-	g_xge.bViewportEnabled = 0;
-	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
-	tRect = xgeViewportGet();
-	if ( (g_xge.bSokolRunning == 0) || (xge_glViewport == NULL) ) {
-		return;
-	}
-	xge_glViewport((GLint)tRect.fX, (GLint)tRect.fY, (GLsizei)tRect.fW, (GLsizei)tRect.fH);
+    (void)xgeFlush();g_xge.bViewportEnabled=0;
+    memset(&g_xge.tViewportRect,0,sizeof(g_xge.tViewportRect));__xgeViewportApplyCurrent();
 }
 
 static int __xgePixelRound(double fValue)
@@ -590,8 +582,13 @@ xge_rect_i_t xgeViewportGetPixels(void)
 	return xgeRectToPixelsNearest(xgeViewportGet());
 }
 
-void xgeClipSet(xge_rect_t tRect)
+static void __xgeClipApplyCurrent(void)
 {
+    if(!g_xge.bClipEnabled){
+        if(g_xge.bSokolRunning && xge_glDisable)xge_glDisable(GL_SCISSOR_TEST);
+        return;
+    }
+    xge_rect_t tRect=g_xge.tClipRect;
 	GLint iX;
 	GLint iY;
 	GLsizei iW;
@@ -602,18 +599,6 @@ void xgeClipSet(xge_rect_t tRect)
 	float fBottom;
 	float fScissorBottom;
 
-	(void)xgeFlush();
-	if ( !__xgeRenderRectFinite(tRect) ) {
-		memset(&tRect, 0, sizeof(tRect));
-	}
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
-	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
-	}
-	g_xge.bClipEnabled = 1;
-	g_xge.tClipRect = tRect;
 	if ( (g_xge.bSokolRunning == 0) || (xge_glScissor == NULL) ) {
 		return;
 	}
@@ -658,12 +643,20 @@ void xgeClipSet(xge_rect_t tRect)
 		fBottom = fTop;
 	}
 	fScissorBottom = floorf((float)g_xge.iHeight - fBottom);
-	iX = (GLint)fLeft;
-	iY = (GLint)fScissorBottom;
-	iW = (GLsizei)(fRight - fLeft);
-	iH = (GLsizei)(fBottom - fTop);
+	iX = (GLint)__xgeRenderFloatToInt(fLeft);
+	iY = (GLint)__xgeRenderFloatToInt(fScissorBottom);
+	iW = (GLsizei)__xgeRenderFloatToInt((double)fRight - fLeft);
+	iH = (GLsizei)__xgeRenderFloatToInt((double)fBottom - fTop);
 	xge_glEnable(GL_SCISSOR_TEST);
 	xge_glScissor(iX, iY, iW, iH);
+ }
+void xgeClipSet(xge_rect_t tRect)
+{
+    (void)xgeFlush();
+    if(!__xgeRenderRectFinite(tRect))memset(&tRect,0,sizeof(tRect));
+    if(tRect.fW<0)tRect.fW=0;
+    if(tRect.fH<0)tRect.fH=0;
+    g_xge.bClipEnabled=1;g_xge.tClipRect=tRect;__xgeClipApplyCurrent();
 }
 
 void xgeClipSetPixels(xge_rect_i_t tRect)
@@ -695,13 +688,8 @@ xge_rect_i_t xgeClipGetPixels(void)
 
 void xgeClipClear(void)
 {
-	(void)xgeFlush();
-	g_xge.bClipEnabled = 0;
-	memset(&g_xge.tClipRect, 0, sizeof(g_xge.tClipRect));
-	if ( (g_xge.bSokolRunning == 0) || (xge_glDisable == NULL) ) {
-		return;
-	}
-	xge_glDisable(GL_SCISSOR_TEST);
+    (void)xgeFlush();g_xge.bClipEnabled=0;
+    memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));__xgeClipApplyCurrent();
 }
 
 #if defined(_WIN32) || defined(_WIN64)

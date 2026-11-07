@@ -285,34 +285,8 @@ struct xui_draw_context_t {
 	uint32_t iMagic;
 	xge_pass_t tPass;
 	int bDirty;
-	xui_draw_context pNextManual;
 };
-/* Weak records embedded in live sessions, with no extra root or allocation.
- * Rendering remains creator-affine; this cold lock only coordinates begin/end
- * from distinct creator threads and distinct capability tables. */
-static xatomic32 g_xuiProxyXgeManualLock;
-static xui_draw_context g_xuiProxyXgeManualDraws;
 static int __xuiProxyXgeDrawPayloadFinalize(xui_proxy,void*);
-static void __xuiProxyXgeManualLock(void)
-{while(xrtAtomic32Exchange(&g_xuiProxyXgeManualLock,1,XMEMORY_ACQUIRE))while(xrtAtomic32Load(&g_xuiProxyXgeManualLock,XMEMORY_RELAXED)){} }
-static void __xuiProxyXgeManualUnlock(void)
-{xrtAtomic32Store(&g_xuiProxyXgeManualLock,0,XMEMORY_RELEASE);}
-static bool __xuiProxyXgeManualBusy(void)
-{
-	uint64_t thread=xrtThreadCurrentId();bool found=false;
-	__xuiProxyXgeManualLock();
-	for(xui_draw_context value=g_xuiProxyXgeManualDraws;value;value=value->pNextManual)
-		if(value->tOwned.tResource.iCreatorThread==thread){found=true;break;}
-	__xuiProxyXgeManualUnlock();return found;
-}
-static void __xuiProxyXgeManualRemove(xui_draw_context draw)
-{
-	__xuiProxyXgeManualLock();
-	xui_draw_context* slot=&g_xuiProxyXgeManualDraws;
-	while(*slot && *slot!=draw)slot=&(*slot)->pNextManual;
-	if(*slot)*slot=draw->pNextManual;
-	draw->pNextManual=NULL;__xuiProxyXgeManualUnlock();
-}
 
 static uint32_t __xuiProxyXgeImageFlags(uint32_t iFlags)
 {
@@ -724,26 +698,19 @@ static int __xuiProxyXgeTargetBegin(xui_proxy pProxy, xui_surface pTarget, xge_p
 	if ( !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	(void)xgeFlush();
 	xgePassInit(pPass, &pTarget->tTarget, 0, 0);
 	return xgePassBegin(pPass);
 }
 
-static int __xuiProxyXgeTargetEnd(xge_pass_t* pPass, int iRet)
+static int __xuiProxyXgeTargetEnd(xge_pass_t* pass,int primary)
 {
-	int iEndRet;
-
-	if ( pPass == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iRet == XGE_OK ) {
-		iRet = xgeFlush();
-	}
-	iEndRet = xgePassEnd(pPass);
-	if ( (iEndRet != XGE_OK) && (iRet == XGE_OK) ) {
-		iRet = iEndRet;
-	}
-	return iRet;
+    if(!pass)return XGE_ERROR_INVALID_ARGUMENT;
+    /* PassEnd owns the single Flush under its ENDING reservation. Preserve
+     * the original operation's first diagnostic, including a failed NULL. */
+    xerror* first=primary!=XGE_OK ? xrtTakeError():NULL;
+    int ended=xgePassEnd(pass);
+    if(primary!=XGE_OK){xrtClearError();xrtSetErrorTake(first);return primary;}
+    return ended;
 }
 
 static int __xuiProxyXgeTargetEndDirty(xge_pass_t* pPass, xui_surface pTarget, int iRet)
@@ -757,22 +724,22 @@ static int __xuiProxyXgeTargetEndDirty(xge_pass_t* pPass, xui_surface pTarget, i
 
 static int __xuiProxyXgeDrawValid(xui_draw_context pDraw)
 {
-	return (pDraw != NULL) &&
-	       (xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW) ||
-	        pDraw->tOwned.tResource.iMagic==XUI_PROXY_XGE_DRAW_MAGIC) &&
-	       (!xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW) ||
-	        (pDraw->tOwned.tResource.onFinalize==__xuiProxyXgeDrawPayloadFinalize &&
-	         xuiInternalProxyResourceReady(pDraw,XUI_OWNED_DRAW))) &&
-	       (pDraw->iMagic == XUI_PROXY_XGE_DRAW_MAGIC) &&
-	       (pDraw->tPass.bActive != 0) &&
+	if(!pDraw)return false;
+	if(xuiInternalProxyResourceManaged(pDraw,XUI_OWNED_DRAW)){
+		if(pDraw->tOwned.tResource.onFinalize!=__xuiProxyXgeDrawPayloadFinalize ||
+		   !xuiInternalProxyResourceReady(pDraw,XUI_OWNED_DRAW))return false;
+	}else if(pDraw->tOwned.tResource.iMagic!=XUI_PROXY_XGE_DRAW_MAGIC)return false;
+	return (pDraw->iMagic == XUI_PROXY_XGE_DRAW_MAGIC) &&
+	       xgePassIsCurrent(&pDraw->tPass) &&
 	       __xuiProxyXgeSurfaceTargetValid(pDraw->tOwned.pTarget);
 }
 
 static void __xuiProxyXgeDrawMarkDirty(xui_draw_context pDraw)
 {
-	if ( __xuiProxyXgeDrawValid(pDraw) ) {
-		pDraw->bDirty = 1;
-	}
+	/* Every caller admitted this live Draw before entering the renderer. A
+	 * second Current query cannot make a reentrant raw-C free safe, and would
+	 * miss completed drawing when a managed End became pending in Flush. */
+	pDraw->bDirty = 1;
 }
 
 static int __xuiProxyXgeClearRectLocal(xui_rect_t tRect, uint32_t iColor)
@@ -1769,17 +1736,18 @@ static int __xuiProxyXgeTextMeasure(xui_proxy pProxy, const xui_text_item_t* pTe
 
 static int __xuiProxyXgeDrawBegin(xui_proxy,xui_draw_context*,xui_surface);
 static int __xuiProxyXgeDrawEnd(xui_proxy,xui_draw_context);
+static int __xuiProxyXgeDrawEndOutcome(xui_proxy,xui_draw_context,int);
 static int __xuiProxyXgeDrawText(xui_proxy, xui_draw_context, const xui_text_item_t* pTextItem, xui_rect_t, uint32_t, uint32_t);
 static int __xuiProxyXgeTextDraw(xui_proxy pProxy, xui_surface pTarget, const xui_text_item_t* pTextItem, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-    xge_text_shape_desc_t desc;xui_draw_context draw;int result,ended;
+    xge_text_shape_desc_t desc;xui_draw_context draw;int result;
     if(!pProxy || !__xuiProxyXgeSurfaceTargetValid(pTarget))return XGE_ERROR_INVALID_ARGUMENT;
     result=__xuiProxyXgeTextDesc(pTextItem,&desc);if(result!=XGE_OK)return result;
     if(pTextItem->iFlags & XUI_TEXT_SHAPE_RANGE)return __xuiProxyXgeTextRangeSurfaceDraw(pProxy,pTarget,pTextItem,tRect,iColor,iFlags);
     if(tRect.fW<=0 || tRect.fH<=0)return XGE_OK;
     result=__xuiProxyXgeDrawBegin(pProxy,&draw,pTarget);if(result!=XGE_OK)return result;
     result=__xuiProxyXgeDrawText(pProxy,draw,pTextItem,tRect,iColor,iFlags);
-    ended=__xuiProxyXgeDrawEnd(pProxy,draw);return result==XGE_OK?ended:result;
+    return __xuiProxyXgeDrawEndOutcome(pProxy,draw,result);
 }
 
 static int __xuiProxyXgeDrawBegin(xui_proxy pProxy, xui_draw_context* ppDraw, xui_surface pTarget)
@@ -1827,11 +1795,26 @@ static int __xuiProxyXgeDrawEnd(xui_proxy pProxy, xui_draw_context pDraw)
 	if ( (iRet == XGE_OK) && bDirty ) {
 		__xuiProxyXgeSurfaceBump(pTarget);
 	}
+	/* A non-current End does not consume the raw C record. */
+	if(pDraw->tPass.bActive)return iRet;
 	pDraw->iMagic = 0;
 	xrtFree(pDraw);
 	return iRet;
 }
 
+static int __xuiProxyXgeDrawEndOutcome(xui_proxy proxy,xui_draw_context draw,int primary)
+{
+    xerror* first=primary!=XGE_OK ? xrtTakeError():NULL;
+    int ended=__xuiProxyXgeDrawEnd(proxy,draw);
+    if(primary!=XGE_OK){xrtClearError();xrtSetErrorTake(first);return primary;}
+    return ended;
+}
+static bool __xuiProxyXgeDrawPayloadReady(const void* payload)
+{
+    const struct xui_draw_context_t* draw=(const void*)((const xui_owned_draw_t*)payload-1);
+    /* Constructor rollback before Begin has no semantic pass to consume. */
+    return !draw->tPass.bActive || xgePassIsCurrent(&draw->tPass);
+}
 static int __xuiProxyXgeDrawPayloadFinalize(xui_proxy proxy,void* payload)
 {
 	(void)proxy;
@@ -1844,19 +1827,18 @@ static int __xuiProxyXgeDrawPayloadFinalize(xui_proxy proxy,void* payload)
 	if(status==XUI_OK && draw->bDirty && target && target->iMagic==XUI_PROXY_XGE_SURFACE_MAGIC){
 		if(++target->iGeneration==0)target->iGeneration=1;
 	}
-	draw->iMagic=0;__xuiProxyXgeManualRemove(draw);return status;
+	draw->iMagic=0;return status;
 }
 static int __xuiProxyXgeManualDrawBegin(xui_proxy proxy,xui_draw_context* output,xui_surface target)
 {
 	if(!xuiProxyIsOwned(proxy))return __xuiProxyXgeDrawBegin(proxy,output,target);
 	if(!output || !__xuiProxyXgeSurfaceTargetValid(target) ||
 	   !xuiInternalProxyResourceReady(target,XUI_OWNED_SURFACE) || xuiSurfaceGetProxy(target)!=proxy)return XUI_ERROR_INVALID_ARGUMENT;
-	if(__xuiProxyXgeManualBusy())return XUI_ERROR_BUSY;
+	if(!xgePassIsIdle())return XUI_ERROR_BUSY;
 	xui_draw_context draw=NULL;void* payload=NULL;
-	int status=xuiDrawCreateOwned(proxy,target,sizeof(*draw)-sizeof(draw->tOwned),__xuiProxyXgeDrawPayloadFinalize,&draw,&payload);
+	int status=xuiDrawCreateOwnedEx(proxy,target,sizeof(*draw)-sizeof(draw->tOwned),__xuiProxyXgeDrawPayloadFinalize,__xuiProxyXgeDrawPayloadReady,&draw,&payload);
 	if(status!=XUI_OK)return status;
 	(void)payload;draw->iMagic=XUI_PROXY_XGE_DRAW_MAGIC;
-	__xuiProxyXgeManualLock();draw->pNextManual=g_xuiProxyXgeManualDraws;g_xuiProxyXgeManualDraws=draw;__xuiProxyXgeManualUnlock();
 	status=__xuiProxyXgeTargetBegin(proxy,target,&draw->tPass);
 	if(status!=XUI_OK){
 		xerror* first=xrtTakeError();(void)xuiDrawReleaseChecked(draw);xrtClearError();xrtSetErrorTake(first);return status;
@@ -3315,7 +3297,7 @@ XUI_API int xuiProxyXgePumpInputRect(xui_context context,xui_rect_t window)
     }
     g_xuiProxyXgeInputTransform.pContext=context;g_xuiProxyXgeInputTransform.tWindowRect=window;
     g_xuiProxyXgeInputTransform.tViewport=viewport;g_xuiProxyXgeInputTransform.bValid=1;
-    (void)xuiInternalNativeAccessibilityBind(context,xgePlatformNativeHandle(),window);
+	(void)xuiInternalNativeAccessibilityBind(context,xgePlatformNativeHandle(),window);
     status=xuiInternalContextDestroyPending(context) ? XUI_OK:__xuiProxyXgePumpQueuedInput(context,window,viewport);
 finish:
     {xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);}
