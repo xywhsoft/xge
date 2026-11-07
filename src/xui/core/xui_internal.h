@@ -171,6 +171,16 @@ bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor vi
 /* C-stack receipt, not a TLS stack. Preserve an explicit failed bit even when
  * no diagnostic could allocate, and keep the first void-hook diagnostic. */
 typedef struct xui_cleanup_receipt_t {int status;xerror* error;} xui_cleanup_receipt_t;
+/* Close every entered style transaction, retaining an earlier registration
+ * failure if the deferred cascade also fails. */
+static inline int xuiInternalStyleEndOutcome(xui_context context,int status)
+{
+    if(status==XUI_OK)return xuiStyleEndUpdate(context);
+    xerror* first=xrtTakeError();
+    (void)xuiStyleEndUpdate(context);
+    xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);
+    return status;
+}
 static inline void xuiInternalCleanupStart(xui_cleanup_receipt_t* receipt,int status)
 {
     receipt->error=xrtTakeError();
@@ -569,6 +579,9 @@ struct xui_context_t {
 	xui_widget_type pWidgetTypes;
 	xui_style_rule_t* pStyleRules;
 	xui_style_property_entry_t* pStyleProperties;
+	/* Intrusive indexes; the list remains the sole owner and iteration order. */
+	xui_style_property_entry_t* pStylePropertiesById[256];
+	xui_style_property_entry_t* pStylePropertiesByName[256];
 	xui_style_token_t* pStyleTokens;
 	xui_style_prop_t* pDefaultStyle;
 	int iDefaultStyleCount;
@@ -680,6 +693,8 @@ struct xui_widget_type_t {
 	xui_cache_policy_t tCachePolicy;
 	int iWidgetCount;
 	int bBuiltin;
+	/* Builtin descriptors can retry a partially failed property initialization. */
+	int bStylePropertiesReady;
 };
 
 typedef struct xui_internal_edit_adapter_t {

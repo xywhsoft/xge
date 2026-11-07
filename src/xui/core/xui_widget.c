@@ -485,6 +485,8 @@ struct xui_style_property_entry_t {
 	xui_widget_type pWidgetType;
 	xui_style_value_t tDefaultValue;
 	xui_style_property_entry_t* pNext;
+	xui_style_property_entry_t* pIdNext;
+	xui_style_property_entry_t* pNameNext;
 };
 
 struct xui_style_token_t {
@@ -734,6 +736,14 @@ static int __xuiStyleValueCopy(xui_style_value_t* pDst, const xui_style_value_t*
 	return XUI_OK;
 }
 
+static unsigned __xuiStylePropertyNameBucket(const char* name)
+{
+	uint32_t hash = XUI_STYLE_HASH_OFFSET;
+	for (const unsigned char* p = (const unsigned char*)name; *p; ++p)
+		hash = (hash ^ *p) * XUI_STYLE_HASH_PRIME;
+	return hash & 255u;
+}
+
 static xui_style_property_entry_t* __xuiStyleFindPropertyById(xui_context pContext, uint32_t iPropertyId)
 {
 	xui_style_property_entry_t* pEntry;
@@ -741,7 +751,7 @@ static xui_style_property_entry_t* __xuiStyleFindPropertyById(xui_context pConte
 	if ( iPropertyId == 0 ) {
 		return NULL;
 	}
-	for ( pEntry = pContext->pStyleProperties; pEntry != NULL; pEntry = pEntry->pNext ) {
+	for ( pEntry = pContext->pStylePropertiesById[iPropertyId & 255u]; pEntry != NULL; pEntry = pEntry->pIdNext ) {
 		if ( pEntry->iPropertyId == iPropertyId ) {
 			return pEntry;
 		}
@@ -756,7 +766,7 @@ static xui_style_property_entry_t* __xuiStyleFindPropertyByName(xui_context pCon
 	if ( (sName == NULL) || (sName[0] == '\0') ) {
 		return NULL;
 	}
-	for ( pEntry = pContext->pStyleProperties; pEntry != NULL; pEntry = pEntry->pNext ) {
+	for ( pEntry = pContext->pStylePropertiesByName[__xuiStylePropertyNameBucket(sName)]; pEntry != NULL; pEntry = pEntry->pNameNext ) {
 		if ( __xuiStringEqual(pEntry->sName, sName) ) {
 			return pEntry;
 		}
@@ -3130,6 +3140,8 @@ void xuiInternalContextDestroyStyles(xui_context pContext)
 		pProperty = pNextProperty;
 	}
 	pContext->pStyleProperties = NULL;
+	memset(pContext->pStylePropertiesById, 0, sizeof(pContext->pStylePropertiesById));
+	memset(pContext->pStylePropertiesByName, 0, sizeof(pContext->pStylePropertiesByName));
 	pToken = pContext->pStyleTokens;
 	while ( pToken != NULL ) {
 		pNextToken = pToken->pNext;
@@ -3748,6 +3760,8 @@ XUI_API int xuiStyleRegisterProperty(xui_context pContext, const xui_style_prope
 	xui_style_property_entry_t* pEntry;
 	char* sName;
 	xui_style_value_t tDefaultValue;
+	xui_style_value_t tRequestedDefault;
+	int bNew;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) || (pInfo == NULL) || (pInfo->iSize < sizeof(*pInfo)) ||
@@ -3760,6 +3774,8 @@ XUI_API int xuiStyleRegisterProperty(xui_context pContext, const xui_style_prope
 	if ( (pInfo->pWidgetType != NULL) && !__xuiWidgetTypeBelongsToContext(pContext, pInfo->pWidgetType) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	memset(&tRequestedDefault, 0, sizeof(tRequestedDefault));
+	tRequestedDefault.iSize = sizeof(tRequestedDefault);
 	memset(&tDefaultValue, 0, sizeof(tDefaultValue));
 	if ( (pInfo->tDefaultValue.iSize >= sizeof(pInfo->tDefaultValue)) &&
 	     (pInfo->tDefaultValue.iType != XUI_STYLE_VALUE_NONE) ) {
@@ -3768,21 +3784,33 @@ XUI_API int xuiStyleRegisterProperty(xui_context pContext, const xui_style_prope
 		     ((pInfo->iValueType != XUI_STYLE_VALUE_NONE) && (pInfo->tDefaultValue.iType != pInfo->iValueType)) ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
-		iRet = __xuiStyleValueCopy(&tDefaultValue, &pInfo->tDefaultValue);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		tRequestedDefault = pInfo->tDefaultValue;
 	} else {
 		tDefaultValue.iSize = sizeof(tDefaultValue);
 		tDefaultValue.iType = XUI_STYLE_VALUE_NONE;
 	}
+	pEntry = __xuiStyleFindPropertyByName(pContext, pInfo->sName);
+	/* Compare semantic fields before allocating, including borrowed GetInfo
+	 * strings. Existing IDs stay stable, as on a real definition update. */
+	if (pEntry != NULL && pEntry->iValueType == pInfo->iValueType &&
+	    pEntry->iDirtyFlags == __xuiStyleDirtyFlags(pInfo->iDirtyFlags) &&
+	    pEntry->iFlags == pInfo->iFlags && pEntry->pWidgetType == pInfo->pWidgetType &&
+	    (tRequestedDefault.iType == XUI_STYLE_VALUE_FLOAT
+	        ? pEntry->tDefaultValue.iType == XUI_STYLE_VALUE_FLOAT &&
+	          memcmp(&pEntry->tDefaultValue.fFloat, &tRequestedDefault.fFloat, sizeof(float)) == 0
+	        : __xuiStyleValueEqual(&pEntry->tDefaultValue, &tRequestedDefault))) {
+		if (pPropertyId != NULL) *pPropertyId = pEntry->iPropertyId;
+		return XUI_OK;
+	}
+	iRet = __xuiStyleValueCopy(&tDefaultValue, &tRequestedDefault);
+	if (iRet != XUI_OK) return iRet;
+	bNew = pEntry == NULL;
 	sName = __xuiStringDuplicate(pInfo->sName);
 	if ( sName == NULL ) {
 		__xuiStyleValueReset(&tDefaultValue);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	pEntry = __xuiStyleFindPropertyByName(pContext, pInfo->sName);
-	if ( pEntry == NULL ) {
+	if ( bNew ) {
 		pEntry = (xui_style_property_entry_t*)xrtCalloc(1, sizeof(*pEntry));
 		if ( pEntry == NULL ) {
 			xrtFree(sName);
@@ -3793,8 +3821,6 @@ XUI_API int xuiStyleRegisterProperty(xui_context pContext, const xui_style_prope
 		if ( pContext->iNextStylePropertyId == 0 ) {
 			pContext->iNextStylePropertyId = 1;
 		}
-		pEntry->pNext = pContext->pStyleProperties;
-		pContext->pStyleProperties = pEntry;
 	} else {
 		if ( pEntry->sName != NULL ) {
 			xrtFree(pEntry->sName);
@@ -3807,6 +3833,16 @@ XUI_API int xuiStyleRegisterProperty(xui_context pContext, const xui_style_prope
 	pEntry->iFlags = pInfo->iFlags;
 	pEntry->pWidgetType = pInfo->pWidgetType;
 	pEntry->tDefaultValue = tDefaultValue;
+	if (bNew) {
+		unsigned byId = pEntry->iPropertyId & 255u;
+		unsigned byName = __xuiStylePropertyNameBucket(pEntry->sName);
+		pEntry->pNext = pContext->pStyleProperties;
+		pContext->pStyleProperties = pEntry;
+		pEntry->pIdNext = pContext->pStylePropertiesById[byId];
+		pContext->pStylePropertiesById[byId] = pEntry;
+		pEntry->pNameNext = pContext->pStylePropertiesByName[byName];
+		pContext->pStylePropertiesByName[byName] = pEntry;
+	}
 	if ( pPropertyId != NULL ) {
 		*pPropertyId = pEntry->iPropertyId;
 	}

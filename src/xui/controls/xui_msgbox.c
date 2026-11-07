@@ -81,9 +81,17 @@ static int __xuiMsgBoxValid(xui_msgbox pBox)
 static const xui_owned_manager_ops_t g_xuiMsgBoxOwnedOps;
 static void __xuiMsgBoxWindowInvalidated(void*);
 static void __xuiMsgBoxInvalidated(void* raw){*(bool*)raw=false;}
-static int __xuiMsgBoxConstructorEnd(xui_call_scope_t* scope,int status,xui_lifetime_link_t* watch,bool* alive,xui_msgbox value,xui_msgbox* output)
+static int __xuiMsgBoxConstructorEnd(xui_call_scope_t* scope,bool styleEntered,int status,xui_lifetime_link_t* watch,bool* alive,xui_msgbox value,xui_msgbox* output)
 {
     xerror* first=xrtTakeError();if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    /* A factory owns the whole batch, including lazily initialized child
+     * controls. Finish its cascade while the construction receipt is alive. */
+    if(styleEntered){
+        int ended=xuiStyleEndUpdate(scope->pContext);xerror* error=xrtTakeError();
+        if(status==XUI_OK && (ended!=XUI_OK || error)){
+            status=ended!=XUI_OK ? ended:XUI_ERROR_CALLBACK_FAILED;first=error;
+        }else xrtErrorFree(error);
+    }
     if(status==XUI_OK && *alive && value->pContext->bCloseRequested)status=XUI_ERROR_INVALID_STATE;
     if(status!=XUI_OK && *alive){
         int close=xuiInternalManagerRequestClose(&value->tOwned);
@@ -131,15 +139,20 @@ static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
 	xui_widget_type_desc_t tDesc;
 	xui_style_property_info_t tInfo;
 	size_t i;
-	if ( pType != NULL ) return pType;
-	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iSize = sizeof(tDesc);
-	tDesc.sName = "msgbox";
-	tDesc.pParent = xuiWindowGetType(pContext);
-	if ( tDesc.pParent == NULL ) return NULL;
-	tDesc.iTypeDataSize = tDesc.pParent->iTypeDataSize;
-	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) return NULL;
-	pType->onPreparePaint = __xuiMsgBoxPreparePaint;
+	int status;
+	if ( pType != NULL && pType->bStylePropertiesReady ) return pType;
+	status=xuiStyleBeginUpdate(pContext);if(status!=XUI_OK)return NULL;
+	if(pType==NULL){
+		memset(&tDesc, 0, sizeof(tDesc));
+		tDesc.iSize = sizeof(tDesc);
+		tDesc.sName = "msgbox";
+		tDesc.pParent = xuiWindowGetType(pContext);
+		if ( tDesc.pParent == NULL ) { (void)xuiInternalStyleEndOutcome(pContext,XUI_ERROR_NOT_INITIALIZED);return NULL; }
+		tDesc.iTypeDataSize = tDesc.pParent->iTypeDataSize;
+		status=xuiWidgetRegisterType(pContext,&pType,&tDesc);
+		if(status!=XUI_OK){(void)xuiInternalStyleEndOutcome(pContext,status);return NULL;}
+
+}
 	memset(&tInfo, 0, sizeof(tInfo));
 	tInfo.iSize = sizeof(tInfo);
 	tInfo.pWidgetType = pType;
@@ -148,9 +161,12 @@ static xui_widget_type __xuiMsgBoxEnsureType(xui_context pContext)
 	tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
 	for ( i = 0; i < sizeof(arrNames) / sizeof(arrNames[0]); ++i ) {
 		tInfo.sName = arrNames[i];
-		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+		status=xuiStyleRegisterProperty(pContext,&tInfo,NULL);
+		if(status!=XUI_OK)break;
 	}
-	return pType;
+	if(status==XUI_OK){pType->onPreparePaint=__xuiMsgBoxPreparePaint;pType->bStylePropertiesReady=1;}
+	status=xuiInternalStyleEndOutcome(pContext,status);
+	return status==XUI_OK ? pType:NULL;
 }
 
 static float __xuiMsgBoxMax(float fA, float fB)
@@ -1427,6 +1443,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	xui_call_scope_t construction={0};
 	xui_lifetime_link_t constructionWatch={0};
 	bool constructionAlive=false;
+	bool styleEntered=false;
 	xui_window_desc_t tWindowDesc;
 	xui_button_desc_t tButtonDesc;
 	xui_widget_type pType;
@@ -1435,28 +1452,31 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	int iRet;
 
 	if ( ppBox == NULL ) {
-		return __xuiMsgBoxConstructorEnd(&construction,(XUI_ERROR_INVALID_ARGUMENT),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_ERROR_INVALID_ARGUMENT),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	*ppBox = NULL;
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiMsgBoxDescValid(pDesc) ) {
-		return __xuiMsgBoxConstructorEnd(&construction,(XUI_ERROR_INVALID_ARGUMENT),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_ERROR_INVALID_ARGUMENT),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
-	iRet=xuiCallScopeBegin(pContext,&construction);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	iRet=xuiCallScopeBegin(pContext,&construction);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	iRet=xuiStyleBeginUpdate(pContext);
+	if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,iRet,&constructionWatch,&constructionAlive,pBox,ppBox);
+	styleEntered=true;
 	pType = __xuiMsgBoxEnsureType(pContext);
-	if ( pType == NULL ) return __xuiMsgBoxConstructorEnd(&construction,(XUI_ERROR_NOT_INITIALIZED),&constructionWatch,&constructionAlive,pBox,ppBox);
+	if ( pType == NULL ) return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_ERROR_NOT_INITIALIZED),&constructionWatch,&constructionAlive,pBox,ppBox);
 	pBox = (xui_msgbox)xrtCalloc(1, sizeof(*pBox));
 	if ( pBox == NULL ) {
-		return __xuiMsgBoxConstructorEnd(&construction,(XUI_ERROR_OUT_OF_MEMORY),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_ERROR_OUT_OF_MEMORY),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	pBox->iMagic = XUI_MSGBOX_MAGIC;
 	pBox->pContext = pContext;
 	iRet=xuiInternalManagerRegister(pContext,&pBox->tOwned,&g_xuiMsgBoxOwnedOps,pBox);
-	if(iRet!=XUI_OK){xrtFree(pBox);pBox=NULL;return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);}
+	if(iRet!=XUI_OK){xrtFree(pBox);pBox=NULL;return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);}
 	constructionAlive=true;
 	iRet=xuiInternalManagerWatch(&pBox->tOwned,&constructionWatch,__xuiMsgBoxInvalidated,&constructionAlive);
-	if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	pBox->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(pContext);
-	iRet=xuiInternalFontAdmit(pContext,pBox->pFont);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	iRet=xuiInternalFontAdmit(pContext,pBox->pFont);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	pBox->bOwnedFont=pContext->pOwnedProxy && pBox->pFont;
 	__xuiMsgBoxDefaultMetrics(&pBox->tMetrics);
 	__xuiMsgBoxDefaultColors(&pBox->tColors);
@@ -1472,7 +1492,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	pBox->bBuiltinIcon = 1;
 	if ( pDesc != NULL && pDesc->bHasCustomIcon && pDesc->pIconSurface != NULL ) {
 		pBox->pIconSurface = pDesc->pIconSurface;
-		iRet=xuiInternalSurfaceAdmit(pContext,pBox->pIconSurface);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		iRet=xuiInternalSurfaceAdmit(pContext,pBox->pIconSurface);if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 		pBox->bOwnedIcon=pContext->pOwnedProxy && pBox->pIconSurface;
 		pBox->tIconSrc = pDesc->tIconSrc;
 		pBox->bCustomIcon = 1;
@@ -1483,7 +1503,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxReplaceText(&pBox->sMessage, (pDesc != NULL && pDesc->sMessage != NULL) ? pDesc->sMessage : "");
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	memset(&tWindowDesc, 0, sizeof(tWindowDesc));
 	tWindowDesc.iSize = sizeof(tWindowDesc);
@@ -1511,11 +1531,11 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	iRet = xuiWidgetCreateTyped(pContext, pType, &pBox->pWindow, &tWindowDesc);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	pBox->pPartsOwner=pBox->pWindow;
 	iRet=xuiWidgetLifetimeWatch(pBox->pWindow,&pBox->tWindowWatch,__xuiMsgBoxWindowInvalidated,pBox);
-	if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	if(iRet!=XUI_OK)return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	iRet = xuiWindowSetClose(pBox->pWindow, __xuiMsgBoxWindowClose, pBox);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetDefaultAction(pBox->pWindow, __xuiMsgBoxDefaultAction, pBox);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCancelAction(pBox->pWindow, __xuiMsgBoxCancelAction, pBox);
@@ -1529,17 +1549,17 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventCallback(pBox->pWindow, __xuiMsgBoxWindowEvent, pBox);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = xuiWidgetSetUpdateCallback(pBox->pWindow, __xuiMsgBoxWindowUpdate, pBox);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	pClient = xuiWindowGetClientWidget(pBox->pWindow);
 	if ( pClient == NULL ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(XUI_ERROR_NOT_INITIALIZED),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_ERROR_NOT_INITIALIZED),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = xuiWidgetSetCacheRenderCallback(pClient, __xuiMsgBoxClientRender, pBox);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_MANUAL);
@@ -1548,19 +1568,19 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetGap(pClient, 0.0f);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = xuiInternalWidgetCreatePart(pBox->pWindow,NULL,&pBox->pContent,NULL);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = xuiWidgetSetHitTestVisible(pBox->pContent, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pBox->pContent, __xuiMsgBoxContentRender, pBox);
 	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pBox->pWindow,pClient,pBox->pContent,NULL);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	memset(&tButtonDesc, 0, sizeof(tButtonDesc));
 	tButtonDesc.iSize = sizeof(tButtonDesc);
@@ -1572,7 +1592,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		iRet = xuiInternalButtonCreatePart(pBox->pWindow,&pBox->arrButtons[i],&tButtonDesc);
 		if ( iRet != XUI_OK ) {
 			xuiMsgBoxDestroy(pBox);
-			return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+			return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 		}
 		iRet = xuiButtonSetClick(pBox->arrButtons[i], __xuiMsgBoxButtonClick, pBox);
 		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pBox->arrButtons[i], 0);
@@ -1580,7 +1600,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pBox->pWindow,pClient,pBox->arrButtons[i],NULL);
 		if ( iRet != XUI_OK ) {
 			xuiMsgBoxDestroy(pBox);
-			return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+			return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 		}
 	}
 	{
@@ -1599,7 +1619,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	}
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = xuiWidgetSetVisible(pBox->pBackdrop, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pBox->pBackdrop, 0);
@@ -1615,26 +1635,26 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pBox->pBackdrop, XUI_EVENT_POINTER_WHEEL, __xuiMsgBoxBackdropEvent, pBox);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = (pDesc != NULL && (pDesc->iButtons == XUI_MSGBOX_BUTTON_CUSTOM || pDesc->iCustomButtonCount > 0)) ?
 		xuiMsgBoxSetCustomButtons(pBox, pDesc->pCustomButtons, pDesc->iCustomButtonCount) :
 		__xuiMsgBoxApplyPresetButtons(pBox, pBox->iButtons);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = __xuiMsgBoxApplyButtonVisual(pBox);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	iRet = __xuiMsgBoxLayout(pBox);
 	if ( iRet != XUI_OK ) {
 		xuiMsgBoxDestroy(pBox);
-		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+		return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
-	return __xuiMsgBoxConstructorEnd(&construction,(XUI_OK),&constructionWatch,&constructionAlive,pBox,ppBox);
+	return __xuiMsgBoxConstructorEnd(&construction,styleEntered,(XUI_OK),&constructionWatch,&constructionAlive,pBox,ppBox);
 }
 
 XUI_API int xuiMsgBoxShow(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc)

@@ -31,3 +31,5 @@
 - `examples/` 中的代码可作为最小集成参考；测试文件用于回归验证，不是用户 API 教程。
 - `guide/` 是使用文档，`reference/` 是样式和接口参考。
 - `design/`、`audits/`、`validation/`、`plans/` 保存开发设计、审计、验证和历史计划，不作为公开 API 契约。
+
+- [Native style registration and cached type queries](native-style-registration.md)

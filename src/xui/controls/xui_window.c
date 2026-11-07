@@ -1795,20 +1795,6 @@ static void __xuiWindowDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	}
 }
 
-static void __xuiWindowRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
-{
-	xui_style_property_info_t tInfo;
-
-	memset(&tInfo, 0, sizeof(tInfo));
-	tInfo.iSize = sizeof(tInfo);
-	tInfo.sName = sName;
-	tInfo.iValueType = iValueType;
-	tInfo.iDirtyFlags = iDirtyFlags;
-	tInfo.iFlags = iFlags;
-	tInfo.pWidgetType = pType;
-	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
-}
-
 static int __xuiWindowPreparePaint(xui_widget pWidget)
 {
 	xui_window_data_t* pData = __xuiWindowGetData(pWidget);
@@ -1839,37 +1825,41 @@ static int __xuiWindowPreparePaint(xui_widget pWidget)
 	return XUI_OK;
 }
 
-static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+static int __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
-	uint32_t iPaintDirty;
-	uint32_t iLayoutDirty;
-
-	pType->onPreparePaint = __xuiWindowPreparePaint;
-	iPaintDirty = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
-	iLayoutDirty = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
-	__xuiWindowRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.client.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.inactive_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.title.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.title.inactive_text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.border.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.close.icon_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.topmost_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.titlebar.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.resize_grip", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.icon.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.min_width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.min_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
+	static const struct {const char* name;int type;uint32_t dirty;uint32_t flags;} properties[] = {
+		{"font.name", XUI_STYLE_VALUE_STRING, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, XUI_STYLE_PROPERTY_INHERITED},
+		{"window.background.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.client.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.titlebar.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.titlebar.inactive_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.title.text_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.title.inactive_text_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.border.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.border.active_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.button.color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.button.hover_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.button.active_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.close.hover_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.close.active_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.close.icon_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.titlebar.topmost_color", XUI_STYLE_VALUE_COLOR, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.titlebar.height", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.border.width", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.resize_grip", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.button.size", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.icon.size", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.min_width", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+		{"window.min_height", XUI_STYLE_VALUE_FLOAT, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0},
+	};
+	xui_style_property_info_t info={0};info.iSize=sizeof(info);info.pWidgetType=pType;
+	for(size_t i=0;i<sizeof(properties)/sizeof(properties[0]);++i){
+		info.sName=properties[i].name;info.iValueType=properties[i].type;
+		info.iDirtyFlags=properties[i].dirty;info.iFlags=properties[i].flags;
+		int status=xuiStyleRegisterProperty(pContext,&info,NULL);
+		if(status!=XUI_OK)return status;
+	}
+	return XUI_OK;
 }
 
 static int __xuiWindowAccessibleNode(xui_widget pWidget, xui_accessible_node_t* pNode)
@@ -1901,42 +1891,42 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	xui_widget_type_desc_t tDesc;
 	xui_widget_type pType;
 	int iRet;
+	if(!xuiInternalContextIsValid(pContext))return NULL;
+	pType=xuiWidgetFindType(pContext,"window");
+	if(pType && pType->bStylePropertiesReady)return pType;
+	if(pType==NULL){
+		memset(&tDesc, 0, sizeof(tDesc));
+		tDesc.iSize = sizeof(tDesc);
+		tDesc.sName = "window";
+		tDesc.pParent = xuiWidgetGetBaseType();
+		tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+		tDesc.iTypeDataSize = sizeof(xui_window_data_t);
+		tDesc.onInit = __xuiWindowInit;
+		tDesc.onDestroy = __xuiWindowDestroy;
+		tDesc.onContentMeasure = __xuiWindowContentMeasure;
+		tDesc.onLayoutPrepare = __xuiWindowPrepare;
+		tDesc.onLayoutChildren = __xuiWindowLayoutChildren;
+		tDesc.onCacheRender = __xuiWindowCacheRender;
+		tDesc.onQueryCursor = __xuiWindowQueryCursor;
+		__xuiWindowDefaultLayout(&tDesc.tLayout);
+		__xuiWindowDefaultCachePolicy(&tDesc.tCachePolicy);
+		iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+		if ( iRet != XUI_OK ) {
+			return NULL;
+		}
+		pType->pAccessibleAdapter = &g_xuiWindowAccessible;
+		    static const size_t fontOffsets[]={offsetof(xui_window_data_t,pFont)};
+	    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
 
-	if ( !xuiInternalContextIsValid(pContext) ) {
-		return NULL;
-	}
-	pType = xuiWidgetFindType(pContext, "window");
-	if ( pType != NULL ) {
-		__xuiWindowRegisterStyleProperties(pContext, pType);
-	return pType;
-	}
-	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iSize = sizeof(tDesc);
-	tDesc.sName = "window";
-	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
-	tDesc.iTypeDataSize = sizeof(xui_window_data_t);
-	tDesc.onInit = __xuiWindowInit;
-	tDesc.onDestroy = __xuiWindowDestroy;
-	tDesc.onContentMeasure = __xuiWindowContentMeasure;
-	tDesc.onLayoutPrepare = __xuiWindowPrepare;
-	tDesc.onLayoutChildren = __xuiWindowLayoutChildren;
-	tDesc.onCacheRender = __xuiWindowCacheRender;
-	tDesc.onQueryCursor = __xuiWindowQueryCursor;
-	__xuiWindowDefaultLayout(&tDesc.tLayout);
-	__xuiWindowDefaultCachePolicy(&tDesc.tCachePolicy);
-	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet != XUI_OK ) {
-		return NULL;
-	}
-	__xuiWindowRegisterStyleProperties(pContext, pType);
-	pType->pAccessibleAdapter = &g_xuiWindowAccessible;
-	    static const size_t fontOffsets[]={offsetof(xui_window_data_t,pFont)};
-    pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+		    static const size_t surfaceOffsets[]={offsetof(xui_window_data_t,pIconSurface)};
+	    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
 
-	    static const size_t surfaceOffsets[]={offsetof(xui_window_data_t,pIconSurface)};
-    pType->pSurfaceOffsets=surfaceOffsets;pType->iSurfaceSlotCount=sizeof(surfaceOffsets)/sizeof(surfaceOffsets[0]);
-    return pType;
+}
+	iRet=xuiStyleBeginUpdate(pContext);if(iRet!=XUI_OK)return NULL;
+	iRet=__xuiWindowRegisterStyleProperties(pContext,pType);
+	if(iRet==XUI_OK){pType->onPreparePaint=__xuiWindowPreparePaint;pType->bStylePropertiesReady=1;}
+	iRet=xuiInternalStyleEndOutcome(pContext,iRet);
+	return iRet==XUI_OK ? pType:NULL;
 }
 
 static int __xuiWindowCreateWithOwner(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc,xui_widget pNativeOwner)

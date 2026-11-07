@@ -1875,7 +1875,7 @@ static const xui_internal_accessibility_adapter_t g_xuiIconPickerAccessible = {
 	.performAction = __xuiIconPickerAccessibleAction
 };
 
-static void __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+static int __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
 {
 	static const char* arrColors[] = {
 		"iconpicker.text.color",
@@ -1901,6 +1901,7 @@ static void __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_wid
 		"iconpicker.item.focus_color",
 	};
 	xui_style_property_info_t tInfo;
+	int status;
 	size_t i;
 	memset(&tInfo, 0, sizeof(tInfo));
 	tInfo.iSize = sizeof(tInfo);
@@ -1909,16 +1910,20 @@ static void __xuiIconPickerRegisterStyleProperties(xui_context pContext, xui_wid
 	tInfo.iDirtyFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
 	for ( i = 0; i < sizeof(arrColors) / sizeof(arrColors[0]); ++i ) {
 		tInfo.sName = arrColors[i];
-		(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+		status=xuiStyleRegisterProperty(pContext,&tInfo,NULL);
+		if(status!=XUI_OK)return status;
 	}
 	tInfo.sName = "iconpicker.border.width";
 	tInfo.iValueType = XUI_STYLE_VALUE_FLOAT;
 	tInfo.iDirtyFlags |= XUI_WIDGET_DIRTY_LAYOUT;
-	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	status=xuiStyleRegisterProperty(pContext,&tInfo,NULL);
+	if(status!=XUI_OK)return status;
 	tInfo.sName = "font.name";
 	tInfo.iValueType = XUI_STYLE_VALUE_STRING;
 	tInfo.iFlags = XUI_STYLE_PROPERTY_INHERITED;
-	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+	status=xuiStyleRegisterProperty(pContext,&tInfo,NULL);
+	if(status!=XUI_OK)return status;
+	return XUI_OK;
 }
 
 XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
@@ -1929,36 +1934,35 @@ XUI_API xui_widget_type xuiIconPickerGetType(xui_context pContext)
 
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
 	pType = xuiWidgetFindType(pContext, "iconpicker");
-	if ( pType != NULL ) {
-		__xuiIconPickerRegisterStyleProperties(pContext, pType);
-		pType->onPreparePaint = __xuiIconPickerSyncStyle;
-		pType->pAccessibleAdapter = &g_xuiIconPickerAccessible;
-		return pType;
-	}
-	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iSize = sizeof(tDesc);
-	tDesc.sName = "iconpicker";
-	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
-	tDesc.iTypeDataSize = sizeof(xui_icon_picker_data_t);
-	tDesc.onInit = __xuiIconPickerInit;
-	tDesc.onDestroy = __xuiIconPickerDestroy;
-	tDesc.onContentMeasure = __xuiIconPickerContentMeasure;
-	tDesc.onCacheRender = __xuiIconPickerCacheRender;
-	tDesc.onUpdate = __xuiIconPickerUpdate;
-	__xuiIconPickerDefaultLayout(&tDesc.tLayout);
-	__xuiIconPickerDefaultCachePolicy(&tDesc.tCachePolicy);
-	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet == XUI_OK ) {
-		__xuiIconPickerRegisterStyleProperties(pContext, pType);
-		pType->onPreparePaint = __xuiIconPickerSyncStyle;
-		pType->pAccessibleAdapter = &g_xuiIconPickerAccessible;
-	}
-    if(iRet==XUI_OK){
-        static const size_t fontOffsets[]={offsetof(xui_icon_picker_data_t,pFont)};
-        pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
-    }
-	return (iRet == XUI_OK) ? pType : NULL;
+	if(pType && pType->bStylePropertiesReady)return pType;
+	if(pType==NULL){
+		memset(&tDesc, 0, sizeof(tDesc));
+		tDesc.iSize = sizeof(tDesc);
+		tDesc.sName = "iconpicker";
+		tDesc.pParent = xuiWidgetGetBaseType();
+		tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+		tDesc.iTypeDataSize = sizeof(xui_icon_picker_data_t);
+		tDesc.onInit = __xuiIconPickerInit;
+		tDesc.onDestroy = __xuiIconPickerDestroy;
+		tDesc.onContentMeasure = __xuiIconPickerContentMeasure;
+		tDesc.onCacheRender = __xuiIconPickerCacheRender;
+		tDesc.onUpdate = __xuiIconPickerUpdate;
+		__xuiIconPickerDefaultLayout(&tDesc.tLayout);
+		__xuiIconPickerDefaultCachePolicy(&tDesc.tCachePolicy);
+		iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+		if(iRet!=XUI_OK)return NULL;
+		pType->pAccessibleAdapter=&g_xuiIconPickerAccessible;
+	    if(iRet==XUI_OK){
+	        static const size_t fontOffsets[]={offsetof(xui_icon_picker_data_t,pFont)};
+	        pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
+	    }
+
+}
+	iRet=xuiStyleBeginUpdate(pContext);if(iRet!=XUI_OK)return NULL;
+	iRet=__xuiIconPickerRegisterStyleProperties(pContext,pType);
+	if(iRet==XUI_OK){pType->onPreparePaint=__xuiIconPickerSyncStyle;pType->bStylePropertiesReady=1;}
+	iRet=xuiInternalStyleEndOutcome(pContext,iRet);
+	return iRet==XUI_OK ? pType:NULL;
 }
 
 XUI_API int xuiIconPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_icon_picker_desc_t* pDesc)
