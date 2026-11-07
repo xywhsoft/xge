@@ -347,12 +347,12 @@ static void __xuiTreeViewDefaults(xui_tree_view_data_t* pData)
 	pData->iScrollbarDisabledColor = XUI_COLOR_RGBA(181, 190, 204, 135);
 	pData->iSelectedTextColor = XUI_COLOR_WHITE;
 	pData->iSelectedExpanderColor = XUI_COLOR_WHITE;
-	pData->iExpanderBackgroundColor = XUI_COLOR_RGBA(205, 225, 246, 165);
-	pData->iExpanderDisabledBackgroundColor = XUI_COLOR_RGBA(224, 232, 242, 130);
-	pData->iExpanderSelectedBackgroundColor = XUI_COLOR_RGBA(18, 86, 178, 145);
-	pData->iExpanderSelectedActiveBackgroundColor = XUI_COLOR_RGBA(13, 62, 132, 190);
-	pData->iExpanderActiveBackgroundColor = XUI_COLOR_RGBA(47, 128, 237, 52);
-	pData->iExpanderHoverBackgroundColor = XUI_COLOR_RGBA(47, 128, 237, 32);
+	pData->iExpanderBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	pData->iExpanderDisabledBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	pData->iExpanderSelectedBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	pData->iExpanderSelectedActiveBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	pData->iExpanderActiveBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	pData->iExpanderHoverBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	pData->iCheckBackgroundColor = XUI_COLOR_WHITE;
 	pData->iCheckMarkColor = XUI_COLOR_WHITE;
 	pData->iFolderTabColor = XUI_COLOR_RGBA(171, 201, 231, 230);
@@ -1242,12 +1242,14 @@ static int __xuiTreeViewSetHover(xui_widget pWidget, xui_tree_view_data_t* pData
 
 static xui_rect_t __xuiTreeViewExpanderRect(const xui_tree_view_data_t* pData, const xui_tree_view_node_t* pNode, xui_rect_t tRow)
 {
+	float fSafePadding;
 	float fSize;
 	float fX;
 	float fY;
 
 	fSize = 14.0f;
-	fX = tRow.fX + pData->fPadding + (float)pNode->iDepth * pData->fIndent;
+	fSafePadding = __xuiTreeViewMaxFloat(pData->fPadding, pData->fBorderWidth + 2.0f);
+	fX = tRow.fX + fSafePadding + (float)pNode->iDepth * pData->fIndent;
 	fY = tRow.fY + (tRow.fH - fSize) * 0.5f;
 	return xuiInternalSnapRect((xui_rect_t){fX, fY, fSize, fSize});
 }
@@ -1269,6 +1271,7 @@ static xui_rect_t __xuiTreeViewCheckRect(const xui_tree_view_data_t* pData, cons
 static int __xuiTreeViewHitExpander(xui_widget pWidget, xui_tree_view_data_t* pData, int iVisible, float fX, float fY)
 {
 	xui_rect_t tRow;
+	xui_rect_t tExpander;
 	xui_rect_t tWorld;
 	xui_tree_view_node_t* pNode;
 	float fX0;
@@ -1285,7 +1288,8 @@ static int __xuiTreeViewHitExpander(xui_widget pWidget, xui_tree_view_data_t* pD
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	tRow.fX += tWorld.fX;
 	tRow.fY += tWorld.fY;
-	fX0 = tRow.fX + pData->fPadding + (float)pNode->iDepth * pData->fIndent - 2.0f;
+	tExpander = __xuiTreeViewExpanderRect(pData, pNode, tRow);
+	fX0 = tExpander.fX - 2.0f;
 	fW = __xuiTreeViewMaxFloat(22.0f, pData->fIndent + 4.0f);
 	return (fX >= fX0) && (fX < fX0 + fW) && (fY >= tRow.fY) && (fY < tRow.fY + tRow.fH);
 }
@@ -1901,31 +1905,6 @@ static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	return iRet;
 }
 
-static int __xuiTreeViewDrawExpander(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bExpanded, uint32_t iColor)
-{
-	xui_vec2_t tA;
-	xui_vec2_t tB;
-	xui_vec2_t tC;
-	float fCX;
-	float fCY;
-
-	if ( (pProxy->drawTriangleFill == NULL) || (__xuiTreeViewAlpha(iColor) == 0) ) {
-		return XUI_OK;
-	}
-	fCX = tRect.fX + tRect.fW * 0.5f;
-	fCY = tRect.fY + tRect.fH * 0.5f;
-	if ( bExpanded ) {
-		tA = (xui_vec2_t){fCX - 5.0f, fCY - 2.5f};
-		tB = (xui_vec2_t){fCX + 5.0f, fCY - 2.5f};
-		tC = (xui_vec2_t){fCX, fCY + 4.0f};
-	} else {
-		tA = (xui_vec2_t){fCX - 2.5f, fCY - 5.0f};
-		tB = (xui_vec2_t){fCX - 2.5f, fCY + 5.0f};
-		tC = (xui_vec2_t){fCX + 4.5f, fCY};
-	}
-	return pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
-}
-
 static uint32_t __xuiTreeViewExpanderHotspotColor(const xui_tree_view_data_t* pResolved, int iState, int bActiveExpander)
 {
 	if ( (iState & XUI_TREE_ITEM_DISABLED) != 0 ) {
@@ -2108,13 +2087,6 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tRow, tResolved.iRowColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		if ( ((iState & XUI_TREE_ITEM_FOCUS) != 0) &&
-		     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
-		     ((iState & XUI_TREE_ITEM_DISABLED) == 0) ) {
-			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiTreeViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiTreeViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iFocusColor);
-			if ( iRet != XUI_OK ) return iRet;
-		}
 		tExpander = __xuiTreeViewExpanderRect(&tResolved, pNode, tRow);
 		if ( pNode->bHasChildren ) {
 			bActiveExpander = (pData->iActiveVisible == i) && (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER);
@@ -2122,7 +2094,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, __xuiTreeViewExpanderHotspotColor(&tResolved, iState, bActiveExpander));
 			if ( iRet != XUI_OK ) return iRet;
 			iExpanderColor = __xuiTreeViewExpanderGlyphColor(&tResolved, iState);
-			iRet = __xuiTreeViewDrawExpander(pProxy, pDraw, tExpander, pNode->bExpanded, iExpanderColor);
+			iRet = xuiInternalDrawDisclosureChevron(pProxy, pDraw, tExpander, pNode->bExpanded, iExpanderColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		fTextX = tExpander.fX + tExpander.fW + 5.0f;
@@ -2145,6 +2117,14 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( (tResolved.pFont != NULL) && (__xuiTreeViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY, __xuiTreeViewMaxFloat(1.0f, tRow.fW - fTextX - tResolved.fPadding), tRow.fH});
 			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiTreeViewText(pNode->sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		/* Keep the row outline above expander/check decoration backgrounds. */
+		if ( ((iState & XUI_TREE_ITEM_FOCUS) != 0) &&
+		     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
+		     ((iState & XUI_TREE_ITEM_DISABLED) == 0) ) {
+			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiTreeViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiTreeViewMaxFloat(1.0f, tRow.fH - 4.0f)});
+			iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iFocusColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
@@ -2208,6 +2188,25 @@ static int __xuiTreeViewAccessibleCount(xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	if ( pData == NULL || pData->iNodeCount >= 0x7ffffffe ) return 0;
 	return pData->iNodeCount + 1;
+}
+
+static int __xuiTreeViewAccessibleFocus(xui_widget pWidget,
+	uint64_t* pNodeId, void* pUser)
+{
+	xui_tree_view_data_t* pData = (xui_tree_view_data_t*)pUser;
+	int iVisible;
+	int iNode;
+
+	if ( pData == NULL || pNodeId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNodeId = 1;
+	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) != pWidget ) return XUI_OK;
+	iVisible = pData->iFocusVisible;
+	if ( iVisible < 0 || iVisible >= pData->iVisibleCount ) return XUI_OK;
+	iNode = pData->arrVisible[iVisible];
+	if ( iNode >= 0 && iNode < pData->iNodeCount ) {
+		*pNodeId = (uint64_t)iNode + 2u;
+	}
+	return XUI_OK;
 }
 
 static int __xuiTreeViewAccessibleGet(xui_widget pWidget, int iIndex,
@@ -2491,6 +2490,9 @@ static int __xuiTreeViewInit(xui_widget pWidget, void* pTypeData, const void* pC
 	iRet = xuiWidgetSetAccessibilityProvider(pWidget,
 		__xuiTreeViewAccessibleCount, __xuiTreeViewAccessibleGet,
 		__xuiTreeViewAccessibleAction, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalAccessibilitySetFocusResolver(pWidget,
+		__xuiTreeViewAccessibleFocus);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pDesc != NULL) && (pDesc->arrNodes != NULL) && (pDesc->iNodeCount > 0) ) {
 		iRet = xuiTreeViewSetNodes(pWidget, pDesc->arrNodes, pDesc->iNodeCount);

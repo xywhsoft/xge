@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "xui_internal.h"
 #include "xui_test_proxy.h"
 
 #include <limits.h>
@@ -133,17 +134,57 @@ static int __xuiTreeViewNear(float fA, float fB)
 	return fDelta < 0.01f;
 }
 
-static int g_iTreeViewTriangleCount = 0;
-static int g_iTreeViewWhiteTriangleCount = 0;
+static int g_iTreeViewChevronLineCount = 0;
+static int g_iTreeViewWhiteChevronLineCount = 0;
+static float g_fTreeViewChevronMinX = 1000000.0f;
+static xui_draw_rect_fill_proc g_onTreeViewDrawRectFill = NULL;
+static xui_draw_rect_stroke_proc g_onTreeViewDrawRectStroke = NULL;
+static int g_bTreeViewTrackFocusOrder = 0;
+static int g_iTreeViewDrawOrder = 0;
+static int g_iTreeViewRootExpanderOrder = 0;
+static int g_iTreeViewRowFocusOrder = 0;
+static uint32_t g_iTreeViewRowFocusColor = XUI_COLOR_RGBA(197, 108, 0, 255);
 
-static int __xuiTreeViewTestDrawTriangleFill(xui_proxy pProxy, xui_draw_context pDraw, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, uint32_t iColor)
+static int __xuiTreeViewTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, uint32_t iColor)
 {
-	(void)tA;
-	(void)tB;
-	(void)tC;
-	g_iTreeViewTriangleCount++;
-	if ( iColor == XUI_COLOR_RGBA(255, 255, 255, 255) ) {
-		g_iTreeViewWhiteTriangleCount++;
+	if ( g_bTreeViewTrackFocusOrder ) {
+		g_iTreeViewDrawOrder++;
+	}
+	return g_onTreeViewDrawRectFill(pProxy, pDraw, tRect, iColor);
+}
+
+static int __xuiTreeViewTestDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, float fWidth, uint32_t iColor)
+{
+	if ( g_bTreeViewTrackFocusOrder ) {
+		g_iTreeViewDrawOrder++;
+		if ( iColor == g_iTreeViewRowFocusColor && __xuiTreeViewNear(tRect.fY, 2.0f) &&
+		     tRect.fW > 100.0f && tRect.fH < 30.0f ) {
+			g_iTreeViewRowFocusOrder = g_iTreeViewDrawOrder;
+		}
+	}
+	return g_onTreeViewDrawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
+}
+
+static int __xuiTreeViewTestDrawLine(xui_proxy pProxy, xui_draw_context pDraw,
+	float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor)
+{
+	(void)fY0;
+	(void)fY1;
+	if ( g_bTreeViewTrackFocusOrder ) {
+		g_iTreeViewDrawOrder++;
+		if ( __xuiTreeViewNear(fWidth, 1.35f) && fY0 < 22.0f && fY1 < 22.0f ) {
+			g_iTreeViewRootExpanderOrder = g_iTreeViewDrawOrder;
+		}
+	}
+	if ( __xuiTreeViewNear(fWidth, 1.35f) ) {
+		g_iTreeViewChevronLineCount++;
+		if ( fX0 < g_fTreeViewChevronMinX ) g_fTreeViewChevronMinX = fX0;
+		if ( fX1 < g_fTreeViewChevronMinX ) g_fTreeViewChevronMinX = fX1;
+		if ( iColor == XUI_COLOR_RGBA(255, 255, 255, 255) ) {
+			g_iTreeViewWhiteChevronLineCount++;
+		}
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
 		return pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, 1.0f, 1.0f}, iColor);
@@ -326,6 +367,7 @@ static int __xuiTreeViewLargeRegression(xui_context pContext, xui_widget pTree, 
 	int i;
 	int bChain;
 	int iBefore;
+	uint64_t iFocusedNodeId;
 	XUI_TEST_CHECK(pNodes != NULL, "large descriptors allocated");
 	for ( bChain = 0; bChain <= 1; bChain++ ) {
 		for ( i = 0; i < iCount; i++ ) pNodes[i] = __xuiTreeViewTestNode(i, (i == 0) ? -1 : (bChain ? i - 1 : 0));
@@ -334,6 +376,10 @@ static int __xuiTreeViewLargeRegression(xui_context pContext, xui_widget pTree, 
 		XUI_TEST_CHECK(xuiTreeViewGetNodeById(pTree, iCount - 1)->iDepth == (bChain ? iCount - 1 : 1), "large public depth");
 		XUI_TEST_CHECK(xuiLayout(pContext) == XUI_OK && xuiUpdate(pContext, 0.016f) == XUI_OK, "large layout and update");
 		XUI_TEST_CHECK(xuiTreeViewSetSelected(pTree, iCount - 1) == XUI_OK && xuiTreeViewEnsureVisible(pTree, iCount - 1) == XUI_OK, "large selected ID and scroll");
+		XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pTree) == XUI_OK &&
+			xuiInternalAccessibilityGetFocusedNode(pTree, &iFocusedNodeId) == XUI_OK &&
+			iFocusedNodeId == (uint64_t)iCount + 1u,
+			"large tree resolves focused accessible node directly");
 		iBefore = *pRenderCount;
 		XUI_TEST_CHECK(__xuiTreeViewRender(pContext, pTarget) == XUI_OK, "large tree renders");
 		XUI_TEST_CHECK(*pRenderCount > iBefore && *pRenderCount - iBefore <= 16, "large tree draws only viewport rows");
@@ -631,7 +677,11 @@ int main(void)
 	memset(&tEventState, 0, sizeof(tEventState));
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
-	tState.tProxy.drawTriangleFill = __xuiTreeViewTestDrawTriangleFill;
+	g_onTreeViewDrawRectFill = tState.tProxy.drawRectFill;
+	g_onTreeViewDrawRectStroke = tState.tProxy.drawRectStroke;
+	tState.tProxy.drawRectFill = __xuiTreeViewTestDrawRectFill;
+	tState.tProxy.drawRectStroke = __xuiTreeViewTestDrawRectStroke;
+	tState.tProxy.drawLine = __xuiTreeViewTestDrawLine;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
@@ -736,13 +786,39 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject invalid replacement tree");
 	XUI_TEST_CHECK(xuiTreeViewGetNodeCount(pTree) == 7 && xuiTreeViewGetNodeById(pTree, 30) != NULL &&
 		xuiTreeViewGetSelected(pTree) == 30, "failed replacement preserves tree state");
-	g_iTreeViewTriangleCount = 0;
-	g_iTreeViewWhiteTriangleCount = 0;
+	g_iTreeViewChevronLineCount = 0;
+	g_iTreeViewWhiteChevronLineCount = 0;
+	g_fTreeViewChevronMinX = 1000000.0f;
+	iRet = xuiTreeViewSetMetrics(pTree, 22.0f, 18.0f, 0.0f, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "zero-padding expander setup");
 	iRet = xuiTreeViewSetSelected(pTree, 20);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 20, "select expandable row");
 	iRet = __xuiTreeViewRender(pContext, pTarget);
-	XUI_TEST_CHECK(iRet == XUI_OK && g_iTreeViewTriangleCount > 0, "expander rendered");
-	XUI_TEST_CHECK(g_iTreeViewWhiteTriangleCount > 0, "selected expander contrast");
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iTreeViewChevronLineCount >= 2, "expander chevron rendered");
+	XUI_TEST_CHECK(g_iTreeViewWhiteChevronLineCount >= 2, "selected expander contrast");
+	XUI_TEST_CHECK(g_fTreeViewChevronMinX >= 3.0f, "expander chevron clears left border");
+	iRet = xuiTreeViewSetColors(pTree,
+		XUI_COLOR_RGBA(247, 251, 255, 255), iBorderColor, g_iTreeViewRowFocusColor,
+		XUI_COLOR_RGBA(255, 255, 255, 0), XUI_COLOR_RGBA(228, 240, 252, 255),
+		XUI_COLOR_RGBA(47, 128, 237, 255), XUI_COLOR_RGBA(31, 49, 68, 255),
+		XUI_COLOR_RGBA(150, 162, 176, 180));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewSetSelected(pTree, 10) == XUI_OK &&
+		xuiSetFocusWidget(pContext, pTree) == XUI_OK, "focused root order setup");
+	g_iTreeViewDrawOrder = g_iTreeViewRootExpanderOrder = g_iTreeViewRowFocusOrder = 0;
+	g_bTreeViewTrackFocusOrder = 1;
+	iRet = __xuiTreeViewRender(pContext, pTarget);
+	g_bTreeViewTrackFocusOrder = 0;
+	XUI_TEST_CHECK(iRet == XUI_OK && g_iTreeViewRootExpanderOrder > 0 &&
+		g_iTreeViewRowFocusOrder > g_iTreeViewRootExpanderOrder,
+		"focused row outline renders above root expander decoration");
+	iRet = xuiTreeViewSetColors(pTree,
+		XUI_COLOR_RGBA(247, 251, 255, 255), iBorderColor, XUI_COLOR_RGBA(0, 0, 0, 0),
+		XUI_COLOR_RGBA(255, 255, 255, 0), XUI_COLOR_RGBA(228, 240, 252, 255),
+		XUI_COLOR_RGBA(47, 128, 237, 255), XUI_COLOR_RGBA(31, 49, 68, 255),
+		XUI_COLOR_RGBA(150, 162, 176, 180));
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore transparent focus color");
+	iRet = xuiTreeViewSetMetrics(pTree, 22.0f, 18.0f, 6.0f, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore tree metrics");
 	iRet = xuiTreeViewSetSelected(pTree, 30);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 30, "restore selected row");
 

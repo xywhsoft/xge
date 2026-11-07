@@ -140,6 +140,7 @@ int main(void)
 	xui_surface pCache;
 	xui_font pFont;
 	xui_window_desc_t tDesc;
+	xui_event_t tEvent;
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
 	xui_rect_t tButton;
@@ -712,6 +713,30 @@ int main(void)
 	XUI_TEST_CHECK(tRect.fW >= 639.0f && tRect.fH >= 419.0f, "maximized rect");
 	iRet = xuiWindowSetMaximized(pMain, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsMaximized(pMain), "restore set");
+
+	/* A maximized window still treats its title bar as a double-click target. */
+	tRect = xuiWidgetGetRect(pMain);
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_POINTER_DOUBLE_CLICK;
+	tEvent.pTarget = pMain;
+	tEvent.fX = tWorld.fX + 100.0f;
+	tEvent.fY = tWorld.fY + 15.0f;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	tEvent.iClickCount = 2;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWindowIsMaximized(pMain),
+		"title double click maximizes window");
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	tEvent.fX = tWorld.fX + 100.0f;
+	tEvent.fY = tWorld.fY + 15.0f;
+	iRet = xuiDispatchEvent(pContext, &tEvent);
+	tWorld = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsMaximized(pMain) &&
+		__xuiWindowNear(tWorld.fX, tRect.fX) && __xuiWindowNear(tWorld.fY, tRect.fY) &&
+		__xuiWindowNear(tWorld.fW, tRect.fW) && __xuiWindowNear(tWorld.fH, tRect.fH),
+		"title double click restores maximized window");
 
 	tWorld = xuiWidgetGetWorldRect(pFrameless);
 	XUI_TEST_CHECK((xuiWindowGetResizeEdges(pFrameless) & XUI_WINDOW_EDGE_TOP) == 0u, "frameless drag-anywhere omits top resize edge");

@@ -1415,26 +1415,6 @@ static int __xuiFileDialogSyncRootSelection(xui_file_dialog pDialog)
 	return xuiTreeViewSetSelected(pDialog->pRootList, iSelected);
 }
 
-static int __xuiFileDialogDrawRootExpander(xui_proxy pProxy, xui_draw_context pDraw,
-	xui_rect_t tRect, int bExpanded, uint32_t iColor)
-{
-	xui_vec2_t tA, tB, tC;
-	float fCX, fCY;
-	if ( pProxy->drawTriangleFill == NULL || (iColor & 0xffu) == 0u ) return XUI_OK;
-	fCX = tRect.fX + tRect.fW * 0.5f;
-	fCY = tRect.fY + tRect.fH * 0.5f;
-	if ( bExpanded ) {
-		tA = (xui_vec2_t){fCX - 4.0f, fCY - 2.0f};
-		tB = (xui_vec2_t){fCX + 4.0f, fCY - 2.0f};
-		tC = (xui_vec2_t){fCX, fCY + 3.0f};
-	} else {
-		tA = (xui_vec2_t){fCX - 2.0f, fCY - 4.0f};
-		tB = (xui_vec2_t){fCX - 2.0f, fCY + 4.0f};
-		tC = (xui_vec2_t){fCX + 3.0f, fCY};
-	}
-	return pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
-}
-
 static int __xuiFileDialogDrawRootItem(xui_widget pWidget, int iNodeId, int iVisible,
 	const xui_tree_view_node_t* pNode, xui_draw_context pDraw, xui_rect_t tRow,
 	int iState, void* pUser)
@@ -1448,7 +1428,8 @@ static int __xuiFileDialogDrawRootItem(xui_widget pWidget, int iNodeId, int iVis
 	xui_proxy pProxy;
 	xui_surface pAtlas;
 	xui_rect_t tFill, tExpander, tIcon, tIconSrc, tText;
-	float fIndent = 18.0f, fPadding = 6.0f;
+	float fIndent = 18.0f, fPadding = 6.0f, fBorderWidth = 1.0f;
+	float fSafePadding;
 	float fTextX;
 	uint32_t iFocus, iRow, iHover, iSelected, iText, iDisabled, iExpander;
 	int iRet;
@@ -1462,7 +1443,7 @@ static int __xuiFileDialogDrawRootItem(xui_widget pWidget, int iNodeId, int iVis
 		pProxy->drawRectFill == NULL ) XUI_FILE_DIALOG_EVENT_RETURN(0);
 	if ( xuiBuiltinAssetGetAtlas(xuiWidgetGetContext(pWidget), &pAtlas) != XUI_OK ||
 		xuiBuiltinAssetGetRect(pRoot->sIconAsset, &tIconSrc) != XUI_OK ) XUI_FILE_DIALOG_EVENT_RETURN(0);
-	(void)xuiTreeViewGetMetrics(pWidget, NULL, &fIndent, &fPadding, NULL);
+	(void)xuiTreeViewGetMetrics(pWidget, NULL, &fIndent, &fPadding, &fBorderWidth);
 	(void)xuiTreeViewGetColors(pWidget, NULL, NULL, &iFocus, &iRow, &iHover,
 		&iSelected, &iText, &iDisabled);
 	(void)xuiTreeViewGetDecorationColors(pWidget, &iExpander, NULL, NULL);
@@ -1500,11 +1481,12 @@ static int __xuiFileDialogDrawRootItem(xui_widget pWidget, int iNodeId, int iVis
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, tFill, 1.0f, iFocus);
 		if ( iRet != XUI_OK ) XUI_FILE_DIALOG_EVENT_RETURN(iRet);
 	}
-	tExpander = xuiInternalSnapRect((xui_rect_t){tRow.fX + fPadding +
+	fSafePadding = __xuiFileDialogMaxFloat(fPadding, fBorderWidth + 2.0f);
+	tExpander = xuiInternalSnapRect((xui_rect_t){tRow.fX + fSafePadding +
 		(float)pNode->iDepth * fIndent, tRow.fY + (tRow.fH - 14.0f) * 0.5f,
 		14.0f, 14.0f});
 	if ( (iState & XUI_TREE_ITEM_HAS_CHILDREN) != 0 ) {
-		iRet = __xuiFileDialogDrawRootExpander(pProxy, pDraw, tExpander,
+		iRet = xuiInternalDrawDisclosureChevron(pProxy, pDraw, tExpander,
 			(iState & XUI_TREE_ITEM_EXPANDED) != 0, iExpander);
 		if ( iRet != XUI_OK ) XUI_FILE_DIALOG_EVENT_RETURN(iRet);
 	}
@@ -2807,10 +2789,10 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pPathRow, XUI_SIZE_FILL, XUI_SIZE_FIXED));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pListRow, XUI_SIZE_FILL, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pFieldRow, XUI_SIZE_FILL, XUI_SIZE_FIXED));
-	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pButtonRow, XUI_SIZE_FILL, XUI_SIZE_FIXED));
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pButtonRow, XUI_SIZE_FILL, XUI_SIZE_CONTENT));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pPathRow, (xui_vec2_t){0.0f, 32.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pFieldRow, (xui_vec2_t){0.0f, 28.0f}));
-	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f}));
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetMinSize(pDialog->pButtonRow, (xui_vec2_t){0.0f, 28.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetFlex(pDialog->pListRow, 1.0f, 1.0f));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetMinSize(pDialog->pListRow, (xui_vec2_t){0.0f, 72.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pPathLabel, (xui_vec2_t){58.0f, 32.0f}));
@@ -2822,9 +2804,12 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pRefreshButton, (xui_vec2_t){32.0f, 32.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pOkButton, (xui_vec2_t){78.0f, 28.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetPreferredSize(pDialog->pCancelButton, (xui_vec2_t){74.0f, 28.0f}));
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pPathLabel, XUI_SIZE_CONTENT, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pPathBar, XUI_SIZE_FILL, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pPathBreadcrumb, XUI_SIZE_FILL, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pPathInput, XUI_SIZE_FILL, XUI_SIZE_FILL));
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pUpButton, XUI_SIZE_FIXED, XUI_SIZE_FILL));
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pRefreshButton, XUI_SIZE_FIXED, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pRootList, XUI_SIZE_FIXED, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pFileList, XUI_SIZE_FILL, XUI_SIZE_FILL));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetSizeMode(pDialog->pNameInput, XUI_SIZE_FILL, XUI_SIZE_FILL));
@@ -2833,7 +2818,8 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetFlex(pDialog->pFileList, 1.0f, 1.0f));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetFlex(pDialog->pNameInput, 1.0f, 1.0f));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetFlex(pDialog->pButtonSpacer, 1.0f, 1.0f));
-	XUI_FILE_DIALOG_SETUP(xuiWidgetSetMargin(pDialog->pPathBreadcrumb, (xui_thickness_t){8.0f, 0.0f, 8.0f, 0.0f}));
+	/* Keep themed breadcrumb backgrounds inside the path bar's 1px frame. */
+	XUI_FILE_DIALOG_SETUP(xuiWidgetSetMargin(pDialog->pPathBreadcrumb, (xui_thickness_t){8.0f, 1.0f, 8.0f, 1.0f}));
 	XUI_FILE_DIALOG_SETUP(xuiWidgetSetFocusable(pDialog->pPathBar, 0));
 	memset(&tPathPolicy, 0, sizeof(tPathPolicy));
 	tPathPolicy.iSize = sizeof(tPathPolicy);

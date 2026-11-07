@@ -2966,6 +2966,48 @@ int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath
 	return pProxy->drawPath(pProxy, pDraw, pPath->pCommands, pPath->iCommandCount, pStyle, fTolerance);
 }
 
+int xuiInternalDrawDisclosureChevron(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, int bExpanded, uint32_t iColor)
+{
+	float fCX;
+	float fCY;
+	float fX0;
+	float fY0;
+	float fX1;
+	float fY1;
+	float fX2;
+	float fY2;
+	int iRet;
+
+	if ( (pProxy == NULL) || (pDraw == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pProxy->drawLine == NULL) || ((iColor & 0xffu) == 0u) ||
+		(tRect.fW < 8.0f) || (tRect.fH < 8.0f) ) {
+		return XUI_OK;
+	}
+	fCX = tRect.fX + tRect.fW * 0.5f;
+	fCY = tRect.fY + tRect.fH * 0.5f;
+	if ( bExpanded ) {
+		fX0 = fCX - 3.5f;
+		fY0 = fCY - 1.75f;
+		fX1 = fCX;
+		fY1 = fCY + 1.75f;
+		fX2 = fCX + 3.5f;
+		fY2 = fY0;
+	} else {
+		fX0 = fCX - 1.75f;
+		fY0 = fCY - 3.5f;
+		fX1 = fCX + 1.75f;
+		fY1 = fCY;
+		fX2 = fX0;
+		fY2 = fCY + 3.5f;
+	}
+	iRet = pProxy->drawLine(pProxy, pDraw, fX0, fY0, fX1, fY1, 1.35f, iColor);
+	if ( iRet != XUI_OK ) return iRet;
+	return pProxy->drawLine(pProxy, pDraw, fX1, fY1, fX2, fY2, 1.35f, iColor);
+}
+
 XUI_API int xuiPainterDrawSvgPath(xui_painter pPainter, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
 {
 	xui_proxy pProxy;

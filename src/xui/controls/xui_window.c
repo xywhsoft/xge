@@ -734,16 +734,13 @@ static int __xuiWindowQueryCursor(xui_widget pWidget, int iX, int iY, void* pUse
 	return xuiInternalWindowFrameResizeCursor(iEdges);
 }
 
-static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, const xui_event_t* pEvent)
+static int __xuiWindowHitMoveRegion(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, const xui_event_t* pEvent)
 {
 	xui_rect_t tWorld;
 	float fLocalX;
 	float fLocalY;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pResolved == NULL) || (pEvent == NULL) ) {
-		return 0;
-	}
-	if ( !pData->bMovable || pData->bMaximized ) {
 		return 0;
 	}
 	tWorld = xuiWidgetGetWorldRect(pWidget);
@@ -757,6 +754,12 @@ static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData,
 	}
 	return __xuiWindowRectContains(xuiInternalRectFromFloatNearest(0.0f, 0.0f, tWorld.fW,
 		pResolved->fBorderWidth + pResolved->fTitleBarHeight), fLocalX, fLocalY);
+}
+
+static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, const xui_event_t* pEvent)
+{
+	if ( pData == NULL || !pData->bMovable || pData->bMaximized ) return 0;
+	return __xuiWindowHitMoveRegion(pWidget, pData, pResolved, pEvent);
 }
 
 static xui_rect_t __xuiWindowBuildInteractionRect(xui_widget pWidget, xui_window_data_t* pData, float fX, float fY)
@@ -1345,9 +1348,9 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	__xuiWindowResolve(pWidget, pData, &tResolved);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
-		if ( bLeftButton && pData->bResizable &&
+		if ( bLeftButton && pData->bResizable && pData->bMovable &&
 		     xuiWidgetGetEffectiveEnabled(pWidget) &&
-		     __xuiWindowCanStartMove(pWidget, pData, &tResolved, pEvent) ) {
+		     __xuiWindowHitMoveRegion(pWidget, pData, &tResolved, pEvent) ) {
 			__xuiWindowCancelInteraction(pWidget, pData, 1);
 			iRet = xuiWindowSetMaximized(pWidget, !pData->bMaximized);
 			if ( iRet != XUI_OK ) return iRet;

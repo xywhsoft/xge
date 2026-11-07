@@ -240,9 +240,14 @@ static native_node* focused_node(native_bridge* b, xui_context context)
 {
     xui_widget widget = xuiGetFocusWidget(context);
     native_node* result;
+    uint64_t focused_id = 0;
     int i, count;
     if (!widget) return NULL;
     result = widget_root(b, widget);
+    if (xuiInternalAccessibilityGetFocusedNode(widget, &focused_id) == XUI_OK && focused_id != 0) {
+        native_node* candidate = provider(b, widget, focused_id, 0);
+        if (candidate) return candidate;
+    }
     count = xuiWidgetGetAccessibleNodeCount(widget);
     for (i = 1; i < count; i++) {
         xui_accessible_node_t node = {0};

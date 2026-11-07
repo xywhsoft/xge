@@ -2891,6 +2891,7 @@ static void __xuiWidgetDestroyAccessibilityData(xui_widget pWidget)
 	pWidget->onAccessibleCount = NULL;
 	pWidget->onAccessibleGet = NULL;
 	pWidget->onAccessibleAction = NULL;
+	pWidget->onAccessibleFocus = NULL;
 	pWidget->pAccessibleUser = NULL;
 }
 

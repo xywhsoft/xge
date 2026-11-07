@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "xui_internal.h"
 #include "xui_test_proxy.h"
 
 #include <math.h>
@@ -653,8 +654,12 @@ int main(void)
 	memset(&tInvalidDesc, 0, sizeof(tInvalidDesc));
 	tInvalidDesc.iSize = sizeof(tInvalidDesc);
 	iRet = xuiListViewCreate(pContext, &pVirtualList, &tInvalidDesc);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pVirtualList);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pVirtualList,
+		(xui_rect_t){24.0f, 20.0f, 190.0f, 120.0f});
 	if ( iRet == XUI_OK ) iRet = xuiListViewSetVirtualItems(pVirtualList, 10000,
 		__xuiListViewVirtualText, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetItemCount(pVirtualList) == 10000 &&
 		xuiWidgetGetAccessibleNodeCount(pVirtualList) == 10001 &&
 		strcmp(xuiListViewGetItemText(pVirtualList, 9999), "Virtual item 9999") == 0,
@@ -664,6 +669,14 @@ int main(void)
 	iRet = xuiWidgetGetAccessibleNode(pVirtualList, 10000, &tAccessible);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tAccessible.sName, "Virtual item 9999") == 0,
 		"virtual accessible item text");
+	{
+		uint64_t iFocusedNodeId = 0;
+		XUI_TEST_CHECK(xuiListViewSetSelected(pVirtualList, 9999) == XUI_OK &&
+			xuiSetFocusWidget(pContext, pVirtualList) == XUI_OK &&
+			xuiInternalAccessibilityGetFocusedNode(pVirtualList, &iFocusedNodeId) == XUI_OK &&
+			iFocusedNodeId == 10001u,
+			"large virtual list resolves focused accessible node directly");
+	}
 	xuiWidgetDestroy(pVirtualList);
 	pVirtualList = NULL;
 

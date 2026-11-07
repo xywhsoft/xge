@@ -357,6 +357,9 @@ int main(void)
 	xui_widget pRootTree = NULL;
 	xui_widget pRootViewport = NULL;
 	xui_widget pBreadcrumb = NULL;
+	xui_widget pPathBar = NULL;
+	xui_widget pPathRow = NULL;
+	xui_widget pPathLabel = NULL;
 	xui_file_dialog pDialog = NULL;
 	xui_surface pTarget = NULL;
 	xui_surface pRootCache = NULL;
@@ -400,7 +403,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy");
 	iRet = xuiInputViewport(pContext, 800.0f, 520.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport");
-	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont, "body", 4, 14.0f, XUI_FONT_FORMAT_TTF);
+	iRet = tState.tProxy.fontLoadMemory(&tState.tProxy, &pFont, "body", 4, 18.0f, XUI_FONT_FORMAT_TTF);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFont != NULL, "font");
 	iRet = xuiSetDefaultFont(pContext, pFont);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default font");
@@ -571,12 +574,40 @@ int main(void)
 	XUI_TEST_CHECK(xuiFileDialogGetRefreshButtonWidget(pDialog) != NULL, "refresh button getter");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dialog layout");
+	pPathBar = xuiWidgetGetParent(xuiFileDialogGetPathBreadcrumbWidget(pDialog));
+	pPathRow = xuiWidgetGetParent(pPathBar);
+	pPathLabel = xuiWidgetGetFirstChild(pPathRow);
+	tWorld = xuiWidgetGetWorldRect(pPathRow);
+	XUI_TEST_CHECK(tWorld.fH >= 32.0f, "path row preserves its minimum height");
+	tRect = xuiWidgetGetWorldRect(pPathBar);
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH,
+		"path bar fills path row height");
+	tRect = xuiWidgetGetWorldRect(pPathLabel);
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH,
+		"path label aligns with path row");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetUpButtonWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH && tRect.fW == 32.0f,
+		"up button aligns with path row");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetRefreshButtonWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH && tRect.fW == 32.0f,
+		"refresh button aligns with path row");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetPathBreadcrumbWidget(pDialog));
+	tWorld = xuiWidgetGetWorldRect(pPathBar);
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY + 1.0f && tRect.fH == tWorld.fH - 2.0f,
+		"breadcrumb background stays inside path border");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetNameInputWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetFilterComboWidget(pDialog));
 	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH && tRect.fH >= 28.0f, "name and filter fixed row height");
-	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog))).fH >= 28.0f, "button fixed row height");
+	tWorld = xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog)));
+	XUI_TEST_CHECK(tWorld.fH >= 30.0f, "button row follows large-font content height");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fH >= 24.0f, "button control height");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fY > tRect.fY, "buttons below fields");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY >= tWorld.fY && tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH,
+		"large-font ok button remains inside button row");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetCancelButtonWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY >= tWorld.fY && tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH,
+		"large-font cancel button remains inside button row");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetWindowWidget(pDialog));
 	XUI_TEST_CHECK(tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH, "buttons remain inside dialog");
@@ -591,8 +622,12 @@ int main(void)
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetNameInputWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetFilterComboWidget(pDialog));
 	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH >= 28.0f && tRect.fW >= 120.0f && tWorld.fW >= 176.0f, "resized name filter row");
-	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog))).fH >= 28.0f, "resized button row height");
+	tWorld = xuiWidgetGetWorldRect(xuiWidgetGetParent(xuiFileDialogGetOkButtonWidget(pDialog)));
+	XUI_TEST_CHECK(tWorld.fH >= 30.0f, "resized button row follows large-font content height");
 	XUI_TEST_CHECK(xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog)).fY > tRect.fY, "resized buttons below fields");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
+	XUI_TEST_CHECK(tRect.fY >= tWorld.fY && tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH,
+		"resized large-font button remains inside button row");
 	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetOkButtonWidget(pDialog));
 	tWorld = xuiWidgetGetWorldRect(xuiFileDialogGetWindowWidget(pDialog));
 	XUI_TEST_CHECK(tRect.fY + tRect.fH <= tWorld.fY + tWorld.fH, "resized buttons remain inside dialog");
@@ -615,6 +650,10 @@ int main(void)
 	tWorld = xuiWidgetGetWorldRect(pBreadcrumb);
 	iRet = __xuiFileDialogClick(pContext, tWorld.fX + tWorld.fW - 4.0f, tWorld.fY + tWorld.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetVisible(xuiFileDialogGetPathInputWidget(pDialog)) && xuiGetFocusWidget(pContext) == xuiFileDialogGetPathInputWidget(pDialog), "breadcrumb empty click edits path");
+	tRect = xuiWidgetGetWorldRect(xuiFileDialogGetPathInputWidget(pDialog));
+	tWorld = xuiWidgetGetWorldRect(pPathBar);
+	XUI_TEST_CHECK(tRect.fY == tWorld.fY && tRect.fH == tWorld.fH,
+		"path input aligns with path bar in edit mode");
 	iRet = xuiInputSetText(xuiFileDialogGetPathInputWidget(pDialog), (const char*)sSub);
 	XUI_TEST_CHECK(iRet == XUI_OK, "path input edit set");
 	iRet = __xuiFileDialogSendKey(pContext, XUI_KEY_ENTER);

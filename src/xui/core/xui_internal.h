@@ -614,6 +614,8 @@ typedef struct xui_internal_accessibility_adapter_t {
 		const struct xui_internal_accessible_text_request*,
 		struct xui_internal_accessible_text_range**);
 } xui_internal_accessibility_adapter_t;
+typedef int (*xui_internal_accessible_focus_proc)(xui_widget pWidget,
+	uint64_t* pNodeId, void* pUser);
 
 typedef int (*xui_internal_prepare_paint_proc)(xui_widget pWidget);
 typedef void (*xui_internal_parent_changed_proc)(xui_widget pWidget,
@@ -804,6 +806,7 @@ struct xui_widget_t {
 	xui_accessible_count_proc onAccessibleCount;
 	xui_accessible_get_proc onAccessibleGet;
 	xui_accessible_action_proc onAccessibleAction;
+	xui_internal_accessible_focus_proc onAccessibleFocus;
 	void* pAccessibleUser;
 	char* sAccessibleName;
 	char* sAccessibleDescription;
@@ -1029,6 +1032,10 @@ int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget)
 void xuiInternalAccessibilityQueue(xui_widget pWidget, int iEventType);
 void xuiInternalAccessibilityFlush(xui_context pContext);
 void xuiInternalAccessibilityDetach(xui_widget pWidget);
+XUI_API int xuiInternalAccessibilitySetFocusResolver(xui_widget pWidget,
+	xui_internal_accessible_focus_proc onFocus);
+XUI_API int xuiInternalAccessibilityGetFocusedNode(xui_widget pWidget,
+	uint64_t* pNodeId);
 int xuiInternalAccessibilityEditNode(xui_widget pWidget, xui_accessible_node_t* pNode);
 int xuiInternalAccessibilityEditAction(xui_widget pWidget, int iAction, const void* pData);
 xui_widget xuiInternalInputModalRoot(xui_context pContext);
@@ -1092,6 +1099,8 @@ int xuiInternalColorPickerCommitPendingEdit(xui_widget pWidget);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
+int xuiInternalDrawDisclosureChevron(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_rect_t tRect, int bExpanded, uint32_t iColor);
 int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget);
 void xuiInternalTooltipCancel(xui_context pContext);
 void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget);

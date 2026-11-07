@@ -1618,6 +1618,20 @@ static int __xuiListViewAccessibleCount(xui_widget pWidget, void* pUser)
 	return pData->iItemCount + 1;
 }
 
+static int __xuiListViewAccessibleFocus(xui_widget pWidget,
+	uint64_t* pNodeId, void* pUser)
+{
+	xui_list_view_data_t* pData = (xui_list_view_data_t*)pUser;
+
+	if ( pData == NULL || pNodeId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNodeId = 1;
+	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
+	     pData->iFocus >= 0 && pData->iFocus < pData->iItemCount ) {
+		*pNodeId = (uint64_t)pData->iFocus + 2u;
+	}
+	return XUI_OK;
+}
+
 static int __xuiListViewAccessibleGet(xui_widget pWidget, int iIndex,
 	xui_accessible_node_t* pNode, void* pUser)
 {
@@ -1862,6 +1876,9 @@ static int __xuiListViewInit(xui_widget pWidget, void* pTypeData, const void* pC
 	iRet = xuiWidgetSetAccessibilityProvider(pWidget,
 		__xuiListViewAccessibleCount, __xuiListViewAccessibleGet,
 		__xuiListViewAccessibleAction, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInternalAccessibilitySetFocusResolver(pWidget,
+		__xuiListViewAccessibleFocus);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pDesc != NULL ) {
 		if ( (pDesc->arrSelected != NULL) && (pDesc->iSelectionCount > 0) ) {

@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "xui_internal.h"
 #include "xui_test_proxy.h"
 
 #include <stdio.h>
@@ -533,6 +534,13 @@ int main(void)
 		xuiTableViewGetSelectedCell(pTable, &iRow, &iColumn) == XUI_OK &&
 		iRow == 0 && iColumn == 0 && tData.iSelectCallbackCount == iSelectBefore + 1,
 		"table accessibility selection action");
+	{
+		uint64_t iFocusedNodeId = 0;
+		XUI_TEST_CHECK(xuiSetFocusWidget(pContext, pTable) == XUI_OK &&
+			xuiInternalAccessibilityGetFocusedNode(pTable, &iFocusedNodeId) == XUI_OK &&
+			iFocusedNodeId == 2u,
+			"table resolves focused accessible cell directly");
+	}
 	memset(&tAccessible, 0, sizeof(tAccessible));
 	tAccessible.iSize = sizeof(tAccessible);
 	XUI_TEST_CHECK(xuiWidgetGetAccessibleNode(pTable, 25, &tAccessible) == XUI_OK &&
