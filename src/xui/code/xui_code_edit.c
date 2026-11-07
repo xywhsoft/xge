@@ -8800,7 +8800,8 @@ XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iInde
 	pScope->iActiveIndex = iIndex;
 	(void)xuiCodeFindScopeSetActiveEditor(pScope,pResult->pEditor);
 	if ( pScope->onActivate != NULL ) {
-		pScope->onActivate(pScope, pResult->pEditor, pResult, pScope->pActivateUser);
+		xui_code_find_result_t snapshot=*pResult;
+		pScope->onActivate(pScope, snapshot.pEditor, &snapshot, pScope->pActivateUser);
 	}
 	return XUI_OK;
 }

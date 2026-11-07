@@ -24,7 +24,7 @@ static int editor(xui_context context,xui_widget root,const char* text,xui_widge
     return result;
 }
 static void destroyScope(xui_code_find_scope scope,xui_widget editor,const xui_code_find_result_t* result,void* user)
-{(void)editor;(void)result;*(int*)user=1;xuiCodeFindScopeDestroy(scope);}
+{(void)editor;(void)result;*(int*)user=0;xuiCodeFindScopeDestroy(scope);*(int*)user=result->iEnd>result->iStart;}
 int main(void)
 {
     int failed=0,checks=0,destroyed=0;
