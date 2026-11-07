@@ -291,6 +291,22 @@ static int __xuiDockFindNodeSplitter(xui_widget pDock, int iOrientation, int iNo
 	return 0;
 }
 
+static int __xuiDockFindPanePart(xui_widget pDock, int iPane, int iType, xui_dock_hit_t* pHit)
+{
+	xui_dock_pane_info_t tPane;
+	float x;
+	float y;
+	memset(&tPane, 0, sizeof(tPane));
+	tPane.iSize = sizeof(tPane);
+	if ( xuiDockPanelGetPaneInfo(pDock, iPane, &tPane) != XUI_OK ) return 0;
+	y = tPane.tCaptionRect.fY + tPane.tCaptionRect.fH * 0.5f;
+	for ( x = tPane.tCaptionRect.fX; x < tPane.tCaptionRect.fX + tPane.tCaptionRect.fW; x += 1.0f ) {
+		if ( xuiDockPanelHitTest(pDock, x, y, pHit) == XUI_OK &&
+		     pHit->iPane == iPane && pHit->iType == iType ) return 1;
+	}
+	return 0;
+}
+
 static int __xuiDockNear(float a, float b)
 {
 	float d = a - b;
@@ -524,6 +540,8 @@ int main(void)
 	float fNoDropY;
 	xui_rect_t tDoc1Tab;
 	xui_rect_t tDoc2Tab;
+	xui_rect_t tScrollBackward;
+	xui_rect_t tScrollForward;
 	xui_rect_t tTipRect;
 	xui_rect_t tAssetRect;
 	xui_rect_t tSrcRect;
@@ -1184,6 +1202,37 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout narrow");
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.bOverflow && tPaneInfo.tOverflowRect.fW <= 0.0f && tPaneInfo.tOverflowRect.fH <= 0.0f && tPaneInfo.iVisibleTabCount < tPaneInfo.iWindowCount, "tab overflow uses pane option menu");
+	iRet = xuiDockPanelGetPaneTabScrollRects(pDock, docPane,
+		&tScrollBackward, &tScrollForward);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetTabScrollButtonsVisible(pDock) &&
+		tScrollBackward.fW <= 0.0f && tScrollForward.fW > 0.0f,
+		"dock tabs show only the needed forward scroll button");
+	XUI_TEST_CHECK(xuiDockPanelHitTest(pDock,
+		tScrollForward.fX + tScrollForward.fW * 0.5f,
+		tScrollForward.fY + tScrollForward.fH * 0.5f, &tHit) == XUI_OK &&
+		tHit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_FORWARD,
+		"dock forward scroll button hit");
+	iActiveBefore = xuiDockPanelGetPaneActiveWindow(pDock, docPane);
+	iRet = __xuiDockTestClick(pContext,
+		8.0f + tScrollForward.fX + tScrollForward.fW * 0.5f,
+		8.0f + tScrollForward.fY + tScrollForward.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetPaneTabScrollRects(pDock, docPane,
+		&tScrollBackward, &tScrollForward);
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.iFirstVisibleTab > 0 &&
+		tScrollBackward.fW > 0.0f &&
+		xuiDockPanelGetPaneActiveWindow(pDock, docPane) == iActiveBefore,
+		"dock scroll arrow moves the tab window without selecting");
+	iRet = xuiDockPanelSetTabScrollButtonsVisible(pDock, 0);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetPaneTabScrollRects(pDock, docPane,
+		&tScrollBackward, &tScrollForward);
+	XUI_TEST_CHECK(iRet == XUI_OK && tScrollBackward.fW <= 0.0f &&
+		tScrollForward.fW <= 0.0f, "dock tab scroll buttons are configurable");
+	iRet = xuiDockPanelSetTabScrollButtonsVisible(pDock, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore dock tab scroll buttons");
 	XUI_TEST_CHECK(tPaneInfo.tOptionRect.fW > 0.0f && xuiDockPanelHitTest(pDock, tPaneInfo.tOptionRect.fX + 1.0f, tPaneInfo.tOptionRect.fY + 1.0f, &tHit) == XUI_OK && tHit.iType == XUI_DOCK_PANEL_HIT_PANE_OPTION, "option hit covers overflow menu");
 	iRet = xuiDockPanelOpenOverflowMenu(pDock, docPane);
 	XUI_TEST_CHECK(iRet == XUI_OK, "programmatic overflow menu open");
@@ -1404,6 +1453,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tData.iClientPointerDown == iClientBefore + 1, "auto hide client remains interactive");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	if ( iRet == XUI_OK ) tTipRect = xuiWidgetGetWorldRect(tWinInfo.pCloseButtonWidget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQueryCursor(pContext,
+		(int)(tTipRect.fX + tTipRect.fW * 0.5f),
+		(int)(tTipRect.fY + tTipRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"auto hide close button arrow cursor");
 	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
 		tTipRect.fX + tTipRect.fW * 0.5f, tTipRect.fY + tTipRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide close button click");
@@ -1419,12 +1472,22 @@ int main(void)
 	tHit.tRect = xuiDockPanelGetAutoHideExpandRect(pDock);
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	if ( iRet == XUI_OK ) tTipRect = xuiWidgetGetWorldRect(tWinInfo.pPinButtonWidget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiQueryCursor(pContext,
+		(int)(tTipRect.fX + tTipRect.fW * 0.5f),
+		(int)(tTipRect.fY + tTipRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"auto hide dock button arrow cursor");
 	if ( iRet == XUI_OK ) iRet = __xuiDockTestClick(pContext,
 		tTipRect.fX + tTipRect.fW * 0.5f, tTipRect.fY + tTipRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "auto hide dock button click");
 	iRet = xuiLayout(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED, "auto hide dock button restores docked state");
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockFindPanePart(pDock, tWinInfo.iPane,
+		XUI_DOCK_PANEL_HIT_PANE_PIN, &tHit) &&
+		xuiQueryCursor(pContext,
+			(int)(tDockWorld.fX + tHit.tRect.fX + tHit.tRect.fW * 0.5f),
+			(int)(tDockWorld.fY + tHit.tRect.fY + tHit.tRect.fH * 0.5f)) == XUI_CURSOR_ARROW,
+		"docked pane auto hide button arrow cursor");
 	iRet = xuiDockPanelAutoHideWindow(pDock, props);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelExpandAutoHideWindow(pDock, props);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);

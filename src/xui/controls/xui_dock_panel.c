@@ -2,6 +2,7 @@
 #if XUI_ENABLE_DOCK_PANEL
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
+#include "../core/xui_tab_strip_internal.h"
 
 #include <limits.h>
 #include <math.h>
@@ -87,8 +88,11 @@ typedef struct xui_dock_pane_slot_t {
 	xui_rect_t tPinRect;
 	xui_rect_t tOptionRect;
 	xui_rect_t tOverflowRect;
+	xui_rect_t tScrollBackwardRect;
+	xui_rect_t tScrollForwardRect;
 	int iFirstVisibleTab;
 	int iVisibleTabCount;
+	int iMaxFirstVisibleTab;
 	int bOverflow;
 } xui_dock_pane_slot_t;
 
@@ -190,6 +194,7 @@ struct xui_dock_panel_data_t {
 	int iChangeCount;
 	int iLayoutChangeCount;
 	int iWindowChangeCount;
+	int bTabScrollButtonsVisible;
 };
 
 static xui_dock_panel_data_t* __xuiDockPanelGetData(xui_widget pWidget);
@@ -638,6 +643,7 @@ static void __xuiDockDefaults(xui_dock_panel_data_t* pData)
 	pData->iMenuPane = -1;
 	pData->iPendingFocusWindow = -1;
 	pData->iAutoHideExpandWindow = -1;
+	pData->bTabScrollButtonsVisible = 1;
 	pData->tDragPreview.iSize = sizeof(pData->tDragPreview);
 	pData->tDragPreview.iWindow = -1;
 	pData->tDragPreview.iPane = -1;
@@ -892,19 +898,43 @@ static int __xuiDockDrawCloseGlyph(xui_proxy pProxy, xui_draw_context pDraw, xui
 	return __xuiDockDrawLine(pProxy, pDraw, x1, y0, x0, y1, 1.3f, c);
 }
 
-static int __xuiDockDrawPinGlyph(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t c, int bAutoHide)
+static int __xuiDockDrawPinGlyph(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t c, int bHorizontal)
 {
 	float cx = r.fX + r.fW * 0.5f;
 	float cy = r.fY + r.fH * 0.5f;
+	float scale = __xuiDockClamp(__xuiDockMin(r.fW, r.fH) / 12.0f, 0.75f, 1.25f);
+	float halfHead = 2.75f * scale;
+	float headDepth = 5.5f * scale;
+	float arm = 4.0f * scale;
+	float stem = 4.5f * scale;
+	float stroke = 1.25f * scale;
+	float joint;
+	xui_rect_t head;
 	int ret;
-	ret = __xuiDockDrawLine(pProxy, pDraw, cx, r.fY + 4.0f, cx, r.fY + r.fH - 4.0f, 1.2f, c);
-	if ( ret != XUI_OK ) return ret;
-	ret = __xuiDockDrawLine(pProxy, pDraw, cx - 4.0f, r.fY + 6.0f, cx + 4.0f, r.fY + 6.0f, 1.2f, c);
-	if ( ret != XUI_OK ) return ret;
-	if ( bAutoHide ) {
-		ret = __xuiDockDrawLine(pProxy, pDraw, cx - 3.0f, cy + 4.0f, cx + 3.0f, cy + 4.0f, 1.2f, c);
+
+	if ( !__xuiDockRectRenderable(r) || (__xuiDockAlpha(c) == 0) ) return XUI_OK;
+	if ( bHorizontal ) {
+		joint = cx - 0.75f * scale;
+		head = __xuiDockRect(joint, cy - halfHead,
+			headDepth, halfHead * 2.0f);
+		ret = __xuiDockDrawStroke(pProxy, pDraw, head, stroke, c);
+		if ( ret != XUI_OK ) return ret;
+		ret = __xuiDockDrawLine(pProxy, pDraw, joint, cy - arm,
+			joint, cy + arm, stroke, c);
+		if ( ret != XUI_OK ) return ret;
+		return __xuiDockDrawLine(pProxy, pDraw, cx - stem, cy,
+			joint, cy, stroke, c);
 	}
-	return ret;
+	joint = cy + 0.75f * scale;
+	head = __xuiDockRect(cx - halfHead, joint - headDepth,
+		halfHead * 2.0f, headDepth);
+	ret = __xuiDockDrawStroke(pProxy, pDraw, head, stroke, c);
+	if ( ret != XUI_OK ) return ret;
+	ret = __xuiDockDrawLine(pProxy, pDraw, cx - arm, joint,
+		cx + arm, joint, stroke, c);
+	if ( ret != XUI_OK ) return ret;
+	return __xuiDockDrawLine(pProxy, pDraw, cx, joint,
+		cx, cy + stem, stroke, c);
 }
 
 static int __xuiDockDrawOptionGlyph(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t c)
@@ -955,6 +985,36 @@ static int __xuiDockDrawPaneButton(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, r,
 		__xuiDockStyleColor(pData, bEnabled ? "dockpanel.button.icon_color" : "dockpanel.button.disabled_color",
 		bEnabled ? __xuiDockColors(pData)->iButtonColor : XUI_COLOR_RGBA(120, 138, 153, 160)));
+}
+
+static int __xuiDockDrawTabScrollButton(xui_proxy pProxy, xui_draw_context pDraw,
+	xui_dock_panel_data_t* pData, xui_rect_t r, int iDirection, int bHot)
+{
+	float cx;
+	float cy;
+	float size;
+	float sign;
+	uint32_t color;
+	int ret;
+
+	if ( !__xuiDockRectRenderable(r) || pData == NULL ) return XUI_OK;
+	if ( bHot ) {
+		ret = __xuiDockDrawFill(pProxy, pDraw, r, __xuiDockColors(pData)->iTabHoverColor);
+		if ( ret != XUI_OK ) return ret;
+	}
+	cx = r.fX + r.fW * 0.5f;
+	cy = r.fY + r.fH * 0.5f;
+	size = __xuiDockClamp(__xuiDockMin(r.fW, r.fH) * 0.18f, 3.0f, 4.5f);
+	sign = iDirection < 0 ? -1.0f : 1.0f;
+	color = __xuiDockStyleColor(pData, "dockpanel.button.icon_color",
+		__xuiDockColors(pData)->iButtonColor);
+	ret = __xuiDockDrawLine(pProxy, pDraw,
+		cx - sign * size * 0.45f, cy - size,
+		cx + sign * size * 0.55f, cy, 1.0f, color);
+	if ( ret == XUI_OK ) ret = __xuiDockDrawLine(pProxy, pDraw,
+		cx + sign * size * 0.55f, cy,
+		cx - sign * size * 0.45f, cy + size, 1.0f, color);
+	return ret;
 }
 
 static int __xuiDockDrawTabCloseButton(xui_proxy pProxy, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_rect_t r, uint32_t iColor, int bHot)
@@ -1625,9 +1685,21 @@ static int __xuiDockPaneUsesTabs(const xui_dock_pane_slot_t* pPane)
 static int __xuiDockPaneSetActiveIndex(xui_widget pWidget, xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, int iIndex)
 {
 	int oldWindow;
+	int oldFirst;
 	if ( (pPane == NULL) || (iIndex < 0) || (iIndex >= pPane->iWindowCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	oldFirst = pPane->iFirstVisibleTab;
+	if ( pPane->iVisibleTabCount > 0 ) {
+		if ( iIndex < pPane->iFirstVisibleTab ) {
+			pPane->iFirstVisibleTab = iIndex;
+		} else if ( iIndex >= pPane->iFirstVisibleTab + pPane->iVisibleTabCount ) {
+			pPane->iFirstVisibleTab = iIndex - pPane->iVisibleTabCount + 1;
+		}
+	}
 	oldWindow = __xuiDockPaneActiveWindow(pPane);
-	if ( pPane->iActiveIndex == iIndex ) return XUI_OK;
+	if ( pPane->iActiveIndex == iIndex ) {
+		if ( oldFirst != pPane->iFirstVisibleTab ) __xuiDockInvalidate(pWidget, 1);
+		return XUI_OK;
+	}
 	pPane->iActiveIndex = iIndex;
 	__xuiDockModelChanged(pData);
 	pData->iChangeCount++;
@@ -3236,24 +3308,25 @@ static void __xuiDockLayoutPane(xui_dock_panel_data_t* pData, int iPane, xui_rec
 
 static void __xuiDockLayoutTabs(xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane)
 {
+	xui_internal_tab_strip_window_t window;
 	xui_rect_t strip;
 	xui_dock_panel_metrics_t* m;
-	float tabW;
+	float widths[XUI_DOCK_PANEL_PANE_WINDOW_CAPACITY];
 	float available;
+	float button;
+	float gap;
 	float x;
 	float right;
-	float natural;
-	int first;
-	int visible;
-	int active;
 	int i;
 	int w;
 	if ( pPane == NULL ) return;
 	m = &pData->tMetrics;
 	strip = pPane->tTabStripRect;
 	pPane->tOverflowRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
-	pPane->iFirstVisibleTab = 0;
+	pPane->tScrollBackwardRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
+	pPane->tScrollForwardRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 	pPane->iVisibleTabCount = 0;
+	pPane->iMaxFirstVisibleTab = 0;
 	pPane->bOverflow = 0;
 	for ( i = 0; i < pPane->iWindowCount; i++ ) {
 		w = pPane->arrWindows[i];
@@ -3269,43 +3342,35 @@ static void __xuiDockLayoutTabs(xui_dock_panel_data_t* pData, xui_dock_pane_slot
 	if ( pPane->tOptionRect.fW > 0.0f && pPane->tOptionRect.fX < right ) right = pPane->tOptionRect.fX - 3.0f;
 	x = strip.fX + 3.0f;
 	available = __xuiDockMax(0.0f, right - x);
-	natural = 0.0f;
 	for ( i = 0; i < pPane->iWindowCount; i++ ) {
 		xui_dock_window_slot_t* win = __xuiDockWindowAt(pData, pPane->arrWindows[i]);
 		float closeW = (win != NULL && win->bClosable) ? (m->fButtonSize + 6.0f) : 0.0f;
 		float nw = (win != NULL) ? (__xuiDockStringWidthGuess(win->sTitle) + m->fTabPaddingX * 2.0f + closeW + 8.0f) : m->fTabMinWidth;
-		nw = __xuiDockClamp(nw, m->fTabMinWidth, m->fTabMaxWidth);
-		natural += nw;
-		if ( i > 0 ) natural -= 1.0f;
+		widths[i] = __xuiDockClamp(nw, m->fTabMinWidth, m->fTabMaxWidth);
 	}
-	if ( natural > available ) {
-		pPane->bOverflow = 1;
+	button = __xuiDockMin(m->fButtonSize, __xuiDockMax(0.0f, strip.fH - 4.0f));
+	gap = 2.0f;
+	window = xuiInternalTabStripResolve(widths, pPane->iWindowCount,
+		pPane->iFirstVisibleTab, available, 1.0f,
+		pData->bTabScrollButtonsVisible && button > 0.5f, button, gap);
+	pPane->bOverflow = window.bOverflow;
+	pPane->iFirstVisibleTab = window.iFirst;
+	pPane->iVisibleTabCount = window.iVisibleCount;
+	pPane->iMaxFirstVisibleTab = window.iMaxFirst;
+	if ( window.bShowBackward ) {
+		pPane->tScrollBackwardRect = __xuiDockRect(x,
+			strip.fY + (strip.fH - button) * 0.5f, button, button);
+		x += button + gap;
 	}
-	visible = pPane->iWindowCount;
-	first = 0;
-	active = pPane->iActiveIndex;
-	if ( active < 0 || active >= pPane->iWindowCount ) active = 0;
-	if ( pPane->bOverflow ) {
-		visible = (m->fTabMinWidth > 0.0f) ? (int)(available / m->fTabMinWidth) : pPane->iWindowCount;
-		if ( visible < 1 ) visible = 1;
-		if ( visible > pPane->iWindowCount ) visible = pPane->iWindowCount;
-		if ( active >= visible ) first = active - visible + 1;
-		if ( first > pPane->iWindowCount - visible ) first = pPane->iWindowCount - visible;
-		if ( first < 0 ) first = 0;
+	if ( window.bShowForward ) {
+		pPane->tScrollForwardRect = __xuiDockRect(right - button,
+			strip.fY + (strip.fH - button) * 0.5f, button, button);
+		right -= button + gap;
 	}
-	pPane->iFirstVisibleTab = first;
-	pPane->iVisibleTabCount = visible;
-	for ( i = 0; i < visible; i++ ) {
-		w = pPane->arrWindows[first + i];
-		if ( pPane->bOverflow ) {
-			tabW = __xuiDockClamp(available / (float)visible + 1.0f, 8.0f, m->fTabMaxWidth);
-		} else if ( (w >= 0) && (w < XUI_DOCK_PANEL_WINDOW_CAPACITY) && pData->arrWindows[w].bUsed ) {
-			float closeW = pData->arrWindows[w].bClosable ? (m->fButtonSize + 6.0f) : 0.0f;
-			tabW = __xuiDockStringWidthGuess(pData->arrWindows[w].sTitle) + m->fTabPaddingX * 2.0f + closeW + 8.0f;
-			tabW = __xuiDockClamp(tabW, m->fTabMinWidth, m->fTabMaxWidth);
-		} else {
-			tabW = m->fTabMinWidth;
-		}
+	for ( i = 0; i < window.iVisibleCount; i++ ) {
+		float tabW;
+		w = pPane->arrWindows[window.iFirst + i];
+		tabW = widths[window.iFirst + i];
 		if ( (w >= 0) && (w < XUI_DOCK_PANEL_WINDOW_CAPACITY) && pData->arrWindows[w].bUsed ) {
 			xui_dock_window_slot_t* pWin = &pData->arrWindows[w];
 			xui_rect_t tab = __xuiDockRect(x, strip.fY + 2.0f, __xuiDockMin(tabW, __xuiDockMax(0.0f, right - x)), __xuiDockMax(0.0f, strip.fH - 2.0f));
@@ -4164,6 +4229,28 @@ static int __xuiDockHitLocal(xui_dock_panel_data_t* pData, float x, float y, xui
 			}
 			return 1;
 		}
+		if ( __xuiDockRectContains(p->tScrollBackwardRect, x, y) &&
+		     p->tScrollBackwardRect.fW > 0.0f ) {
+			if ( hit != NULL ) {
+				hit->iType = XUI_DOCK_PANEL_HIT_PANE_SCROLL_BACKWARD;
+				hit->iPane = i;
+				hit->iWindow = __xuiDockPaneActiveWindow(p);
+				hit->iRegion = p->iRegion;
+				hit->tRect = p->tScrollBackwardRect;
+			}
+			return 1;
+		}
+		if ( __xuiDockRectContains(p->tScrollForwardRect, x, y) &&
+		     p->tScrollForwardRect.fW > 0.0f ) {
+			if ( hit != NULL ) {
+				hit->iType = XUI_DOCK_PANEL_HIT_PANE_SCROLL_FORWARD;
+				hit->iPane = i;
+				hit->iWindow = __xuiDockPaneActiveWindow(p);
+				hit->iRegion = p->iRegion;
+				hit->tRect = p->tScrollForwardRect;
+			}
+			return 1;
+		}
 		for ( j = 0; j < p->iWindowCount; j++ ) {
 			int widx = p->arrWindows[j];
 			xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, widx);
@@ -4680,6 +4767,22 @@ static xui_dock_pane_slot_t* __xuiDockPaneForTarget(xui_dock_panel_data_t* pData
 	return NULL;
 }
 
+static int __xuiDockScrollPaneTabs(xui_widget pWidget,
+	xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, int iDirection)
+{
+	int iFirst;
+
+	if ( pWidget == NULL || pData == NULL || pPane == NULL ||
+	     !pPane->bOverflow || iDirection == 0 ) return XUI_OK;
+	iFirst = pPane->iFirstVisibleTab + (iDirection < 0 ? -1 : 1);
+	if ( iFirst < 0 ) iFirst = 0;
+	if ( iFirst > pPane->iMaxFirstVisibleTab ) iFirst = pPane->iMaxFirstVisibleTab;
+	if ( iFirst == pPane->iFirstVisibleTab ) return XUI_OK;
+	pPane->iFirstVisibleTab = iFirst;
+	__xuiDockInvalidate(pWidget, 1);
+	return XUI_OK;
+}
+
 static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_dock_panel_data_t* pData;
@@ -4719,6 +4822,19 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	left = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	middle = (pEvent->iButton == XUI_POINTER_BUTTON_MIDDLE);
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_POINTER_WHEEL:
+		if ( __xuiDockHitLocal(pData, lx, ly, &hit) && hit.iPane >= 0 ) {
+			xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, hit.iPane);
+			float fDelta = pEvent->fWheelX != 0.0f ? pEvent->fWheelX : -pEvent->fWheelY;
+			if ( pPane != NULL && pPane->bOverflow && fDelta != 0.0f &&
+			     __xuiDockRectContains(pPane->tTabStripRect, lx, ly) ) {
+				int iOldFirst = pPane->iFirstVisibleTab;
+				(void)__xuiDockScrollPaneTabs(pWidget, pData, pPane,
+					fDelta > 0.0f ? 1 : -1);
+				if ( iOldFirst != pPane->iFirstVisibleTab ) return XUI_EVENT_DISPATCH_STOP;
+			}
+		}
+		return XUI_OK;
 	case XUI_EVENT_CONTEXT_MENU:
 	{
 		xui_rect_t tAnchor = world;
@@ -4822,6 +4938,11 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 				(void)__xuiDockOpenPaneMenu(pWidget, pData, hit.iPane);
 			} else if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_OVERFLOW ) {
 				(void)__xuiDockOpenOverflowMenu(pWidget, pData, hit.iPane);
+			} else if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_BACKWARD ||
+			            hit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_FORWARD ) {
+				(void)__xuiDockScrollPaneTabs(pWidget, pData,
+					__xuiDockPaneAt(pData, hit.iPane),
+					hit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_BACKWARD ? -1 : 1);
 			} else if ( hit.iType == XUI_DOCK_PANEL_HIT_AUTO_HIDE ) {
 				(void)xuiDockPanelExpandAutoHideWindow(pWidget, hit.iWindow);
 				{
@@ -4932,9 +5053,25 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			}
 			{
 				xui_dock_pane_slot_t* pSourcePane = __xuiDockPaneAt(pData, pData->iDragPane);
-				int insert = ((pEvent->iModifiers & XUI_MOD_CTRL) == 0u) ?
-					__xuiDockPaneTabInsertIndex(pData, pSourcePane, lx, ly) : -1;
+				int insert = -1;
 				if ( pSourcePane != NULL && __xuiDockRectContains(pSourcePane->tTabStripRect, lx, ly) ) {
+					float fZone = __xuiDockMax(18.0f, pData->tMetrics.fButtonSize + 4.0f);
+					float fRight = pSourcePane->tOptionRect.fW > 0.0f ?
+						pSourcePane->tOptionRect.fX :
+						pSourcePane->tTabStripRect.fX + pSourcePane->tTabStripRect.fW;
+					int iOldFirst = pSourcePane->iFirstVisibleTab;
+					if ( lx <= pSourcePane->tTabStripRect.fX + fZone ) {
+						(void)__xuiDockScrollPaneTabs(pWidget, pData, pSourcePane, -1);
+					} else if ( lx >= fRight - fZone ) {
+						(void)__xuiDockScrollPaneTabs(pWidget, pData, pSourcePane, 1);
+					}
+					if ( iOldFirst != pSourcePane->iFirstVisibleTab ) {
+						pData->bDragFloating = 0;
+						pData->iDragInsertIndex = -1;
+						return XUI_EVENT_DISPATCH_STOP;
+					}
+					insert = ((pEvent->iModifiers & XUI_MOD_CTRL) == 0u) ?
+						__xuiDockPaneTabInsertIndex(pData, pSourcePane, lx, ly) : -1;
 					if ( insert == pData->iDragSourceIndex || insert == pData->iDragSourceIndex + 1 ) insert = -1;
 					pData->bDragFloating = 0;
 					ret = __xuiDockSetTabInsertPreview(pWidget, pData, pSourcePane, w->iWindow, insert);
@@ -5202,6 +5339,15 @@ static int __xuiDockHostQueryCursor(xui_widget pHost, int iX, int iY, void* pUse
 		if ( w->bMovable && ly >= 0.0f && ly < pData->tMetrics.fCaptionHeight ) return XUI_CURSOR_MOVE;
 	}
 	return XUI_CURSOR_INHERIT;
+}
+
+static int __xuiDockHostButtonQueryCursor(xui_widget pButton, int iX, int iY, void* pUser)
+{
+	(void)pButton;
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return XUI_CURSOR_ARROW;
 }
 
 static xui_rect_t __xuiDockResizeFloatRect(xui_widget pPanel, xui_dock_window_slot_t* pWin,
@@ -6053,6 +6199,16 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		ret = __xuiDockDrawPaneButton(pWidget, pProxy, pDraw, pData, pPane->tOverflowRect, "dock_pane_option_overflow", pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_OVERFLOW && pData->iHoverPane == pPane->iPane, 1);
 		if ( ret != XUI_OK ) return ret;
 	}
+	ret = __xuiDockDrawTabScrollButton(pProxy, pDraw, pData,
+		pPane->tScrollBackwardRect, -1,
+		pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_BACKWARD &&
+		pData->iHoverPane == pPane->iPane);
+	if ( ret != XUI_OK ) return ret;
+	ret = __xuiDockDrawTabScrollButton(pProxy, pDraw, pData,
+		pPane->tScrollForwardRect, 1,
+		pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_FORWARD &&
+		pData->iHoverPane == pPane->iPane);
+	if ( ret != XUI_OK ) return ret;
 	ret = __xuiDockDrawPaneButton(pWidget, pProxy, pDraw, pData, pPane->tCloseRect, "dock_pane_close", pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_CLOSE && pData->iHoverPane == pPane->iPane, 1);
 	if ( ret != XUI_OK ) return ret;
 	ret = __xuiDockDrawPaneButton(pWidget, pProxy, pDraw, pData, pPane->tPinRect, "dock_pane_auto_hide", pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_PIN && pData->iHoverPane == pPane->iPane, __xuiDockPaneCanAutoHide(pData, pPane));
@@ -6306,6 +6462,7 @@ static int __xuiDockPanelInitEvents(xui_widget pWidget)
 	int ret;
 	ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiDockPanelEvent, NULL);
+	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiDockPanelEvent, NULL);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiDockPanelEvent, NULL);
@@ -6521,6 +6678,17 @@ static int __xuiDockPanelQueryCursor(xui_widget pWidget, int iX, int iY, void* p
 	} else {
 		tWorld = xuiWidgetGetWorldRect(pWidget);
 		if ( __xuiDockHitLocal(pData, (float)iX - tWorld.fX, (float)iY - tWorld.fY, &tHit) ) {
+			if ( tHit.iType == XUI_DOCK_PANEL_HIT_PANE_CLOSE ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_PIN ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_OPTION ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_OVERFLOW ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_BACKWARD ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_SCROLL_FORWARD ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN ||
+			     tHit.iType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE ) {
+				return XUI_CURSOR_ARROW;
+			}
 			if ( tHit.iType == XUI_DOCK_PANEL_HIT_AUTO_HIDE || tHit.iType == XUI_DOCK_PANEL_HIT_AUTO_HIDE_PANEL ) {
 				return XUI_CURSOR_MOVE;
 			}
@@ -6621,6 +6789,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	int iChangeCount;
 	int iLayoutChangeCount;
 	int iWindowChangeCount;
+	int bTabScrollButtonsVisible;
 	int i;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
     xui_font_slot_update_t fontUpdate={0};
@@ -6661,6 +6830,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	iChangeCount = pData->iChangeCount;
 	iLayoutChangeCount = pData->iLayoutChangeCount;
 	iWindowChangeCount = pData->iWindowChangeCount;
+	bTabScrollButtonsVisible = pData->bTabScrollButtonsVisible;
 	memcpy(arrMenuTitle, pData->arrMenuTitle, sizeof(arrMenuTitle));
 	memcpy(arrTooltipText, pData->arrTooltipText, sizeof(arrTooltipText));
 	(void)xuiMenuClose(pOptionMenu);
@@ -6707,6 +6877,7 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	pData->iChangeCount = iChangeCount + 1;
 	pData->iLayoutChangeCount = iLayoutChangeCount + 1;
 	pData->iWindowChangeCount = iWindowChangeCount + 1;
+	pData->bTabScrollButtonsVisible = bTabScrollButtonsVisible;
 	memcpy(pData->arrMenuTitle, arrMenuTitle, sizeof(pData->arrMenuTitle));
 	memcpy(pData->arrTooltipText, arrTooltipText, sizeof(pData->arrTooltipText));
 	(void)__xuiDockSetDragPreview(pWidget, pData, NULL);
@@ -6828,6 +6999,8 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	if ( ret == XUI_OK ) ret = xuiWidgetSetEventHandler(pinButton, XUI_EVENT_VISIBLE_CHANGED, __xuiDockHostButtonEvent, w);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetTooltipResolver(closeButton, __xuiDockHostButtonTooltipResolve, w);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetTooltipResolver(pinButton, __xuiDockHostButtonTooltipResolve, w);
+	if ( ret == XUI_OK ) ret = xuiWidgetSetCursorQueryCallback(closeButton, __xuiDockHostButtonQueryCursor, w);
+	if ( ret == XUI_OK ) ret = xuiWidgetSetCursorQueryCallback(pinButton, __xuiDockHostButtonQueryCursor, w);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetVisible(host, 0);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetVisible(closeButton, 0);
 	if ( ret == XUI_OK ) ret = xuiWidgetSetVisible(pinButton, 0);
@@ -7432,6 +7605,34 @@ XUI_API int xuiDockPanelGetPaneInfo(xui_widget pWidget, int iPane, xui_dock_pane
 	pInfo->tClientRect = pPane->tClientRect;
 	pInfo->tOptionRect = pPane->tOptionRect;
 	pInfo->tOverflowRect = pPane->tOverflowRect;
+	return XUI_OK;
+}
+
+XUI_API int xuiDockPanelSetTabScrollButtonsVisible(xui_widget pWidget, int bVisible)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bVisible = bVisible ? 1 : 0;
+	if ( pData->bTabScrollButtonsVisible == bVisible ) return XUI_OK;
+	pData->bTabScrollButtonsVisible = bVisible;
+	__xuiDockInvalidate(pWidget, 1);
+	return XUI_OK;
+}
+
+XUI_API int xuiDockPanelGetTabScrollButtonsVisible(xui_widget pWidget)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	return pData != NULL ? pData->bTabScrollButtonsVisible : 0;
+}
+
+XUI_API int xuiDockPanelGetPaneTabScrollRects(xui_widget pWidget, int iPane,
+	xui_rect_t* pBackward, xui_rect_t* pForward)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, iPane);
+	if ( pPane == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackward != NULL ) *pBackward = pPane->tScrollBackwardRect;
+	if ( pForward != NULL ) *pForward = pPane->tScrollForwardRect;
 	return XUI_OK;
 }
 

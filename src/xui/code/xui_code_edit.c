@@ -5,6 +5,7 @@
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_code_provider_internal.h"
+#include "xui_code_bracket_internal.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -134,6 +135,8 @@ typedef struct xui_code_edit_data_t {
 	int iEolMode;
 	int iFlags;
 	uint32_t iDisplayOptions;
+	int bBracketMatching;
+	xui_internal_code_bracket_state_t tBracketMatch;
 	xui_pointer_owner_t tPointerOwner;
 	int bDragging;
 	int iDragAnchor;
@@ -238,6 +241,7 @@ static int __xuiCodeEditAlive(xui_context pContext, xui_widget pWidget,
 #define XUI_CODE_EDIT_MAX_LINE_SAMPLE_LINES 2048
 #define XUI_CODE_EDIT_MAX_LINE_SAMPLE_BYTES 4096
 #define XUI_CODE_EDIT_TOKEN_WINDOW_BYTES 262144
+#define XUI_CODE_EDIT_BRACKET_SCAN_BYTES 65536
 #define XUI_CODE_EDIT_LINE_LAYOUT_CACHE_CAPACITY 96
 #define XUI_CODE_EDIT_ASSIST_NONE 0
 #define XUI_CODE_EDIT_ASSIST_SIGNATURE 1
@@ -2374,6 +2378,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	int i;
 
 	if ( pData == NULL ) return;
+	xuiInternalCodeBracketDestroy(&pData->tBracketMatch);
 	if ( pData->pDocument != NULL ) {
 		(void)xuiInternalCodeDocumentSetEditObserver(pData->pDocument, NULL, NULL);
 	}
@@ -5186,6 +5191,8 @@ static int __xuiCodeEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iDisplayOptions = (uint32_t)pData->iFlags &
 		(XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL |
 		 XUI_CODE_EDIT_SHOW_INDENT_GUIDES | XUI_CODE_EDIT_SHOW_MINIMAP);
+	pData->bBracketMatching =
+		(pData->iFlags & XUI_CODE_EDIT_DISABLE_BRACKET_MATCH) == 0;
 	pData->fMinimapWidth = 96.0f;
 	pData->iHoveredDiagnostic = -1;
 	pData->iCompletionSelected = -1;
@@ -5671,6 +5678,57 @@ static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData,
 	return iRet;
 }
 
+static int __xuiCodeEditSyncBracketMatch(xui_code_edit_data_t* pData,
+	int* pChanged)
+{
+	xui_code_language_t tLanguage;
+	xui_code_selection_t tSelection;
+	const xui_code_language_t* pLanguage;
+	int iOldStatus;
+	int iOldSource;
+	int iOldMatch;
+	int iRet;
+	int bChanged;
+
+	if ( pChanged != NULL ) *pChanged = 0;
+	if ( pData == NULL || pData->pDocument == NULL ||
+	     pData->pSelection == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldStatus = pData->tBracketMatch.iStatus;
+	iOldSource = pData->tBracketMatch.iSourceOffset;
+	iOldMatch = pData->tBracketMatch.iMatchOffset;
+	if ( !pData->bBracketMatching || pData->bImeComposing ||
+	     xuiCodeSelectionGetCount(pData->pSelection) != 1 ||
+	     xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ||
+	     tSelection.iAnchorOffset != tSelection.iCaretOffset ) {
+		xuiInternalCodeBracketReset(&pData->tBracketMatch);
+		if ( pChanged != NULL ) {
+			*pChanged = iOldStatus != XUI_CODE_BRACKET_NONE ||
+				iOldSource >= 0 || iOldMatch >= 0;
+		}
+		return XUI_OK;
+	}
+	pLanguage = NULL;
+	memset(&tLanguage, 0, sizeof(tLanguage));
+	if ( pData->sLanguage != NULL && pData->sLanguage[0] != '\0' &&
+	     xuiCodeLanguageRegistryFind(pData->pLanguages, pData->sLanguage,
+		 &tLanguage) == XUI_OK ) {
+		pLanguage = &tLanguage;
+	}
+	bChanged = 0;
+	iRet = xuiInternalCodeBracketUpdate(&pData->tBracketMatch,
+		pData->pDocument, pLanguage, tSelection.iCaretOffset,
+		XUI_CODE_EDIT_BRACKET_SCAN_BYTES, &bChanged);
+	if ( iRet != XUI_OK ) {
+		xuiInternalCodeBracketReset(&pData->tBracketMatch);
+		bChanged = iOldStatus != XUI_CODE_BRACKET_NONE ||
+			iOldSource >= 0 || iOldMatch >= 0;
+		/* Bracket decoration is optional and must not make the editor fail. */
+		iRet = XUI_OK;
+	}
+	if ( pChanged != NULL ) *pChanged = bChanged;
+	return iRet;
+}
+
 static int __xuiCodeEditGetTokenStyle(xui_code_theme pTheme,
 	xui_code_token_t tToken, xui_code_style_t* pStyle)
 {
@@ -5968,6 +6026,80 @@ static int __xuiCodeEditRenderFindRange(xui_proxy pProxy, xui_draw_context pDraw
 	if ( tRect.fX + tRect.fW > tContent.fX + tContent.fW ) tRect.fW = tContent.fX + tContent.fW - tRect.fX;
 	if ( tRect.fW <= 0.0f ) return XUI_OK;
 	return __xuiCodeEditDrawRectFill(pProxy, pDraw, tRect, iColor);
+}
+
+static int __xuiCodeEditRenderBracketOffset(xui_proxy pProxy,
+	xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData,
+	const char* sText, xui_rect_t tContent, int iLineStart,
+	int iPaintStart, int iPaintEnd, float fTextX, float fY,
+	float fColumnWidth, float fLineHeight, int iOffset,
+	uint32_t iFillColor, uint32_t iBorderColor, int bFill, int bBorder)
+{
+	xui_rect_t tRect;
+	float fStartX;
+	float fEndX;
+	int iRet;
+
+	if ( pData == NULL || sText == NULL || iOffset < iPaintStart ||
+	     iOffset >= iPaintEnd || iOffset < iLineStart ) return XUI_OK;
+	fStartX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
+		iOffset - iLineStart, fColumnWidth);
+	fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
+		iOffset + 1 - iLineStart, fColumnWidth);
+	tRect = (xui_rect_t){
+		fTextX + 4.0f + fStartX - pData->fScrollX,
+		fY,
+		fEndX - fStartX,
+		fLineHeight
+	};
+	if ( tRect.fW <= 0.0f || tRect.fX + tRect.fW <= tContent.fX ||
+	     tRect.fX >= tContent.fX + tContent.fW ) return XUI_OK;
+	if ( bFill ) {
+		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tRect, iFillColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( bBorder && __xuiCodeEditAlpha(iBorderColor) != 0 &&
+	     pProxy != NULL && pProxy->drawRectStroke != NULL ) {
+		return pProxy->drawRectStroke(pProxy, pDraw,
+			xuiInternalSnapRect(tRect), xuiInternalSnapSize(1.0f),
+			iBorderColor);
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditRenderBracketMatch(xui_proxy pProxy,
+	xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData,
+	const char* sText, xui_rect_t tContent, int iLineStart,
+	int iPaintStart, int iPaintEnd, float fTextX, float fY,
+	float fColumnWidth, float fLineHeight, uint32_t iFillColor,
+	uint32_t iMatchBorderColor, uint32_t iUnmatchedBorderColor,
+	int bFill, int bBorder)
+{
+	uint32_t iBorderColor;
+	int iRet;
+
+	if ( pData == NULL ) return XUI_OK;
+	if ( pData->tBracketMatch.iStatus != XUI_CODE_BRACKET_MATCHED &&
+	     pData->tBracketMatch.iStatus != XUI_CODE_BRACKET_UNMATCHED ) {
+		return XUI_OK;
+	}
+	iBorderColor = (pData->tBracketMatch.iStatus == XUI_CODE_BRACKET_MATCHED) ?
+		iMatchBorderColor : iUnmatchedBorderColor;
+	iRet = __xuiCodeEditRenderBracketOffset(pProxy, pDraw, pFont, pData,
+		sText, tContent, iLineStart, iPaintStart, iPaintEnd, fTextX, fY,
+		fColumnWidth, fLineHeight, pData->tBracketMatch.iSourceOffset,
+		iFillColor, iBorderColor,
+		bFill && pData->tBracketMatch.iStatus == XUI_CODE_BRACKET_MATCHED,
+		bBorder);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->tBracketMatch.iStatus == XUI_CODE_BRACKET_MATCHED ) {
+		iRet = __xuiCodeEditRenderBracketOffset(pProxy, pDraw, pFont,
+			pData, sText, tContent, iLineStart, iPaintStart, iPaintEnd,
+			fTextX, fY, fColumnWidth, fLineHeight,
+			pData->tBracketMatch.iMatchOffset, iFillColor,
+			iMatchBorderColor, bFill, bBorder);
+	}
+	return iRet;
 }
 
 static int __xuiCodeEditRenderFindResults(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData, xui_rect_t tContent, int iLineStart, int iLineEnd, float fTextX, float fY, float fColumnWidth, float fLineHeight, uint32_t iResultColor, uint32_t iActiveColor)
@@ -6340,6 +6472,9 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 	uint32_t iSelectionColor;
 	uint32_t iFindResultColor;
 	uint32_t iFindActiveColor;
+	uint32_t iBracketBackgroundColor;
+	uint32_t iBracketBorderColor;
+	uint32_t iBracketUnmatchedBorderColor;
 	uint32_t iCaretColor;
 	uint32_t iImeColor;
 	uint32_t iImeErrorColor;
@@ -6390,6 +6525,7 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 	pProxy = xuiInternalContextGetProxy(pContext);
 	if ( pProxy == NULL ) return XUI_OK;
 	__xuiCodeEditSyncAssistColors(pWidget, pData);
+	(void)__xuiCodeEditSyncBracketMatch(pData, NULL);
 	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	tRect = xuiWidgetGetContentRect(pWidget);
@@ -6412,6 +6548,12 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 	iSelectionColor = __xuiCodeEditColor(pWidget, "codeedit.selection.color", XUI_COLOR_RGBA(74, 144, 239, 255));
 	iFindResultColor = __xuiCodeEditColor(pWidget, "codeedit.find.result_color", XUI_COLOR_RGBA(255, 235, 128, 150));
 	iFindActiveColor = __xuiCodeEditColor(pWidget, "codeedit.find.active_color", XUI_COLOR_RGBA(255, 183, 77, 190));
+	iBracketBackgroundColor = __xuiCodeEditColor(pWidget,
+		"codeedit.bracket_match.background_color", XUI_COLOR_RGBA(74, 144, 239, 48));
+	iBracketBorderColor = __xuiCodeEditColor(pWidget,
+		"codeedit.bracket_match.border_color", XUI_COLOR_RGBA(74, 144, 239, 220));
+	iBracketUnmatchedBorderColor = __xuiCodeEditColor(pWidget,
+		"codeedit.bracket_unmatched.border_color", XUI_COLOR_RGBA(220, 38, 38, 255));
 	iCaretColor = __xuiCodeEditColor(pWidget, "codeedit.caret.color", XUI_COLOR_RGBA(15, 23, 42, 255));
 	iImeColor = __xuiCodeEditColor(pWidget, "codeedit.ime.color", XUI_COLOR_RGBA(37, 99, 235, 255));
 	iImeErrorColor = __xuiCodeEditColor(pWidget, "codeedit.ime.error_color", XUI_COLOR_RGBA(220, 38, 38, 255));
@@ -6526,6 +6668,13 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tTextContent.fX, fY, tTextContent.fW, fLineHeight}, iCurrentLineColor);
 			}
 			if ( iRet == XUI_OK ) {
+				iRet = __xuiCodeEditRenderBracketMatch(pProxy, pDraw, pFont,
+					pData, sText, tTextContent, iStart, iPaintStart,
+					iPaintEnd, fTextBaseX, fY, fColumnWidth, fLineHeight,
+					iBracketBackgroundColor, iBracketBorderColor,
+					iBracketUnmatchedBorderColor, 1, 0);
+			}
+			if ( iRet == XUI_OK ) {
 				iRet = __xuiCodeEditRenderFindResults(pProxy, pDraw, pFont, pData,
 					tTextContent, iPaintStart, iPaintEnd, 0.0f, fY,
 					fColumnWidth, fLineHeight, iFindResultColor, iFindActiveColor);
@@ -6550,6 +6699,13 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 				iRet = __xuiCodeEditRenderDiagnostics(pWidget, pProxy, pDraw, pFont,
 					pData, tTextContent, iPaintStart, iPaintEnd, fY,
 					fColumnWidth, fLineHeight);
+			}
+			if ( iRet == XUI_OK ) {
+				iRet = __xuiCodeEditRenderBracketMatch(pProxy, pDraw, pFont,
+					pData, sText, tTextContent, iStart, iPaintStart,
+					iPaintEnd, fTextBaseX, fY, fColumnWidth, fLineHeight,
+					iBracketBackgroundColor, iBracketBorderColor,
+					iBracketUnmatchedBorderColor, 0, 1);
 			}
 			iClipRet = __xuiCodeEditBodyClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);
 			if ( iRet != XUI_OK ) return iRet;
@@ -6738,6 +6894,9 @@ static void __xuiCodeEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.find.result_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.find.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.bracket_match.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.bracket_match.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.bracket_unmatched.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.inline_completion.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.minimap.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCodeEditRegisterStyleProperty(pContext, pType, "codeedit.minimap.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
@@ -7023,6 +7182,7 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage)
 	xrtFree(pData->sLanguage);
 	pData->sLanguage = sNew;
 	xuiCodeTokenBufferClear(pData->pTokenBuffer);
+	xuiInternalCodeBracketReset(&pData->tBracketMatch);
 	__xuiCodeEditSetError(pData, "");
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -8799,6 +8959,7 @@ static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 	xui_code_selection_t tSelection;
 	uint32_t iVersion;
 	int bSelectionChanged;
+	int bBracketChanged;
 	int iRet;
 
 	(void)pUser;
@@ -8822,6 +8983,11 @@ static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 			tSelection.iCaretOffset, 0, 0, 1);
 		pData->iEditNotifyAnchor = tSelection.iAnchorOffset;
 		pData->iEditNotifyCaret = tSelection.iCaretOffset;
+	}
+	bBracketChanged = 0;
+	(void)__xuiCodeEditSyncBracketMatch(pData, &bBracketChanged);
+	if ( bBracketChanged ) {
+		(void)__xuiCodeEditInvalidateView(pWidget);
 	}
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->iCompletionCount > 0 && pData->pCompletionPopup != NULL &&
@@ -9564,6 +9730,31 @@ XUI_API uint32_t xuiCodeEditGetDisplayOptions(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? pData->iDisplayOptions : 0u;
+}
+
+XUI_API int xuiCodeEditSetBracketMatching(xui_widget pWidget, int bEnabled)
+{
+	xui_code_edit_data_t* pData;
+	int bNext;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	bNext = bEnabled ? 1 : 0;
+	if ( pData->bBracketMatching == bNext ) return XUI_OK;
+	pData->bBracketMatching = bNext;
+	if ( bNext ) {
+		pData->iFlags &= ~(int)XUI_CODE_EDIT_DISABLE_BRACKET_MATCH;
+	} else {
+		pData->iFlags |= (int)XUI_CODE_EDIT_DISABLE_BRACKET_MATCH;
+	}
+	xuiInternalCodeBracketReset(&pData->tBracketMatch);
+	return __xuiCodeEditInvalidateView(pWidget);
+}
+
+XUI_API int xuiCodeEditGetBracketMatching(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return (pData != NULL) ? pData->bBracketMatching : 0;
 }
 
 XUI_API int xuiCodeEditSetMinimap(xui_widget pWidget, int bVisible, float fWidth)

@@ -398,6 +398,7 @@ int main(void)
 	xui_widget_type pType;
 	xui_widget pRoot;
 	xui_widget pCodeEdit;
+	xui_widget pBracketEdit;
 	xui_widget pHScrollBar;
 	xui_widget pVScrollBar;
 	xui_widget pHitWidget;
@@ -419,8 +420,10 @@ int main(void)
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pCodeCache;
+	xui_surface pBracketCache;
 	xui_font pFont;
 	xui_code_edit_desc_t tDesc;
+	xui_code_edit_desc_t tBracketDesc;
 	xui_panel_desc_t tPanelDesc;
 	xui_tabs_desc_t tTabsDesc;
 	xui_dock_panel_desc_t tDockDesc;
@@ -430,6 +433,7 @@ int main(void)
 	xui_code_style_t tStyle;
 	xui_style_property_t tProperty;
 	xui_style_property_t arrStyleProperties[2];
+	xui_style_property_t arrBracketStyleProperties[3];
 	xui_rect_t tImeRect;
 	xui_rect_t tScrollBarRect;
 	xui_rect_t tScrollBarWorld;
@@ -490,6 +494,9 @@ int main(void)
 	uint32_t iReadonlyBackgroundColor;
 	uint32_t iImeColor;
 	uint32_t iDiagnosticColor;
+	uint32_t iBracketBackgroundColor;
+	uint32_t iBracketBorderColor;
+	uint32_t iBracketUnmatchedColor;
 	uint32_t iCompletionVersion;
 	float fTextOriginX;
 	float fLineNumberX;
@@ -509,6 +516,7 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pCodeEdit = NULL;
+	pBracketEdit = NULL;
 	pHScrollBar = NULL;
 	pVScrollBar = NULL;
 	pTabIndentEdit = NULL;
@@ -529,6 +537,7 @@ int main(void)
 	pMenu = NULL;
 	pTarget = NULL;
 	pCodeCache = NULL;
+	pBracketCache = NULL;
 	pFont = NULL;
 	pOverrideTheme = NULL;
 	pFindScope = NULL;
@@ -546,6 +555,9 @@ int main(void)
 	iReadonlyBackgroundColor = XUI_COLOR_RGBA(236, 241, 248, 255);
 	iImeColor = XUI_COLOR_RGBA(22, 104, 214, 255);
 	iDiagnosticColor = XUI_COLOR_RGBA(201, 31, 47, 255);
+	iBracketBackgroundColor = XUI_COLOR_RGBA(29, 126, 214, 71);
+	iBracketBorderColor = XUI_COLOR_RGBA(18, 94, 181, 233);
+	iBracketUnmatchedColor = XUI_COLOR_RGBA(215, 38, 61, 249);
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 	xuiTestProxyEnableFrameClock(&tState, 1.0);
@@ -566,6 +578,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiCodeEditGetType(pContext) == pType, "type reuse");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.whitespace.color") != 0u, "codeedit style property registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.diagnostic.error.color") != 0u, "codeedit diagnostic style property registered");
+	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.bracket_match.background_color") != 0u &&
+		xuiStyleFindProperty(pContext, "codeedit.bracket_match.border_color") != 0u &&
+		xuiStyleFindProperty(pContext, "codeedit.bracket_unmatched.border_color") != 0u,
+		"codeedit bracket style properties registered");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
@@ -743,6 +759,106 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiCodeEditGetText(pCodeEdit), "int main(void) {\n\treturn 0;\n}\n") == 0, "initial text");
 	XUI_TEST_CHECK(xuiCodeEditIsReadonly(pCodeEdit) == 1, "readonly initial");
 	XUI_TEST_CHECK(xuiCodeEditGetDisplayOptions(pCodeEdit) == 0u, "display options initial");
+
+	memset(&tBracketDesc, 0, sizeof(tBracketDesc));
+	tBracketDesc.iSize = sizeof(tBracketDesc);
+	tBracketDesc.pFont = pFont;
+	tBracketDesc.sText = "{ /* ([)] */ }\n";
+	tBracketDesc.sLanguage = "c";
+	iRet = xuiCodeEditCreate(pContext, &pBracketEdit, &tBracketDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBracketEdit != NULL &&
+		xuiCodeEditGetBracketMatching(pBracketEdit) == 1,
+		"bracket matching enabled by default");
+	xuiWidgetSetRect(pBracketEdit, (xui_rect_t){330.0f, 30.0f, 280.0f, 120.0f});
+	iRet = xuiWidgetAddChild(pRoot, pBracketEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "bracket editor add child");
+	arrBracketStyleProperties[0] = __xuiCodeEditStyleColorProp(
+		"codeedit.bracket_match.background_color", iBracketBackgroundColor);
+	arrBracketStyleProperties[1] = __xuiCodeEditStyleColorProp(
+		"codeedit.bracket_match.border_color", iBracketBorderColor);
+	arrBracketStyleProperties[2] = __xuiCodeEditStyleColorProp(
+		"codeedit.bracket_unmatched.border_color", iBracketUnmatchedColor);
+	iRet = xuiWidgetSetInlineStyle(pBracketEdit, arrBracketStyleProperties, 3);
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionSetRange(
+		xuiCodeEditGetSelection(pBracketEdit),
+		xuiCodeEditGetDocument(pBracketEdit), 1, 1);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "syntax-aware bracket match render");
+	pBracketCache = xuiWidgetGetCacheSurface(pBracketEdit,
+		xuiWidgetGetStateId(pBracketEdit));
+	XUI_TEST_CHECK(pBracketCache != NULL &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBackgroundColor) == 2 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBorderColor) == 2 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketUnmatchedColor) == 0,
+		"brackets in comments do not disturb syntax-aware matching");
+
+	iRet = xuiCodeEditSetText(pBracketEdit, "([)]");
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionSetRange(
+		xuiCodeEditGetSelection(pBracketEdit),
+		xuiCodeEditGetDocument(pBracketEdit), 1, 1);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	xuiTestSurfaceReset(pBracketCache);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	pBracketCache = xuiWidgetGetCacheSurface(pBracketEdit,
+		xuiWidgetGetStateId(pBracketEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBackgroundColor) == 0 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketUnmatchedColor) == 1,
+		"mixed invalid nesting renders one unmatched bracket");
+	iRet = xuiCodeEditSetLanguage(pBracketEdit, "");
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditSetText(pBracketEdit, "[plain]");
+	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionSetRange(
+		xuiCodeEditGetSelection(pBracketEdit),
+		xuiCodeEditGetDocument(pBracketEdit), 1, 1);
+	if ( iRet == XUI_OK ) iRet = xuiUpdate(pContext, 0.016f);
+	xuiTestSurfaceReset(pBracketCache);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	pBracketCache = xuiWidgetGetCacheSurface(pBracketEdit,
+		xuiWidgetGetStateId(pBracketEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBackgroundColor) == 2 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBorderColor) == 2,
+		"plain language matches raw bracket bytes");
+	iRet = xuiCodeEditSetBracketMatching(pBracketEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeEditGetBracketMatching(pBracketEdit) == 0,
+		"bracket matching runtime disable");
+	xuiTestSurfaceReset(pBracketCache);
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	pBracketCache = xuiWidgetGetCacheSurface(pBracketEdit,
+		xuiWidgetGetStateId(pBracketEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBackgroundColor) == 0 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketBorderColor) == 0 &&
+		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
+			iBracketUnmatchedColor) == 0,
+		"disabled bracket matching draws no decoration");
+	iRet = xuiCodeEditSetBracketMatching(pBracketEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiCodeEditGetBracketMatching(pBracketEdit) == 1,
+		"bracket matching runtime re-enable");
+	xuiWidgetDestroy(pBracketEdit);
+	pBracketEdit = NULL;
+	pBracketCache = NULL;
+	tBracketDesc.iFlags = (int)XUI_CODE_EDIT_DISABLE_BRACKET_MATCH;
+	iRet = xuiCodeEditCreate(pContext, &pBracketEdit, &tBracketDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBracketEdit != NULL &&
+		xuiCodeEditGetBracketMatching(pBracketEdit) == 0,
+		"bracket matching descriptor disable flag");
+	xuiWidgetDestroy(pBracketEdit);
+	pBracketEdit = NULL;
+
 	iRet = xuiCodeMarginModelGetCount(xuiCodeEditGetMargins(pCodeEdit));
 	XUI_TEST_CHECK(iRet == 6, "default margin count");
 	iRet = xuiCodeMarginModelGet(xuiCodeEditGetMargins(pCodeEdit), 0, &tMargin);
@@ -2391,6 +2507,7 @@ int main(void)
 
 cleanup:
 	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);
+	if ( pBracketEdit != NULL ) { xuiWidgetDestroy(pBracketEdit); pBracketEdit = NULL; }
 	if ( pTabIndentEdit != NULL ) { xuiWidgetDestroy(pTabIndentEdit); pTabIndentEdit = NULL; }
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	xuiDestroy(pContext);

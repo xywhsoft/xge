@@ -250,6 +250,8 @@ int main(void)
 	xui_rect_t tDirty;
 	xui_rect_t tIcon;
 	xui_rect_t tOverflow;
+	xui_rect_t tScrollBackward;
+	xui_rect_t tScrollForward;
 	xui_rect_t tMenuWorld;
 	xui_rect_t tMenuItem;
 	xui_rect_t tBadIconSrc[5];
@@ -506,7 +508,9 @@ int main(void)
 
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
 	tOverflow = xuiTabsGetOverflowRect(pTabs);
-	XUI_TEST_CHECK(xuiTabsIsOverflow(pTabs) && tOverflow.fW > 0.0f && tOverflow.fH > 0.0f, "overflow button visible");
+	XUI_TEST_CHECK(xuiTabsIsOverflow(pTabs) && tOverflow.fW > 0.0f && tOverflow.fH > 0.0f &&
+		xuiTabsGetScrollButtonsVisible(pTabs) && xuiTabsGetTabListButtonVisible(pTabs),
+		"overflow controls enabled by default");
 	fScroll = xuiTabsGetScroll(pTabs);
 	iRet = xuiTabsSetScroll(pTabs, NAN);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTabsGetScroll(pTabs) == fScroll,
@@ -514,18 +518,36 @@ int main(void)
 	iRet = xuiTabsSetScroll(pTabs, INFINITY);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiTabsGetScroll(pTabs) == fScroll,
 		"reject infinite scroll without mutation");
-	XUI_TEST_CHECK(xuiTabsGetTabRect(pTabs, 4).fW <= 0.0f
-		&& xuiWidgetGetRect(xuiTabsGetButtonWidget(pTabs, 4)).fW <= 0.0f,
-		"overflow gives excess tab an empty layout box");
+	iRet = xuiTabsSetScroll(pTabs, 0.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	tScrollBackward = xuiTabsGetScrollBackwardRect(pTabs);
+	tScrollForward = xuiTabsGetScrollForwardRect(pTabs);
+	XUI_TEST_CHECK(iRet == XUI_OK && tScrollBackward.fW <= 0.0f &&
+		tScrollForward.fW > 0.0f, "only the needed forward scroll button is visible");
+	iBefore = xuiTabsGetSelected(pTabs);
+	iRet = __xuiTabsDispatchClick(pContext,
+		tWorld.fX + tScrollForward.fX + tScrollForward.fW * 0.5f,
+		tWorld.fY + tScrollForward.fY + tScrollForward.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	tScrollBackward = xuiTabsGetScrollBackwardRect(pTabs);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetScroll(pTabs) > 0.0f &&
+		xuiTabsGetSelected(pTabs) == iBefore && tScrollBackward.fW > 0.0f,
+		"scroll arrow advances one tab without selecting it");
+	iRet = xuiTabsSetScroll(pTabs, xuiTabsGetMaxScroll(pTabs));
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetScrollBackwardRect(pTabs).fW > 0.0f &&
+		xuiTabsGetScrollForwardRect(pTabs).fW <= 0.0f &&
+		xuiTabsGetSelected(pTabs) == iBefore,
+		"end of tab window hides the unneeded forward button");
 	iRet = __xuiTabsDispatchClick(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
 	pMenu = xuiTabsGetOverflowMenu(pTabs);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu) && (xuiTabsGetState(pTabs) & XUI_TABS_STATE_OPEN) != 0u, "overflow menu opens");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout overflow menu");
-	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 2, "overflow menu only lists hidden tabs");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 5, "tab list menu includes every tab");
 	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
-	XUI_TEST_CHECK(xuiMenuGetItem(pMenu, 1)->iValue == 4, "overflow menu preserves hidden tab value");
-	tMenuItem = xuiMenuGetItemRect(pMenu, 1);
+	XUI_TEST_CHECK(xuiMenuGetItem(pMenu, 4)->iValue == 4, "tab list menu preserves tab value");
+	tMenuItem = xuiMenuGetItemRect(pMenu, 4);
 	iRet = __xuiTabsDispatchClick(pContext, tMenuWorld.fX + tMenuItem.fX + tMenuItem.fW * 0.5f, tMenuWorld.fY + tMenuItem.fY + tMenuItem.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 4 && tEvents.iSelectCount == 2 && tEvents.iLastSelect == 4, "overflow menu selects hidden tab");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
@@ -533,6 +555,20 @@ int main(void)
 	tTab = xuiTabsGetTabRect(pTabs, 4);
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
 	XUI_TEST_CHECK(tTab.fX >= tTabBar.fX - 0.5f && (tTab.fX + tTab.fW) <= (xuiTabsGetOverflowRect(pTabs).fX + 0.5f), "selected overflow tab visible before menu button");
+	iRet = xuiTabsSetScrollButtonsVisible(pTabs, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetScrollBackwardRect(pTabs).fW <= 0.0f &&
+		xuiTabsGetScrollForwardRect(pTabs).fW <= 0.0f &&
+		xuiTabsGetOverflowRect(pTabs).fW > 0.0f,
+		"scroll buttons can be hidden independently of the tab list");
+	iRet = xuiTabsSetScrollButtonsVisible(pTabs, 1);
+	if ( iRet == XUI_OK ) iRet = xuiTabsSetTabListButtonVisible(pTabs, 0);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetOverflowRect(pTabs).fW <= 0.0f,
+		"tab list button can be hidden independently");
+	iRet = xuiTabsSetTabListButtonVisible(pTabs, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore overflow controls");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pIcon, 16, 16, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon surface");
