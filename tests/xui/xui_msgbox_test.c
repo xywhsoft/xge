@@ -179,12 +179,18 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_msgbox pBox;
+	xui_msgbox pReuseBox;
+	xui_msgbox pOverwriteBox;
+	xui_msgbox pReuseOverwriteBox;
 	xui_msgbox pInvalidBox;
+	xui_file_dialog pFileDialog;
+	xui_file_dialog pReuseDialog;
 	xui_surface pCustomIcon;
 	xui_surface pContentCache;
 	xui_font pFont;
 	xui_msgbox_desc_t tDesc;
 	xui_msgbox_desc_t tInvalidDesc;
+	xui_file_dialog_desc_t tFileDesc;
 	xui_msgbox_button_t arrCustom[2];
 	xui_rect_t tIcon;
 	xui_rect_t tMessage;
@@ -215,6 +221,11 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pBox = NULL;
+	pReuseBox = NULL;
+	pOverwriteBox = NULL;
+	pReuseOverwriteBox = NULL;
+	pFileDialog = NULL;
+	pReuseDialog = NULL;
 	pCustomIcon = NULL;
 	pFont = NULL;
 	pContentCache = NULL;
@@ -527,6 +538,83 @@ int main(void)
 	XUI_TEST_CHECK(xuiMsgBoxGetResultCount(pBox) == 5, "result count");
 	XUI_TEST_CHECK(xuiMsgBoxGetChangeCount(pBox) > 0, "change count");
 
+	pReuseBox = pBox;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sTitle = "Reused";
+	tDesc.sMessage = "The existing message box is shown again.";
+	tDesc.pFont = pFont;
+	tDesc.iType = XUI_MSGBOX_ICON_QUEST;
+	tDesc.iButtons = XUI_MSGBOX_BUTTON_YES_NO;
+	tDesc.bHasModal = 1;
+	tDesc.bModal = 1;
+	iRet = xuiMsgBoxShow(pContext, &pBox, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pBox == pReuseBox && xuiMsgBoxIsOpen(pBox),
+		"show reuses closed message box");
+	XUI_TEST_CHECK(strcmp(xuiMsgBoxGetTitle(pBox), "Reused") == 0 &&
+		xuiMsgBoxGetType(pBox) == XUI_MSGBOX_ICON_QUEST &&
+		xuiMsgBoxGetButtonCount(pBox) == 2, "reuse applies descriptor");
+	iRet = xuiMsgBoxShow(pContext, &pBox, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUSY && pBox == pReuseBox,
+		"show rejects an already open reusable message box");
+	iRet = xuiMsgBoxSetOpen(pBox, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close reused message box");
+
+	memset(&tFileDesc, 0, sizeof(tFileDesc));
+	tFileDesc.iSize = sizeof(tFileDesc);
+	tFileDesc.iMode = XUI_FILE_DIALOG_MODE_OPEN_FILE;
+	tFileDesc.sTitle = "Reusable file dialog";
+	tFileDesc.sInitialDir = ".";
+	tFileDesc.sFilter = "All Files (*.*)|*.*";
+	tFileDesc.pFont = pFont;
+	tFileDesc.bModal = 1;
+	iRet = xuiFileDialogShow(pContext, &pFileDialog, &tFileDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFileDialog != NULL && xuiFileDialogIsOpen(pFileDialog),
+		"show creates file dialog");
+	pReuseDialog = pFileDialog;
+	iRet = xuiFileDialogShow(pContext, &pFileDialog, &tFileDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUSY && pFileDialog == pReuseDialog,
+		"file dialog show rejects open instance");
+	iRet = xuiFileDialogSetOpen(pFileDialog, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close reusable file dialog");
+	tFileDesc.sTitle = "Reused file dialog";
+	iRet = xuiFileDialogShow(pContext, &pFileDialog, &tFileDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFileDialog == pReuseDialog && xuiFileDialogIsOpen(pFileDialog),
+		"show reuses closed file dialog");
+	iRet = xuiFileDialogSetOpen(pFileDialog, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close reused file dialog");
+	tFileDesc.iMode = XUI_FILE_DIALOG_MODE_SAVE_FILE;
+	iRet = xuiFileDialogShow(pContext, &pFileDialog, &tFileDesc);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && pFileDialog == pReuseDialog,
+		"file dialog reuse rejects mode changes");
+	xuiFileDialogDestroy(pFileDialog);
+	pFileDialog = NULL;
+	memset(&tFileDesc, 0, sizeof(tFileDesc));
+	tFileDesc.iSize = sizeof(tFileDesc);
+	tFileDesc.iMode = XUI_FILE_DIALOG_MODE_SAVE_FILE;
+	tFileDesc.sInitialDir = "build";
+	tFileDesc.sFileName = "xge.dll";
+	tFileDesc.sFilter = "Libraries (*.dll)|*.dll";
+	tFileDesc.pFont = pFont;
+	tFileDesc.bModal = 1;
+	iRet = xuiFileDialogShow(pContext, &pFileDialog, &tFileDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "show save dialog for overwrite reuse");
+	iRet = xuiFileDialogCommit(pFileDialog);
+	pOverwriteBox = xuiFileDialogGetOverwriteMsgBox(pFileDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOverwriteBox != NULL && xuiMsgBoxIsOpen(pOverwriteBox),
+		"first overwrite confirmation opens");
+	pReuseOverwriteBox = pOverwriteBox;
+	iRet = xuiMsgBoxSetOpen(pOverwriteBox, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close first overwrite confirmation");
+	iRet = xuiFileDialogCommit(pFileDialog);
+	pOverwriteBox = xuiFileDialogGetOverwriteMsgBox(pFileDialog);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOverwriteBox == pReuseOverwriteBox && xuiMsgBoxIsOpen(pOverwriteBox),
+		"overwrite confirmation reuses message box");
+	iRet = xuiMsgBoxSetOpen(pOverwriteBox, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close reused overwrite confirmation");
+	iRet = xuiFileDialogSetOpen(pFileDialog, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close save dialog after overwrite reuse");
+
 	tDestroyResult.ppBox = &pBox;
 	iRet = xuiMsgBoxSetResult(pBox, __xuiMsgBoxDestroyResult, &tDestroyResult);
 	XUI_TEST_CHECK(iRet == XUI_OK, "destroying result callback set");
@@ -544,6 +632,9 @@ cleanup:
 	}
 	if ( pBox != NULL ) {
 		xuiMsgBoxDestroy(pBox);
+	}
+	if ( pFileDialog != NULL ) {
+		xuiFileDialogDestroy(pFileDialog);
 	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);

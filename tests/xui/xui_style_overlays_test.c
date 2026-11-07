@@ -486,7 +486,9 @@ static int msgbox_colors(void)
 	s = style(p, 6);
 	OK(xuiStyleSetType(f.context, xuiWidgetFindType(f.context, "msgbox"), &s));
 	CHECK(paint_only(window) == 0);
-	CHECK(render(&f) == 0 && fill(client, p[0].tValue.iColor) > 0 && fill(backdrop, p[1].tValue.iColor) > 0);
+	CHECK(render(&f) == 0);
+	CHECK(fill(client, p[0].tValue.iColor) > 0);
+	CHECK(fill(backdrop, p[1].tValue.iColor) > 0);
 	CHECK(xuiTestSurfaceGetLastTextColor(cache(content)) == p[2].tValue.iColor);
 	CHECK(xuiTestSurfaceGetLastColor(cache(content)) == p[3].tValue.iColor);
 	CHECK(fill(button, p[4].tValue.iColor) > 0);

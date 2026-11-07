@@ -345,6 +345,8 @@ typedef struct xui_language_text_t {
 #define XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY	0x00000002u
 /* Runs onUpdate once when this widget's tree is hidden or detached. */
 #define XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE	0x00000004u
+/* Runs onPreparePaint every frame even when the widget subtree is otherwise clean. */
+#define XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT	0x00000008u
 
 #define XUI_RESOURCE_SURFACE		1
 #define XUI_RESOURCE_FONT		2
@@ -5520,6 +5522,16 @@ typedef struct xui_render_stats_t {
 	int iDrawnCaches;
 	int iSkippedWidgets;
 	int iRecoveredErrors;
+	int iPrepareVisitedWidgets;
+	int iPrepareSkippedSubtrees;
+	uint64_t iDirtyPropagationSteps;
+	uint64_t iEventMaskPropagationSteps;
+	int iRenderNodesReused;
+	int iRenderNodesUpdated;
+	int iRenderNodesInserted;
+	int iRenderNodesRemoved;
+	uint32_t iRootStructureRevision;
+	uint32_t iOverlayStructureRevision;
 } xui_render_stats_t;
 
 typedef struct xui_layout_stats_t {
@@ -6014,6 +6026,7 @@ typedef struct xui_debug_widget_info_t {
 	uint64_t iSubtreeEventMask;
 	xui_rect_t tRect;
 	xui_rect_t tWorldRect;
+	uint32_t iSubtreeDirtyFlags;
 } xui_debug_widget_info_t;
 
 typedef int (*xui_widget_type_init_proc)(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser);
@@ -10308,6 +10321,9 @@ XUI_API int xuiDockPanelGetWindowChangeCount(xui_widget pWidget);
 /* 创建消息框（模态对话框，内建四态图标）；失败时总会清空 *ppBox。 */
 #if XUI_ENABLE_MSGBOX
 XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc);
+/* 创建或复用已关闭的消息框并显示。*ppBox 为 NULL 时创建；非 NULL 时必须属于
+ * pContext。复用时仅更新描述中明确提供的文本、样式和模态字段，字体不可变。 */
+XUI_API int xuiMsgBoxShow(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc);
 /* 释放消息框。 */
 XUI_API void xuiMsgBoxDestroy(xui_msgbox pBox);
 XUI_API int xuiMsgBoxDestroyOwnerChecked(xui_msgbox pBox, bool* pConsumed);
@@ -10390,6 +10406,9 @@ XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox);
 /* 创建文件对话框（浏览/过滤/保存，组合式控件）。 */
 #if XUI_ENABLE_FILE_DIALOG
 XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
+/* 创建或复用已关闭的文件对话框并显示。*ppDialog 为 NULL 时创建；复用时模式和
+ * 字体必须与首次创建一致，其他非空描述字段会更新后再打开。 */
+XUI_API int xuiFileDialogShow(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
 /* 释放文件对话框。 */
 XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog);
 XUI_API int xuiFileDialogDestroyOwnerChecked(xui_file_dialog pDialog, bool* pConsumed);

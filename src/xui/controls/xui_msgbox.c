@@ -1061,8 +1061,16 @@ static int __xuiMsgBoxPreparePaint(xui_widget pWidget)
 
 static int __xuiMsgBoxBackdropPreparePaint(xui_widget pWidget)
 {
+	xui_msgbox pBox = (xui_msgbox)pWidget->pCacheRenderUser;
+	int iRet;
+
 	/* The backdrop is an earlier overlay sibling of its window. */
-	(void)__xuiMsgBoxSyncPaint((xui_msgbox)pWidget->pCacheRenderUser);
+	if ( __xuiMsgBoxValid(pBox) &&
+	     xuiWidgetGetStyleGeneration(pBox->pWindow) != xuiStyleGetGeneration(pBox->pContext) ) {
+		iRet = xuiWidgetResolveStyle(pBox->pWindow);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	(void)__xuiMsgBoxSyncPaint(pBox);
 	return XUI_OK;
 }
 
@@ -1523,8 +1531,11 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		xuiMsgBoxDestroy(pBox);
 		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
-	pBox->pWindow->onUpdate = __xuiMsgBoxWindowUpdate;
-	pBox->pWindow->pUpdateUser = pBox;
+	iRet = xuiWidgetSetUpdateCallback(pBox->pWindow, __xuiMsgBoxWindowUpdate, pBox);
+	if ( iRet != XUI_OK ) {
+		xuiMsgBoxDestroy(pBox);
+		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
+	}
 	pClient = xuiWindowGetClientWidget(pBox->pWindow);
 	if ( pClient == NULL ) {
 		xuiMsgBoxDestroy(pBox);
@@ -1580,6 +1591,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 			tTypeDesc.iSize = sizeof(tTypeDesc);
 			tTypeDesc.sName = "msgbox-backdrop";
 			tTypeDesc.pParent = xuiWidgetGetBaseType();
+			tTypeDesc.iFlags = XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 			iRet = xuiWidgetRegisterType(pContext, &pBackdropType, &tTypeDesc);
 			if ( iRet == XUI_OK ) pBackdropType->onPreparePaint = __xuiMsgBoxBackdropPreparePaint;
 		}
@@ -1623,6 +1635,56 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 		return __xuiMsgBoxConstructorEnd(&construction,(iRet),&constructionWatch,&constructionAlive,pBox,ppBox);
 	}
 	return __xuiMsgBoxConstructorEnd(&construction,(XUI_OK),&constructionWatch,&constructionAlive,pBox,ppBox);
+}
+
+XUI_API int xuiMsgBoxShow(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc)
+{
+	xui_msgbox pBox;
+	xui_font pFont;
+	int iRet;
+
+	if ( ppBox == NULL || !xuiInternalContextIsValid(pContext) || !__xuiMsgBoxDescValid(pDesc) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pBox = *ppBox;
+	if ( pBox == NULL ) {
+		iRet = xuiMsgBoxCreate(pContext, &pBox, pDesc);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiMsgBoxSetOpen(pBox, 1);
+		if ( iRet != XUI_OK ) {
+			xuiMsgBoxDestroy(pBox);
+			return iRet;
+		}
+		*ppBox = pBox;
+		return XUI_OK;
+	}
+	if ( !__xuiMsgBoxValid(pBox) || pBox->pContext != pContext ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiMsgBoxIsOpen(pBox) ) return XUI_ERROR_BUSY;
+	if ( pDesc == NULL ) return xuiMsgBoxSetOpen(pBox, 1);
+	pFont = pDesc->pFont != NULL ? pDesc->pFont : pBox->pFont;
+	if ( pFont != pBox->pFont ) return XUI_ERROR_INVALID_STATE;
+	if ( pDesc->sTitle != NULL ) {
+		iRet = xuiMsgBoxSetTitle(pBox, pDesc->sTitle);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pDesc->sMessage != NULL ) {
+		iRet = xuiMsgBoxSetMessage(pBox, pDesc->sMessage);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iRet = xuiMsgBoxSetType(pBox, pDesc->iType);
+	if ( iRet == XUI_OK && pDesc->bHasCustomIcon && pDesc->pIconSurface != NULL ) {
+		iRet = xuiMsgBoxSetIconSurface(pBox, pDesc->pIconSurface, pDesc->tIconSrc);
+	}
+	if ( iRet == XUI_OK ) {
+		iRet = (pDesc->iButtons == XUI_MSGBOX_BUTTON_CUSTOM || pDesc->iCustomButtonCount > 0) ?
+			xuiMsgBoxSetCustomButtons(pBox, pDesc->pCustomButtons, pDesc->iCustomButtonCount) :
+			xuiMsgBoxSetButtons(pBox, pDesc->iButtons);
+	}
+	if ( iRet == XUI_OK && pDesc->bHasMetrics ) iRet = xuiMsgBoxSetMetrics(pBox, &pDesc->tMetrics);
+	if ( iRet == XUI_OK && pDesc->bHasColors ) iRet = xuiMsgBoxSetColors(pBox, &pDesc->tColors);
+	if ( iRet == XUI_OK && pDesc->bHasModal ) iRet = xuiMsgBoxSetModal(pBox, pDesc->bModal);
+	if ( iRet == XUI_OK ) iRet = xuiMsgBoxSetOpen(pBox, 1);
+	return iRet;
 }
 
 static bool __xuiMsgBoxTrace(const void* raw,xrtownershipvisitor visit,void* data)

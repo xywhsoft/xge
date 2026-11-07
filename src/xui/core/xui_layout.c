@@ -461,7 +461,12 @@ static int __xuiLayoutApply(xui_widget widget, const xui_rect_t* local_root_rect
 	rect = local_root_rect != NULL ? *local_root_rect : __xuiLayoutLocalRect(widget, layout_result.rect, 0);
 	if ( (widget->tRect.fX != rect.fX) || (widget->tRect.fY != rect.fY) ||
 	     (widget->tRect.fW != rect.fW) || (widget->tRect.fH != rect.fH) ) {
+		uint32_t paint_flags = XUI_WIDGET_DIRTY_RENDER;
+		if ( widget->tRect.fW != rect.fW || widget->tRect.fH != rect.fH )
+			paint_flags |= XUI_WIDGET_DIRTY_CACHE;
 		xuiInternalStateRecordBoundsTree(widget);
+		xuiInternalWidgetMarkDirtyFlags(widget, paint_flags);
+		widget->bRenderGeometryDirty = 1;
 		widget->tRect = rect;
 	}
 	widget->tMeasuredSize.fX = xuiInternalSnapSize(layout_result.rect.width);

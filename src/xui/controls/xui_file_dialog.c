@@ -1932,9 +1932,10 @@ static void __xuiFileDialogOverwriteResult(xui_msgbox pBox, int iResult, void* p
 static int __xuiFileDialogShowOverwriteConfirm(xui_file_dialog pDialog, const char* sPath)
 {
 	xui_msgbox_desc_t tDesc;
-	xui_msgbox pNewBox;
 	char* sNewPath;
+	char* sOldPath;
 	char sMessage[768];
+	int bCreated;
 	int iRet;
 
 	if ( !__xuiFileDialogValid(pDialog) || sPath == NULL || sPath[0] == 0 ) {
@@ -1951,22 +1952,41 @@ static int __xuiFileDialogShowOverwriteConfirm(xui_file_dialog pDialog, const ch
 	tDesc.pFont = pDialog->pFont;
 	tDesc.iType = XUI_MSGBOX_ICON_QUEST;
 	tDesc.iButtons = XUI_MSGBOX_BUTTON_YES_NO;
-	pNewBox = NULL;
-	iRet = xuiMsgBoxCreate(pDialog->pContext, &pNewBox, &tDesc);
-	if ( iRet == XUI_OK ) iRet = xuiMsgBoxSetResult(pNewBox, __xuiFileDialogOverwriteResult, pDialog);
-	if ( iRet == XUI_OK ) iRet = xuiMsgBoxSetOpen(pNewBox, 1);
+	bCreated = 0;
+	if ( pDialog->pOverwriteBox == NULL ) {
+		iRet = xuiMsgBoxCreate(pDialog->pContext, &pDialog->pOverwriteBox, &tDesc);
+		if ( iRet != XUI_OK ) {
+			xrtFree(sNewPath);
+			return iRet;
+		}
+		bCreated = 1;
+		iRet = xuiMsgBoxLifetimeWatch(pDialog->pOverwriteBox, &pDialog->tOverwriteWatch,
+			__xuiFileDialogOverwriteInvalidated, pDialog);
+		if ( iRet == XUI_OK ) {
+			iRet = xuiMsgBoxSetResult(pDialog->pOverwriteBox,
+				__xuiFileDialogOverwriteResult, pDialog);
+		}
+		if ( iRet != XUI_OK ) {
+			xuiMsgBoxDestroy(pDialog->pOverwriteBox);
+			pDialog->pOverwriteBox = NULL;
+			xrtFree(sNewPath);
+			return iRet;
+		}
+	}
+	sOldPath = pDialog->sPendingSavePath;
+	pDialog->sPendingSavePath = sNewPath;
+	iRet = xuiMsgBoxShow(pDialog->pContext, &pDialog->pOverwriteBox, &tDesc);
 	if ( iRet != XUI_OK ) {
-		if ( pNewBox != NULL ) xuiMsgBoxDestroy(pNewBox);
+		pDialog->sPendingSavePath = sOldPath;
 		xrtFree(sNewPath);
+		if ( bCreated ) {
+			xuiLifetimeUnwatch(&pDialog->tOverwriteWatch);
+			xuiMsgBoxDestroy(pDialog->pOverwriteBox);
+			pDialog->pOverwriteBox = NULL;
+		}
 		return iRet;
 	}
-    xui_msgbox oldBox=pDialog->pOverwriteBox;xuiLifetimeUnwatch(&pDialog->tOverwriteWatch);
-    if(pDialog->sPendingSavePath)xrtFree(pDialog->sPendingSavePath);
-    pDialog->pOverwriteBox=pNewBox;
-    iRet=xuiMsgBoxLifetimeWatch(pNewBox,&pDialog->tOverwriteWatch,__xuiFileDialogOverwriteInvalidated,pDialog);
-    if(oldBox)xuiMsgBoxDestroy(oldBox);
-    if(iRet!=XUI_OK){xrtFree(sNewPath);return iRet;}
-	pDialog->sPendingSavePath = sNewPath;
+	if ( sOldPath != NULL ) xrtFree(sOldPath);
 	return XUI_OK;
 }
 
@@ -2963,6 +2983,71 @@ XUI_API xui_context xuiFileDialogGetContext(xui_file_dialog dialog)
 }
 XUI_API int xuiFileDialogLifetimeWatch(xui_file_dialog dialog,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
 {return __xuiFileDialogValid(dialog) ? xuiInternalManagerWatch(&dialog->tOwned,link,invalidate,user):XUI_ERROR_INVALID_ARGUMENT;}
+
+XUI_API int xuiFileDialogShow(xui_context pContext, xui_file_dialog* ppDialog,
+	const xui_file_dialog_desc_t* pDesc)
+{
+	xui_file_dialog pDialog;
+	xui_font pFont;
+	char* sNewFileName;
+	char* sOldFileName;
+	int iMode;
+	int iRet;
+
+	if ( ppDialog == NULL || !xuiInternalContextIsValid(pContext) ||
+	     !__xuiFileDialogDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pDialog = *ppDialog;
+	if ( pDialog == NULL ) {
+		iRet = xuiFileDialogCreate(pContext, &pDialog, pDesc);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiFileDialogSetOpen(pDialog, 1);
+		if ( iRet != XUI_OK ) {
+			xuiFileDialogDestroy(pDialog);
+			return iRet;
+		}
+		*ppDialog = pDialog;
+		return XUI_OK;
+	}
+	if ( !__xuiFileDialogValid(pDialog) || pDialog->pContext != pContext ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xuiFileDialogIsOpen(pDialog) ) return XUI_ERROR_BUSY;
+	if ( pDesc == NULL ) return xuiFileDialogSetOpen(pDialog, 1);
+	iMode = pDesc->iMode != 0 ? pDesc->iMode : pDialog->iMode;
+	pFont = pDesc->pFont != NULL ? pDesc->pFont : pDialog->pFont;
+	if ( iMode != pDialog->iMode || pFont != pDialog->pFont ) return XUI_ERROR_INVALID_STATE;
+	if ( pDesc->sTitle != NULL ) {
+		iRet = xuiWindowSetTitle(pDialog->pWindow, pDesc->sTitle);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pDesc->sFilter != NULL ) {
+		iRet = xuiFileDialogSetFilter(pDialog, pDesc->sFilter);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pDesc->sFileName != NULL ) {
+		sNewFileName = xrtStrDup(pDesc->sFileName);
+		if ( sNewFileName == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		iRet = __xuiFileDialogSetNameText(pDialog, pDesc->sFileName);
+		if ( iRet != XUI_OK ) {
+			xrtFree(sNewFileName);
+			return iRet;
+		}
+		sOldFileName = pDialog->sFileName;
+		pDialog->sFileName = sNewFileName;
+		if ( sOldFileName != NULL ) xrtFree(sOldFileName);
+	}
+	if ( pDesc->sInitialDir != NULL ) {
+		iRet = xuiFileDialogSetDirectory(pDialog, pDesc->sInitialDir);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pDesc->fWidth > 0.0f ) pDialog->fWidth = pDesc->fWidth;
+	if ( pDesc->fHeight > 0.0f ) pDialog->fHeight = pDesc->fHeight;
+	iRet = __xuiFileDialogLayoutInitial(pDialog);
+	if ( iRet == XUI_OK ) iRet = xuiFileDialogSetResult(pDialog, pDesc->onResult, pDesc->pResultUser);
+	if ( iRet == XUI_OK ) iRet = xuiFileDialogSetModal(pDialog, pDesc->bModal);
+	if ( iRet == XUI_OK ) iRet = xuiFileDialogSetOpen(pDialog, 1);
+	return iRet;
+}
 
 #if defined(XUI_FILE_DIALOG_TEST)
 XUI_API int xuiFileDialogTestPathRootLen(const char* sPath)

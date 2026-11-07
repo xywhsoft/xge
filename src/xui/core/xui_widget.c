@@ -1414,29 +1414,111 @@ static int __xuiWidgetIsAttached(xui_widget pWidget)
 	       ((pWidget->pContext->pRoot == pRoot) || (pWidget->pContext->pOverlayRoot == pRoot));
 }
 
-static uint64_t __xuiWidgetRecomputeSubtreeEventMask(xui_widget pWidget)
+static uint64_t __xuiWidgetAggregateEventMask(xui_widget pWidget)
 {
 	xui_widget pChild;
 	uint64_t iMask;
 
-	if ( !__xuiWidgetValid(pWidget) ) {
+	/* Destruction marks a whole subtree pending before physically unlinking it.
+	 * Aggregates remain exact for those still-linked carriers until removal. */
+	if ( !__xuiWidgetMemoryValid(pWidget) ) {
 		return 0ull;
 	}
 	iMask = __xuiWidgetOwnEventMask(pWidget);
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iMask |= __xuiWidgetRecomputeSubtreeEventMask(pChild);
+		iMask |= pChild->iSubtreeEventMask;
 	}
-	pWidget->iSubtreeEventMask = iMask;
 	return iMask;
 }
+
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+static uint64_t __xuiWidgetVerifyEventMaskRecursive(xui_widget pWidget, int* pValid)
+{
+	xui_widget pChild;
+	uint64_t iMask = __xuiWidgetOwnEventMask(pWidget);
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
+		iMask |= __xuiWidgetVerifyEventMaskRecursive(pChild, pValid);
+	if ( pWidget->iSubtreeEventMask != iMask ) {
+		fprintf(stderr, "XUI event mask mismatch: type=%s stored=%llu expected=%llu\n",
+			pWidget->pType != NULL ? pWidget->pType->sName : "?",
+			(unsigned long long)pWidget->iSubtreeEventMask, (unsigned long long)iMask);
+		*pValid = 0;
+	}
+	return iMask;
+}
+
+static uint32_t __xuiWidgetVerifyDirtyMaskRecursive(xui_widget pWidget, int* pValid)
+{
+	xui_widget pChild;
+	uint32_t iFlags = pWidget->iDirtyFlags;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
+		iFlags |= __xuiWidgetVerifyDirtyMaskRecursive(pChild, pValid);
+	if ( pWidget->iSubtreeDirtyFlags != iFlags ) *pValid = 0;
+	return iFlags;
+}
+
+static void __xuiWidgetVerifyEventMasks(xui_widget pWidget)
+{
+	int bValid = 1;
+	xui_widget pTrigger = pWidget;
+	if ( pWidget == NULL ) return;
+	while ( pWidget->pParent != NULL ) pWidget = pWidget->pParent;
+	(void)__xuiWidgetVerifyEventMaskRecursive(pWidget, &bValid);
+	if ( !bValid ) {
+		xui_widget pScan;
+		fprintf(stderr, "XUI incremental verification failed: event mask aggregate trigger=%s\n",
+			pTrigger->pType != NULL ? pTrigger->pType->sName : "?");
+		for ( pScan = pTrigger; pScan != NULL; pScan = pScan->pParent )
+			fprintf(stderr, "  chain type=%s stored=%llu own=%llu\n",
+				pScan->pType != NULL ? pScan->pType->sName : "?",
+				(unsigned long long)pScan->iSubtreeEventMask,
+				(unsigned long long)__xuiWidgetOwnEventMask(pScan));
+		abort();
+	}
+}
+#endif
 
 static void __xuiWidgetUpdateEventMasksToRoot(xui_widget pWidget)
 {
 	xui_widget pScan;
+	uint64_t iOldMask;
+	uint64_t iNewMask;
 
 	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
-		(void)__xuiWidgetRecomputeSubtreeEventMask(pScan);
+		iOldMask = pScan->iSubtreeEventMask;
+		iNewMask = __xuiWidgetAggregateEventMask(pScan);
+		pScan->iSubtreeEventMask = iNewMask;
+		pScan->pContext->iEventMaskPropagationTotal++;
+		if ( iNewMask == iOldMask ) break;
 	}
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	__xuiWidgetVerifyEventMasks(pWidget);
+#endif
+}
+
+static void __xuiWidgetPropagateEventBitsToRoot(xui_widget pWidget, uint64_t iBits)
+{
+	xui_widget pScan;
+	uint64_t iOldMask;
+
+	if ( iBits == 0ull ) return;
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		iOldMask = pScan->iSubtreeEventMask;
+		pScan->iSubtreeEventMask |= iBits;
+		pScan->pContext->iEventMaskPropagationTotal++;
+		if ( pScan->iSubtreeEventMask == iOldMask ) break;
+	}
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	__xuiWidgetVerifyEventMasks(pWidget);
+#endif
+}
+
+static void __xuiWidgetApplyOwnEventMaskChange(xui_widget pWidget, uint64_t iOldOwnMask)
+{
+	uint64_t iNewOwnMask = __xuiWidgetOwnEventMask(pWidget);
+	uint64_t iRemoved = iOldOwnMask & ~iNewOwnMask;
+	if ( iRemoved != 0ull ) __xuiWidgetUpdateEventMasksToRoot(pWidget);
+	else __xuiWidgetPropagateEventBitsToRoot(pWidget, iNewOwnMask & ~iOldOwnMask);
 }
 
 static void __xuiWidgetInvalidateMeasureTree(xui_widget pWidget)
@@ -1455,7 +1537,9 @@ static void __xuiWidgetInvalidateMeasureTree(xui_widget pWidget)
 
 static void __xuiWidgetMarkDirtyOnly(xui_widget pWidget, uint32_t iFlags)
 {
-	xui_widget pParent;
+	xui_widget pScan;
+	xui_widget pRoot;
+	uint32_t iOldFlags;
 
 	if ( iFlags == 0 ) {
 		iFlags = XUI_WIDGET_DIRTY_RENDER;
@@ -1464,13 +1548,39 @@ static void __xuiWidgetMarkDirtyOnly(xui_widget pWidget, uint32_t iFlags)
 		__xuiWidgetInvalidateMeasureTree(pWidget);
 	}
 	pWidget->iDirtyFlags |= iFlags;
-	pWidget->iSubtreeDirtyFlags |= iFlags;
+	if ( (iFlags & (XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_TREE)) != 0 ) {
+		pWidget->bRenderGeometryDirty = 1;
+	}
+	if ( (iFlags & XUI_WIDGET_DIRTY_TREE) != 0 ) {
+		pWidget->bRenderStructureDirty = 1;
+		for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+			if ( pScan->bSubtreeRenderStructureDirty ) break;
+			pScan->bSubtreeRenderStructureDirty = 1;
+		}
+		pRoot = pWidget;
+		while ( pRoot->pParent != NULL ) pRoot = pRoot->pParent;
+		if ( pRoot == pWidget->pContext->pRoot ) {
+			if ( ++pWidget->pContext->iRootStructureRevision == 0 )
+				pWidget->pContext->iRootStructureRevision = 1;
+		} else if ( pRoot == pWidget->pContext->pOverlayRoot ) {
+			if ( ++pWidget->pContext->iOverlayStructureRevision == 0 )
+				pWidget->pContext->iOverlayStructureRevision = 1;
+		}
+	}
 	__xuiWidgetBumpGeneration(pWidget);
-	for ( pParent = pWidget->pParent; pParent != NULL; pParent = pParent->pParent ) {
-		pParent->iSubtreeDirtyFlags |= iFlags;
-		__xuiWidgetBumpGeneration(pParent);
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		iOldFlags = pScan->iSubtreeDirtyFlags;
+		pScan->iSubtreeDirtyFlags |= iFlags;
+		pScan->pContext->iDirtyPropagationTotal++;
+		if ( pScan != pWidget ) __xuiWidgetBumpGeneration(pScan);
+		if ( pScan->iSubtreeDirtyFlags == iOldFlags ) break;
 	}
 	xuiInternalContextBumpGeneration(pWidget->pContext);
+}
+
+void xuiInternalWidgetMarkDirtyFlags(xui_widget pWidget, uint32_t iFlags)
+{
+	if ( __xuiWidgetValid(pWidget) ) __xuiWidgetMarkDirtyOnly(pWidget, iFlags);
 }
 
 static void __xuiWidgetMarkDescendantPaintDirty(xui_widget pWidget, uint32_t iFlags)
@@ -1493,28 +1603,67 @@ void xuiInternalWidgetSyncDpi(xui_widget pWidget)
 		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static uint32_t __xuiWidgetRecomputeSubtreeDirtyFlags(xui_widget pWidget)
+static uint32_t __xuiWidgetAggregateDirtyFlags(xui_widget pWidget)
 {
 	xui_widget pChild;
 	uint32_t iFlags;
 
-	if ( !__xuiWidgetValid(pWidget) ) return 0;
+	if ( !__xuiWidgetMemoryValid(pWidget) ) return 0;
 	iFlags = pWidget->iDirtyFlags;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iFlags |= __xuiWidgetRecomputeSubtreeDirtyFlags(pChild);
+		iFlags |= pChild->iSubtreeDirtyFlags;
 	}
-	pWidget->iSubtreeDirtyFlags = iFlags;
 	return iFlags;
+}
+
+static void __xuiWidgetRepairDirtyToRoot(xui_widget pWidget)
+{
+	xui_widget pScan;
+	uint32_t iOldFlags;
+	uint32_t iNewFlags;
+
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		iOldFlags = pScan->iSubtreeDirtyFlags;
+		iNewFlags = __xuiWidgetAggregateDirtyFlags(pScan);
+		pScan->iSubtreeDirtyFlags = iNewFlags;
+		pScan->pContext->iDirtyPropagationTotal++;
+		if ( iNewFlags == iOldFlags ) break;
+	}
+}
+
+static int __xuiWidgetAggregateRenderStructureDirty(xui_widget pWidget)
+{
+	xui_widget pChild;
+	if ( pWidget->bRenderStructureDirty ) return 1;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( pChild->bSubtreeRenderStructureDirty ) return 1;
+	}
+	return 0;
+}
+
+static void __xuiWidgetRepairRenderStructureToRoot(xui_widget pWidget)
+{
+	xui_widget pScan;
+	int bOld;
+	int bNew;
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		bOld = pScan->bSubtreeRenderStructureDirty;
+		bNew = __xuiWidgetAggregateRenderStructureDirty(pScan);
+		pScan->bSubtreeRenderStructureDirty = bNew;
+		if ( bNew == bOld ) break;
+	}
 }
 
 static void __xuiWidgetClearDirtyRecursive(xui_widget pWidget, uint32_t iFlags)
 {
 	xui_widget pChild;
 
+	if ( (pWidget->iSubtreeDirtyFlags & iFlags) == 0 ) return;
 	pWidget->iDirtyFlags &= ~iFlags;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xuiWidgetClearDirtyRecursive(pChild, iFlags);
 	}
+	pWidget->iSubtreeDirtyFlags = __xuiWidgetAggregateDirtyFlags(pWidget);
 }
 
 static int __xuiWidgetCountDescendants(xui_widget pWidget)
@@ -1852,16 +2001,9 @@ static int __xuiWidgetReserveRenderNodes(xui_context pContext, int iCapacity)
 	return XUI_OK;
 }
 
-static int __xuiWidgetAppendRenderNode(xui_context pContext, xui_widget pWidget, xui_rect_t tPaintRect)
+static void __xuiWidgetFillRenderNode(xui_widget pWidget, xui_rect_t tPaintRect)
 {
-	xui_render_node_t* pNode;
-	int iRet;
-
-	iRet = __xuiWidgetReserveRenderNodes(pContext, pContext->iRenderNodeCount + 1);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	pNode = &pContext->pRenderNodes[pContext->iRenderNodeCount++];
+	xui_render_node_t* pNode = &pWidget->tRenderNode;
 	memset(pNode, 0, sizeof(*pNode));
 	pNode->iSize = sizeof(*pNode);
 	pNode->pWidget = pWidget;
@@ -1872,7 +2014,43 @@ static int __xuiWidgetAppendRenderNode(xui_context pContext, xui_widget pWidget,
 	pNode->iStateId = pWidget->iStateId;
 	pNode->iCachePolicy = __xuiWidgetEffectiveCachePolicy(pWidget);
 	pNode->iFlags = pWidget->iDirtyFlags;
-	return XUI_OK;
+	pWidget->bRenderGeometryDirty = 0;
+}
+
+static void __xuiWidgetUnlinkRenderNodeOnDestroy(xui_widget pWidget)
+{
+	xui_context pContext;
+	xui_widget pScan;
+	xui_widget pNext;
+	xui_widget pEnd;
+	xui_widget pAfter;
+	xui_widget pPrevious;
+	int iRemoved = 0;
+
+	if ( pWidget == NULL || !pWidget->bRenderNodeLinked ) return;
+	pContext = pWidget->pContext;
+	pPrevious = pWidget->pRenderPrev;
+	pEnd = pWidget->pRenderSubtreeLast != NULL ? pWidget->pRenderSubtreeLast : pWidget;
+	pAfter = pEnd->pRenderNext;
+	if ( pPrevious != NULL ) pPrevious->pRenderNext = pAfter;
+	else pContext->pRenderHead = pAfter;
+	if ( pAfter != NULL ) pAfter->pRenderPrev = pPrevious;
+	else pContext->pRenderTail = pPrevious;
+	for ( pScan = pWidget->pParent; pScan != NULL; pScan = pScan->pParent ) {
+		if ( pScan->pRenderSubtreeLast != pEnd ) break;
+		pScan->pRenderSubtreeLast = pPrevious;
+	}
+	for ( pScan = pWidget; pScan != pAfter; pScan = pNext ) {
+		pNext = pScan->pRenderNext;
+		pScan->pRenderPrev = NULL;
+		pScan->pRenderNext = NULL;
+		pScan->pRenderSubtreeLast = NULL;
+		pScan->bRenderNodeLinked = 0;
+		iRemoved++;
+	}
+	pContext->iRenderLinkedNodeCount -= iRemoved;
+	if ( pContext->iRenderLinkedNodeCount < 0 ) pContext->iRenderLinkedNodeCount = 0;
+	pContext->bRenderIndexDirty = 1;
 }
 
 static int __xuiWidgetStackingGreater(xui_widget pA, xui_widget pB)
@@ -2026,7 +2204,8 @@ static void __xuiWidgetDestroyStackingChildren(xui_widget pWidget)
 	pWidget->bStackingChildrenDirty = 1;
 }
 
-static int __xuiWidgetBuildRenderTreeRecursive(xui_context pContext, xui_widget pWidget, xui_rect_t tParentClip, int bHasClip)
+static int __xuiWidgetBuildRenderChainRecursive(xui_context pContext, xui_widget pWidget,
+	xui_rect_t tParentClip, int bHasClip, xui_widget* ppHead, xui_widget* ppTail, int* pCount)
 {
 	xui_widget pChild;
 	const xui_widget* ppChildren;
@@ -2039,14 +2218,19 @@ static int __xuiWidgetBuildRenderTreeRecursive(xui_context pContext, xui_widget 
 	int iRet;
 
 	if ( !pWidget->bVisible ) {
+		pWidget->pRenderSubtreeLast = NULL;
 		return XUI_OK;
 	}
 	tWorldRect = xuiInternalSnapRect(xuiWidgetGetWorldRect(pWidget));
 	tPaintRect = bHasClip ? __xuiWidgetIntersectRect(tWorldRect, tParentClip) : tWorldRect;
-	iRet = __xuiWidgetAppendRenderNode(pContext, pWidget, tPaintRect);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
+	__xuiWidgetFillRenderNode(pWidget, tPaintRect);
+	pWidget->pRenderPrev = *ppTail;
+	pWidget->pRenderNext = NULL;
+	if ( *ppTail != NULL ) (*ppTail)->pRenderNext = pWidget;
+	else *ppHead = pWidget;
+	*ppTail = pWidget;
+	pWidget->bRenderNodeLinked = 1;
+	(*pCount)++;
 	tChildClip = tParentClip;
 	bChildHasClip = bHasClip;
 	if ( (pWidget->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN) ||
@@ -2060,11 +2244,13 @@ static int __xuiWidgetBuildRenderTreeRecursive(xui_context pContext, xui_widget 
 	}
 	for ( i = 0; i < iChildCount; i++ ) {
 		pChild = ppChildren[i];
-		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pChild, tChildClip, bChildHasClip);
+		iRet = __xuiWidgetBuildRenderChainRecursive(pContext, pChild, tChildClip, bChildHasClip,
+			ppHead, ppTail, pCount);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
+	pWidget->pRenderSubtreeLast = *ppTail;
 	return XUI_OK;
 }
 
@@ -2304,7 +2490,7 @@ static int __xuiWidgetTypeDescValid(xui_context pContext, const xui_widget_type_
 		return 0;
 	}
 	if ( (pDesc->iFlags & ~(XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
-		XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE)) != 0 ) {
+		XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE | XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT)) != 0 ) {
 		return 0;
 	}
 	pParent = (pDesc->pParent != NULL) ? pDesc->pParent : &g_xuiWidgetBaseType;
@@ -2357,6 +2543,37 @@ static xui_internal_prepare_paint_proc __xuiWidgetTypePreparePaint(xui_widget_ty
 	return NULL;
 }
 
+static int __xuiWidgetTypePrepareFrameDependent(xui_widget_type pType)
+{
+	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
+		if ( (pType->iFlags & XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT) != 0 ) return 1;
+	}
+	return 0;
+}
+
+static int __xuiWidgetAggregatePrepareFrameDependent(xui_widget pWidget)
+{
+	xui_widget pChild;
+	if ( __xuiWidgetTypePrepareFrameDependent(pWidget->pType) ) return 1;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( pChild->bSubtreePrepareFrameDependent ) return 1;
+	}
+	return 0;
+}
+
+static void __xuiWidgetRepairPrepareFrameDependentToRoot(xui_widget pWidget)
+{
+	xui_widget pScan;
+	int bOld;
+	int bNew;
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		bOld = pScan->bSubtreePrepareFrameDependent;
+		bNew = __xuiWidgetAggregatePrepareFrameDependent(pScan);
+		pScan->bSubtreePrepareFrameDependent = bNew;
+		if ( bNew == bOld ) break;
+	}
+}
+
 static xui_internal_parent_changed_proc __xuiWidgetTypeParentChanged(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
@@ -2383,6 +2600,64 @@ static xui_widget_update_proc __xuiWidgetTypeUpdate(xui_widget_type pType)
 		}
 	}
 	return NULL;
+}
+
+static int __xuiWidgetAggregateHasUpdate(xui_widget pWidget, int bInactive)
+{
+	xui_widget pChild;
+
+	if ( pWidget->onUpdate != NULL &&
+		(!bInactive || (pWidget->pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0) ) {
+		return 1;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( bInactive ? pChild->bSubtreeHasInactiveUpdate : pChild->bSubtreeHasUpdate ) return 1;
+	}
+	return 0;
+}
+
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+static unsigned __xuiWidgetVerifyUpdateStateRecursive(xui_widget pWidget, int* pValid)
+{
+	xui_widget pChild;
+	unsigned iState = pWidget->onUpdate != NULL ? 1u : 0u;
+	if ( pWidget->onUpdate != NULL &&
+		(pWidget->pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0 ) iState |= 2u;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
+		iState |= __xuiWidgetVerifyUpdateStateRecursive(pChild, pValid);
+	if ( pWidget->bSubtreeHasUpdate != ((iState & 1u) != 0) ||
+		pWidget->bSubtreeHasInactiveUpdate != ((iState & 2u) != 0) ) *pValid = 0;
+	return iState;
+}
+
+static void __xuiWidgetVerifyUpdateState(xui_widget pWidget)
+{
+	int bValid = 1;
+	if ( pWidget == NULL ) return;
+	while ( pWidget->pParent != NULL ) pWidget = pWidget->pParent;
+	(void)__xuiWidgetVerifyUpdateStateRecursive(pWidget, &bValid);
+	if ( !bValid ) {
+		fprintf(stderr, "XUI incremental verification failed: update aggregate\n");
+		abort();
+	}
+}
+#endif
+
+static void __xuiWidgetRepairUpdateStateToRoot(xui_widget pWidget)
+{
+	xui_widget pScan;
+
+	for ( pScan = pWidget; pScan != NULL; pScan = pScan->pParent ) {
+		int bOldUpdate = pScan->bSubtreeHasUpdate;
+		int bOldInactive = pScan->bSubtreeHasInactiveUpdate;
+		pScan->bSubtreeHasUpdate = __xuiWidgetAggregateHasUpdate(pScan, 0);
+		pScan->bSubtreeHasInactiveUpdate = __xuiWidgetAggregateHasUpdate(pScan, 1);
+		if ( pScan->bSubtreeHasUpdate == bOldUpdate &&
+			pScan->bSubtreeHasInactiveUpdate == bOldInactive ) break;
+	}
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	__xuiWidgetVerifyUpdateState(pWidget);
+#endif
 }
 
 static xui_widget_type __xuiWidgetTypeDefaultLayoutOwner(xui_widget_type pType)
@@ -3719,6 +3994,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->iMagic = XUI_WIDGET_MAGIC;
 	pWidget->pContext = pContext;
 	pWidget->pType = pType;
+	pWidget->bSubtreePrepareFrameDependent = __xuiWidgetTypePrepareFrameDependent(pType);
 
     if(pNativeOwner && __xuiWidgetStablePartSlot((xui_widget)pNativeOwner,ppWidget))pWidget->ppInternalOwnerSlot=ppWidget;
 	__xuiWidgetInitStackingChildren(pWidget);
@@ -3770,6 +4046,9 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->pCacheRenderUser = pWidget->pTypeData;
 	pWidget->onUpdate = __xuiWidgetTypeUpdate(pType);
 	pWidget->pUpdateUser = pWidget->pTypeData;
+	pWidget->bSubtreeHasUpdate = pWidget->onUpdate != NULL;
+	pWidget->bSubtreeHasInactiveUpdate = pWidget->onUpdate != NULL &&
+		(pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0;
 	pWidget->onQueryCursor = __xuiWidgetTypeQueryCursor(pType);
 	pWidget->pQueryCursorUser = pWidget->pTypeData;
 	iRet = xuiInternalLayoutCreateWidget(pWidget);
@@ -4045,6 +4324,7 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
     __xuiWidgetClearPartSlot(pWidget);
     __xuiWidgetUnlinkPart(pWidget);
     xui_widget visualParent=pWidget->pParent;
+	__xuiWidgetUnlinkRenderNodeOnDestroy(pWidget);
     if(visualParent){
         xuiInternalLayoutDetach(pWidget);
         if(pWidget->pPrevSibling)pWidget->pPrevSibling->pNextSibling=pWidget->pNextSibling;
@@ -4054,6 +4334,12 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget)
         if(visualParent->iChildCount>0)--visualParent->iChildCount;
         __xuiWidgetStackingDirty(visualParent);
         pWidget->pParent=NULL;pWidget->pPrevSibling=NULL;pWidget->pNextSibling=NULL;
+		__xuiWidgetUpdateEventMasksToRoot(visualParent);
+		__xuiWidgetRepairDirtyToRoot(visualParent);
+		__xuiWidgetRepairPrepareFrameDependentToRoot(visualParent);
+		__xuiWidgetRepairUpdateStateToRoot(visualParent);
+		__xuiWidgetMarkDirtyOnly(visualParent,
+			XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
     }
 	/* Detach before user destructors can request more context cleanup. */
 	xui_context pContext = pWidget->pContext;
@@ -4348,9 +4634,40 @@ static int __xuiWidgetInsertBeforeOperation(xui_widget pParent, xui_widget pChil
 	}
 	pChild->pParent = pParent;
 	pParent->iChildCount++;
+	if ( pChild->bSubtreePrepareFrameDependent ) {
+		xui_widget pScan;
+		for ( pScan = pParent; pScan != NULL; pScan = pScan->pParent ) {
+			if ( pScan->bSubtreePrepareFrameDependent ) break;
+			pScan->bSubtreePrepareFrameDependent = 1;
+		}
+	}
+	if ( pChild->bSubtreeHasUpdate || pChild->bSubtreeHasInactiveUpdate ) {
+		xui_widget pScan;
+		for ( pScan = pParent; pScan != NULL; pScan = pScan->pParent ) {
+			int bOldUpdate = pScan->bSubtreeHasUpdate;
+			int bOldInactive = pScan->bSubtreeHasInactiveUpdate;
+			pScan->bSubtreeHasUpdate |= pChild->bSubtreeHasUpdate;
+			pScan->bSubtreeHasInactiveUpdate |= pChild->bSubtreeHasInactiveUpdate;
+			if ( pScan->bSubtreeHasUpdate == bOldUpdate &&
+				pScan->bSubtreeHasInactiveUpdate == bOldInactive ) break;
+		}
+	}
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	__xuiWidgetVerifyUpdateState(pParent);
+#endif
 	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
-	__xuiWidgetUpdateEventMasksToRoot(pParent);
+	__xuiWidgetPropagateEventBitsToRoot(pParent, pChild->iSubtreeEventMask);
+	if ( pChild->iSubtreeDirtyFlags != 0 ) {
+		xui_widget pScan;
+		uint32_t iBits = pChild->iSubtreeDirtyFlags;
+		for ( pScan = pParent; pScan != NULL; pScan = pScan->pParent ) {
+			uint32_t iOldFlags = pScan->iSubtreeDirtyFlags;
+			pScan->iSubtreeDirtyFlags |= iBits;
+			pScan->pContext->iDirtyPropagationTotal++;
+			if ( pScan->iSubtreeDirtyFlags == iOldFlags ) break;
+		}
+	}
 	(void)xuiWidgetInvalidate(pParent, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 	__xuiWidgetNotifyParentChanged(pChild, NULL, pParent);
 	return XUI_OK;
@@ -4414,6 +4731,10 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget,const void* p
 	if ( !__xuiWidgetValid(pWidget) || pWidget->pParent != pParent ) return XUI_OK;
     if(pWidget->pInternalOwner && pWidget->pInternalOwner!=pAuthority)return XUI_ERROR_INVALID_STATE;
 	tWorldRect = xuiWidgetGetWorldRect(pWidget);
+	/* Remove the stable paint-order range while the old ancestor chain is
+	 * still available. A detached overlay may be destroyed before the next
+	 * RenderTree pass, so deferring this would leave stale subtree endpoints. */
+	__xuiWidgetUnlinkRenderNodeOnDestroy(pWidget);
 	xuiInternalLayoutDetach(pWidget);
 	if ( pWidget->pPrevSibling != NULL ) {
 		pWidget->pPrevSibling->pNextSibling = pWidget->pNextSibling;
@@ -4433,8 +4754,10 @@ static int __xuiWidgetRemoveFromParentOperation(xui_widget pWidget,const void* p
 	}
 	__xuiWidgetStackingDirty(pParent);
 	__xuiWidgetBumpLayoutVersion(pParent);
-	(void)__xuiWidgetRecomputeSubtreeEventMask(pWidget);
 	__xuiWidgetUpdateEventMasksToRoot(pParent);
+	__xuiWidgetRepairDirtyToRoot(pParent);
+	__xuiWidgetRepairPrepareFrameDependentToRoot(pParent);
+	__xuiWidgetRepairUpdateStateToRoot(pParent);
 	(void)__xuiWidgetInvalidateWorldRect(pParent, tWorldRect, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 	__xuiWidgetNotifyParentChanged(pWidget, pParent, NULL);
 	if ( __xuiWidgetValid(pWidget) ) __xuiWidgetSyncInactiveTree(pWidget);
@@ -4557,15 +4880,22 @@ XUI_API xui_rect_t xuiWidgetGetContentRect(xui_widget pWidget)
 
 XUI_API int xuiWidgetSetLayout(xui_widget pWidget, const xui_layout_t* pLayout)
 {
+	int bStackingChanged;
+	int iRet;
 	if ( !__xuiWidgetValid(pWidget) || !__xuiLayoutStructValid(pLayout) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidget->tLayout.iOverflow != pLayout->iOverflow ) __xuiWidgetDamagePaintTree(pWidget);
-	if ( pWidget->tLayout.iLayer != pLayout->iLayer || pWidget->tLayout.iZIndex != pLayout->iZIndex ) {
+	bStackingChanged = pWidget->tLayout.iLayer != pLayout->iLayer ||
+		pWidget->tLayout.iZIndex != pLayout->iZIndex;
+	if ( bStackingChanged ) {
 		__xuiWidgetStackingDirty(pWidget->pParent);
 	}
 	pWidget->tLayout = *pLayout;
-	return __xuiWidgetLayoutChanged(pWidget);
+	iRet = __xuiWidgetLayoutChanged(pWidget);
+	if ( iRet != XUI_OK || !bStackingChanged ) return iRet;
+	return xuiWidgetInvalidate(pWidget->pParent != NULL ? pWidget->pParent : pWidget,
+		XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API xui_layout_t xuiWidgetGetLayout(xui_widget pWidget)
@@ -4861,6 +5191,7 @@ XUI_API int xuiWidgetSetOverflow(xui_widget pWidget, int iOverflow)
 	}
 	__xuiWidgetDamagePaintTree(pWidget);
 	pWidget->tLayout.iOverflow = iOverflow;
+	pWidget->bRenderGeometryDirty = 1;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -4922,6 +5253,7 @@ XUI_API int xuiWidgetGetGridMetrics(xui_widget pWidget, int* pColumnCount, float
 
 XUI_API int xuiWidgetSetLayer(xui_widget pWidget, int iLayer, int iZIndex)
 {
+	xui_widget pStructuralRoot;
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -4931,7 +5263,8 @@ XUI_API int xuiWidgetSetLayer(xui_widget pWidget, int iLayer, int iZIndex)
 	pWidget->tLayout.iLayer = iLayer;
 	pWidget->tLayout.iZIndex = iZIndex;
 	__xuiWidgetStackingDirty(pWidget->pParent);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_RENDER);
+	pStructuralRoot = pWidget->pParent != NULL ? pWidget->pParent : pWidget;
+	return xuiWidgetInvalidate(pStructuralRoot, XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiWidgetGetLayer(xui_widget pWidget, int* pLayer, int* pZIndex)
@@ -5342,6 +5675,8 @@ XUI_API int xuiWidgetArrangeChild(xui_widget pParent, xui_widget pChild, xui_rec
 
 static int __xuiWidgetSetVisibleOperation(xui_widget pWidget, int bVisible)
 {
+	xui_widget pStructuralRoot;
+	int iRet;
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -5361,7 +5696,12 @@ static int __xuiWidgetSetVisibleOperation(xui_widget pWidget, int bVisible)
 		__xuiWidgetSyncInactiveTree(pWidget);
 		if ( !__xuiWidgetValid(pWidget) ) return XUI_OK;
 	}
-	return __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget), XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiWidgetInvalidateWorldRect(pWidget, xuiWidgetGetWorldRect(pWidget),
+		XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	pStructuralRoot = pWidget->pParent != NULL ? pWidget->pParent : pWidget;
+	return xuiWidgetInvalidate(pStructuralRoot,
+		XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiWidgetSetVisible(xui_widget pWidget, int bVisible)
@@ -5639,16 +5979,18 @@ XUI_API int xuiWidgetSetCancelAction(xui_widget pWidget, xui_widget_action_proc 
 
 XUI_API int xuiWidgetSetDragEnabled(xui_widget pWidget, int bEnabled)
 {
+	uint64_t iOldOwnMask;
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 	pWidget->bDragEnabled = bEnabled ? 1 : 0;
 	if ( pWidget->bDragEnabled ) {
 		pWidget->iEventInterestMask |= XUI_EVENT_MASK_DRAG;
 	} else if ( !pWidget->bDropEnabled ) {
 		pWidget->iEventInterestMask &= ~XUI_EVENT_MASK_DRAG;
 	}
-	__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	return XUI_OK;
 }
 
@@ -5659,14 +6001,16 @@ XUI_API int xuiWidgetGetDragEnabled(xui_widget pWidget)
 
 XUI_API int xuiWidgetSetDropEnabled(xui_widget pWidget, int bEnabled)
 {
+	uint64_t iOldOwnMask;
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 	pWidget->bDropEnabled = bEnabled ? 1 : 0;
 	if ( pWidget->bDropEnabled ) {
 		pWidget->iEventInterestMask |= XUI_EVENT_MASK_DRAG;
 	} else if ( !pWidget->bDragEnabled ) {
 		pWidget->iEventInterestMask &= ~XUI_EVENT_MASK_DRAG;
 	}
-	__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	return XUI_OK;
 }
 
@@ -5793,17 +6137,19 @@ int xuiInternalInputRefreshImePosition(xui_context pContext)
 
 XUI_API int xuiWidgetSetImeMode(xui_widget pWidget, int iImeMode)
 {
+	uint64_t iOldOwnMask;
 	if ( !__xuiWidgetValid(pWidget) ||
 	     ((iImeMode != XUI_IME_DISABLED) && (iImeMode != XUI_IME_ENABLED) && (iImeMode != XUI_IME_AUTO)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 	pWidget->iImeMode = iImeMode;
 	if ( iImeMode == XUI_IME_DISABLED ) {
 		pWidget->iEventInterestMask &= ~XUI_EVENT_MASK_IME;
 	} else {
 		pWidget->iEventInterestMask |= XUI_EVENT_MASK_IME;
 	}
-	__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	if ( (pWidget->pContext != NULL) && (pWidget->pContext->pFocusWidget == pWidget) ) {
 		return xuiInternalInputSyncIme(pWidget->pContext);
 	}
@@ -5943,12 +6289,13 @@ static int __xuiWidgetSetOwnedEvent(xui_widget pWidget, int iEventType,
 	if ( pSlot != NULL ) { tOld = *pSlot; *pSlot = pOwner == NULL ? (xui_callback_owner_t){0} : *pOwner; }
 	if ( iEventType == -1 ) { pWidget->onEvent = onEvent; pWidget->pEventUser = pUser; }
 	else {
+		uint64_t iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 		pWidget->arrEventHandlers[iEventType] = onEvent;
 		pWidget->arrEventUsers[iEventType] = pUser;
 		uint64_t iMask = __xuiWidgetEventTypeMask(iEventType);
 		if ( onEvent != NULL ) pWidget->iEventHandlerMask |= iMask;
 		else pWidget->iEventHandlerMask &= ~iMask;
-		__xuiWidgetUpdateEventMasksToRoot(pWidget);
+		__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	}
 	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
     (void)xuiInternalCallbackOwnerDrop(pContext, &tOld);
@@ -6258,6 +6605,7 @@ XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY)
 XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser)
 {
 	uint64_t iMask;
+	uint64_t iOldOwnMask;
 
 	if ( !__xuiWidgetValid(pWidget) ||
 	     (iEventType < 0) ||
@@ -6265,6 +6613,7 @@ XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_wid
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidget->pEventOwners != NULL ) return xuiWidgetSetEventHandlerOwned(pWidget, iEventType, onEvent, pUser, NULL);
+	iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 	pWidget->arrEventHandlers[iEventType] = onEvent;
 	pWidget->arrEventUsers[iEventType] = pUser;
 	iMask = __xuiWidgetEventTypeMask(iEventType);
@@ -6274,7 +6623,7 @@ XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_wid
 		} else {
 			pWidget->iEventHandlerMask &= ~iMask;
 		}
-		__xuiWidgetUpdateEventMasksToRoot(pWidget);
+		__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	}
 	return XUI_OK;
 }
@@ -6297,15 +6646,17 @@ XUI_API int xuiWidgetGetEventHandler(xui_widget pWidget, int iEventType, xui_wid
 
 XUI_API int xuiWidgetSetEventInterest(xui_widget pWidget, uint64_t iEventMask, int bEnabled)
 {
+	uint64_t iOldOwnMask;
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iOldOwnMask = __xuiWidgetOwnEventMask(pWidget);
 	if ( bEnabled ) {
 		pWidget->iEventInterestMask |= iEventMask;
 	} else {
 		pWidget->iEventInterestMask &= ~iEventMask;
 	}
-	__xuiWidgetUpdateEventMasksToRoot(pWidget);
+	__xuiWidgetApplyOwnEventMaskChange(pWidget, iOldOwnMask);
 	return XUI_OK;
 }
 
@@ -7131,7 +7482,7 @@ static void __xuiWidgetSyncInactiveTree(xui_widget pWidget)
 	xui_widget pChild;
 	xui_widget pNext;
 	int iRet;
-	if ( !__xuiWidgetValid(pWidget) ) return;
+	if ( !__xuiWidgetValid(pWidget) || !pWidget->bSubtreeHasInactiveUpdate ) return;
 	if ( pWidget->onUpdate != NULL &&
 		(pWidget->pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0 ) {
 		pWidget->pContext->iWidgetCallbackDepth++;
@@ -7154,7 +7505,7 @@ static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 	xui_widget pChild;
 	xui_widget pNext;
 	int iRet;
-	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible ) return;
+	if ( !__xuiWidgetValid(pWidget) || !pWidget->bVisible || !pWidget->bSubtreeHasUpdate ) return;
 	if ( pWidget->onUpdate != NULL ) {
 		pWidget->pContext->iWidgetCallbackDepth++;
 		iRet = xuiInternalInvokeUpdateCallback(pWidget,fDelta);
@@ -7410,7 +7761,7 @@ XUI_API void xuiWidgetClearDirty(xui_widget pWidget, uint32_t iFlags)
 		iFlags = XUI_WIDGET_DIRTY_ALL;
 	}
 	pWidget->iDirtyFlags &= ~iFlags;
-	pWidget->iSubtreeDirtyFlags &= ~iFlags;
+	__xuiWidgetRepairDirtyToRoot(pWidget);
 }
 
 XUI_API int xuiWidgetSetStyleName(xui_widget pWidget, const char* sName)
@@ -7720,6 +8071,7 @@ XUI_API int xuiWidgetSetUpdateCallbackOwned(xui_widget pWidget,xui_widget_update
     int result=xuiInternalCallbackUpdateBegin(pWidget,&pWidget->onUpdate,onUpdate!=NULL,pUser,pOwner,&update);
     if(result!=XUI_OK)return result;
     pWidget->onUpdate=onUpdate;pWidget->pUpdateUser=pUser;
+	__xuiWidgetRepairUpdateStateToRoot(pWidget);
     xuiInternalCallbackUpdatePublish(&update);
     result=XUI_OK;
     return xuiInternalCallbackUpdateEnd(&update,result);
@@ -7729,7 +8081,8 @@ XUI_API int xuiWidgetSetUpdateCallback(xui_widget pWidget, xui_widget_update_pro
 {
     if(!__xuiWidgetValid(pWidget))return XUI_ERROR_INVALID_ARGUMENT;
     if(xuiInternalCallbackSlotOwned(pWidget,&pWidget->onUpdate))return xuiWidgetSetUpdateCallbackOwned(pWidget,onUpdate,pUser,NULL);
-    pWidget->onUpdate=onUpdate;pWidget->pUpdateUser=pUser;
+	pWidget->onUpdate=onUpdate;pWidget->pUpdateUser=pUser;
+	__xuiWidgetRepairUpdateStateToRoot(pWidget);
     return XUI_OK;
 }
 
@@ -8221,10 +8574,15 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 			__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
 		}
 	}
-	if ( !pWidget->bVisible || (iPolicy == XUI_CACHE_POLICY_NONE) ) {
+	if ( !pWidget->bVisible ) {
+		return XUI_OK;
+	}
+	if ( iPolicy == XUI_CACHE_POLICY_NONE ) {
+		pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_TREE);
 		return XUI_OK;
 	}
 	if ( (iPolicy == XUI_CACHE_POLICY_SELF) && (pWidget->onCacheRender == NULL) ) {
+		pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_TREE);
 		return XUI_OK;
 	}
 	if ( ((pWidget->tCachePolicy.iFlags & XUI_CACHE_UPDATE_ALL_STATES) != 0) && (pWidget->iCacheCount > 0) ) {
@@ -8254,6 +8612,13 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) || !pWidget->bVisible ) {
 		return;
 	}
+	if ( (pWidget->iSubtreeDirtyFlags & XUI_RENDER_SUBTREE_DIRTY_FLAGS) == 0 &&
+	     !pWidget->bSubtreePrepareFrameDependent &&
+	     pWidget->iResolvedStyleGeneration == pWidget->pContext->iStyleGeneration ) {
+		pWidget->pContext->tRenderStats.iPrepareSkippedSubtrees++;
+		return;
+	}
+	pWidget->pContext->tRenderStats.iPrepareVisitedWidgets++;
 	/* Detached and newly created widgets can miss the context's style refresh. */
 	if ( pWidget->iResolvedStyleGeneration != pWidget->pContext->iStyleGeneration ) {
 		iRet = xuiWidgetResolveStyle(pWidget);
@@ -8285,12 +8650,15 @@ static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 		xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_CACHE, 1,
 			"cache.prepare", "The widget cache could not be prepared and was skipped.");
 	}
+	pWidget->iSubtreeDirtyFlags = __xuiWidgetAggregateDirtyFlags(pWidget);
 }
 
 static int __xuiRenderPrepareOperation(xui_context pContext)
 {
 	xui_widget pRoot;
 	uint32_t iGeneration;
+	uint64_t iDirtySnapshot;
+	uint64_t iEventSnapshot;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ) {
@@ -8305,6 +8673,8 @@ static int __xuiRenderPrepareOperation(xui_context pContext)
 	if ( iGeneration == 0 ) {
 		iGeneration = 1;
 	}
+	iDirtySnapshot = pContext->iDirtyPropagationSnapshot;
+	iEventSnapshot = pContext->iEventMaskPropagationSnapshot;
 	memset(&pContext->tRenderStats, 0, sizeof(pContext->tRenderStats));
 	pContext->tRenderStats.iSize = sizeof(pContext->tRenderStats);
 	pContext->tRenderStats.iGeneration = iGeneration;
@@ -8319,14 +8689,30 @@ static int __xuiRenderPrepareOperation(xui_context pContext)
 	if ( pRoot != NULL ) {
 		__xuiWidgetRenderPrepareTree(pRoot);
 		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
-		if ( pContext->pRoot == pRoot ) (void)__xuiWidgetRecomputeSubtreeDirtyFlags(pRoot);
 	}
 	pRoot = pContext->pOverlayRoot;
 	if ( pRoot != NULL ) {
 		__xuiWidgetRenderPrepareTree(pRoot);
-		if ( !xuiInternalContextDestroyPending(pContext) && pContext->pOverlayRoot == pRoot )
-			(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pRoot);
+		if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 	}
+	pContext->tRenderStats.iDirtyPropagationSteps =
+		pContext->iDirtyPropagationTotal - iDirtySnapshot;
+	pContext->tRenderStats.iEventMaskPropagationSteps =
+		pContext->iEventMaskPropagationTotal - iEventSnapshot;
+	pContext->iDirtyPropagationSnapshot = pContext->iDirtyPropagationTotal;
+	pContext->iEventMaskPropagationSnapshot = pContext->iEventMaskPropagationTotal;
+	pContext->tRenderStats.iRootStructureRevision = pContext->iRootStructureRevision;
+	pContext->tRenderStats.iOverlayStructureRevision = pContext->iOverlayStructureRevision;
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	{
+		int bValid = 1;
+		if ( pContext->pRoot != NULL )
+			(void)__xuiWidgetVerifyDirtyMaskRecursive(pContext->pRoot, &bValid);
+		if ( pContext->pOverlayRoot != NULL )
+			(void)__xuiWidgetVerifyDirtyMaskRecursive(pContext->pOverlayRoot, &bValid);
+		if ( !bValid ) return XUI_ERROR_INVALID_STATE;
+	}
+#endif
 	return XUI_OK;
 }
 
@@ -8342,11 +8728,17 @@ XUI_API int xuiRenderPrepare(xui_context pContext)
 
 XUI_API int xuiGetRenderStats(xui_context pContext, xui_render_stats_t* pStats)
 {
+	size_t iCopySize;
+	xui_render_stats_t tStats;
+
 	if ( !xuiInternalContextIsValid(pContext) || (pStats == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	*pStats = pContext->tRenderStats;
-	pStats->iSize = sizeof(*pStats);
+	iCopySize = pStats->iSize;
+	if ( iCopySize == 0 || iCopySize > sizeof(*pStats) ) iCopySize = sizeof(*pStats);
+	tStats = pContext->tRenderStats;
+	tStats.iSize = sizeof(tStats);
+	memcpy(pStats, &tStats, iCopySize);
 	return XUI_OK;
 }
 
@@ -8416,17 +8808,358 @@ XUI_API int xuiPurgeCaches(xui_context pContext, size_t iTargetBytes)
 	return xuiInternalContextInvalidateAll(pContext);
 }
 
+static xui_rect_t __xuiWidgetInheritedRenderClip(xui_context pContext, xui_widget pWidget)
+{
+	xui_rect_t tClip;
+	xui_widget pAncestor;
+
+	tClip.fX = 0.0f;
+	tClip.fY = 0.0f;
+	tClip.fW = pContext->fViewportWidth;
+	tClip.fH = pContext->fViewportHeight;
+	for ( pAncestor = pWidget->pParent; pAncestor != NULL; pAncestor = pAncestor->pParent ) {
+		if ( (pAncestor->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN) ||
+		     (pAncestor->tLayout.iOverflow == XUI_OVERFLOW_CLIP) ) {
+			tClip = __xuiWidgetIntersectRect(tClip,
+				xuiInternalSnapRect(xuiWidgetGetWorldRect(pAncestor)));
+		}
+	}
+	return tClip;
+}
+
+static int __xuiWidgetRemoveRenderRange(xui_context pContext, xui_widget pWidget,
+	xui_widget* ppBefore, xui_widget* ppAfter)
+{
+	xui_widget pEnd;
+	xui_widget pScan;
+	xui_widget pNext;
+	int iRemoved = 0;
+
+	*ppBefore = NULL;
+	*ppAfter = NULL;
+	if ( pWidget == NULL || !pWidget->bRenderNodeLinked ) return 0;
+	pEnd = pWidget->pRenderSubtreeLast != NULL ? pWidget->pRenderSubtreeLast : pWidget;
+	*ppBefore = pWidget->pRenderPrev;
+	*ppAfter = pEnd->pRenderNext;
+	if ( *ppBefore != NULL ) (*ppBefore)->pRenderNext = *ppAfter;
+	else pContext->pRenderHead = *ppAfter;
+	if ( *ppAfter != NULL ) (*ppAfter)->pRenderPrev = *ppBefore;
+	else pContext->pRenderTail = *ppBefore;
+	for ( pScan = pWidget; pScan != *ppAfter; pScan = pNext ) {
+		pNext = pScan->pRenderNext;
+		pScan->pRenderPrev = NULL;
+		pScan->pRenderNext = NULL;
+		pScan->pRenderSubtreeLast = NULL;
+		pScan->bRenderNodeLinked = 0;
+		iRemoved++;
+	}
+	pContext->iRenderLinkedNodeCount -= iRemoved;
+	if ( pContext->iRenderLinkedNodeCount < 0 ) pContext->iRenderLinkedNodeCount = 0;
+	pContext->tRenderStats.iRenderNodesRemoved += iRemoved;
+	pContext->bRenderIndexDirty = 1;
+	return iRemoved;
+}
+
+static void __xuiWidgetClearRenderStructureDirtyTree(xui_widget pWidget)
+{
+	xui_widget pChild;
+	if ( pWidget == NULL ) return;
+	pWidget->bRenderStructureDirty = 0;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling )
+		__xuiWidgetClearRenderStructureDirtyTree(pChild);
+	pWidget->bSubtreeRenderStructureDirty = 0;
+}
+
+static int __xuiWidgetRebuildRenderRange(xui_context pContext, xui_widget pWidget)
+{
+	xui_widget pBefore;
+	xui_widget pAfter;
+	xui_widget pHead = NULL;
+	xui_widget pTail = NULL;
+	xui_widget pOldEnd;
+	xui_widget pAncestor;
+	xui_widget pReplacement;
+	xui_rect_t tClip;
+	int iCount = 0;
+	int iRet;
+
+	if ( pWidget == NULL ) return XUI_OK;
+	pOldEnd = pWidget->bRenderNodeLinked ?
+		(pWidget->pRenderSubtreeLast != NULL ? pWidget->pRenderSubtreeLast : pWidget) : NULL;
+	(void)__xuiWidgetRemoveRenderRange(pContext, pWidget, &pBefore, &pAfter);
+	tClip = __xuiWidgetInheritedRenderClip(pContext, pWidget);
+	iRet = __xuiWidgetBuildRenderChainRecursive(pContext, pWidget, tClip, 1,
+		&pHead, &pTail, &iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pHead != NULL ) {
+		pHead->pRenderPrev = pBefore;
+		if ( pBefore != NULL ) pBefore->pRenderNext = pHead;
+		else pContext->pRenderHead = pHead;
+		pTail->pRenderNext = pAfter;
+		if ( pAfter != NULL ) pAfter->pRenderPrev = pTail;
+		else pContext->pRenderTail = pTail;
+	} else {
+		if ( pBefore != NULL ) pBefore->pRenderNext = pAfter;
+		else pContext->pRenderHead = pAfter;
+		if ( pAfter != NULL ) pAfter->pRenderPrev = pBefore;
+		else pContext->pRenderTail = pBefore;
+	}
+	pContext->iRenderLinkedNodeCount += iCount;
+	pContext->tRenderStats.iRenderNodesInserted += iCount;
+	pContext->bRenderIndexDirty = 1;
+	/* A partial range rebuild may change the final node of every ancestor for
+	 * which this subtree is the final visible child. Keep those range ends exact. */
+	pReplacement = pTail != NULL ? pTail : pBefore;
+	for ( pAncestor = pWidget->pParent; pOldEnd != NULL && pAncestor != NULL;
+		pAncestor = pAncestor->pParent ) {
+		if ( pAncestor->pRenderSubtreeLast != pOldEnd ) break;
+		pAncestor->pRenderSubtreeLast = pReplacement;
+	}
+	__xuiWidgetClearRenderStructureDirtyTree(pWidget);
+	if ( pWidget->pParent != NULL ) __xuiWidgetRepairRenderStructureToRoot(pWidget->pParent);
+	return XUI_OK;
+}
+
+static int __xuiWidgetRebuildDirtyRenderRanges(xui_context pContext, xui_widget pWidget)
+{
+	const xui_widget* ppChildren;
+	int iChildCount;
+	int i;
+	int iRet;
+
+	if ( pWidget == NULL || !pWidget->bSubtreeRenderStructureDirty )
+		return XUI_OK;
+	if ( pWidget->bRenderStructureDirty )
+		return __xuiWidgetRebuildRenderRange(pContext, pWidget);
+	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iChildCount; ++i ) {
+		xui_widget pChild = ppChildren[i];
+		if ( !pChild->bSubtreeRenderStructureDirty ) continue;
+		if ( !pChild->bRenderNodeLinked ) return __xuiWidgetRebuildRenderRange(pContext, pWidget);
+		iRet = __xuiWidgetRebuildDirtyRenderRanges(pContext, pChild);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiWidgetUpdateRenderRecords(xui_context pContext, xui_widget pWidget,
+	xui_rect_t tParentClip, int bHasClip, int bForce)
+{
+	const xui_widget* ppChildren;
+	xui_rect_t tWorldRect;
+	xui_rect_t tPaintRect;
+	xui_rect_t tChildClip;
+	int bChildHasClip;
+	int bForceChildren;
+	int iChildCount;
+	int i;
+	int iRet;
+
+	if ( pWidget == NULL || !pWidget->bVisible ) return XUI_OK;
+	if ( !bForce && (pWidget->iSubtreeDirtyFlags & XUI_RENDER_SUBTREE_DIRTY_FLAGS) == 0 )
+		return XUI_OK;
+	bForceChildren = bForce || pWidget->bRenderGeometryDirty;
+	tWorldRect = xuiInternalSnapRect(xuiWidgetGetWorldRect(pWidget));
+	tPaintRect = bHasClip ? __xuiWidgetIntersectRect(tWorldRect, tParentClip) : tWorldRect;
+	if ( pWidget->bRenderNodeLinked &&
+	     (bForce || pWidget->bRenderGeometryDirty ||
+	      (pWidget->iDirtyFlags & XUI_RENDER_SUBTREE_DIRTY_FLAGS) != 0) ) {
+		__xuiWidgetFillRenderNode(pWidget, tPaintRect);
+		pContext->tRenderStats.iRenderNodesUpdated++;
+		pContext->bRenderIndexDirty = 1;
+	}
+	tChildClip = tParentClip;
+	bChildHasClip = bHasClip;
+	if ( (pWidget->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN) ||
+	     (pWidget->tLayout.iOverflow == XUI_OVERFLOW_CLIP) ) {
+		tChildClip = bHasClip ? __xuiWidgetIntersectRect(tPaintRect, tParentClip) : tPaintRect;
+		bChildHasClip = 1;
+	}
+	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iChildCount; ++i ) {
+		iRet = __xuiWidgetUpdateRenderRecords(pContext, ppChildren[i], tChildClip,
+			bChildHasClip, bForceChildren);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static void __xuiWidgetClearLinkedRenderTree(xui_context pContext)
+{
+	xui_widget pScan;
+	xui_widget pNext;
+
+	for ( pScan = pContext->pRenderHead; pScan != NULL; pScan = pNext ) {
+		pNext = pScan->pRenderNext;
+		pScan->pRenderPrev = NULL;
+		pScan->pRenderNext = NULL;
+		pScan->pRenderSubtreeLast = NULL;
+		pScan->bRenderNodeLinked = 0;
+	}
+	pContext->pRenderHead = NULL;
+	pContext->pRenderTail = NULL;
+	pContext->iRenderLinkedNodeCount = 0;
+	pContext->bRenderIndexDirty = 1;
+}
+
+static int __xuiWidgetBuildFullRenderTree(xui_context pContext, xui_rect_t tRootClip)
+{
+	xui_widget pHead = NULL;
+	xui_widget pTail = NULL;
+	int iOldCount = pContext->iRenderLinkedNodeCount;
+	int iCount = 0;
+	int iRet;
+
+	__xuiWidgetClearLinkedRenderTree(pContext);
+	if ( pContext->pRoot != NULL ) {
+		iRet = __xuiWidgetBuildRenderChainRecursive(pContext, pContext->pRoot, tRootClip, 1,
+			&pHead, &pTail, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pContext->pOverlayRoot != NULL ) {
+		iRet = __xuiWidgetBuildRenderChainRecursive(pContext, pContext->pOverlayRoot, tRootClip, 1,
+			&pHead, &pTail, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pContext->pRenderHead = pHead;
+	pContext->pRenderTail = pTail;
+	pContext->iRenderLinkedNodeCount = iCount;
+	pContext->tRenderStats.iRenderNodesRemoved += iOldCount;
+	pContext->tRenderStats.iRenderNodesInserted += iCount;
+	pContext->bRenderIndexDirty = 1;
+	__xuiWidgetClearRenderStructureDirtyTree(pContext->pRoot);
+	__xuiWidgetClearRenderStructureDirtyTree(pContext->pOverlayRoot);
+	return XUI_OK;
+}
+
+static int __xuiWidgetAppendTopRenderRange(xui_context pContext, xui_widget pWidget,
+	xui_rect_t tRootClip)
+{
+	xui_widget pHead = NULL;
+	xui_widget pTail = NULL;
+	int iCount = 0;
+	int iRet;
+
+	iRet = __xuiWidgetBuildRenderChainRecursive(pContext, pWidget, tRootClip, 1,
+		&pHead, &pTail, &iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pHead != NULL ) {
+		pHead->pRenderPrev = pContext->pRenderTail;
+		if ( pContext->pRenderTail != NULL ) pContext->pRenderTail->pRenderNext = pHead;
+		else pContext->pRenderHead = pHead;
+		pContext->pRenderTail = pTail;
+	}
+	pContext->iRenderLinkedNodeCount += iCount;
+	pContext->tRenderStats.iRenderNodesInserted += iCount;
+	pContext->bRenderIndexDirty = 1;
+	__xuiWidgetClearRenderStructureDirtyTree(pWidget);
+	if ( pWidget->pParent != NULL ) __xuiWidgetRepairRenderStructureToRoot(pWidget->pParent);
+	return XUI_OK;
+}
+
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+static int __xuiWidgetVerifyRenderChainRecursive(xui_widget pWidget, xui_rect_t tParentClip,
+	int bHasClip, xui_widget* ppScan, int* pCount)
+{
+	const xui_widget* ppChildren;
+	xui_rect_t tWorldRect;
+	xui_rect_t tPaintRect;
+	xui_rect_t tChildClip;
+	xui_render_node_t* pNode;
+	xui_widget pExpectedLast;
+	int bChildHasClip;
+	int iChildCount;
+	int i;
+	int iRet;
+
+	if ( pWidget == NULL || !pWidget->bVisible ) return XUI_OK;
+	if ( *ppScan != pWidget || !pWidget->bRenderNodeLinked ) {
+		fprintf(stderr, "XUI incremental verification failed: render order/link\n");
+		return XUI_ERROR_INVALID_STATE;
+	}
+	pNode = &pWidget->tRenderNode;
+	tWorldRect = xuiInternalSnapRect(xuiWidgetGetWorldRect(pWidget));
+	tPaintRect = bHasClip ? __xuiWidgetIntersectRect(tWorldRect, tParentClip) : tWorldRect;
+	if ( pNode->pWidget != pWidget || memcmp(&pNode->tWorldRect, &tWorldRect, sizeof(tWorldRect)) != 0 ||
+	     memcmp(&pNode->tPaintRect, &tPaintRect, sizeof(tPaintRect)) != 0 ||
+	     pNode->iLayer != pWidget->tLayout.iLayer || pNode->iZIndex != pWidget->tLayout.iZIndex ||
+	     pNode->iStateId != pWidget->iStateId ||
+	     pNode->iCachePolicy != __xuiWidgetEffectiveCachePolicy(pWidget) )
+	{
+		fprintf(stderr, "XUI incremental verification failed: render node geometry/state\n");
+		return XUI_ERROR_INVALID_STATE;
+	}
+	(*pCount)++;
+	*ppScan = pWidget->pRenderNext;
+	tChildClip = tParentClip;
+	bChildHasClip = bHasClip;
+	if ( (pWidget->tLayout.iOverflow == XUI_OVERFLOW_HIDDEN) ||
+	     (pWidget->tLayout.iOverflow == XUI_OVERFLOW_CLIP) ) {
+		tChildClip = bHasClip ? __xuiWidgetIntersectRect(tPaintRect, tParentClip) : tPaintRect;
+		bChildHasClip = 1;
+	}
+	iRet = xuiInternalStackingChildren(pWidget, &ppChildren, &iChildCount);
+	if ( iRet != XUI_OK ) return iRet;
+	pExpectedLast = pWidget;
+	for ( i = 0; i < iChildCount; ++i ) {
+		iRet = __xuiWidgetVerifyRenderChainRecursive(ppChildren[i], tChildClip,
+			bChildHasClip, ppScan, pCount);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( ppChildren[i]->bVisible && ppChildren[i]->pRenderSubtreeLast != NULL )
+			pExpectedLast = ppChildren[i]->pRenderSubtreeLast;
+	}
+	if ( pWidget->pRenderSubtreeLast != pExpectedLast ) {
+		fprintf(stderr, "XUI render range mismatch: widget=%p type=%s stored=%p/%s expected=%p/%s children=%d\n",
+			(void*)pWidget,
+			pWidget->pType != NULL ? pWidget->pType->sName : "?",
+			(void*)pWidget->pRenderSubtreeLast,
+			pWidget->pRenderSubtreeLast != NULL && pWidget->pRenderSubtreeLast->pType != NULL ?
+				pWidget->pRenderSubtreeLast->pType->sName : "null",
+			(void*)pExpectedLast,
+			pExpectedLast != NULL && pExpectedLast->pType != NULL ? pExpectedLast->pType->sName : "null",
+			pWidget->iChildCount);
+		return XUI_ERROR_INVALID_STATE;
+	}
+	return XUI_OK;
+}
+
+static int __xuiWidgetVerifyRenderChain(xui_context pContext, xui_rect_t tRootClip)
+{
+	xui_widget pScan = pContext->pRenderHead;
+	int iCount = 0;
+	int iRet;
+	if ( pContext->pRoot != NULL ) {
+		iRet = __xuiWidgetVerifyRenderChainRecursive(pContext->pRoot, tRootClip, 1, &pScan, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pContext->pOverlayRoot != NULL ) {
+		iRet = __xuiWidgetVerifyRenderChainRecursive(pContext->pOverlayRoot, tRootClip, 1, &pScan, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pScan != NULL || iCount != pContext->iRenderLinkedNodeCount ) {
+		fprintf(stderr, "XUI incremental verification failed: render chain count\n");
+		return XUI_ERROR_INVALID_STATE;
+	}
+	return XUI_OK;
+}
+#endif
+
 static int __xuiBuildRenderTreeOperation(xui_context pContext)
 {
 	xui_rect_t tRootClip;
 	uint32_t iGeneration;
+	int iOldCount;
+	int bOverlayAdded = 0;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pContext->iRenderNodeCount = 0;
 	if ( (pContext->pRoot == NULL) && (pContext->pOverlayRoot == NULL) ) {
+		__xuiWidgetClearLinkedRenderTree(pContext);
+		pContext->iRenderNodeCount = 0;
 		return XUI_OK;
 	}
 	iRet = xuiInternalEnsureLayout(pContext);
@@ -8439,22 +9172,43 @@ static int __xuiBuildRenderTreeOperation(xui_context pContext)
 	tRootClip.fY = 0.0f;
 	tRootClip.fW = pContext->fViewportWidth;
 	tRootClip.fH = pContext->fViewportHeight;
-	if ( pContext->pRoot != NULL ) {
-		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pContext->pRoot, tRootClip, 1);
-		if ( iRet != XUI_OK ) {
-			xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_RENDER, 0,
-				"render_tree.build", "The root render tree could not be built.");
-			return iRet;
+	iOldCount = pContext->iRenderLinkedNodeCount;
+	if ( pContext->iRenderTreeGeneration == 0 ||
+	     (pContext->pRoot != NULL && pContext->pRoot->bVisible && !pContext->pRoot->bRenderNodeLinked) ) {
+		iRet = __xuiWidgetBuildFullRenderTree(pContext, tRootClip);
+	} else {
+		iRet = XUI_OK;
+		if ( pContext->pOverlayRoot != NULL && pContext->pOverlayRoot->bVisible &&
+		     !pContext->pOverlayRoot->bRenderNodeLinked ) {
+			iRet = __xuiWidgetAppendTopRenderRange(pContext, pContext->pOverlayRoot, tRootClip);
+			bOverlayAdded = (iRet == XUI_OK);
 		}
+		if ( iRet == XUI_OK ) iRet = __xuiWidgetRebuildDirtyRenderRanges(pContext, pContext->pRoot);
+		if ( iRet == XUI_OK && !bOverlayAdded )
+			iRet = __xuiWidgetRebuildDirtyRenderRanges(pContext, pContext->pOverlayRoot);
+	}
+	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_RENDER, 0,
+			"render_tree.build", "The incremental render tree could not be updated.");
+		return iRet;
+	}
+	if ( pContext->pRoot != NULL ) {
+		iRet = __xuiWidgetUpdateRenderRecords(pContext, pContext->pRoot, tRootClip, 1, 0);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pContext->pOverlayRoot != NULL ) {
-		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pContext->pOverlayRoot, tRootClip, 1);
-		if ( iRet != XUI_OK ) {
-			xuiInternalReportError(pContext, pContext->pOverlayRoot, iRet, XUI_ERROR_STAGE_RENDER, 0,
-				"render_tree.build", "The overlay render tree could not be built.");
-			return iRet;
-		}
+		iRet = __xuiWidgetUpdateRenderRecords(pContext, pContext->pOverlayRoot, tRootClip, 1, 0);
+		if ( iRet != XUI_OK ) return iRet;
 	}
+	pContext->iRenderNodeCount = pContext->iRenderLinkedNodeCount;
+	pContext->tRenderStats.iRenderNodesReused = iOldCount - pContext->tRenderStats.iRenderNodesRemoved;
+	if ( pContext->tRenderStats.iRenderNodesReused < 0 ) pContext->tRenderStats.iRenderNodesReused = 0;
+	pContext->tRenderStats.iRootStructureRevision = pContext->iRootStructureRevision;
+	pContext->tRenderStats.iOverlayStructureRevision = pContext->iOverlayStructureRevision;
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	iRet = __xuiWidgetVerifyRenderChain(pContext, tRootClip);
+	if ( iRet != XUI_OK ) return iRet;
+#endif
 	iGeneration = pContext->iRenderTreeGeneration + 1;
 	pContext->iRenderTreeGeneration = (iGeneration != 0) ? iGeneration : 1;
 	return XUI_OK;
@@ -8475,7 +9229,25 @@ XUI_API int xuiGetRenderNodeCount(xui_context pContext)
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return 0;
 	}
-	return pContext->iRenderNodeCount;
+	return pContext->iRenderLinkedNodeCount;
+}
+
+static int __xuiWidgetRefreshRenderNodeIndex(xui_context pContext)
+{
+	xui_widget pScan;
+	int iRet;
+	int iCount = 0;
+
+	if ( !pContext->bRenderIndexDirty &&
+	     pContext->iRenderNodeCount == pContext->iRenderLinkedNodeCount ) return XUI_OK;
+	iRet = __xuiWidgetReserveRenderNodes(pContext, pContext->iRenderLinkedNodeCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( pScan = pContext->pRenderHead; pScan != NULL; pScan = pScan->pRenderNext ) {
+		pContext->pRenderNodes[iCount++] = pScan->tRenderNode;
+	}
+	pContext->iRenderNodeCount = iCount;
+	pContext->bRenderIndexDirty = 0;
+	return XUI_OK;
 }
 
 XUI_API int xuiGetRenderNode(xui_context pContext, int iIndex, xui_render_node_t* pNode)
@@ -8483,9 +9255,10 @@ XUI_API int xuiGetRenderNode(xui_context pContext, int iIndex, xui_render_node_t
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (pNode == NULL) ||
 	     (iIndex < 0) ||
-	     (iIndex >= pContext->iRenderNodeCount) ) {
+	     (iIndex >= pContext->iRenderLinkedNodeCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xuiWidgetRefreshRenderNodeIndex(pContext) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	*pNode = pContext->pRenderNodes[iIndex];
 	pNode->iSize = sizeof(*pNode);
 	return XUI_OK;
@@ -8555,6 +9328,7 @@ static int __xuiWidgetRenderTreeToSurface(xui_widget pWidget, xui_surface pTarge
 		}
 	}
 	pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE);
+	pWidget->iSubtreeDirtyFlags = __xuiWidgetAggregateDirtyFlags(pWidget);
 	return XUI_OK;
 }
 
@@ -8566,7 +9340,7 @@ XUI_API int xuiWidgetRenderTree(xui_widget pWidget, xui_surface pTarget)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiWidgetRenderTreeToSurface(pWidget, pTarget);
-	(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pWidget);
+	__xuiWidgetRepairDirtyToRoot(pWidget);
 	return iRet;
 }
 
@@ -8583,31 +9357,38 @@ static int __xuiDebugDepth(xui_widget pWidget)
 
 XUI_API int xuiDebugWidgetInspect(xui_widget pWidget, xui_debug_widget_info_t* pInfo)
 {
+	size_t iCopySize;
+	xui_debug_widget_info_t tInfo;
+
 	if ( !__xuiWidgetValid(pWidget) || (pInfo == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pInfo, 0, sizeof(*pInfo));
-	pInfo->iSize = sizeof(*pInfo);
-	pInfo->pWidget = pWidget;
-	pInfo->pParent = pWidget->pParent;
-	pInfo->iDepth = __xuiDebugDepth(pWidget);
-	pInfo->iChildCount = pWidget->iChildCount;
-	pInfo->bVisible = pWidget->bVisible;
-	pInfo->bEnabled = pWidget->bEnabled;
-	pInfo->bFocusable = pWidget->bFocusable;
-	pInfo->bTabStop = pWidget->bTabStop;
-	pInfo->bFocusScope = pWidget->bFocusScope;
-	pInfo->bHitTestVisible = pWidget->bHitTestVisible;
-	pInfo->bDragEnabled = pWidget->bDragEnabled;
-	pInfo->bDropEnabled = pWidget->bDropEnabled;
-	pInfo->iImeMode = pWidget->iImeMode;
-	pInfo->iLayer = pWidget->tLayout.iLayer;
-	pInfo->iZIndex = pWidget->tLayout.iZIndex;
-	pInfo->iDirtyFlags = pWidget->iDirtyFlags;
-	pInfo->iEventMask = __xuiWidgetOwnEventMask(pWidget);
-	pInfo->iSubtreeEventMask = pWidget->iSubtreeEventMask;
-	pInfo->tRect = pWidget->tRect;
-	pInfo->tWorldRect = xuiWidgetGetWorldRect(pWidget);
+	iCopySize = pInfo->iSize;
+	if ( iCopySize == 0 || iCopySize > sizeof(*pInfo) ) iCopySize = sizeof(*pInfo);
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.pWidget = pWidget;
+	tInfo.pParent = pWidget->pParent;
+	tInfo.iDepth = __xuiDebugDepth(pWidget);
+	tInfo.iChildCount = pWidget->iChildCount;
+	tInfo.bVisible = pWidget->bVisible;
+	tInfo.bEnabled = pWidget->bEnabled;
+	tInfo.bFocusable = pWidget->bFocusable;
+	tInfo.bTabStop = pWidget->bTabStop;
+	tInfo.bFocusScope = pWidget->bFocusScope;
+	tInfo.bHitTestVisible = pWidget->bHitTestVisible;
+	tInfo.bDragEnabled = pWidget->bDragEnabled;
+	tInfo.bDropEnabled = pWidget->bDropEnabled;
+	tInfo.iImeMode = pWidget->iImeMode;
+	tInfo.iLayer = pWidget->tLayout.iLayer;
+	tInfo.iZIndex = pWidget->tLayout.iZIndex;
+	tInfo.iDirtyFlags = pWidget->iDirtyFlags;
+	tInfo.iEventMask = __xuiWidgetOwnEventMask(pWidget);
+	tInfo.iSubtreeEventMask = pWidget->iSubtreeEventMask;
+	tInfo.tRect = pWidget->tRect;
+	tInfo.tWorldRect = xuiWidgetGetWorldRect(pWidget);
+	tInfo.iSubtreeDirtyFlags = pWidget->iSubtreeDirtyFlags;
+	memcpy(pInfo, &tInfo, iCopySize);
 	return XUI_OK;
 }
 

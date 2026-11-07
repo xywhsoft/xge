@@ -3,6 +3,8 @@
 #include "xui_internal.h"
 
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct xui_window_data_t {
@@ -618,25 +620,22 @@ static int __xuiWindowApplyLayerAndZ(xui_widget pWidget, xui_window_data_t* pDat
 		pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL);
 }
 
-static int __xuiWindowDeactivateInTree(xui_widget pRoot, xui_widget pExcept)
+static int __xuiWindowDeactivateActive(xui_context pContext, xui_widget pExcept)
 {
-	xui_widget pChild;
+	xui_widget pActive;
 	xui_window_data_t* pData;
 	int iRet;
 
-	if ( pRoot == NULL ) {
-		return XUI_OK;
-	}
-	pData = __xuiWindowGetData(pRoot);
-	if ( (pData != NULL) && (pRoot != pExcept) && pData->bActive ) {
+	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pActive = pContext->pActiveWindow;
+	if ( pActive == NULL || pActive == pExcept ) return XUI_OK;
+	pContext->pActiveWindow = NULL;
+	pData = __xuiWindowGetData(pActive);
+	if ( pData != NULL && pData->bActive ) {
 		pData->bActive = 0;
-		(void)__xuiWindowApplyLayerAndZ(pRoot, pData);
-		iRet = __xuiWindowInvalidateChrome(pRoot, pData,
+		(void)__xuiWindowApplyLayerAndZ(pActive, pData);
+		iRet = __xuiWindowInvalidateChrome(pActive, pData,
 			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	for ( pChild = pRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iRet = __xuiWindowDeactivateInTree(pChild, pExcept);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -657,11 +656,10 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 	}
 	bWasActive = pData->bActive;
 	pContext = xuiWidgetGetContext(pWidget);
-	iRet = __xuiWindowDeactivateInTree(xuiGetRootWidget(pContext), pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiWindowDeactivateInTree(xuiOverlayRoot(pContext), pWidget);
+	iRet = __xuiWindowDeactivateActive(pContext, pWidget);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->bActive = 1;
+	pContext->pActiveWindow = pWidget;
 	iRet = __xuiWindowApplyLayerAndZ(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bRaise ) {
@@ -685,6 +683,7 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+#if XUI_ENABLE_INCREMENTAL_VERIFY
 static xui_widget __xuiWindowFindActiveInTree(xui_widget pRoot)
 {
 	xui_widget pChild;
@@ -707,6 +706,7 @@ static xui_widget __xuiWindowFindActiveInTree(xui_widget pRoot)
 	}
 	return NULL;
 }
+#endif
 
 static uint32_t __xuiWindowResizeEdgesAtData(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, float fX, float fY)
 {
@@ -1504,6 +1504,7 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 			__xuiWindowCancelInteraction(pWidget, pData, 1);
 			__xuiWindowCancelButtonPress(pWidget, pData, 1);
 			pData->bActive = 0;
+			if ( pContext->pActiveWindow == pWidget ) pContext->pActiveWindow = NULL;
 		}
 		(void)__xuiWindowInvalidateChrome(pWidget, pData,
 			XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1785,9 +1786,10 @@ static void __xuiWindowDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_window_data_t* pData;
 
-	(void)pWidget;
 	(void)pUser;
 	pData = (xui_window_data_t*)pTypeData;
+	if ( pWidget != NULL && pWidget->pContext != NULL &&
+		pWidget->pContext->pActiveWindow == pWidget ) pWidget->pContext->pActiveWindow = NULL;
 	if ( pData != NULL ) {
 		memset(pData, 0, sizeof(*pData));
 	}
@@ -2201,12 +2203,15 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 			if ( iRet != XUI_OK ) goto open_failed;
 		} else {
 			pData->bActive = 0;
+			if ( pWidget->pContext->pActiveWindow == pWidget ) pWidget->pContext->pActiveWindow = NULL;
 		}
 		__xuiWindowIncrementCounter(&pData->iChangeCount);
 		return XUI_OK;
 	open_failed:
 		pData->bOpen = 0;
 		pData->bActive = bOldActive;
+		if ( pWidget->pContext->pActiveWindow == pWidget && !bOldActive )
+			pWidget->pContext->pActiveWindow = NULL;
 		(void)xuiWidgetSetVisible(pWidget, 0);
 		return iRet;
 	}
@@ -2216,6 +2221,7 @@ static int __xuiWindowSetOpenInternal(xui_widget pWidget, xui_window_data_t* pDa
 	if ( iRet != XUI_OK ) return iRet;
 	pData->bOpen = 0;
 	pData->bActive = 0;
+	if ( pWidget->pContext->pActiveWindow == pWidget ) pWidget->pContext->pActiveWindow = NULL;
 	__xuiWindowIncrementCounter(&pData->iChangeCount);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -2539,10 +2545,26 @@ XUI_API int xuiWindowIsActive(xui_widget pWidget)
 XUI_API xui_widget xuiWindowGetActive(xui_context pContext)
 {
 	xui_widget pFound;
+	xui_window_data_t* pData;
 	if ( !xuiInternalContextIsValid(pContext) ) return NULL;
-	pFound = __xuiWindowFindActiveInTree(xuiOverlayRoot(pContext));
-	if ( pFound != NULL ) return pFound;
-	return __xuiWindowFindActiveInTree(xuiGetRootWidget(pContext));
+	pFound = pContext->pActiveWindow;
+	pData = __xuiWindowGetData(pFound);
+	if ( pData == NULL || !pData->bOpen || !pData->bActive ||
+		!xuiWidgetGetEffectiveVisible(pFound) || !xuiWidgetGetEffectiveEnabled(pFound) ) {
+		pContext->pActiveWindow = NULL;
+		return NULL;
+	}
+#if XUI_ENABLE_INCREMENTAL_VERIFY
+	{
+		xui_widget pExpected = __xuiWindowFindActiveInTree(xuiOverlayRoot(pContext));
+		if ( pExpected == NULL ) pExpected = __xuiWindowFindActiveInTree(xuiGetRootWidget(pContext));
+		if ( pExpected != pFound ) {
+			fprintf(stderr, "XUI incremental verification failed: active window index\n");
+			abort();
+		}
+	}
+#endif
+	return pFound;
 }
 
 XUI_API int xuiWindowSetChrome(xui_widget pWidget, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize)

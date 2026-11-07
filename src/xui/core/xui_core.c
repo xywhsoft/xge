@@ -1274,6 +1274,10 @@ void xuiInternalContextDestroyRenderTree(xui_context pContext)
 	pContext->iRenderNodeCount = 0;
 	pContext->iRenderNodeCapacity = 0;
 	pContext->iRenderTreeGeneration = 0;
+	pContext->pRenderHead = NULL;
+	pContext->pRenderTail = NULL;
+	pContext->iRenderLinkedNodeCount = 0;
+	pContext->bRenderIndexDirty = 0;
 }
 
 void xuiInternalContextDestroyInput(xui_context pContext)
@@ -3501,23 +3505,24 @@ static int __xuiCoreDrawRenderNode(xui_context pContext, xui_surface pTarget,
 static void __xuiCoreClearRenderDirtyRecursive(xui_widget pWidget)
 {
 	xui_widget pChild;
+	const uint32_t iFlags = XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE;
 
-	if ( pWidget == NULL ) {
+	if ( pWidget == NULL || (pWidget->iSubtreeDirtyFlags & iFlags) == 0 ) {
 		return;
 	}
-	pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE);
-	pWidget->iSubtreeDirtyFlags &= ~(XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE);
+	pWidget->iDirtyFlags &= ~iFlags;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xuiCoreClearRenderDirtyRecursive(pChild);
 	}
+	pWidget->iSubtreeDirtyFlags &= ~iFlags;
 }
 
 static int __xuiCoreComposeRenderTree(xui_context pContext, xui_surface pTarget, const xui_surface_desc_t* pTargetDesc, const xui_rect_i_t* pRects, int iRectCount)
 {
 	xui_rect_i_t tDamage;
 	const xui_render_node_t* pNode;
+	xui_widget pRenderWidget;
 	int i;
-	int n;
 	int iRet;
 
 	for ( i = 0; i < iRectCount; i++ ) {
@@ -3525,8 +3530,9 @@ static int __xuiCoreComposeRenderTree(xui_context pContext, xui_surface pTarget,
 		if ( !__xuiCoreClipDamageToTarget(pTargetDesc, &tDamage) ) {
 			continue;
 		}
-		for ( n = 0; n < pContext->iRenderNodeCount; n++ ) {
-			pNode = &pContext->pRenderNodes[n];
+		for ( pRenderWidget = pContext->pRenderHead; pRenderWidget != NULL;
+		      pRenderWidget = pRenderWidget->pRenderNext ) {
+			pNode = &pRenderWidget->tRenderNode;
 			if ( __xuiCoreNodeCoveredBySubtreeCache(pNode) ) {
 				pContext->tRenderStats.iSkippedWidgets++;
 				continue;

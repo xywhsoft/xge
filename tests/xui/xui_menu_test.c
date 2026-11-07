@@ -326,8 +326,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiMenuRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
-	XUI_TEST_CHECK(popupBorders == 1 && innerFocusBorders == 0,
-		"focused popup menu draws one outer border without an inner focus frame");
+	XUI_TEST_CHECK(popupBorders == 1 && innerFocusBorders == 1,
+		"focused popup menu honors an explicitly configured focus frame");
 	iRet = xuiMenuMeasure(pMenu, &fWidth, &fHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && fWidth >= 112.0f && fHeight > 120.0f, "menu measure");
 	iMeasureCount = xuiTestProxyGetTextMeasureCount(&tState);

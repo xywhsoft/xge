@@ -448,6 +448,7 @@ struct xui_context_t {
 	xui_widget pHoverWidget;
 	xui_widget pActiveWidget;
 	xui_widget pFocusWidget;
+	xui_widget pActiveWindow;
 	/* MenuBar menu-mode focus is context-owned so widget detachment can clear
 	 * both borrowed handles before deferred destruction releases memory. */
 	xui_widget pMenuBarModeOwner;
@@ -553,6 +554,16 @@ struct xui_context_t {
 	int iRenderNodeCount;
 	int iRenderNodeCapacity;
 	uint32_t iRenderTreeGeneration;
+	xui_widget pRenderHead;
+	xui_widget pRenderTail;
+	int iRenderLinkedNodeCount;
+	int bRenderIndexDirty;
+	uint32_t iRootStructureRevision;
+	uint32_t iOverlayStructureRevision;
+	uint64_t iDirtyPropagationTotal;
+	uint64_t iEventMaskPropagationTotal;
+	uint64_t iDirtyPropagationSnapshot;
+	uint64_t iEventMaskPropagationSnapshot;
 	size_t iCacheBudgetBytes;
 	uint32_t iCacheGeneration;
 	xui_widget_type pWidgetTypes;
@@ -751,6 +762,17 @@ struct xui_widget_t {
 	uint64_t iEventInterestMask;
 	uint64_t iEventHandlerMask;
 	uint64_t iSubtreeEventMask;
+	xui_render_node_t tRenderNode;
+	xui_widget pRenderPrev;
+	xui_widget pRenderNext;
+	xui_widget pRenderSubtreeLast;
+	int bRenderNodeLinked;
+	int bRenderGeometryDirty;
+	int bRenderStructureDirty;
+	int bSubtreeRenderStructureDirty;
+	int bSubtreePrepareFrameDependent;
+	int bSubtreeHasUpdate;
+	int bSubtreeHasInactiveUpdate;
 	uint32_t iStateId;
 	uint32_t iGeneration;
 	uint32_t iLayoutVersion;
@@ -1005,6 +1027,7 @@ void xuiInternalLayoutInvalidate(xui_widget pWidget, int bMeasure);
 void xuiInternalWidgetSyncDpi(xui_widget pWidget);
 int xuiInternalWidgetInvalidateArrange(xui_widget pWidget, uint32_t iPaintFlags);
 int xuiInternalWidgetInvalidatePaintIfNeeded(xui_widget pWidget);
+void xuiInternalWidgetMarkDirtyFlags(xui_widget pWidget, uint32_t iFlags);
 int xuiInternalListViewSetVirtualItemsResetSelection(xui_widget pWidget, int iCount,
 	xui_list_view_text_proc onText, void* pUser);
 int xuiInternalLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasured);

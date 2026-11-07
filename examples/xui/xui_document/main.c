@@ -161,12 +161,10 @@ static int service_close(demo* d)
         desc.sTitle = "Close documents"; desc.sMessage = "Save unsaved documents before closing?";
         desc.pFont = d->font; desc.iButtons = XUI_MSGBOX_BUTTON_YES_NO_CANCEL;
         desc.bModal = desc.bHasModal = 1;
-        if (d->close_box) { xuiMsgBoxDestroy(d->close_box); d->close_box = NULL; }
-        result = xuiMsgBoxCreate(d->context, &d->close_box, &desc);
+        result = xuiMsgBoxShow(d->context, &d->close_box, &desc);
         if (result == XUI_OK) result = xuiMsgBoxSetPresetButtonTitle(d->close_box, XUI_MSGBOX_BUTTON_TITLE_YES, "Save");
         if (result == XUI_OK) result = xuiMsgBoxSetPresetButtonTitle(d->close_box, XUI_MSGBOX_BUTTON_TITLE_NO, "Discard");
         if (result == XUI_OK) result = xuiMsgBoxSetResult(d->close_box, close_result, d);
-        if (result == XUI_OK) result = xuiMsgBoxSetOpen(d->close_box, 1);
         d->close_requested = 0;
         return result;
     }
@@ -197,10 +195,8 @@ static void file_result(xui_file_dialog dialog, int answer, const char* path, vo
             desc.sTitle = "Open document"; desc.sMessage = "Discard current unsaved changes and open this file?";
             desc.pFont = d->font; desc.iButtons = XUI_MSGBOX_BUTTON_YES_NO;
             desc.bModal = desc.bHasModal = 1;
-            if (d->discard_box) { xuiMsgBoxDestroy(d->discard_box); d->discard_box = NULL; }
-            result = xuiMsgBoxCreate(d->context, &d->discard_box, &desc);
+            result = xuiMsgBoxShow(d->context, &d->discard_box, &desc);
             if (result == XUI_OK) result = xuiMsgBoxSetResult(d->discard_box, discard_result, d);
-            if (result == XUI_OK) result = xuiMsgBoxSetOpen(d->discard_box, 1);
             if (result == XUI_OK) return;
         } else if (result == XUI_OK) {
             result = replace_document(d, d->file_editor, d->pending_open);

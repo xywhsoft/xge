@@ -30,6 +30,7 @@ typedef struct xui_file_dialog_demo_t {
 	xui_widget pSaveButton;
 	xui_widget pFolderButton;
 	xui_file_dialog pDialog;
+	xui_file_dialog arrDialogs[3];
 	int iFrame;
 	int iMaxFrames;
 	double fMaxSeconds;
@@ -182,14 +183,14 @@ static void __xuiFileDialogResult(xui_file_dialog pDialog, int iResult, const ch
 static int __xuiFileDialogShow(xui_file_dialog_demo_t* pDemo, int iMode)
 {
 	xui_file_dialog_desc_t tDesc;
+	int iIndex;
 	int iRet;
 
-	if ( pDemo->pDialog != NULL ) {
-		xuiFileDialogDestroy(pDemo->pDialog);
-		pDemo->pDialog = NULL;
-	}
+	iIndex = iMode - XUI_FILE_DIALOG_MODE_OPEN_FILE;
+	if ( iIndex < 0 || iIndex >= 3 ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
+	tDesc.iMode = iMode;
 	tDesc.sInitialDir = "";
 	tDesc.sFilter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
 	tDesc.pFont = pDemo->pFont;
@@ -199,12 +200,9 @@ static int __xuiFileDialogShow(xui_file_dialog_demo_t* pDemo, int iMode)
 	tDesc.fHeight = 520.0f;
 	if ( iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE ) {
 		tDesc.sFileName = "new-file.txt";
-		iRet = xuiSaveFileDialog(pDemo->pContext, &pDemo->pDialog, &tDesc);
-	} else if ( iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER ) {
-		iRet = xuiSelectFolderDialog(pDemo->pContext, &pDemo->pDialog, &tDesc);
-	} else {
-		iRet = xuiOpenFileDialog(pDemo->pContext, &pDemo->pDialog, &tDesc);
 	}
+	iRet = xuiFileDialogShow(pDemo->pContext, &pDemo->arrDialogs[iIndex], &tDesc);
+	if ( iRet == XUI_OK ) pDemo->pDialog = pDemo->arrDialogs[iIndex];
 	return iRet;
 }
 
@@ -317,10 +315,15 @@ static int __xuiFileDialogCreateAssets(xui_file_dialog_demo_t* pDemo)
 
 static void __xuiFileDialogDestroyAssets(xui_file_dialog_demo_t* pDemo)
 {
-	if ( pDemo->pDialog != NULL ) {
-		xuiFileDialogDestroy(pDemo->pDialog);
-		pDemo->pDialog = NULL;
+	int i;
+
+	for ( i = 0; i < 3; ++i ) {
+		if ( pDemo->arrDialogs[i] != NULL ) {
+			xuiFileDialogDestroy(pDemo->arrDialogs[i]);
+			pDemo->arrDialogs[i] = NULL;
+		}
 	}
+	pDemo->pDialog = NULL;
 	if ( pDemo->pContext != NULL ) {
 		xuiDestroy(pDemo->pContext);
 		pDemo->pContext = NULL;

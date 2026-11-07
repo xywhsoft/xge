@@ -971,10 +971,10 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	/* The popup owns the menu's frame. Keyboard focus belongs to the menu
-	 * for navigation, but must not add another frame inside that popup. */
+	/* The default focus color is transparent. An explicit focus color is a
+	 * caller request and remains effective while the popup is open. */
 	if ( (xuiWidgetGetInputState(pWidget) & XUI_WIDGET_STATE_FOCUS) != 0u &&
-	     (pData->pPopup == NULL || !xuiPopupIsOpen(pData->pPopup)) )
+	     (tColors.iFocusColor & 0xffu) != 0u )
 		return __xuiMenuDrawRectStroke(pProxy, pDraw, tRect, 1.0f, tColors.iFocusColor);
 	return XUI_OK;
 }
@@ -1859,8 +1859,8 @@ static int __xuiMenuInit(xui_widget pWidget, void* pTypeData, const void* pCreat
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
 	if ( iRet != XUI_OK ) return iRet;
-	pWidget->onUpdate = __xuiMenuUpdate;
-	iRet = xuiWidgetSetFocusable(pWidget, 1);
+	iRet = xuiWidgetSetUpdateCallback(pWidget, __xuiMenuUpdate, pData);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusScope(pWidget, 1);
 	if ( iRet != XUI_OK ) return iRet;
