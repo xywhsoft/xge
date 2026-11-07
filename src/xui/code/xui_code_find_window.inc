@@ -462,7 +462,7 @@ static int __xuiCodeEditFindWindowLayout(xui_widget owner,int replace)
     xui_widget checks[]={ui->pCaseCheck,ui->pWordCheck,ui->pRegexCheck,ui->pEscapeCheck,ui->pSelectionCheck};
     for(size_t i=0;i<sizeof(checks)/sizeof(checks[0]);++i){(void)xuiWidgetSetSizeMode(checks[i],XUI_SIZE_FILL,XUI_SIZE_FILL);(void)xuiWidgetSetFlex(checks[i],1,1);}
     int columns=r.fW-44>=3*width ? 3:2,visible=0;
-    for(size_t i=0;i<sizeof(buttons)/sizeof(buttons[0]);++i){int row=xuiWidgetGetVisible(buttons[i]) ? 2+visible++/columns:4;if(xuiWidgetGetParent(buttons[i])!=ui->pRows[row]){(void)xuiInternalWidgetDetachPart(owner,buttons[i]);(void)xuiInternalWidgetInsertPart(owner,ui->pRows[row],buttons[i],NULL);}(void)xuiWidgetSetSizeMode(buttons[i],XUI_SIZE_FILL,XUI_SIZE_FILL);(void)xuiWidgetSetFlex(buttons[i],1,1);}
+    for(size_t i=0;i<sizeof(buttons)/sizeof(buttons[0]);++i){int row=xuiWidgetGetVisible(buttons[i]) ? 2+visible++/columns:4;(void)xuiInternalWidgetDetachPart(owner,buttons[i]);(void)xuiInternalWidgetInsertPart(owner,ui->pRows[row],buttons[i],NULL);(void)xuiWidgetSetSizeMode(buttons[i],XUI_SIZE_FILL,XUI_SIZE_FILL);(void)xuiWidgetSetFlex(buttons[i],1,1);}
     for(int i=2;i<5;++i)(void)xuiWidgetSetVisible(ui->pRows[i],i<2+(visible+columns-1)/columns);
     (void)xuiWidgetSetSizeMode(ui->pFooter,XUI_SIZE_FILL,XUI_SIZE_FIXED);(void)xuiWidgetSetPreferredSize(ui->pFooter,(xui_vec2_t){0,__xuiCodeFindStackHeight(ui->pFooter)});
     (void)xuiWidgetSetSizeMode(ui->pFindResultList,XUI_SIZE_FILL,XUI_SIZE_FIXED);(void)xuiWidgetSetPreferredSize(ui->pFindResultList,(xui_vec2_t){0,fmaxf(160,height*6)});
@@ -698,12 +698,12 @@ static int __xuiCodeFindWindowCreate(xui_widget pEditor, xui_code_find_scope pSc
 XUI_API int xuiCodeFindScopeSetActiveEditor(xui_code_find_scope pScope, xui_widget pEditor)
 {
 	if(pScope==NULL)return XUI_ERROR_INVALID_ARGUMENT;
+	if(pScope->pActiveEditor==pEditor)return XUI_OK;
 	if(pEditor!=NULL) {
 		int found=0;
 		for(int i=0;i<pScope->iEditorCount;++i)if(pScope->pEditors[i].pEditor==pEditor){found=1;break;}
 		if(!found)return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if(pScope->pActiveEditor==pEditor)return XUI_OK;
 	pScope->pActiveEditor=pEditor;
 	xui_code_find_window_t* pUi=pScope->pFindUi;
 	if(pUi!=NULL) {
