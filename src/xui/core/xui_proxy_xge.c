@@ -2416,7 +2416,9 @@ static int __xuiProxyXgeMapKey(int iKey)
 	if ( iKey >= XGE_KEY_F1 && iKey <= XGE_KEY_F25 ) return XUI_KEY_F1 + (iKey - XGE_KEY_F1);
 	switch ( iKey ) {
 	case XGE_KEY_ESCAPE: return XUI_KEY_ESCAPE;
-	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
+	/* Keep physical key identity in XGE; UI commands share Enter semantics. */
+	case XGE_KEY_ENTER:
+	case XGE_KEY_KP_ENTER: return XUI_KEY_ENTER;
 	case XGE_KEY_TAB: return XUI_KEY_TAB;
 	case XGE_KEY_BACKSPACE: return XUI_KEY_BACKSPACE;
 	case XGE_KEY_INSERT: return XUI_KEY_INSERT;
