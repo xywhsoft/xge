@@ -10,7 +10,7 @@ BIN="$APP_DIR/XGE"
 SRC="single/xge.c platform/ios/xge_ios_main.m"
 INC="@config/includes.rsp"
 FLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -x objective-c -DXGE_NO_AUDIO -DSOKOL_GLES3 -mios-simulator-version-min=$DEPLOY"
-LIBS="-framework UIKit -framework Foundation -framework QuartzCore -framework OpenGLES -lm"
+LIBS="-framework UIKit -framework Foundation -framework CoreText -framework QuartzCore -framework OpenGLES -lm"
 
 SDK_PATH="$(xcrun --sdk "$SDK" --show-sdk-path)"
 

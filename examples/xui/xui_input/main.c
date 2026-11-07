@@ -624,11 +624,16 @@ static int __xuiInputCreateBadgeSurface(xui_input_demo_t* pDemo)
 static int __xuiInputCreateAssets(xui_input_demo_t* pDemo)
 {
 	xui_surface_desc_t tSurfaceDesc;
+	xui_context_desc_t tContextDesc;
 	const char* sFontPath;
 	int iRet;
 
 	pDemo->tProxy = xuiProxyXge();
-	iRet = xuiCreate(&pDemo->pContext);
+	/* This example owns a selected application font, so it disables the
+	 * optional platform default and avoids allocating both fonts. */
+	xuiContextDescDefault(&tContextDesc);
+	tContextDesc.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED;
+	iRet = xuiCreateEx(&tContextDesc,&pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiSetProxy(pDemo->pContext, &pDemo->tProxy);
 	if ( iRet != XUI_OK ) return iRet;

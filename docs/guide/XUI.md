@@ -12,6 +12,8 @@ XUI 是 XGE 附带的保留式 UI 库。它提供 context、控件树、布局�
 
 XUI 的精确初始化顺序、结构体字段和回调签名以 `xui.h` 与 `examples/xui/xui_proxy_*` 为准；这些范例同时演示 proxy、字体、纹理与输入桥接。
 
+默认字体采用按需加载的 `AUTO` 策略；游戏或自带字体的应用可在 `xuiCreateEx()` 中关闭系统字体，详见 [系统字体与字体加载策略](FONTS.md)。
+
 ## 控件选择
 
 | 类别 | 代表控件 |
@@ -50,6 +52,7 @@ CodeEdit 的光标和选择更新刷新绘制及 IME 锚点；文本编辑和实
 
 1. `examples/xui/xui_proxy_surface`：最小 XGE/XUI 图形桥接。
 2. `examples/xui/xui_button`、`examples/xui/xui_layout`：基础控件和布局。
-3. `examples/xui/xui_input`、`examples/xui/xui_textedit`：输入、剪贴板和 IME。
-4. `examples/xui/xui_window`、`examples/xui/xui_dockpanel`：浮层和桌面式布局。
-5. 选择业务控件范例并结合 `tests/xui/` 的相应回归测试验证集成。
+3. `examples/xui/xui_label`、`examples/xui/xui_input`：系统字体 `AUTO` 与应用字体 `DISABLED` 两种初始化方式。
+4. `examples/xui/xui_textedit`：输入、剪贴板和 IME。
+5. `examples/xui/xui_window`、`examples/xui/xui_dockpanel`：浮层和桌面式布局。
+6. 选择业务控件范例并结合 `tests/xui/` 的相应回归测试验证集成。

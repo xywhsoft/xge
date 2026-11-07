@@ -44,16 +44,3 @@ a negative status). A subsequent Drop reports its own cleanup status to those
 receipts, using the operation's earlier diagnostic as the exact prefix. The
 operation still returns its original primary status. No parent/TLS inference
 is used to guess whether a NULL primary existed.
-
-Snapshot admission delivery is explicit at every caller: BeginReturned lets a
-checked direct consumer propagate the negative status; BeginReported reports
-infrastructure failures for void/value/veto and event consumers without an
-independent status route. These internal names have no unclassified alias.
-A direct API's handled failure does not poison its parent cleanup receipt.
-The Grid regression asserts that distinction, including a true rollback Drop
-failure; the Context merge getter checks its direct negative result separately
-from event dispatch's existing checked receipt contract.
-On successful owned SnapshotEnd the common explicit tail takes TLS once,
-followed by the consuming Drop's diagnostic check and outcome collection.
-This adds one diagnostic read compared with the previous owned tail, with no
-heap allocation; the non-owned fast path keeps its existing early return.

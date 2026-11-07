@@ -12,6 +12,7 @@
 - [低成本纹理存储优化](guide/TEXTURE_STORAGE.md)
 - [2D 粒子系统](guide/PARTICLES.md)
 - [XUI 使用指南](guide/XUI.md)
+- [系统字体与字体加载策略](guide/FONTS.md)
 - [XUI Terminal 使用指南](guide/TERMINAL.md)
 - [范例索引](guide/EXAMPLES.md)
 - [平台说明](guide/PLATFORM.md)

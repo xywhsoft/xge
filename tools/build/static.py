@@ -181,7 +181,7 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
         raise RuntimeError('Static archive unexpectedly embeds XRT or hosted import-slot machinery: '+str(forbidden[:8]))
     temporary.replace(archive)
     symbols=sorted(set(re.findall(r'\b(?:__imp_)?((?:__)?xrt[A-Z]\w*)\s*$',undefined,re.M)))
-    libraries=(['kernel32','advapi32','ws2_32','iphlpapi','gdi32','user32','shell32','ole32','oleaut32','uuid','imm32','winmm','avrt']if windows else['m','X11','Xi','Xcursor','GL','dl','pthread'])
+    libraries=(['kernel32','advapi32','ws2_32','iphlpapi','gdi32','user32','shell32','ole32','oleaut32','uuid','imm32','winmm','avrt','dwrite']if windows else['m','X11','Xi','Xcursor','GL','dl','pthread'])
     global_definitions=set(re.findall(r'^\S*\s+[A-Za-z]\s+(\S+)\s*$',defined,re.M))
     cpp_runtime=sorted({v for v in re.findall(r'^\s+U\s+(\S+)\s*$',undefined,re.M)
         if v.startswith(('_Z','__cxa','__gxx')) and v not in global_definitions})

@@ -19,25 +19,6 @@ typedef struct emoji_demo_t {
 	int iMaxFrames;
 } emoji_demo_t;
 
-static const char* find_font(void)
-{
-	static const char* paths[] = {
-		"C:\\Windows\\Fonts\\segoeui.ttf",
-		"C:\\Windows\\Fonts\\arial.ttf"
-	};
-	FILE* file;
-	int i;
-
-	for ( i = 0; i < (int)(sizeof(paths) / sizeof(paths[0])); i++ ) {
-		file = fopen(paths[i], "rb");
-		if ( file != NULL ) {
-			fclose(file);
-			return paths[i];
-		}
-	}
-	return NULL;
-}
-
 static void draw_mixed_line(xge_font pFont, const char* sText, float fX, float fY, uint32_t iColor)
 {
 	xge_text_shape_desc_t tDesc;
@@ -135,14 +116,13 @@ int main(int argc, char** argv)
 {
 	emoji_demo_t tDemo;
 	xge_desc_t tDesc;
-	const char* sFont;
+	xge_system_font_desc_t tFontDesc;
 	int iRet;
 	int i;
 
-	sFont = find_font();
-	if ( sFont == NULL ) return 1;
 	memset(&tDemo, 0, sizeof(tDemo));
 	memset(&tDesc, 0, sizeof(tDesc));
+	memset(&tFontDesc,0,sizeof(tFontDesc));
 	tDesc.iWidth = WINDOW_W;
 	tDesc.iHeight = WINDOW_H;
 	tDesc.sTitle = "XGE SVG Emoji";
@@ -169,10 +149,13 @@ int main(int argc, char** argv)
 		xgeUnit();
 		return 1;
 	}
-	if ( xgeFontLoad(&tDemo.tFont16, sFont, 16.0f) != XGE_OK ||
-	     xgeFontLoad(&tDemo.tFont24, sFont, 24.0f) != XGE_OK ||
-	     xgeFontLoad(&tDemo.tFont40, sFont, 40.0f) != XGE_OK ||
-	     xgeFontLoad(&tDemo.tFont72, sFont, 72.0f) != XGE_OK ) {
+	tFontDesc.iSize=sizeof(tFontDesc);
+	tFontDesc.iRole=XGE_SYSTEM_FONT_UI;
+	tFontDesc.fPixelSize=16.0f;
+	if ( xgeFontLoadSystem(&tDemo.tFont16,&tFontDesc) != XGE_OK ||
+	     xgeFontCreateSized(&tDemo.tFont24,&tDemo.tFont16,24.0f) != XGE_OK ||
+	     xgeFontCreateSized(&tDemo.tFont40,&tDemo.tFont16,40.0f) != XGE_OK ||
+	     xgeFontCreateSized(&tDemo.tFont72,&tDemo.tFont16,72.0f) != XGE_OK ) {
 		xgeRenderTargetFree(&tDemo.tCaptureTarget);
 		xgeUnit();
 		return 1;

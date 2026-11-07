@@ -28,6 +28,9 @@ typedef struct xui_test_proxy_state_t {
 	int iSvgSurfaceLoadCount;
 	int iSurfaceDestroyCount;
 	int iTextMeasureCount;
+	int iSystemFontLoadCount;
+	int iFontDestroyCount;
+	int iFailSystemFontLoad;
 	uint32_t iLastTextMeasureFlags;
 	int iTextShapeCount;
 	size_t iTextShapeBytes;
@@ -55,6 +58,7 @@ void xuiTestProxySetClockSeconds(xui_test_proxy_state_t* pState, double fClockSe
 void xuiTestProxyFailNextSurfaceCreate(xui_test_proxy_state_t* pState, int iError);
 void xuiTestProxyFailNextDrawEnd(xui_test_proxy_state_t* pState, int iError);
 void xuiTestProxySetSurfaceClearUnsupported(xui_test_proxy_state_t* pState, int bUnsupported);
+void xuiTestProxyFailSystemFontLoad(xui_test_proxy_state_t* pState, int iError);
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText);
 const char* xuiTestProxyGetClipboardText(xui_test_proxy_state_t* pState);
 int xuiTestSurfaceCreate(xui_test_proxy_state_t* pState, xui_surface* ppSurface, int iWidth, int iHeight, uint32_t iFlags);

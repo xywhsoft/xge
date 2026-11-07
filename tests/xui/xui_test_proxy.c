@@ -848,6 +848,20 @@ static int __xuiTestFontLoadMemory(xui_proxy pProxy, xui_font* ppFont, const voi
 	return __xuiTestFontLoadFile(pProxy, ppFont, NULL, fSize, iFlags);
 }
 
+static int __xuiTestFontLoadSystem(xui_proxy pProxy,xui_font* ppFont,const xui_system_font_desc_t* pDesc)
+{
+	xui_test_proxy_state_t* state=pProxy ? (xui_test_proxy_state_t*)pProxy->pUser:NULL;
+	if(!state || !ppFont || !pDesc || pDesc->iSize<sizeof(*pDesc))return XUI_ERROR_INVALID_ARGUMENT;
+	state->iSystemFontLoadCount++;
+	if(state->iFailSystemFontLoad){
+		int result=state->iFailSystemFontLoad;
+		state->iFailSystemFontLoad=0;
+		*ppFont=NULL;
+		return result;
+	}
+	return __xuiTestFontLoadFile(pProxy,ppFont,NULL,pDesc->fSize,0);
+}
+
 static int __xuiTestFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics)
 {
 	(void)pProxy;
@@ -868,8 +882,9 @@ static int __xuiTestFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_font_me
 
 static void __xuiTestFontDestroy(xui_proxy pProxy, xui_font pFont)
 {
-	(void)pProxy;
+	xui_test_proxy_state_t* state=pProxy ? (xui_test_proxy_state_t*)pProxy->pUser:NULL;
 	if ( __xuiTestFontValid(pFont) ) {
+		if(state)state->iFontDestroyCount++;
 		pFont->iMagic = 0;
 		xrtFree(pFont);
 	}
@@ -1092,6 +1107,7 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.shapeCircleStroke = __xuiTestShapeCircleStroke;
 	pState->tProxy.fontLoadFile = __xuiTestFontLoadFile;
 	pState->tProxy.fontLoadMemory = __xuiTestFontLoadMemory;
+	pState->tProxy.fontLoadSystem = __xuiTestFontLoadSystem;
 	pState->tProxy.fontGetMetrics = __xuiTestFontGetMetrics;
 	pState->tProxy.fontDestroy = __xuiTestFontDestroy;
 	pState->tProxy.fontCreateSized = __xuiTestFontCreateSized;
@@ -1119,6 +1135,11 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawClipSet = __xuiTestDrawClipSet;
 	pState->tProxy.drawClipClear = __xuiTestDrawClipClear;
 	pState->tProxy.textShape = __xuiTestTextShape;
+}
+
+void xuiTestProxyFailSystemFontLoad(xui_test_proxy_state_t* pState,int iError)
+{
+	if(pState)pState->iFailSystemFontLoad=iError;
 }
 
 void xuiTestProxyEnableFrameClock(xui_test_proxy_state_t* pState, double fClockSeconds)

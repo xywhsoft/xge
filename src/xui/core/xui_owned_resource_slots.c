@@ -240,6 +240,7 @@ bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor vi
     if(context->pTransferData){xrtownershipref data=xuiDataObjectOwnership(context->pTransferData);
         if(!data.Data || !visit(data,user))return false;}
     if(context->pDefaultFont && !visit(xuiFontOwnership(context->pDefaultFont),user))return false;
+    if(context->pSystemFont && !visit(xuiFontOwnership(context->pSystemFont),user))return false;
     for(int i=0;i<context->iFontCount;++i)
         if(context->pFonts[i].pFont && !visit(xuiFontOwnership(context->pFonts[i].pFont),user))return false;
     return xuiInternalContextTraceRegistry(context,visit,user) && xuiInternalTextMeasureCacheTrace(context,visit,user) &&

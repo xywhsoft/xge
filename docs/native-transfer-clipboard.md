@@ -99,6 +99,10 @@ the remaining formats.
 Proxy ABI 18 appends one optional typed `clipboardSetItemsWithTransfer`
 function pointer (+8 bytes/table). Earlier field offsets remain unchanged;
 embedded Context/backend records are rebuilt with the new exact table size.
+The later optional `fontLoadSystem` pointer is appended after that prefix.
+Legacy raw Proxy tables ending at the earlier prefix remain accepted and the
+missing callback reads as NULL; Owned Proxy objects still require the current
+complete table because their capability record is immutable.
 The XUI-to-XGE cold item projection uses a bounded typed stack array and no
 temporary heap adapter. Owned Context drag sessions admit Owned data and trace
 the actual session reference. The Native XGE-to-XUI provider bridge retains the

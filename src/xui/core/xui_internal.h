@@ -594,6 +594,10 @@ struct xui_context_t {
 	xui_theme_t tTheme;
 	xui_chrome_style_t tChromeStyle;
 	xui_font pDefaultFont;
+	xui_font pSystemFont; /* Context-owned lazy platform font, separate from the active default slot. */
+	xui_context_desc_t tCreateDesc;
+	int iSystemFontStatus; /* 0 not attempted, XUI_OK loaded, or a stable negative result. */
+	int bSystemFontLoading;
     xui_proxy pOwnedProxy; /* one real capability owner; tProxy is a borrowed table copy */
     xui_owned_manager_t* pOwnedManagers;
     xui_owned_manager_t* pPendingManagers;

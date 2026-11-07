@@ -1622,6 +1622,31 @@ static int __xuiProxyXgeFontLoadMemory(xui_proxy pProxy, xui_font* ppFont, const
 	return XGE_OK;
 }
 
+static int __xuiProxyXgeFontLoadSystem(xui_proxy pProxy,xui_font* ppFont,const xui_system_font_desc_t* pDesc)
+{
+	xge_system_font_desc_t desc={0};
+	xui_font font;
+	int status;
+	if(!pProxy || !ppFont || !pDesc || pDesc->iSize<sizeof(*pDesc) || pDesc->iFlags!=0)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	*ppFont=NULL;
+	font=__xuiProxyXgeFontAlloc(pProxy,&status);
+	if(!font)return status;
+	desc.iSize=sizeof(desc);
+	desc.iRole=XGE_SYSTEM_FONT_UI;
+	desc.fPixelSize=pDesc->fSize;
+	status=xgeFontLoadSystem(&font->tFont,&desc);
+	if(status!=XGE_OK){__xuiProxyXgeFontDiscard(font);return status;}
+	if(xgeFontFallbackGet(&font->tFallbackFont,font->tFont.fSize)==XGE_OK){
+		xgeFontSetFallback(&font->tFont,&font->tFallbackFont);
+		font->bHasFallback=1;
+	}
+	font->iMagic=XUI_PROXY_XGE_FONT_MAGIC;
+	font->iFlags=XUI_FONT_FORMAT_TTF;
+	*ppFont=font;
+	return XGE_OK;
+}
+
 static int __xuiProxyXgeFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics)
 {
 	xge_font_metrics_t tMetrics;
@@ -3367,6 +3392,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.shapeCircleStroke = __xuiProxyXgeShapeCircleStroke;
 	tProxy.fontLoadFile = __xuiProxyXgeFontLoadFile;
 	tProxy.fontLoadMemory = __xuiProxyXgeFontLoadMemory;
+	tProxy.fontLoadSystem = __xuiProxyXgeFontLoadSystem;
 	tProxy.fontGetMetrics = __xuiProxyXgeFontGetMetrics;
 	tProxy.fontDestroy = __xuiProxyXgeFontDestroy;
 	tProxy.textMeasure = __xuiProxyXgeTextMeasure;

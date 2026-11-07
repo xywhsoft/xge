@@ -46,7 +46,7 @@ int main(void) {
 | --- | --- |
 | 绘制基础形状、精细路径和渐变 | `xgeShape*`、`xgeShapeEx*`；`examples/xge/xge_shape*`。 |
 | 图像、纹理与采样状态 | `xgeImage*`、`xgeTexture*`；`examples/xge/xge_svg`、`examples/xge/yuv420p_texture_lab`。 |
-| 字体、文本和 Emoji | `xgeFont*`、`xgeText*`；[Emoji 支持](EMOJI.md)。 |
+| 字体、文本和 Emoji | `xgeFont*`、`xgeText*`；[系统字体与加载策略](FONTS.md)、[Emoji 支持](EMOJI.md)。 |
 | 键盘、鼠标、触摸、IME 和拖放 | `xgeInput*`、`xgeDrag*`、`xgeDataObject*`。 |
 | 场景与更新策略 | `xgeScene*`、`xgeSceneUpdateStrategy*`。 |
 | 异步图像和资源加载 | `xgeAsync*`、`xgeResource*`。 |

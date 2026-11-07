@@ -87,28 +87,6 @@ static int __xuiLabelParseArgs(xui_label_demo_t* pDemo, int argc, char** argv)
 	return XGE_OK;
 }
 
-static const char* __xuiLabelFindTtf(void)
-{
-	static const char* arrPaths[] = {
-		"C:\\Windows\\Fonts\\segoeui.ttf",
-		"C:\\Windows\\Fonts\\arial.ttf",
-		"C:\\Windows\\Fonts\\calibri.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc",
-		"C:\\Windows\\Fonts\\simhei.ttf"
-	};
-	FILE* pFile;
-	int i;
-
-	for ( i = 0; i < (int)(sizeof(arrPaths) / sizeof(arrPaths[0])); i++ ) {
-		pFile = fopen(arrPaths[i], "rb");
-		if ( pFile != NULL ) {
-			fclose(pFile);
-			return arrPaths[i];
-		}
-	}
-	return NULL;
-}
-
 static xui_style_value_t __xuiLabelStyleColor(uint32_t iColor)
 {
 	xui_style_value_t tValue;
@@ -490,7 +468,6 @@ static void __xuiLabelRunChecks(xui_label_demo_t* pDemo)
 static int __xuiLabelCreateAssets(xui_label_demo_t* pDemo)
 {
 	xui_surface_desc_t tSurfaceDesc;
-	const char* sFontPath;
 	int iRet;
 
 	pDemo->tProxy = xuiProxyXge();
@@ -520,16 +497,14 @@ static int __xuiLabelCreateAssets(xui_label_demo_t* pDemo)
 		printf("xui_label: surfaceCreate failed: %d\n", iRet);
 		return iRet;
 	}
-	sFontPath = __xuiLabelFindTtf();
-	if ( sFontPath == NULL ) {
-		printf("xui_label: no usable system TTF font found\n");
-		return XUI_ERROR_FILE_NOT_FOUND;
-	}
-	iRet = pDemo->tProxy.fontLoadFile(&pDemo->tProxy, &pDemo->pFont, sFontPath, 16.0f, XUI_FONT_FORMAT_TTF);
+	/* xuiCreate defaults to AUTO. The platform font is allocated only here,
+	 * when the example first asks for it. */
+	iRet=xuiEnsureDefaultFont(pDemo->pContext);
+	if(iRet!=XUI_OK)return iRet;
+	pDemo->pFont=xuiGetDefaultFont(pDemo->pContext); /* borrowed from Context */
+	iRet = pDemo->tProxy.fontCreateSized(&pDemo->tProxy, &pDemo->pSmallFont, pDemo->pFont, 10.0f);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = pDemo->tProxy.fontLoadFile(&pDemo->tProxy, &pDemo->pSmallFont, sFontPath, 10.0f, XUI_FONT_FORMAT_TTF);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = pDemo->tProxy.fontLoadFile(&pDemo->tProxy, &pDemo->pLargeFont, sFontPath, 24.0f, XUI_FONT_FORMAT_TTF);
+	iRet = pDemo->tProxy.fontCreateSized(&pDemo->tProxy, &pDemo->pLargeFont, pDemo->pFont, 24.0f);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiSetDefaultFont(pDemo->pContext, pDemo->pFont);
 	(void)xuiRegisterFont(pDemo->pContext, "body", pDemo->pFont);
@@ -549,9 +524,6 @@ static void __xuiLabelDestroyAssets(xui_label_demo_t* pDemo)
 	}
 	if ( pDemo->pSmallFont != NULL ) {
 		pDemo->tProxy.fontDestroy(&pDemo->tProxy, pDemo->pSmallFont);
-	}
-	if ( pDemo->pFont != NULL ) {
-		pDemo->tProxy.fontDestroy(&pDemo->tProxy, pDemo->pFont);
 	}
 	if ( pDemo->pTarget != NULL ) {
 		pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pTarget);

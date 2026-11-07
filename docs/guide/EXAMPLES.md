@@ -19,7 +19,7 @@
 | [`examples/xge/xge_particles`](../../examples/xge/xge_particles/README.md) | 七个独立粒子程序：火花、火烟、爆炸、雨雪、尾尘、光环、彩纸。 |
 | `examples/xge/xge_shape_ex`、`xge_shape_ex_*` | 路径、混合、特效、渐变、裁剪和绘制顺序。 |
 | `examples/xge/xge_svg` | SVG 加载与绘制。 |
-| `examples/xge/xge_emoji` | 文本中的 Emoji 显示。 |
+| `examples/xge/xge_emoji` | 使用平台系统字体并显示文本中的 Emoji。 |
 | `examples/xge/yuv420p_texture_lab` | YUV420P 纹理。 |
 | `examples/tutorial/tutorial_capture` | 教程用的最小渲染场景。 |
 
@@ -32,6 +32,8 @@
 - 数据控件：`xui_listview`、`xui_treeview`、`xui_tableview`、`xui_propertygrid`、`xui_chart`；
 - 弹出与反馈：`xui_popup`、`xui_menu`、`xui_combobox`、`xui_msgbox`、`xui_toast`；
 - 专用功能：`xui_flowgraph`、`xui_workflow_editor`、`xui_terminal`、`xui_qrcode`。
+
+字体策略范例见 `xui_label`（默认 `AUTO` 惰性系统字体）与 `xui_input`（`DISABLED`，仅应用字体）；完整契约见 [系统字体与字体加载策略](FONTS.md)。
 
 以范例中的公开 API 调用为准；`tests/xui/` 适合用于验证行为和边界条件，而不是替代应用代码。
 

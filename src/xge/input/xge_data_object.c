@@ -54,7 +54,7 @@ static const xge_data_lifetime_type_t __xgeDataGenerationType={sizeof(xge_data_g
 #define DO_FN(name) __xgeDataOwned##name
 #define DO_PUBLIC(name) xgeDataObject##name
 #define DO_STATUS(name) XGE_##name
-#define DO_API
+#define DO_API 
 #define DO_ROOT(object) __xgeDataObjectRoot(object)
 #define DO_HANDLE xge_data_object
 #define DO_OBJECT_TYPE __xgeDataObjectType
