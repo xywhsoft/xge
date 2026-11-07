@@ -65,6 +65,41 @@ typedef struct xui_code_edit_line_layout_t {
 	uint32_t iUseStamp;
 } xui_code_edit_line_layout_t;
 
+typedef struct xui_code_find_window_t {
+	xui_widget pOwner;
+	xui_widget pEditor;
+	xui_code_find_scope pFindScope;
+	int iFindRangeStart, iFindRangeEnd;
+	int bUpdating, bPending;
+	float fPendingElapsed;
+	uint32_t iTargetVersion;
+	int bFindResultScopeMode;
+	char sFindResultPosition[32];
+	char sFindResultPreview[160];
+	xui_widget pBody,pScroll,pFooter,pRows[5],pCloseButton;
+	float fLayoutWidth,fLayoutHeight;
+	xui_font pLayoutFont;
+	int iLayoutReplace;
+	xui_widget pFindWindow;
+	xui_widget pFindInput;
+	xui_widget pReplaceInput;
+	xui_widget pFindStatus;
+	xui_widget pFindPrevButton;
+	xui_widget pFindNextButton;
+	xui_widget pReplaceButton;
+	xui_widget pReplaceAllButton;
+	xui_widget pFindAllButton;
+	xui_widget pCaseCheck;
+	xui_widget pWordCheck;
+	xui_widget pRegexCheck;
+	xui_widget pEscapeCheck;
+	xui_widget pSelectionCheck;
+	xui_widget pScopeCheck;
+	xui_widget pFindResultList;
+	int bFindWindowReplace;
+	uint32_t iFindLanguageRevision;
+} xui_code_find_window_t;
+
 typedef struct xui_code_edit_data_t {
     int iCacheActivity; /* 1 native mutation, 2 whole native consumer */
     int bProducingLineLayout; /* uses the previous pointer-alignment padding */
@@ -100,27 +135,7 @@ typedef struct xui_code_edit_data_t {
 	uint32_t iFindFlags;
 	int iFindRangeStart;
 	int iFindRangeEnd;
-	int bFindResultScopeMode;
-	char sFindResultPosition[32];
-	char sFindResultPreview[160];
-	xui_widget pFindWindow;
-	xui_widget pFindInput;
-	xui_widget pReplaceInput;
-	xui_widget pFindStatus;
-	xui_widget pFindPrevButton;
-	xui_widget pFindNextButton;
-	xui_widget pReplaceButton;
-	xui_widget pReplaceAllButton;
-	xui_widget pFindAllButton;
-	xui_widget pCaseCheck;
-	xui_widget pWordCheck;
-	xui_widget pRegexCheck;
-	xui_widget pEscapeCheck;
-	xui_widget pSelectionCheck;
-	xui_widget pScopeCheck;
-	xui_widget pFindResultList;
-	int bFindWindowReplace;
-	uint32_t iFindLanguageRevision;
+	xui_code_find_window_t* pFindUi;
 	xui_widget pMenu;
 	char* arrMenuTitle[12];
 	xui_widget pHScrollBar;
@@ -263,12 +278,18 @@ struct xui_code_find_scope_t {
 	int iActiveIndex;
 	xui_code_find_activate_proc onActivate;
 	void* pActivateUser;
+	xui_code_find_window_t* pFindUi;
+	xui_widget pActiveEditor;
 };
 
 static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand, const void* pCommandData, int* pHandled);
 static int __xuiCodeEditUpdateScrollModel(xui_widget pWidget, xui_code_edit_data_t* pData);
 static int __xuiCodeEditInvalidateView(xui_widget pWidget);
-static void __xuiCodeEditFindWindowApplyLanguage(xui_widget pCodeEdit, xui_code_edit_data_t* pData);
+static void __xuiCodeEditFindWindowApplyLanguage(xui_widget pOwner, xui_code_find_window_t* pUi);
+static int __xuiCodeFindWindowRefreshTable(xui_code_find_window_t*, int, int);
+static void __xuiCodeFindWindowInvalidate(xui_code_find_window_t*);
+static void __xuiCodeFindWindowSetFont(xui_code_find_window_t*, xui_font);
+static void __xuiCodeFindWindowDestroy(xui_code_find_window_t*);
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser);
 static uint32_t __xuiCodeEditColor(xui_widget pWidget, const char* sName, uint32_t iDefaultColor);
 static int __xuiCodeEditVisibleRowToLine(xui_code_edit_data_t* pData, int iRow);
@@ -459,14 +480,13 @@ static void __xuiCodeEditClearFindResults(xui_code_edit_data_t* pData)
 	if ( pData == NULL ) return;
 	pData->iFindResultCount = 0;
 	pData->iFindActiveIndex = -1;
-	pData->bFindResultScopeMode = 0;
 	memset(&pData->tFindActive, 0, sizeof(pData->tFindActive));
 	if ( pData->pAnnotations != NULL ) {
 		(void)xuiCodeAnnotationClearIndicators(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT);
 	}
-	if ( pData->pFindResultList != NULL ) {
-		(void)xuiTableViewRefreshAdapter(pData->pFindResultList);
-	}
+	xui_code_find_window_t* ui = pData->pFindScope ? pData->pFindScope->pFindUi : pData->pFindUi;
+	if (ui != NULL && !ui->bFindResultScopeMode && ui->pFindResultList != NULL)
+		(void)xuiTableViewRefreshAdapter(ui->pFindResultList);
 }
 
 static int __xuiCodeEditDocumentPrepare(xui_code_document document,int start,int end,
@@ -506,6 +526,12 @@ static void __xuiCodeEditDocumentEdited(xui_code_document pDocument,
 	(void)pDocument;
 	pData = (xui_code_edit_data_t*)pUser;
 	if ( pData == NULL ) return;
+	if (pData->pFindScope != NULL) {
+		pData->pFindScope->iResultCount = 0;
+		pData->pFindScope->iActiveIndex = -1;
+		__xuiCodeFindWindowInvalidate(pData->pFindScope->pFindUi);
+	}
+	__xuiCodeFindWindowInvalidate(pData->pFindUi);
 	if ( bReset ) {
 		if ( pData->pOwner != NULL ) {
 			(void)__xuiCodeEditCancelPointer(pData->pOwner, pData);
@@ -2417,10 +2443,10 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pVScrollBar);
 		pData->pVScrollBar = NULL;
 	}
-	if ( pData->pFindWindow != NULL ) {
-		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pFindWindow);
-		pData->pFindWindow = NULL;
-	}
+	if ( pData->pFindScope != NULL ) (void)xuiCodeFindScopeRemoveEditor(pData->pFindScope, pWidget);
+	if(pData->pFindUi != NULL) pData->pFindUi->pEditor=NULL;
+	__xuiCodeFindWindowDestroy(pData->pFindUi);
+	pData->pFindUi = NULL;
 	for ( i = 0; i < (int)(sizeof(pData->arrMenuTitle) / sizeof(pData->arrMenuTitle[0])); ++i ) {
 		xrtFree(pData->arrMenuTitle[i]);
 		pData->arrMenuTitle[i] = NULL;
@@ -7249,24 +7275,7 @@ XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)
 	pData->iCachedMaxLineLength = 0;
 	__xuiCodeEditWrapIndexClear(pData);
 	if ( pData->pMenu != NULL ) (void)xuiMenuSetFont(pData->pMenu, pFont);
-	if ( pData->pFindWindow != NULL ) {
-		(void)xuiWindowSetFont(pData->pFindWindow, pFont);
-		if ( pData->pFindInput != NULL ) (void)xuiInputSetFont(pData->pFindInput, pFont);
-		if ( pData->pReplaceInput != NULL ) (void)xuiInputSetFont(pData->pReplaceInput, pFont);
-		if ( pData->pFindPrevButton != NULL ) (void)xuiButtonSetFont(pData->pFindPrevButton, pFont);
-		if ( pData->pFindNextButton != NULL ) (void)xuiButtonSetFont(pData->pFindNextButton, pFont);
-		if ( pData->pFindAllButton != NULL ) (void)xuiButtonSetFont(pData->pFindAllButton, pFont);
-		if ( pData->pReplaceButton != NULL ) (void)xuiButtonSetFont(pData->pReplaceButton, pFont);
-		if ( pData->pReplaceAllButton != NULL ) (void)xuiButtonSetFont(pData->pReplaceAllButton, pFont);
-		if ( pData->pCaseCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pCaseCheck, pFont);
-		if ( pData->pWordCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pWordCheck, pFont);
-		if ( pData->pRegexCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pRegexCheck, pFont);
-		if ( pData->pEscapeCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pEscapeCheck, pFont);
-		if ( pData->pSelectionCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pSelectionCheck, pFont);
-		if ( pData->pScopeCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pScopeCheck, pFont);
-		if ( pData->pFindResultList != NULL ) (void)xuiTableViewSetFont(pData->pFindResultList, pFont);
-		if ( pData->pFindStatus != NULL ) (void)xuiLabelSetFont(pData->pFindStatus, pFont);
-	}
+	if ( pData->pFindUi != NULL ) __xuiCodeFindWindowSetFont(pData->pFindUi, pFont);
 	(void)__xuiCodeEditUpdateScrollModel(pWidget, pData);
 	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
@@ -7430,133 +7439,11 @@ static void __xuiCodeEditFormatFindPosition(int iLine, int iColumn, char* sBuffe
 	snprintf(sBuffer, (size_t)iCapacity, "%d:%d", iLine + 1, iColumn + 1);
 }
 
-static int __xuiCodeEditFindResultTableColumns(xui_code_edit_data_t* pData, int bScope)
-{
-	xui_table_view_column_t arrColumns[3];
-	xui_context pContext;
-	int iCount;
-	int i;
-
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->bFindResultScopeMode = bScope ? 1 : 0;
-	if ( pData->pFindResultList == NULL ) return XUI_OK;
-	pContext = xuiWidgetGetContext(pData->pFindResultList);
-	memset(arrColumns, 0, sizeof(arrColumns));
-	if ( bScope ) {
-		arrColumns[0].sTitle = xuiTranslate(pContext, XUI_TR_FIND_COL_FILE);
-		arrColumns[0].fWidth = 150.0f;
-		arrColumns[0].fMinWidth = 80.0f;
-		arrColumns[1].sTitle = xuiTranslate(pContext, XUI_TR_FIND_COL_POSITION);
-		arrColumns[1].fWidth = 84.0f;
-		arrColumns[1].fMinWidth = 64.0f;
-		arrColumns[2].sTitle = xuiTranslate(pContext, XUI_TR_FIND_COL_CONTENT);
-		arrColumns[2].fWidth = 340.0f;
-		arrColumns[2].fMinWidth = 120.0f;
-		iCount = 3;
-	} else {
-		arrColumns[0].sTitle = xuiTranslate(pContext, XUI_TR_FIND_COL_POSITION);
-		arrColumns[0].fWidth = 84.0f;
-		arrColumns[0].fMinWidth = 64.0f;
-		arrColumns[1].sTitle = xuiTranslate(pContext, XUI_TR_FIND_COL_CONTENT);
-		arrColumns[1].fWidth = 492.0f;
-		arrColumns[1].fMinWidth = 160.0f;
-		iCount = 2;
-	}
-	for ( i = 0; i < iCount; i++ ) {
-		arrColumns[i].bVisibleSet = 1;
-		arrColumns[i].bVisible = 1;
-		arrColumns[i].bResizableSet = 1;
-		arrColumns[i].bResizable = 1;
-	}
-	return xuiTableViewSetColumns(pData->pFindResultList, arrColumns, iCount);
-}
-
-static int __xuiCodeEditFindResultTableCount(xui_widget pWidget, void* pUser)
-{
-	xui_widget pCodeEdit;
-	xui_code_edit_data_t* pData;
-
-	(void)pWidget;
-	pCodeEdit = (xui_widget)pUser;
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL ) return 0;
-	if ( pData->bFindResultScopeMode && pData->pFindScope != NULL ) {
-		return pData->pFindScope->iResultCount;
-	}
-	return pData->iFindResultCount;
-}
-
-static int __xuiCodeEditFindResultTableCell(xui_widget pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser)
-{
-	xui_widget pCodeEdit;
-	xui_code_edit_data_t* pData;
-	xui_find_result_t* pFind;
-	xui_code_find_result_t* pScopeResult;
-	int iLine;
-	int iColumnIndex;
-
-	(void)pWidget;
-	pCodeEdit = (xui_widget)pUser;
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL || pCell == NULL || iRow < 0 || iColumn < 0 ) return 0;
-	if ( pData->bFindResultScopeMode ) {
-		if ( pData->pFindScope == NULL || iRow >= pData->pFindScope->iResultCount ) return 0;
-		pScopeResult = &pData->pFindScope->pResults[iRow];
-		if ( iColumn == 0 ) {
-			pCell->sText = __xuiCodeFindScopeGetEditorNameByWidget(pData->pFindScope, pScopeResult->pEditor);
-			return 1;
-		}
-		if ( iColumn == 1 ) {
-			__xuiCodeEditFormatFindPosition(pScopeResult->iLine, pScopeResult->iColumn, pData->sFindResultPosition, (int)sizeof(pData->sFindResultPosition));
-			pCell->sText = pData->sFindResultPosition;
-			return 1;
-		}
-		if ( iColumn == 2 ) {
-			pCell->sText = pScopeResult->sPreview;
-			return 1;
-		}
-		return 0;
-	}
-	if ( iRow >= pData->iFindResultCount ) return 0;
-	pFind = &pData->pFindResults[iRow];
-	if ( iColumn == 0 ) {
-		iLine = 0;
-		iColumnIndex = 0;
-		(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, pFind->iStart, &iLine, &iColumnIndex);
-		__xuiCodeEditFormatFindPosition(iLine, iColumnIndex, pData->sFindResultPosition, (int)sizeof(pData->sFindResultPosition));
-		pCell->sText = pData->sFindResultPosition;
-		return 1;
-	}
-	if ( iColumn == 1 ) {
-		__xuiCodeEditBuildFindPreview(pData->pDocument, pFind->iStart, pData->sFindResultPreview, (int)sizeof(pData->sFindResultPreview));
-		pCell->sText = pData->sFindResultPreview;
-		return 1;
-	}
-	return 0;
-}
-
-static int __xuiCodeEditRefreshFindResultTable(xui_code_edit_data_t* pData, int bScope, int iActiveIndex)
-{
-	int iRet;
-
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiCodeEditFindResultTableColumns(pData, bScope);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( pData->pFindResultList == NULL ) return XUI_OK;
-	iRet = xuiTableViewRefreshAdapter(pData->pFindResultList);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( iActiveIndex >= 0 ) {
-		iRet = xuiTableViewSetSelectedRow(pData->pFindResultList, iActiveIndex);
-		if ( iRet == XUI_OK ) iRet = xuiTableViewEnsureCellVisible(pData->pFindResultList, iActiveIndex, 0);
-	}
-	return iRet;
-}
-
 static int __xuiCodeEditSyncFindResultList(xui_widget pWidget, xui_code_edit_data_t* pData)
 {
-	(void)pWidget;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiCodeEditRefreshFindResultTable(pData, 0, pData->iFindActiveIndex);
+	xui_code_find_window_t* pUi = pData->pFindScope ? pData->pFindScope->pFindUi : pData->pFindUi;
+	if ( pUi == NULL || pUi->pEditor != pWidget || pUi->bFindResultScopeMode ) return XUI_OK;
+	return __xuiCodeFindWindowRefreshTable(pUi, 0, pData->iFindActiveIndex);
 }
 
 static int __xuiCodeEditCopyDocumentRange(xui_code_edit_data_t* pData,
@@ -8704,6 +8591,12 @@ XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope)
 	int i;
 
 	if ( pScope == NULL ) return;
+	if(pScope->pFindUi != NULL) {
+		xui_code_find_window_t* ui=pScope->pFindUi;
+		ui->pFindScope=NULL;ui->pEditor=NULL;
+		__xuiCodeFindWindowDestroy(ui);
+	}
+	pScope->pFindUi = NULL;
 	for ( i = 0; i < pScope->iEditorCount; i++ ) {
 		if ( xuiCodeEditGetFindScope(pScope->pEditors[i].pEditor) == pScope ) {
 			(void)xuiCodeEditSetFindScope(pScope->pEditors[i].pEditor, NULL);
@@ -8728,6 +8621,9 @@ XUI_API int xuiCodeFindScopeClearEditors(xui_code_find_scope pScope)
 		pScope->pEditors[i].sName = NULL;
 		pScope->pEditors[i].pEditor = NULL;
 	}
+	pScope->pActiveEditor = NULL;
+	if ( pScope->pFindUi != NULL ) pScope->pFindUi->pEditor = NULL;
+	__xuiCodeFindWindowInvalidate(pScope->pFindUi);
 	pScope->iEditorCount = 0;
 	pScope->iResultCount = 0;
 	pScope->iActiveIndex = -1;
@@ -8745,6 +8641,9 @@ XUI_API int xuiCodeFindScopeAddEditorNamed(xui_code_find_scope pScope, xui_widge
 	int iRet;
 
 	if ( pScope == NULL || __xuiCodeEditGetData(pEditor) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiCodeEditGetFindScope(pEditor) != NULL && xuiCodeEditGetFindScope(pEditor) != pScope ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pScope->pFindUi != NULL && xuiWidgetGetContext(pEditor) != xuiWidgetGetContext(pScope->pFindUi->pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pScope->iEditorCount > 0 && xuiWidgetGetContext(pEditor) != xuiWidgetGetContext(pScope->pEditors[0].pEditor) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pScope->iEditorCount; i++ ) {
 		if ( pScope->pEditors[i].pEditor == pEditor ) {
 			if ( sName != NULL ) return __xuiCodeFindScopeSetEntryName(&pScope->pEditors[i], sName);
@@ -8761,6 +8660,9 @@ XUI_API int xuiCodeFindScopeAddEditorNamed(xui_code_find_scope pScope, xui_widge
 	pScope->iResultCount = 0;
 	pScope->iActiveIndex = -1;
 	(void)xuiCodeEditSetFindScope(pEditor, pScope);
+	if(__xuiCodeEditGetData(pEditor)->pFindUi != NULL)
+		(void)xuiWindowSetOpen(__xuiCodeEditGetData(pEditor)->pFindUi->pFindWindow,0);
+	__xuiCodeFindWindowInvalidate(pScope->pFindUi);
 	return XUI_OK;
 }
 
@@ -8790,6 +8692,11 @@ XUI_API int xuiCodeFindScopeRemoveEditor(xui_code_find_scope pScope, xui_widget 
 			if ( pScope->iEditorCount >= 0 ) memset(&pScope->pEditors[pScope->iEditorCount], 0, sizeof(pScope->pEditors[pScope->iEditorCount]));
 			pScope->iResultCount = 0;
 			pScope->iActiveIndex = -1;
+			if ( pScope->pActiveEditor == pEditor ) {
+				pScope->pActiveEditor = NULL;
+				if ( pScope->pFindUi != NULL ) pScope->pFindUi->pEditor = NULL;
+			}
+			__xuiCodeFindWindowInvalidate(pScope->pFindUi);
 			if ( xuiCodeEditGetFindScope(pEditor) == pScope ) (void)xuiCodeEditSetFindScope(pEditor, NULL);
 			return XUI_OK;
 		}
@@ -8891,65 +8798,11 @@ XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iInde
 	iRet = __xuiCodeEditApplyFindResult(pResult->pEditor, pData, &tFind);
 	if ( iRet != XUI_OK ) return iRet;
 	pScope->iActiveIndex = iIndex;
+	(void)xuiCodeFindScopeSetActiveEditor(pScope,pResult->pEditor);
 	if ( pScope->onActivate != NULL ) {
 		pScope->onActivate(pScope, pResult->pEditor, pResult, pScope->pActivateUser);
 	}
 	return XUI_OK;
-}
-
-static void __xuiCodeEditFindWindowOptions(xui_code_edit_data_t* pData, xui_find_options_t* pOptions)
-{
-	uint32_t iFlags;
-
-	if ( pOptions == NULL ) return;
-	memset(pOptions, 0, sizeof(*pOptions));
-	pOptions->iSize = sizeof(*pOptions);
-	if ( pData == NULL ) return;
-	pOptions->sPattern = (pData->pFindInput != NULL) ? xuiInputGetText(pData->pFindInput) : pData->sFindPattern;
-	pOptions->sReplacement = (pData->pReplaceInput != NULL) ? xuiInputGetText(pData->pReplaceInput) : pData->sFindReplacement;
-	pOptions->iStartOffset = -1;
-	iFlags = 0u;
-	if ( pData->pCaseCheck != NULL && xuiCheckBoxGetChecked(pData->pCaseCheck) ) iFlags |= XUI_FIND_CASE_SENSITIVE;
-	if ( pData->pWordCheck != NULL && xuiCheckBoxGetChecked(pData->pWordCheck) ) iFlags |= XUI_FIND_WHOLE_WORD;
-	if ( pData->pRegexCheck != NULL && xuiCheckBoxGetChecked(pData->pRegexCheck) ) iFlags |= XUI_FIND_REGEX;
-	if ( pData->pEscapeCheck != NULL && xuiCheckBoxGetChecked(pData->pEscapeCheck) ) iFlags |= XUI_FIND_ESCAPE;
-	if ( pData->pSelectionCheck != NULL && xuiCheckBoxGetChecked(pData->pSelectionCheck) ) iFlags |= XUI_FIND_SELECTION;
-	pOptions->iFlags = iFlags;
-}
-
-static int __xuiCodeEditFindWindowUseScope(xui_code_edit_data_t* pData)
-{
-	return pData != NULL && pData->pFindScope != NULL && pData->pScopeCheck != NULL && xuiCheckBoxGetChecked(pData->pScopeCheck);
-}
-
-static void __xuiCodeEditFindWindowSetStatus(xui_code_edit_data_t* pData, const char* sText)
-{
-	if ( pData == NULL || pData->pFindStatus == NULL ) return;
-	(void)xuiLabelSetText(pData->pFindStatus, (sText != NULL) ? sText : "");
-}
-
-static void __xuiCodeEditFindWindowApplyLanguage(xui_widget pCodeEdit, xui_code_edit_data_t* pData)
-{
-	xui_context pContext;
-
-	if ( pCodeEdit == NULL || pData == NULL || pData->pFindWindow == NULL ) return;
-	pContext = xuiWidgetGetContext(pCodeEdit);
-	pData->iFindLanguageRevision = xuiGetLanguageRevision(pContext);
-	(void)xuiWindowSetTitle(pData->pFindWindow, xuiTranslate(pContext, pData->bFindWindowReplace ? XUI_TR_REPLACE_TITLE : XUI_TR_FIND_TITLE));
-	if ( pData->pFindInput != NULL ) (void)xuiInputSetPlaceholder(pData->pFindInput, xuiTranslate(pContext, XUI_TR_FIND_PLACEHOLDER));
-	if ( pData->pReplaceInput != NULL ) (void)xuiInputSetPlaceholder(pData->pReplaceInput, xuiTranslate(pContext, XUI_TR_REPLACE_PLACEHOLDER));
-	if ( pData->pFindPrevButton != NULL ) (void)xuiButtonSetText(pData->pFindPrevButton, xuiTranslate(pContext, XUI_TR_FIND_PREVIOUS));
-	if ( pData->pFindNextButton != NULL ) (void)xuiButtonSetText(pData->pFindNextButton, xuiTranslate(pContext, XUI_TR_FIND_NEXT));
-	if ( pData->pFindAllButton != NULL ) (void)xuiButtonSetText(pData->pFindAllButton, xuiTranslate(pContext, XUI_TR_FIND_ALL));
-	if ( pData->pReplaceButton != NULL ) (void)xuiButtonSetText(pData->pReplaceButton, xuiTranslate(pContext, XUI_TR_REPLACE_CURRENT));
-	if ( pData->pReplaceAllButton != NULL ) (void)xuiButtonSetText(pData->pReplaceAllButton, xuiTranslate(pContext, XUI_TR_REPLACE_ALL));
-	if ( pData->pCaseCheck != NULL ) (void)xuiCheckBoxSetText(pData->pCaseCheck, xuiTranslate(pContext, XUI_TR_FIND_CASE));
-	if ( pData->pWordCheck != NULL ) (void)xuiCheckBoxSetText(pData->pWordCheck, xuiTranslate(pContext, XUI_TR_FIND_WORD));
-	if ( pData->pRegexCheck != NULL ) (void)xuiCheckBoxSetText(pData->pRegexCheck, xuiTranslate(pContext, XUI_TR_FIND_REGEX));
-	if ( pData->pEscapeCheck != NULL ) (void)xuiCheckBoxSetText(pData->pEscapeCheck, xuiTranslate(pContext, XUI_TR_FIND_ESCAPE));
-	if ( pData->pSelectionCheck != NULL ) (void)xuiCheckBoxSetText(pData->pSelectionCheck, xuiTranslate(pContext, XUI_TR_FIND_SELECTION));
-	if ( pData->pScopeCheck != NULL ) (void)xuiCheckBoxSetText(pData->pScopeCheck, xuiTranslate(pContext, XUI_TR_FIND_SCOPE));
-	(void)__xuiCodeEditFindResultTableColumns(pData, pData->bFindResultScopeMode);
 }
 
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
@@ -9008,449 +8861,10 @@ static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 			}
 		}
 	}
-	if ( pData->pFindWindow != NULL ) {
-		if ( pData->iFindLanguageRevision != xuiGetLanguageRevision(pContext) ) {
-			__xuiCodeEditFindWindowApplyLanguage(pWidget, pData);
-		}
-	}
 	return XUI_OK;
 }
 
-static int __xuiCodeEditSyncScopeList(xui_code_edit_data_t* pData, xui_code_find_scope pScope)
-{
-	if ( pData == NULL || pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiCodeEditRefreshFindResultTable(pData, 1, pScope->iActiveIndex);
-}
-
-static void __xuiCodeEditFindWindowRefresh(xui_widget pCodeEdit)
-{
-	xui_code_edit_data_t* pData;
-	xui_find_options_t tOptions;
-	char sStatus[64];
-	int iCount;
-	int iRet;
-	int bUseScope;
-
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL ) return;
-	__xuiCodeEditFindWindowOptions(pData, &tOptions);
-	bUseScope = __xuiCodeEditFindWindowUseScope(pData);
-	if ( tOptions.sPattern == NULL || tOptions.sPattern[0] == '\0' ) {
-		__xuiCodeEditClearFindResults(pData);
-		if ( bUseScope && pData->pFindScope != NULL ) {
-			pData->pFindScope->iResultCount = 0;
-			pData->pFindScope->iActiveIndex = -1;
-		}
-		(void)__xuiCodeEditRefreshFindResultTable(pData, bUseScope, -1);
-		(void)xuiWidgetInvalidate(pCodeEdit, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		__xuiCodeEditFindWindowSetStatus(pData, "");
-		return;
-	}
-	iCount = 0;
-	if ( bUseScope ) {
-		tOptions.iFlags &= ~XUI_FIND_SELECTION;
-		iRet = xuiCodeFindScopeFindAll(pData->pFindScope, &tOptions, &iCount);
-		if ( iRet == XUI_OK ) iRet = __xuiCodeEditSyncScopeList(pData, pData->pFindScope);
-	} else {
-		iRet = xuiCodeEditFindAll(pCodeEdit, &tOptions, &iCount);
-	}
-	if ( iRet != XUI_OK ) {
-		__xuiCodeEditFindWindowSetStatus(pData, xuiTranslate(xuiWidgetGetContext(pCodeEdit), XUI_TR_FIND_INVALID_PATTERN));
-		return;
-	}
-	snprintf(sStatus, sizeof(sStatus), xuiTranslate(xuiWidgetGetContext(pCodeEdit), XUI_TR_FIND_MATCHES_FMT), iCount);
-	__xuiCodeEditFindWindowSetStatus(pData, sStatus);
-}
-
-static void __xuiCodeEditFindInputChange(xui_widget pWidget, const char* sText, void* pUser)
-{
-	(void)pWidget;
-	(void)sText;
-	__xuiCodeEditFindWindowRefresh((xui_widget)pUser);
-}
-
-static void __xuiCodeEditFindCheckChange(xui_widget pWidget, int bChecked, void* pUser)
-{
-	(void)pWidget;
-	(void)bChecked;
-	__xuiCodeEditFindWindowRefresh((xui_widget)pUser);
-}
-
-static void __xuiCodeEditFindTableSelect(xui_widget pWidget, int iIndex, int iColumn, int iSelectionMode, void* pUser)
-{
-	xui_widget pCodeEdit;
-	xui_code_edit_data_t* pData;
-	xui_find_result_t tFind;
-
-	(void)pWidget;
-	(void)iColumn;
-	(void)iSelectionMode;
-	pCodeEdit = (xui_widget)pUser;
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL || iIndex < 0 ) return;
-	if ( __xuiCodeEditFindWindowUseScope(pData) ) {
-		(void)xuiCodeFindScopeActivateResult(pData->pFindScope, iIndex);
-		return;
-	}
-	if ( iIndex >= pData->iFindResultCount ) return;
-	tFind = pData->pFindResults[iIndex];
-	pData->iFindActiveIndex = iIndex;
-	(void)__xuiCodeEditApplyFindResult(pCodeEdit, pData, &tFind);
-	(void)xuiWidgetInvalidate(pCodeEdit, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-}
-
-static void __xuiCodeEditFindButtonClick(xui_widget pButton, void* pUser)
-{
-	xui_widget pCodeEdit;
-	xui_code_edit_data_t* pData;
-	xui_find_options_t tOptions;
-	char sStatus[64];
-	int iCount;
-	int iIndex;
-	int iRet;
-
-	pCodeEdit = (xui_widget)pUser;
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL ) return;
-	__xuiCodeEditFindWindowOptions(pData, &tOptions);
-	iRet = XUI_OK;
-	if ( __xuiCodeEditFindWindowUseScope(pData) && (pButton == pData->pFindPrevButton || pButton == pData->pFindNextButton || pButton == pData->pFindAllButton) ) {
-		iRet = xuiCodeFindScopeFindAll(pData->pFindScope, &tOptions, &iCount);
-		if ( iRet == XUI_OK ) iRet = __xuiCodeEditSyncScopeList(pData, pData->pFindScope);
-		if ( iRet == XUI_OK && pData->pFindScope->iResultCount > 0 && pButton != pData->pFindAllButton ) {
-			iIndex = pData->pFindScope->iActiveIndex;
-			if ( iIndex < 0 ) iIndex = (pButton == pData->pFindPrevButton) ? pData->pFindScope->iResultCount : -1;
-			iIndex += (pButton == pData->pFindPrevButton) ? -1 : 1;
-			if ( iIndex < 0 ) iIndex = pData->pFindScope->iResultCount - 1;
-			if ( iIndex >= pData->pFindScope->iResultCount ) iIndex = 0;
-			iRet = xuiCodeFindScopeActivateResult(pData->pFindScope, iIndex);
-			if ( iRet == XUI_OK && pData->pFindResultList != NULL ) {
-				(void)xuiTableViewSetSelectedRow(pData->pFindResultList, iIndex);
-				(void)xuiTableViewEnsureCellVisible(pData->pFindResultList, iIndex, 0);
-			}
-		}
-	} else if ( pButton == pData->pFindPrevButton ) {
-		iRet = xuiCodeEditFindPrevious(pCodeEdit, &tOptions);
-	} else if ( pButton == pData->pFindNextButton ) {
-		iRet = xuiCodeEditFindNext(pCodeEdit, &tOptions);
-	} else if ( pButton == pData->pFindAllButton ) {
-		iRet = xuiCodeEditFindAll(pCodeEdit, &tOptions, &iCount);
-	} else if ( pButton == pData->pReplaceButton ) {
-		iRet = xuiCodeEditReplaceCurrent(pCodeEdit, &tOptions);
-	} else if ( pButton == pData->pReplaceAllButton ) {
-		iRet = xuiCodeEditReplaceAll(pCodeEdit, &tOptions, &iCount);
-		snprintf(sStatus, sizeof(sStatus), xuiTranslate(xuiWidgetGetContext(pCodeEdit), XUI_TR_FIND_REPLACED_FMT), iCount);
-		__xuiCodeEditFindWindowSetStatus(pData, sStatus);
-	}
-	if ( iRet == XUI_OK && pButton != pData->pReplaceAllButton ) {
-		if ( __xuiCodeEditFindWindowUseScope(pData) ) iCount = pData->pFindScope->iResultCount;
-		else iCount = pData->iFindResultCount;
-		snprintf(sStatus, sizeof(sStatus), xuiTranslate(xuiWidgetGetContext(pCodeEdit), XUI_TR_FIND_MATCHES_FMT), iCount);
-		__xuiCodeEditFindWindowSetStatus(pData, sStatus);
-	} else if ( iRet != XUI_OK ) {
-		__xuiCodeEditFindWindowSetStatus(pData, xuiTranslate(xuiWidgetGetContext(pCodeEdit), XUI_TR_FIND_NOT_FOUND));
-	}
-}
-
-static void __xuiCodeEditFindWindowClose(xui_widget pWindow, void* pUser)
-{
-	xui_widget pCodeEdit = (xui_widget)pUser;
-	(void)pWindow;
-	if ( pCodeEdit != NULL ) {
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pCodeEdit), pCodeEdit);
-	}
-}
-
-static int __xuiCodeEditFindWindowKeyDown(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
-{
-	xui_widget pCodeEdit;
-	xui_code_edit_data_t* pData;
-	int iKey;
-
-	(void)pWidget;
-	pCodeEdit = (xui_widget)pUser;
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pEvent == NULL || pData == NULL || pData->pFindWindow == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pEvent->iType != XUI_EVENT_KEY_DOWN ) return XUI_OK;
-	iKey = pEvent->iKey;
-	if ( iKey >= 'a' && iKey <= 'z' ) iKey = iKey - 'a' + 'A';
-	if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
-		if ( iKey == 'F' ) {
-			(void)xuiCodeEditOpenFind(pCodeEdit);
-			return XUI_EVENT_DISPATCH_STOP;
-		}
-		if ( iKey == 'H' ) {
-			(void)xuiCodeEditOpenReplace(pCodeEdit);
-			return XUI_EVENT_DISPATCH_STOP;
-		}
-	}
-	if ( pEvent->iKey == XUI_KEY_F3 ) {
-		__xuiCodeEditFindButtonClick(((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? pData->pFindPrevButton : pData->pFindNextButton, pCodeEdit);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	if ( pEvent->iKey == XUI_KEY_ENTER ) {
-		__xuiCodeEditFindButtonClick(((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? pData->pFindPrevButton : pData->pFindNextButton, pCodeEdit);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-		(void)xuiWindowSetOpen(pData->pFindWindow, 0);
-		(void)xuiSetFocusWidget(xuiWidgetGetContext(pCodeEdit), pCodeEdit);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	return XUI_OK;
-}
-
-static int __xuiCodeEditFindWindowLayout(xui_widget pCodeEdit, int bReplace)
-{
-	xui_code_edit_data_t* pData;
-	xui_rect_t tWindow;
-	float fHeight;
-	float fResultY;
-
-	pData = __xuiCodeEditGetData(pCodeEdit);
-	if ( pData == NULL || pData->pFindWindow == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	fHeight = bReplace ? 420.0f : 384.0f;
-	fResultY = bReplace ? 122.0f : 86.0f;
-	tWindow = xuiWidgetGetRect(pData->pFindWindow);
-	if ( tWindow.fW < 720.0f ) tWindow.fW = 720.0f;
-	tWindow.fH = fHeight;
-	(void)xuiWidgetSetRect(pData->pFindWindow, tWindow);
-	(void)xuiWidgetSetRect(pData->pFindInput, (xui_rect_t){12.0f, 12.0f, 320.0f, 28.0f});
-	(void)xuiWidgetSetRect(pData->pFindPrevButton, (xui_rect_t){346.0f, 12.0f, 80.0f, 28.0f});
-	(void)xuiWidgetSetRect(pData->pFindNextButton, (xui_rect_t){432.0f, 12.0f, 88.0f, 28.0f});
-	(void)xuiWidgetSetRect(pData->pFindAllButton, (xui_rect_t){526.0f, 12.0f, 130.0f, 28.0f});
-	(void)xuiWidgetSetVisible(pData->pReplaceInput, bReplace);
-	(void)xuiWidgetSetVisible(pData->pReplaceButton, bReplace);
-	(void)xuiWidgetSetVisible(pData->pReplaceAllButton, bReplace);
-	if ( bReplace ) {
-		(void)xuiWidgetSetRect(pData->pReplaceInput, (xui_rect_t){12.0f, 50.0f, 320.0f, 28.0f});
-		(void)xuiWidgetSetRect(pData->pReplaceButton, (xui_rect_t){346.0f, 50.0f, 116.0f, 28.0f});
-		(void)xuiWidgetSetRect(pData->pReplaceAllButton, (xui_rect_t){470.0f, 50.0f, 148.0f, 28.0f});
-	}
-	(void)xuiWidgetSetRect(pData->pCaseCheck, (xui_rect_t){12.0f, fResultY - 34.0f, 112.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pWordCheck, (xui_rect_t){132.0f, fResultY - 34.0f, 108.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pRegexCheck, (xui_rect_t){248.0f, fResultY - 34.0f, 80.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pEscapeCheck, (xui_rect_t){336.0f, fResultY - 34.0f, 84.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pSelectionCheck, (xui_rect_t){428.0f, fResultY - 34.0f, 108.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pScopeCheck, (xui_rect_t){544.0f, fResultY - 34.0f, 96.0f, 24.0f});
-	(void)xuiWidgetSetRect(pData->pFindResultList, (xui_rect_t){12.0f, fResultY, 676.0f, 220.0f});
-	(void)xuiWidgetSetRect(pData->pFindStatus, (xui_rect_t){12.0f, fResultY + 228.0f, 676.0f, 24.0f});
-	return XUI_OK;
-}
-
-static int __xuiCodeEditCreateFindButton(xui_context pContext, xui_widget* ppButton, xui_font pFont, const char* sText, xui_widget pCodeEdit)
-{
-	xui_button_desc_t tButton;
-	int iRet;
-
-	memset(&tButton, 0, sizeof(tButton));
-	tButton.iSize = sizeof(tButton);
-	tButton.pFont = pFont;
-	tButton.sText = sText;
-	tButton.fBorderWidth = 1.0f;
-	iRet = xuiInternalButtonCreatePart(pCodeEdit,ppButton,&tButton);
-	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(*ppButton, __xuiCodeEditFindButtonClick, pCodeEdit);
-	return iRet;
-}
-
-static int __xuiCodeEditCreateFindCheck(xui_context pContext, xui_widget* ppCheck, xui_font pFont, const char* sText, int bChecked, xui_widget pCodeEdit)
-{
-	xui_checkbox_desc_t tCheck;
-	int iRet;
-
-	memset(&tCheck, 0, sizeof(tCheck));
-	tCheck.iSize = sizeof(tCheck);
-	tCheck.pFont = pFont;
-	tCheck.sText = sText;
-	tCheck.bChecked = bChecked;
-	tCheck.fIndicatorSize = 14.0f;
-	tCheck.fGap = 4.0f;
-	iRet = xuiInternalCheckBoxCreatePart(pCodeEdit,ppCheck,&tCheck);
-	if ( iRet == XUI_OK ) iRet = xuiCheckBoxSetChange(*ppCheck, __xuiCodeEditFindCheckChange, pCodeEdit);
-	return iRet;
-}
-
-static int __xuiCodeEditCreateFindWindow(xui_widget pCodeEdit, xui_code_edit_data_t* pData)
-{
-	xui_context pContext;
-	xui_widget pRoot;
-	xui_widget pClient;
-	xui_window_desc_t tWindow;
-	xui_input_desc_t tInput;
-	xui_label_desc_t tLabel;
-	xui_table_view_desc_t tTable;
-	xui_font pFont;
-	int iRet;
-
-	if ( pCodeEdit == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pContext = xuiWidgetGetContext(pCodeEdit);
-	pRoot = xuiGetRootWidget(pContext);
-	if ( pRoot == NULL ) return XUI_ERROR_NOT_INITIALIZED;
-	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
-	memset(&tWindow, 0, sizeof(tWindow));
-	tWindow.iSize = sizeof(tWindow);
-	tWindow.sTitle = xuiTranslate(pContext, XUI_TR_FIND_TITLE);
-	tWindow.pFont = pFont;
-	tWindow.bClosed = 1;
-	tWindow.bTopMost = 1;
-	tWindow.bHideCollapse = 1;
-	tWindow.bHideMaximize = 1;
-	tWindow.bNotResizable = 1;
-	tWindow.fTitleBarHeight = 28.0f;
-	tWindow.fBorderWidth = 1.0f;
-	tWindow.fButtonSize = 18.0f;
-	iRet = xuiInternalWindowCreatePart(pCodeEdit,&pData->pFindWindow,&tWindow);
-	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWindowSetClose(pData->pFindWindow, __xuiCodeEditFindWindowClose, pCodeEdit);
-	pClient = xuiWindowGetClientWidget(pData->pFindWindow);
-	(void)xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
-	(void)xuiWidgetSetPadding(pClient, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
-	(void)xuiWidgetSetGap(pClient, 0.0f);
-	(void)xuiWidgetSetEventHandler(pClient, XUI_EVENT_KEY_DOWN, __xuiCodeEditFindWindowKeyDown, pCodeEdit);
-	memset(&tInput, 0, sizeof(tInput));
-	tInput.iSize = sizeof(tInput);
-	tInput.pFont = pFont;
-	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_FIND_PLACEHOLDER);
-	tInput.fBorderWidth = 1.0f;
-	iRet = xuiInternalInputCreatePart(pCodeEdit,&pData->pFindInput,&tInput);
-	tInput.sPlaceholder = xuiTranslate(pContext, XUI_TR_REPLACE_PLACEHOLDER);
-	if ( iRet == XUI_OK ) iRet = xuiInternalInputCreatePart(pCodeEdit,&pData->pReplaceInput,&tInput);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindButton(pContext, &pData->pFindPrevButton, pFont, xuiTranslate(pContext, XUI_TR_FIND_PREVIOUS), pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindButton(pContext, &pData->pFindNextButton, pFont, xuiTranslate(pContext, XUI_TR_FIND_NEXT), pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindButton(pContext, &pData->pFindAllButton, pFont, xuiTranslate(pContext, XUI_TR_FIND_ALL), pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindButton(pContext, &pData->pReplaceButton, pFont, xuiTranslate(pContext, XUI_TR_REPLACE_CURRENT), pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindButton(pContext, &pData->pReplaceAllButton, pFont, xuiTranslate(pContext, XUI_TR_REPLACE_ALL), pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pCaseCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_CASE), (pData->iFindFlags & XUI_FIND_CASE_SENSITIVE) != 0, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pWordCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_WORD), (pData->iFindFlags & XUI_FIND_WHOLE_WORD) != 0, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pRegexCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_REGEX), (pData->iFindFlags & XUI_FIND_REGEX) != 0, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pEscapeCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_ESCAPE), (pData->iFindFlags & XUI_FIND_ESCAPE) != 0, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pSelectionCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_SELECTION), (pData->iFindFlags & XUI_FIND_SELECTION) != 0, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditCreateFindCheck(pContext, &pData->pScopeCheck, pFont, xuiTranslate(pContext, XUI_TR_FIND_SCOPE), 0, pCodeEdit);
-	memset(&tTable, 0, sizeof(tTable));
-	tTable.iSize = sizeof(tTable);
-	tTable.pFont = pFont;
-	tTable.fDefaultRowHeight = 22.0f;
-	tTable.fHeaderHeight = 24.0f;
-	tTable.iSelectionMode = XUI_TABLE_VIEW_SELECTION_ROW;
-	tTable.onCount = __xuiCodeEditFindResultTableCount;
-	tTable.onCell = __xuiCodeEditFindResultTableCell;
-	tTable.pAdapterUser = pCodeEdit;
-	if ( iRet == XUI_OK ) iRet = xuiInternalTableViewCreatePart(pCodeEdit,&pData->pFindResultList,&tTable);
-	if ( iRet == XUI_OK ) iRet = xuiTableViewSetSelect(pData->pFindResultList, __xuiCodeEditFindTableSelect, pCodeEdit);
-	if ( iRet == XUI_OK ) iRet = __xuiCodeEditFindResultTableColumns(pData, 0);
-	memset(&tLabel, 0, sizeof(tLabel));
-	tLabel.iSize = sizeof(tLabel);
-	tLabel.pFont = pFont;
-	tLabel.sText = "";
-	tLabel.iTextColor = XUI_COLOR_RGBA(90, 105, 124, 255);
-	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	if ( iRet == XUI_OK ) iRet = xuiInternalLabelCreatePart(pCodeEdit,&pData->pFindStatus,&tLabel);
-	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiInputSetChange(pData->pFindInput, __xuiCodeEditFindInputChange, pCodeEdit);
-	(void)xuiInputSetChange(pData->pReplaceInput, __xuiCodeEditFindInputChange, pCodeEdit);
-	iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindInput,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceInput,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindPrevButton,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindNextButton,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindAllButton,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceButton,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pReplaceAllButton,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pCaseCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pWordCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pRegexCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pEscapeCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pSelectionCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pScopeCheck,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindResultList,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,xuiWindowGetClientWidget(pData->pFindWindow),pData->pFindStatus,NULL);
-	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pCodeEdit,pRoot,pData->pFindWindow,NULL);
-	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetRect(pData->pFindWindow, (xui_rect_t){32.0f, 32.0f, 720.0f, 384.0f});
-	__xuiCodeEditFindWindowApplyLanguage(pCodeEdit, pData);
-	return __xuiCodeEditFindWindowLayout(pCodeEdit, 0);
-}
-
-static int __xuiCodeEditOpenFindWindow(xui_widget pWidget, int bReplace)
-{
-	xui_code_edit_data_t* pData;
-	xui_rect_t tOwner;
-	xui_rect_t tWindow;
-	char* sSelected;
-	int iStart;
-	int iEnd;
-	int iLen;
-	int iRet;
-
-	pData = __xuiCodeEditGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->pFindWindow == NULL ) {
-		iRet = __xuiCodeEditCreateFindWindow(pWidget, pData);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pData->bFindWindowReplace = bReplace ? 1 : 0;
-	iStart = 0;
-	iEnd = 0;
-	(void)xuiCodeSelectionGetRange(pData->pSelection, &iStart, &iEnd);
-	pData->iFindRangeStart = 0;
-	pData->iFindRangeEnd = 0;
-	if ( iEnd > iStart ) {
-		pData->iFindRangeStart = iStart;
-		pData->iFindRangeEnd = iEnd;
-		iLen = iEnd - iStart;
-		if ( iLen > 0 && iLen < 256 ) {
-			sSelected = (char*)xrtMalloc((size_t)iLen + 1u);
-			if ( sSelected == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-			iRet = xuiCodeDocumentCopyRange(pData->pDocument, iStart, iEnd,
-				sSelected, iLen + 1, NULL);
-			if ( iRet != XUI_OK ) {
-				xrtFree(sSelected);
-				return iRet;
-			}
-			(void)xuiInputSetText(pData->pFindInput, sSelected);
-			xrtFree(sSelected);
-		}
-	} else if ( pData->sFindPattern != NULL && pData->sFindPattern[0] != '\0' ) {
-		(void)xuiInputSetText(pData->pFindInput, pData->sFindPattern);
-	}
-	if ( pData->sFindReplacement != NULL ) {
-		(void)xuiInputSetText(pData->pReplaceInput, pData->sFindReplacement);
-	}
-	if ( pData->pSelectionCheck != NULL ) {
-		(void)xuiCheckBoxSetChecked(pData->pSelectionCheck, (iEnd > iStart && (pData->iFindFlags & XUI_FIND_SELECTION) != 0));
-	}
-	if ( pData->pScopeCheck != NULL ) {
-		(void)xuiWidgetSetVisible(pData->pScopeCheck, pData->pFindScope != NULL);
-	}
-	__xuiCodeEditFindWindowApplyLanguage(pWidget, pData);
-	(void)__xuiCodeEditFindWindowLayout(pWidget, bReplace);
-	tOwner = xuiWidgetGetWorldRect(pWidget);
-	tWindow = xuiWidgetGetRect(pData->pFindWindow);
-	tWindow.fX = tOwner.fX + 16.0f;
-	tWindow.fY = tOwner.fY + 16.0f;
-	(void)xuiWidgetSetRect(pData->pFindWindow, tWindow);
-	(void)xuiWindowSetOpen(pData->pFindWindow, 1);
-	(void)xuiWindowBringToFront(pData->pFindWindow);
-	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pFindInput);
-	__xuiCodeEditFindWindowRefresh(pWidget);
-	return XUI_OK;
-}
-
-XUI_API int xuiCodeEditOpenFind(xui_widget pWidget)
-{
-	return __xuiCodeEditOpenFindWindow(pWidget, 0);
-}
-
-XUI_API int xuiCodeEditOpenReplace(xui_widget pWidget)
-{
-	return __xuiCodeEditOpenFindWindow(pWidget, 1);
-}
-
-XUI_API xui_widget xuiCodeEditGetFindWindow(xui_widget pWidget)
-{
-	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-	return (pData != NULL) ? pData->pFindWindow : NULL;
-}
+#include "xui_code_find_window.inc"
 
 static int __xuiCodeEditAfterReplaceAll(xui_widget pWidget, xui_code_edit_data_t* pData, const char* sReplacement, int iReplaceCount, int iRet)
 {
