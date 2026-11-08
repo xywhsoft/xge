@@ -283,6 +283,7 @@ typedef struct xui_terminal_data_t {
 	int bWrapPending;
 	int bAutoWrap;
 	int iNewlineMode;
+	int bProcessingQueue;
 	int bOriginMode;
 	int bInsertMode;
 	int bApplicationCursor;
@@ -3269,6 +3270,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 	int iIndex;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bProcessingQueue ) return XUI_ERROR_INVALID_STATE;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	xuiInternalOperationEnter(pContext);
@@ -3277,6 +3279,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 		xuiInternalOperationLeave(pContext);
 		return XUI_OK;
 	}
+	pData->bProcessingQueue = 1;
 	iCount = pData->iQueueSize;
 	if ( (iBudget > 0) && (iCount > iBudget) ) {
 		iCount = iBudget;
@@ -3303,6 +3306,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 		__xuiTerminalSyncScrollModel(pWidget, pData);
 		__xuiTerminalInvalidateDirty(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
+	pData->bProcessingQueue = 0;
 	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }

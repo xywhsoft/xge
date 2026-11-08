@@ -11,6 +11,13 @@ static int at(xui_widget terminal, int col, int row, uint32_t codepoint)
     return xuiTerminalGetCell(terminal, col, row, &cell) == XUI_OK && cell.iCodepoint == codepoint;
 }
 
+static int reentryResult;
+static void switchOnResponse(xui_widget widget, const uint8_t* data, int size, void* user)
+{
+    (void)data; (void)size; (void)user;
+    reentryResult = xuiTerminalSetNewlineMode(widget, XUI_TERMINAL_NEWLINE_VT);
+}
+
 static void destroyOnResponse(xui_widget widget, const uint8_t* data, int size, void* user)
 {
     (void)data; (void)size; (void)user;
@@ -106,6 +113,12 @@ int main(void)
     CHECK(xuiTerminalFlush(terminal) == XUI_OK);
     CHECK(xuiTerminalGetCursor(terminal, &x, &y) == XUI_OK && x == 1 && y == 4);
     CHECK(at(terminal, 0, 4, 'E'));
+    CHECK(xuiTerminalSetInputCallback(terminal, switchOnResponse, NULL) == XUI_OK);
+    CHECK(xuiTerminalWriteText(terminal, "\033[5n") == XUI_OK);
+    CHECK(xuiTerminalSetNewlineMode(terminal, XUI_TERMINAL_NEWLINE_VT) == XUI_OK);
+    CHECK(reentryResult == XUI_ERROR_INVALID_STATE);
+    CHECK(xuiTerminalGetNewlineMode(terminal) == XUI_TERMINAL_NEWLINE_VT);
+    CHECK(xuiTerminalSetNewlineMode(terminal, XUI_TERMINAL_NEWLINE_TEXT) == XUI_OK);
     CHECK(xuiTerminalSetInputCallback(terminal, destroyOnResponse, NULL) == XUI_OK);
     CHECK(xuiTerminalWriteText(terminal, "\033[5n") == XUI_OK);
     CHECK(xuiTerminalSetNewlineMode(terminal, XUI_TERMINAL_NEWLINE_VT) == XUI_ERROR_INVALID_STATE);
