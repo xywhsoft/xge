@@ -282,6 +282,7 @@ typedef struct xui_terminal_data_t {
 	int bCursorVisible;
 	int bWrapPending;
 	int bAutoWrap;
+	int iNewlineMode;
 	int bOriginMode;
 	int bInsertMode;
 	int bApplicationCursor;
@@ -3096,6 +3097,7 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			pData->iCursorX = __xuiTerminalNextTabStop(pData);
 		} else if ( b == '\n' ) {
 			pData->bWrapPending = 0;
+			if ( pData->iNewlineMode == XUI_TERMINAL_NEWLINE_TEXT ) pData->iCursorX = 0;
 			__xuiTerminalLineFeed(pWidget, pData);
 		} else if ( b == '\r' ) {
 			pData->bWrapPending = 0;
@@ -6423,6 +6425,7 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->fPadding = pData->fBasePadding;
 	pData->bCursorVisible = 1;
 	pData->bAutoWrap = 1;
+	pData->iNewlineMode = XUI_TERMINAL_NEWLINE_TEXT;
 	pData->iMouseTracking = XUI_TERMINAL_MOUSE_TRACKING_NONE;
 	pData->iMouseEncoding = XUI_TERMINAL_MOUSE_ENCODING_X10;
 	__xuiTerminalClearSelectionData(pData);
@@ -6643,6 +6646,33 @@ XUI_API int xuiTerminalFlush(xui_widget pWidget)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iQueueSize > 0 ) __xuiTerminalClearHoverLinkData(pData);
 	return __xuiTerminalProcessQueue(pWidget, pData, 0);
+}
+
+XUI_API int xuiTerminalSetNewlineMode(xui_widget pWidget, int iMode)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	xui_context pContext;
+	int iRet;
+
+	if ( pData == NULL || (iMode != XUI_TERMINAL_NEWLINE_TEXT && iMode != XUI_TERMINAL_NEWLINE_VT) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iNewlineMode == iMode ) return XUI_OK;
+	/* Flush may deliver a response/title callback that closes this widget. */
+	pContext = xuiWidgetGetContext(pWidget);
+	xuiInternalOperationEnter(pContext);
+	/* Preserve Write -> Set ordering even when the frame budget has not drained it. */
+	iRet = xuiTerminalFlush(pWidget);
+	if ( iRet == XUI_OK ) {
+		if ( __xuiTerminalWidgetAlive(pWidget) ) pData->iNewlineMode = iMode;
+		else iRet = XUI_ERROR_INVALID_STATE;
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiTerminalGetNewlineMode(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	return pData != NULL ? pData->iNewlineMode : XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiTerminalClear(xui_widget pWidget)

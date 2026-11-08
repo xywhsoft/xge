@@ -20,6 +20,8 @@ desc.iParseBudgetBytes = 65536;
 desc.fCellWidth = 8.0f;
 desc.fCellHeight = 16.0f;
 xuiTerminalCreate(context, &terminal, &desc);
+/* ConPTY/TUI 输出保留原始 VT 光标语义。 */
+xuiTerminalSetNewlineMode(terminal, XUI_TERMINAL_NEWLINE_VT);
 
 memset(&process, 0, sizeof(process));
 process.iSize = sizeof(process);
@@ -32,6 +34,14 @@ xuiTerminalAttachSession(terminal, session);
 ```
 
 控件销毁前应先调用 `xuiTerminalDetachSession`，再调用 `xuiTerminalSessionDestroy`。Windows 上需要交互式 shell 或 TUI 时必须使用 `XUI_TERMINAL_PROCESS_CONPTY`；普通管道只适合非交互输出，不能提供正确的屏幕尺寸和终端输入语义。
+
+## 换行策略
+
+默认使用 `XUI_TERMINAL_NEWLINE_TEXT`：LF (`\n`) 下移一行并回到行首，适用于日志、普通进程管道和直接写入文本。CRLF 的效果相同，单独 CR (`\r`) 仍只回到当前行首，支持进度覆盖。
+
+调用 `xuiTerminalSetNewlineMode(terminal, XUI_TERMINAL_NEWLINE_VT)` 可保留原始 VT 行为：LF 只下移，CR 才回到行首。PTY、ConPTY、SSH 和全屏 TUI 应显式使用 VT。`xuiTerminalGetNewlineMode` 返回当前配置。
+
+切换模式前会解析已排队输出，保证此前的 Write 使用原模式；无效模式返回错误且不改变队列或配置。Clear、resize、主备用屏切换和 RIS (`ESC c`) 均保留应用设置的换行策略。模式只改变 LF 的光标动作，不改写输入字节、CR、自动折行或 `ESC D` 的含义，不增加输出副本。
 
 ## 缓冲区与 resize
 
