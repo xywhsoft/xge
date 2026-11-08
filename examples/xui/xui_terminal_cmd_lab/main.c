@@ -820,6 +820,9 @@ static int __xuiCmdLabCreateUi(xui_terminal_cmd_lab_t* pDemo)
 	tDesc.iCursorColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	iRet = xuiTerminalCreate(pDemo->pContext, &pDemo->pTerminal, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
+	/* This lab hosts ConPTY/TUI streams rather than plain pipe text. */
+	iRet = xuiTerminalSetNewlineMode(pDemo->pTerminal, XUI_TERMINAL_NEWLINE_VT);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetRect(pDemo->pTerminal, (xui_rect_t){48.0f, 72.0f, 804.0f, 420.0f});
 	(void)xuiTerminalSetInputCallback(pDemo->pTerminal, __xuiCmdLabInput, pDemo);
 	(void)xuiTerminalSetResizeCallback(pDemo->pTerminal, __xuiCmdLabResize, pDemo);
