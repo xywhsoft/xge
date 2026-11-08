@@ -1812,7 +1812,10 @@ static int __xuiCodeEditLineLayoutBuildWraps(xui_code_edit_line_layout_t* pLayou
 				iWordBreak = i;
 			}
 		}
-		if ( iWordBreak > iStartStop ) iCandidate = iWordBreak;
+		/* A break opportunity is only useful when the remainder overflows.
+		 * Otherwise a short line gains a spurious row for its final word. */
+		if ( iCandidate < pLayout->iStopCount - 1 &&
+			iWordBreak > iStartStop ) iCandidate = iWordBreak;
 		iRet = __xuiCodeEditLineLayoutReserveWraps(pLayout,
 			pLayout->iWrapOffsetCount + 1);
 		if ( iRet != XUI_OK ) return iRet;
@@ -5834,20 +5837,30 @@ static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy,
 				xui_text_paint_span_t arrSpans[128];
 				xui_rect_t tRect;
 				int iSpanCount = 0;
-				if ( pSegment->iEnd <= iRenderStart || pSegment->iStart >= iRenderEnd ) continue;
+				int iPaintStart = pSegment->iStart > iRenderStart ? pSegment->iStart : iRenderStart;
+				int iPaintEnd = pSegment->iEnd < iRenderEnd ? pSegment->iEnd : iRenderEnd;
+				int iSpanOrigin;
+				if ( iPaintEnd <= iPaintStart ) continue;
+				/* Unwrapped lines retain their shaping context and use the
+				 * existing horizontal viewport clipping (including chunks). */
+				if ( !pData->bWordWrap ) {
+					iPaintStart = pSegment->iStart;
+					iPaintEnd = pSegment->iEnd;
+				}
+				iSpanOrigin = pSegment->bChunked ? pSegment->iStart : iPaintStart;
 				for ( iToken = 0; iToken < iTokenCount && iSpanCount < (int)(sizeof(arrSpans) / sizeof(arrSpans[0])); iToken++ ) {
 					xui_code_style_t tStyle;
 					const char* sProperty;
 					int iSpanStart = pTokens[iToken].iStartOffset;
 					int iSpanEnd = pTokens[iToken].iEndOffset;
-					if ( iSpanEnd <= pSegment->iStart || iSpanStart >= pSegment->iEnd ) continue;
+					if ( iSpanEnd <= iPaintStart || iSpanStart >= iPaintEnd ) continue;
 					memset(&tStyle, 0, sizeof(tStyle));
 					if ( __xuiCodeEditGetTokenStyle(pData->pTheme, pTokens[iToken], &tStyle) != XUI_OK ||
 					     __xuiCodeEditAlpha(tStyle.iForeground) == 0 ) continue;
 					sProperty = __xuiCodeEditSyntaxColorProperty(pTokens[iToken].iKind);
 					arrSpans[iSpanCount].iSize = sizeof(arrSpans[iSpanCount]);
-					arrSpans[iSpanCount].iStart = (iSpanStart > pSegment->iStart ? iSpanStart : pSegment->iStart) - pSegment->iStart;
-					arrSpans[iSpanCount].iEnd = (iSpanEnd < pSegment->iEnd ? iSpanEnd : pSegment->iEnd) - pSegment->iStart;
+					arrSpans[iSpanCount].iStart = (iSpanStart > iPaintStart ? iSpanStart : iPaintStart) - iSpanOrigin;
+					arrSpans[iSpanCount].iEnd = (iSpanEnd < iPaintEnd ? iSpanEnd : iPaintEnd) - iSpanOrigin;
 					arrSpans[iSpanCount].iColor = sProperty != NULL ?
 						__xuiCodeEditColor(pWidget, sProperty, tStyle.iForeground) : tStyle.iForeground;
 					iSpanCount++;
@@ -5860,9 +5873,15 @@ static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy,
 						XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP,
 						arrSpans, iSpanCount);
 				} else {
-					tRect = (xui_rect_t){fTextX + 4.0f + pSegment->fX - pData->fScrollX,
-						fY, pSegment->fWidth, fLineHeight};
-					iRet = pProxy->drawTextSpans(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pLayout->sText + pSegment->iStart, .iTextSize=pSegment->iEnd - pSegment->iStart, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, arrSpans, iSpanCount);
+					float fPaintX = pSegment->fX;
+					float fPaintWidth = pSegment->fWidth;
+					if ( iPaintStart != pSegment->iStart || iPaintEnd != pSegment->iEnd ) {
+						fPaintX = __xuiCodeEditLineLayoutOffsetX(pLayout, iPaintStart);
+						fPaintWidth = __xuiCodeEditLineLayoutOffsetX(pLayout, iPaintEnd) - fPaintX;
+					}
+					tRect = (xui_rect_t){fTextX + 4.0f + fPaintX - pData->fScrollX,
+						fY, fPaintWidth, fLineHeight};
+					iRet = pProxy->drawTextSpans(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pLayout->sText + iPaintStart, .iTextSize=iPaintEnd - iPaintStart, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, arrSpans, iSpanCount);
 				}
 				if ( iRet != XUI_OK ) return iRet;
 			}
