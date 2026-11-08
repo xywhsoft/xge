@@ -14,6 +14,21 @@ import argparse,hashlib,json,os,re,shlex,shutil,subprocess,sys,time
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
+def reuse_dependencies(dependencies, source_root, target_root):
+    """Validate the files used by the target build, not the parent's checkout."""
+    original_root=Path(source_root)
+    source_root,target_root=original_root.resolve(),Path(target_root).resolve()
+    rebound={}
+    for name,digest in dependencies.items():
+        path=Path(name)
+        if path.is_relative_to(original_root):path=target_root/path.relative_to(original_root)
+        else:
+            path=path.resolve()
+            if path.is_relative_to(source_root):path=target_root/path.relative_to(source_root)
+        if not path.is_file()or sha(path)!=digest:return None
+        rebound[str(path)]=digest
+    return rebound
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2])
@@ -148,11 +163,13 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
         key=hashlib.sha256(json.dumps([str(v)for v in command]).encode()).hexdigest();cache=None
         try:cache=json.loads(record.read_text())
         except (OSError,ValueError):pass
+        if cache and cache.get('sourceRoot')!=str(root):cache=None
         prior=parent_rows.get(str(source))
         if cache is None and prior and prior['compiler']==str(compiler)and prior['flags']==options:
             prior_cache=json.loads(Path(prior['dependencyRecord']).read_text())
-            if prior_cache['compilerSha256']==sha(compiler)and sha(prior['object'])==prior['sha256']and all(Path(v).is_file()and sha(v)==h for v,h in prior_cache['dependencies'].items()):
-                shutil.copy2(prior['object'],obj);cache=dict(prior_cache,key=key);record.write_text(json.dumps(cache,indent=2)+'\n')
+            rebound=reuse_dependencies(prior_cache['dependencies'],parent['source_root'],root)
+            if rebound is not None and prior_cache['compilerSha256']==sha(compiler)and sha(prior['object'])==prior['sha256']:
+                shutil.copy2(prior['object'],obj);cache=dict(prior_cache,key=key,sourceRoot=str(root),dependencies=rebound);record.write_text(json.dumps(cache,indent=2)+'\n')
         if cache and obj.exists()and cache['key']==key and cache['compilerSha256']==sha(compiler)and all(Path(v).is_file()and sha(v)==h for v,h in cache['dependencies'].items()):
             reused.append(str(source))
         else:
@@ -160,7 +177,7 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
             text=dep.read_text().replace('\\\n',' ');text=re.split(r':\s',text,maxsplit=1)[1]
             deps=[re.sub(r'\\([ #\\])',r'\1',v)for v in re.findall(r'(?:\\.|[^\s])+',text)]
             paths=[Path(v)if Path(v).is_absolute()else root/v for v in deps]
-            record.write_text(json.dumps(dict(key=key,compilerSha256=sha(compiler),dependencies={str(v):sha(v)for v in paths}),indent=2)+'\n')
+            record.write_text(json.dumps(dict(key=key,sourceRoot=str(root),compilerSha256=sha(compiler),dependencies={str(v):sha(v)for v in paths}),indent=2)+'\n')
             compiled.append(str(source))
         link_objects.append(obj);rows.append(dict(source=str(source),object=str(obj),sha256=sha(obj),compiler=str(compiler),flags=options,dependencyRecord=str(record)))
     for source in sources:compile_one(source,cc,flags)
