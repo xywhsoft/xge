@@ -17,7 +17,7 @@ static xge_host_xrt_proc resolve(void* user,const char* name)
 #undef XGE_HOST_XRT_SLOT
     return NULL;
 }
-typedef struct State {int calls;xge_texture texture;xge_shader shader;} State;
+typedef struct State {int calls;xge_texture texture;xge_shader shader;xge_pass pass;} State;
 static const char vertex[]="#version 330\nin vec2 aPosition;void main(){gl_Position=vec4(aPosition,0.0,1.0);}";
 static const char fragment[]="#version 330\nuniform vec4 uTint;out vec4 fragColor;void main(){fragColor=uTint;}";
 static int render(void* raw)
@@ -51,7 +51,13 @@ static int render(void* raw)
     xgeMaterialFree(&material);assert(state->shader->iRefCount==1);
     return 1;
 }
-static int empty_frame(void* raw){++*(int*)raw;return 1;}
+static int unfinished_frame(void* raw)
+{
+    State* state=raw;++state->calls;
+    xge_render_target target=NULL;assert(xgeRenderTargetCreateOwned(&target,2,2)==XGE_OK);
+    assert(xgePassCreateOwned(&state->pass,target,0,0)==XGE_OK);
+    xgeRenderTargetFree(target);assert(xgePassBegin(state->pass)==XGE_OK);return 1;
+}
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
@@ -63,8 +69,12 @@ int main(void)
     /* Physical backend has ended: releasing old handles must not call GL. */
     xgeTextureFree(state.texture);xgeShaderFree(state.shader);
     assert(!xgeGraphicsOwnedResourceCount() && xgeUnitChecked()==XGE_OK);
-    int calls=0;assert(xgeInit(&desc)==XGE_OK && xgeRun(empty_frame,&calls)==XGE_OK && calls==1);
+    assert(xgeInit(&desc)==XGE_OK && xgeRun(unfinished_frame,&state)==XGE_OK && state.calls==2);
+    assert(xgeGraphicsOwnedResourceCount()==1 && xgeUnitChecked()==XGE_ERROR_BUSY);
+    bool consumed=false;
+    assert(xgePassReleaseOwnerChecked(state.pass,&consumed)==XGE_ERROR_NOT_INITIALIZED && consumed);
+    assert(!xgeGraphicsOwnedResourceCount() && xgePassIsIdle());
     assert(xgeUnitChecked()==XGE_OK && !xrtGetError());
-    puts("real OpenGL: nested Pass restore/readback, shader/variant retention, ended-context Busy, release and fresh restart: PASS");
+    puts("real OpenGL: nested Pass restore/readback, shader/variant retention, ended-context Busy, release/restart and consumed checked Pass cleanup: PASS");
     return 0;
 }
