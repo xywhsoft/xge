@@ -6,6 +6,21 @@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"foundation %d: %s\n",__LINE__,#x);return 1;}}while(0)
 #if XGE_ENABLE_INPUT_ACTIONS
 static float read_action(const xge_action_binding_t *b,void *user){return ((float*)user)[b->code];}
+static int reentry_failures;
+static float read_reentry(const xge_action_binding_t *b,void *user)
+{
+    xge_actions *a=user;xge_action_state_t state;
+    reentry_failures+=xgeActionsBind(a,0,b)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsClearBindings(a,0)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsSetDeadzone(a,0,.1f)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsSetEnabled(a,0,0)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsUpdate(a,NULL,NULL)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsResetChecked(a)!=XGE_ERROR_BUSY;
+    reentry_failures+=xgeActionsFreeChecked(a)!=XGE_ERROR_BUSY;
+    xgeActionsReset(a);xgeActionsFree(a);
+    reentry_failures+=xgeActionsGet(a,0,&state)!=XGE_OK;
+    return 1;
+}
 static int actions(void)
 {
     xge_actions *a=NULL;CHECK(!xgeActionsCreate(3,4,&a));float input[4]={0};
@@ -27,7 +42,10 @@ static int actions(void)
     xallocationscope scope={0};xallocationbudget *quota=NULL;
     CHECK(xrtAllocationBudgetCreate(1,&quota)&&xrtAllocationBudgetEnter(quota,&scope));
     CHECK(!xgeActionsUpdate(a,read_action,input)&&!scope.Rejections);CHECK(xrtAllocationBudgetLeave(&scope));xrtAllocationBudgetFree(quota);
-    xgeActionsFree(a);return 0;
+    CHECK(!xgeActionsUpdate(a,read_reentry,a)&&!reentry_failures);
+    CHECK(!xgeActionsResetChecked(a)&&!xgeActionsGet(a,0,&s)&&!s.value&&!s.down);
+    CHECK(!xgeActionsUpdate(a,read_action,input));
+    CHECK(!xgeActionsFreeChecked(a)&&!xgeActionsFreeChecked(NULL));return 0;
 }
 #endif
 int main(void){

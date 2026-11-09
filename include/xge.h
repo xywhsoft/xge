@@ -3707,6 +3707,10 @@ typedef float (*xge_action_read_proc)(const xge_action_binding_t *binding,void *
 /* Fixed capacities; actions are application-defined indices. CPU-only. */
 XGE_API int xgeActionsCreate(uint32_t action_count,uint32_t binding_capacity,xge_actions **out);
 XGE_API void xgeActionsFree(xge_actions *actions);
+/* Serialized by the caller. A read callback may query state, but mutation,
+ * nested update and destruction return BUSY until that update completes.
+ * Legacy void Free/Reset leave the object unchanged when busy. */
+XGE_API int xgeActionsFreeChecked(xge_actions *actions);
 XGE_API int xgeActionsBind(xge_actions *actions,uint32_t action,const xge_action_binding_t *binding);
 XGE_API int xgeActionsClearBindings(xge_actions *actions,uint32_t action);
 XGE_API int xgeActionsSetDeadzone(xge_actions *actions,uint32_t action,float deadzone);
@@ -3718,6 +3722,7 @@ XGE_API int xgeActionsUpdate(xge_actions *actions,xge_action_read_proc read,void
 XGE_API int xgeActionsGet(const xge_actions *actions,uint32_t action,xge_action_state_t *out);
 /* Focus loss: clears values/edges without generating synthetic release events. */
 XGE_API void xgeActionsReset(xge_actions *actions);
+XGE_API int xgeActionsResetChecked(xge_actions *actions);
 #endif
 
 #if XGE_ENABLE_3D
