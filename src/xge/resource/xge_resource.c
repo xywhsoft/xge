@@ -1,29 +1,132 @@
-typedef struct xge_resource_free_snapshot_t {
-	void (*free)(void* pData, void* pUser);
-	void* pUser;
-	xge_xpack_provider_t tXPack;
-	int bXPack;
-} xge_resource_free_snapshot_t;
+/* Registry entries are immutable real owners. A load pins its entry under the
+ * publisher lock, then invokes arbitrary provider/owner code after unlocking.
+ * Keeping this registry outside g_xge preserves pre-init registrations. */
+typedef struct xge_resource_registration_t {
+    xatomic64 refs;
+    xge_resource_provider_t raw;
+    xge_xpack_provider_t pack;
+    xge_resource_read_owned_proc read;
+    xge_callback_node_t* owner;
+    void (*releaseUser)(void*);
+    bool packed;
+    char* scheme;
+    char* root;
+} xge_resource_registration_t;
+static xspinlock g_xgeResourceSpin=XRT_SPIN_INIT;
+static xge_resource_registration_t* g_xgeResourceProviders[XGE_RESOURCE_PROVIDER_MAX];
+static int g_xgeResourceProviderCount;
+static int g_xgeResourcePackCount;
 
-static void __xgeResourceFreeSnapshot(void* pData, void* pUser)
+static bool __xgeResourceRegistrationPin(xge_resource_registration_t* entry)
 {
-	xge_resource_free_snapshot_t* pSnapshot = (xge_resource_free_snapshot_t*)pUser;
-
-	if ( pSnapshot == NULL ) {
-		xrtFree(pData);
-		return;
-	}
-	if ( pSnapshot->bXPack ) {
-		if ( pSnapshot->tXPack.free != NULL ) pSnapshot->tXPack.free(pData, pSnapshot->tXPack.pUser);
-		else xrtFree(pData);
-	} else if ( pSnapshot->free != NULL ) {
-		pSnapshot->free(pData, pSnapshot->pUser);
-	} else {
-		xrtFree(pData);
-	}
-	xrtFree(pSnapshot);
+    uint64 refs=xrtAtomic64Load(&entry->refs,XMEMORY_RELAXED);
+    do {if(!refs || refs==UINT64_MAX)return false;}
+    while(!xrtAtomic64CompareExchange(&entry->refs,&refs,refs+1,XMEMORY_RELAXED,XMEMORY_RELAXED));
+    return true;
 }
+static int __xgeResourceRegistrationRelease(xge_resource_registration_t* entry)
+{
+    if(!entry || xrtAtomic64FetchSub(&entry->refs,1,XMEMORY_ACQ_REL)!=1)return XGE_OK;
+    xge_callback_node_t* owner=entry->owner;
+    void (*releaseUser)(void*)=entry->releaseUser;void* user=entry->raw.pUser;
+    xrtFree(entry->scheme);xrtFree(entry->root);xrtFree(entry);
+    xerror* ambient=xrtTakeError();int status=XGE_OK;xerror* first=NULL;
+    __xgeCallbackOutcome(__xgeCallbackNodeRelease(owner),&status,&first);
+    if(releaseUser)releaseUser(user);
+    __xgeCallbackOutcome(XGE_OK,&status,&first);
+    if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(first);}return status;
+}
+static int __xgeResourceRegistryPublish(xge_resource_registration_t* entry)
+{
+    (void)xrtSpinLock(&g_xgeResourceSpin);
+    int status=xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE) ? XGE_ERROR_INVALID_STATE:
+        g_xgeResourceProviderCount==XGE_RESOURCE_PROVIDER_MAX ||
+        (entry->packed && g_xgeResourcePackCount==XGE_XPACK_PROVIDER_MAX) ? XGE_ERROR_RESOURCE_FAILED:XGE_OK;
+    if(status==XGE_OK){g_xgeResourceProviders[g_xgeResourceProviderCount++]=entry;if(entry->packed)++g_xgeResourcePackCount;}
+    (void)xrtSpinUnlock(&g_xgeResourceSpin);return status;
+}
+/* Caller owns user until successful publication. For native bridge providers
+ * this hook is the real registration reference, distinct from payload refs. */
+static int __xgeResourceProviderStore(const xge_resource_provider_t* provider,void (*releaseUser)(void*),bool replace,bool* published)
+{
+    if(published)*published=false;
+    if(!provider || !provider->sScheme || !provider->load)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_resource_registration_t* entry=xrtCalloc(1,sizeof(*entry));
+    if(!entry)return XGE_ERROR_OUT_OF_MEMORY;
+    xrtAtomic64Init(&entry->refs,1);entry->raw=*provider;
+    entry->scheme=__xgeStrDup(provider->sScheme);
+    if(!entry->scheme){xrtFree(entry);return XGE_ERROR_OUT_OF_MEMORY;}
+    entry->releaseUser=releaseUser;
+    xge_resource_registration_t* old=NULL;
+    (void)xrtSpinLock(&g_xgeResourceSpin);int slot=-1;
+    if(replace)for(int i=0;i<g_xgeResourceProviderCount;++i){
+        xge_resource_registration_t* candidate=g_xgeResourceProviders[i];
+        if(!candidate->read && candidate->raw.load==provider->load && candidate->raw.free==provider->free){slot=i;break;}
+    }
+    int status=xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE) ? XGE_ERROR_INVALID_STATE:
+        slot<0 && g_xgeResourceProviderCount==XGE_RESOURCE_PROVIDER_MAX ? XGE_ERROR_RESOURCE_FAILED:XGE_OK;
+    if(status==XGE_OK){if(slot<0)g_xgeResourceProviders[g_xgeResourceProviderCount++]=entry;
+        else {old=g_xgeResourceProviders[slot];g_xgeResourceProviders[slot]=entry;}}
+    (void)xrtSpinUnlock(&g_xgeResourceSpin);
+    if(status!=XGE_OK){entry->releaseUser=NULL;(void)__xgeResourceRegistrationRelease(entry);return status;}
+    if(published)*published=true;
+    return __xgeResourceRegistrationRelease(old);
+}
+static int __xgeResourceProviderReplaceWithRelease(const xge_resource_provider_t* provider,void (*releaseUser)(void*),bool* published)
+{return __xgeResourceProviderStore(provider,releaseUser,true,published);}
+int xgeResourceProviderAdd(const xge_resource_provider_t* provider)
+{return __xgeResourceProviderStore(provider,NULL,false,NULL);}
 
+static int __xgeResourceRegistryRemove(int (*load)(const char*,void**,int*,void*),void (*freeData)(void*,void*))
+{
+    xge_resource_registration_t* removed[XGE_RESOURCE_PROVIDER_MAX];int count=0,write=0;
+    (void)xrtSpinLock(&g_xgeResourceSpin);
+    for(int i=0;i<g_xgeResourceProviderCount;++i){
+        xge_resource_registration_t* entry=g_xgeResourceProviders[i];
+        if(!entry->read && entry->raw.load==load && entry->raw.free==freeData){removed[count++]=entry;if(entry->packed)--g_xgeResourcePackCount;}
+        else g_xgeResourceProviders[write++]=entry;
+    }
+    memset(g_xgeResourceProviders+write,0,(size_t)(g_xgeResourceProviderCount-write)*sizeof(*g_xgeResourceProviders));
+    g_xgeResourceProviderCount=write;(void)xrtSpinUnlock(&g_xgeResourceSpin);
+    xerror* ambient=xrtTakeError();int status=XGE_OK;xerror* first=NULL;
+    for(int i=0;i<count;++i)__xgeCallbackOutcome(__xgeResourceRegistrationRelease(removed[i]),&status,&first);
+    if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(first);}return status;
+}
+int xgeResourceProviderClearChecked(void)
+{
+    xge_resource_registration_t* removed[XGE_RESOURCE_PROVIDER_MAX];int count;
+    (void)xrtSpinLock(&g_xgeResourceSpin);count=g_xgeResourceProviderCount;
+    memcpy(removed,g_xgeResourceProviders,(size_t)count*sizeof(*removed));
+    memset(g_xgeResourceProviders,0,sizeof(g_xgeResourceProviders));g_xgeResourceProviderCount=g_xgeResourcePackCount=0;
+    (void)xrtSpinUnlock(&g_xgeResourceSpin);
+    xerror* ambient=xrtTakeError();int status=XGE_OK;xerror* first=NULL;
+    for(int i=0;i<count;++i)__xgeCallbackOutcome(__xgeResourceRegistrationRelease(removed[i]),&status,&first);
+    if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(first);}return status;
+}
+void xgeResourceProviderClear(void)
+{
+    int status=xgeResourceProviderClearChecked();
+    if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+}
+static xge_resource_registration_t* __xgeResourceRegistryFind(const char* uri,int schemeLength,bool pin,int* ordinal,int* failure)
+{
+    xge_resource_registration_t* found=NULL;
+    (void)xrtSpinLock(&g_xgeResourceSpin);
+    for(int i=g_xgeResourceProviderCount-1;i>=0;--i){
+        xge_resource_registration_t* entry=g_xgeResourceProviders[i];
+        if(__xgeSchemeEqual(uri,schemeLength,entry->scheme)){
+            if(!pin || __xgeResourceRegistrationPin(entry)){found=entry;if(ordinal)*ordinal=i+1;}
+            else if(failure)*failure=XGE_ERROR_OUT_OF_MEMORY;
+            break;
+        }
+    }
+    (void)xrtSpinUnlock(&g_xgeResourceSpin);return found;
+}
+static bool __xgeResourceHasProvider(const char* uri)
+{
+    int size=__xgeUriSchemeLen(uri);
+    return size>0 && __xgeResourceRegistryFind(uri,size,false,NULL,NULL)!=NULL;
+}
 static char* __xgeResourceXPackMakePath(const char* sRoot, const char* sPath)
 {
 	char* sFull;
@@ -77,227 +180,176 @@ static int __xgeResourceXPackPathSafe(const char* sPath)
 	return 1;
 }
 
-static int __xgeResourceXPackLoad(const char* sURI, void** ppData, int* pSize, void* pUser)
-{
-	xge_xpack_provider_t* pProvider;
-	const char* sPath;
-	char* sPackPath;
-	void* pData;
-	uint64_t iSize;
-	int iSchemeLen;
 
-	if ( (sURI == NULL) || (ppData == NULL) || (pSize == NULL) || (pUser == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pProvider = (xge_xpack_provider_t*)pUser;
-	if ( (pProvider->pPack == NULL) || (pProvider->read == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iSchemeLen = __xgeUriSchemeLen(sURI);
-	sPath = sURI;
-	if ( iSchemeLen > 0 ) {
-		sPath += iSchemeLen + 3;
-	}
-	if ( !__xgeResourceXPackPathSafe(sPath) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sPackPath = __xgeResourceXPackMakePath(pProvider->sRoot, sPath);
-	if ( sPackPath == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iSize = 0;
-	pData = pProvider->read(pProvider->pPack, sPackPath, &iSize, pProvider->pUser);
-	xrtFree(sPackPath);
-	if ( pData == NULL ) {
-		return XGE_ERROR_FILE_NOT_FOUND;
-	}
-	if ( iSize > (uint64_t)INT32_MAX ) {
-		if ( pProvider->free != NULL ) {
-			pProvider->free(pData, pProvider->pUser);
-		} else {
-			xrtFree(pData);
-		}
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	*ppData = pData;
-	*pSize = (int)iSize;
-	return XGE_OK;
+static bool __xgeResourceSchemeValid(const char* text)
+{
+    if(!text || !((*text>='A' && *text<='Z') || (*text>='a' && *text<='z')))return false;
+    for(++text;*text;++text)if(!((*text>='A' && *text<='Z') || (*text>='a' && *text<='z') ||
+        (*text>='0' && *text<='9') || *text=='+' || *text=='-' || *text=='.'))return false;
+    return true;
 }
-
-static void __xgeResourceXPackFree(void* pData, void* pUser)
+static int __xgeResourceProviderOwned(const char* scheme,const char* root,bool packed,
+    xge_resource_read_owned_proc read,void* user,const xge_callback_owner_t* owner)
 {
-	xge_xpack_provider_t* pProvider;
-
-	if ( pData == NULL ) {
-		return;
-	}
-	pProvider = (xge_xpack_provider_t*)pUser;
-	if ( (pProvider != NULL) && (pProvider->free != NULL) ) {
-		pProvider->free(pData, pProvider->pUser);
-	} else {
-		xrtFree(pData);
-	}
+    if(!read || !__xgeResourceSchemeValid(scheme))return XGE_ERROR_INVALID_ARGUMENT;
+    xge_callback_node_t* node=NULL;int status=__xgeCallbackNodePrepare(true,false,owner,&node);
+    if(status!=XGE_OK)return status;
+    xge_resource_registration_t* entry=xrtCalloc(1,sizeof(*entry));
+    if(!entry){xerror* primary=xrtTakeError();(void)__xgeCallbackNodeRelease(node);xrtClearError();xrtSetErrorTake(primary);return XGE_ERROR_OUT_OF_MEMORY;}
+    xrtAtomic64Init(&entry->refs,1);entry->owner=node;entry->read=read;entry->raw.pUser=user;entry->packed=packed;
+    entry->scheme=__xgeStrDup(scheme);if(root)entry->root=__xgeStrDup(root);
+    if(!entry->scheme || (root && !entry->root))status=XGE_ERROR_OUT_OF_MEMORY;
+    else status=__xgeResourceRegistryPublish(entry);
+    if(status!=XGE_OK){xerror* first=xrtTakeError();__xgeCallbackOutcome(__xgeResourceRegistrationRelease(entry),&status,&first);xrtSetErrorTake(first);}
+    return status;
 }
-
-int xgeResourceProviderAdd(const xge_resource_provider_t* pProvider)
+static int __xgeResourceOperationFinish(int status,xerror* ambient)
 {
-	if ( (pProvider == NULL) || (pProvider->sScheme == NULL) || (pProvider->load == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.iResourceProviderCount >= XGE_RESOURCE_PROVIDER_MAX ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	g_xge.arrResourceProviders[g_xge.iResourceProviderCount] = *pProvider;
-	g_xge.iResourceProviderCount++;
-	return XGE_OK;
+    xerror* fresh=xrtTakeError();
+    if(status==XGE_OK && fresh)status=XGE_ERROR_CALLBACK_FAILED;
+    if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(fresh);}
+    return status;
 }
-
-void xgeResourceProviderClear(void)
+int xgeResourceProviderAddOwned(const char* scheme,xge_resource_read_owned_proc read,void* user,const xge_callback_owner_t* owner)
 {
-	memset(g_xge.arrResourceProviders, 0, sizeof(g_xge.arrResourceProviders));
-	memset(g_xge.arrXPackProviders, 0, sizeof(g_xge.arrXPackProviders));
-	g_xge.iResourceProviderCount = 0;
-	g_xge.iXPackProviderCount = 0;
+    xerror* ambient=xrtTakeError();int status=__xgeResourceProviderOwned(scheme,NULL,false,read,user,owner);
+    return __xgeResourceOperationFinish(status,ambient);
 }
-
-int xgeResourceXPackProviderAdd(const xge_xpack_provider_t* pProvider)
+int xgeResourceXPackProviderAddOwned(const char* root,xge_resource_read_owned_proc read,void* user,const xge_callback_owner_t* owner)
 {
-	xge_resource_provider_t tProvider;
-	int iIndex;
-
-	if ( (pProvider == NULL) || (pProvider->pPack == NULL) || (pProvider->read == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.iXPackProviderCount >= XGE_XPACK_PROVIDER_MAX ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	iIndex = g_xge.iXPackProviderCount;
-	g_xge.arrXPackProviders[iIndex] = *pProvider;
-	memset(&tProvider, 0, sizeof(tProvider));
-	tProvider.sScheme = "res";
-	tProvider.load = __xgeResourceXPackLoad;
-	tProvider.free = __xgeResourceXPackFree;
-	tProvider.pUser = &g_xge.arrXPackProviders[iIndex];
-	if ( xgeResourceProviderAdd(&tProvider) != XGE_OK ) {
-		memset(&g_xge.arrXPackProviders[iIndex], 0, sizeof(g_xge.arrXPackProviders[iIndex]));
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	g_xge.iXPackProviderCount++;
-	return XGE_OK;
+    xerror* ambient=xrtTakeError();int status=__xgeResourceProviderOwned("res",root,true,read,user,owner);
+    return __xgeResourceOperationFinish(status,ambient);
 }
-
-int xgeResourceLoad(const char* sURI, xge_resource_t* pResource)
+int xgeResourceXPackProviderAdd(const xge_xpack_provider_t* provider)
 {
-	int iSchemeLen;
-	int iProvider;
-	int iRet;
-	size_t iSize;
-	void* pData;
-
-	if ( (sURI == NULL) || (pResource == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	memset(pResource, 0, sizeof(*pResource));
-
-	iSchemeLen = __xgeUriSchemeLen(sURI);
-	if ( iSchemeLen > 0 ) {
-		iProvider = __xgeResourceFindProvider(sURI, iSchemeLen);
-		if ( iProvider >= 0 ) {
-			xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[iProvider];
-			xge_resource_free_snapshot_t* pSnapshot;
-
-			iRet = pProvider->load(sURI, &pResource->pData, &pResource->iSize, pProvider->pUser);
-			if ( iRet != XGE_OK ) {
-				memset(pResource, 0, sizeof(*pResource));
-				return iRet;
-			}
-			pSnapshot = (xge_resource_free_snapshot_t*)xrtCalloc(1, sizeof(*pSnapshot));
-			if ( pSnapshot == NULL ) {
-				if ( pProvider->free != NULL ) pProvider->free(pResource->pData, pProvider->pUser);
-				else xrtFree(pResource->pData);
-				memset(pResource, 0, sizeof(*pResource));
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			if ( pProvider->load == __xgeResourceXPackLoad ) {
-				pSnapshot->bXPack = 1;
-				pSnapshot->tXPack = *(xge_xpack_provider_t*)pProvider->pUser;
-			} else {
-				pSnapshot->free = pProvider->free;
-				pSnapshot->pUser = pProvider->pUser;
-			}
-			pResource->iProvider = iProvider + 1;
-			pResource->free = __xgeResourceFreeSnapshot;
-			pResource->pUser = pSnapshot;
-			return XGE_OK;
-		}
-		if ( __xgeSchemeEqual(sURI, iSchemeLen, "res") ) {
-			sURI += iSchemeLen + 3;
-		} else if ( __xgeSchemeEqual(sURI, iSchemeLen, "file") ) {
-			sURI += iSchemeLen + 3;
-		} else {
-			__xgeLogFormat(XGE_LOG_WARN, "resource", "unsupported resource scheme: %s", sURI);
-			return XGE_ERROR_UNSUPPORTED;
-		}
-	}
-
-	pData = __xgeFileGetAll(sURI, &iSize);
-	if ( pData == NULL ) {
-		xerrkind Kind = xrtErrorKind(xrtGetError());
-		if ( Kind == XERR_MEMORY ) {
-			__xgeLogFormat(XGE_LOG_WARN, "resource", "resource memory exhausted or allocation quota reached: %s", sURI);
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		if ( Kind == XERR_NOT_FOUND ) {
-			__xgeLogFormat(XGE_LOG_WARN, "resource", "resource file not found: %s", sURI);
-			return XGE_ERROR_FILE_NOT_FOUND;
-		}
-		__xgeLogFormat(XGE_LOG_WARN, "resource", "resource read failed: %s", sURI);
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	if ( iSize > (size_t)INT32_MAX ) {
-		xrtFree(pData);
-		__xgeLogFormat(XGE_LOG_ERROR, "resource", "resource file too large: %s", sURI);
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	pResource->pData = pData;
-	pResource->iSize = (int)iSize;
-	pResource->iProvider = 0;
-	return XGE_OK;
+    if(!provider || !provider->pPack || !provider->read)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_resource_registration_t* entry=xrtCalloc(1,sizeof(*entry));
+    if(!entry)return XGE_ERROR_OUT_OF_MEMORY;
+    xrtAtomic64Init(&entry->refs,1);entry->packed=true;entry->pack=*provider;
+    entry->scheme=__xgeStrDup("res");if(provider->sRoot)entry->root=__xgeStrDup(provider->sRoot);
+    int status=!entry->scheme || (provider->sRoot && !entry->root) ? XGE_ERROR_OUT_OF_MEMORY:__xgeResourceRegistryPublish(entry);
+    if(status!=XGE_OK)(void)__xgeResourceRegistrationRelease(entry);
+    return status;
 }
-
-int xgeResourceLoadMemory(const void* pData, int iSize, xge_resource_t* pResource)
+int xgeResourceOutputSet(xge_resource_output_t* output,const void* data,size_t bytes)
 {
-	void* pCopy;
-
-	if ( (pData == NULL) || (iSize < 0) || (pResource == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	memset(pResource, 0, sizeof(*pResource));
-	if ( iSize == 0 ) {
-		return XGE_OK;
-	}
-	pCopy = xrtMalloc((size_t)iSize);
-	if ( pCopy == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memcpy(pCopy, pData, (size_t)iSize);
-	pResource->pData = pCopy;
-	pResource->iSize = iSize;
-	pResource->iProvider = 0;
-	return XGE_OK;
+    if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+    if(output->_iStatus!=XGE_OK)return output->_iStatus;
+    if(bytes>(size_t)INT32_MAX || (bytes && !data))return output->_iStatus=XGE_ERROR_INVALID_ARGUMENT;
+    void* copy=bytes ? xrtMalloc(bytes):NULL;
+    if(bytes && !copy)return output->_iStatus=XGE_ERROR_OUT_OF_MEMORY;
+    if(bytes)memcpy(copy,data,bytes);
+    xrtFree(output->pData);output->pData=copy;output->iSize=(int)bytes;return XGE_OK;
 }
-
-void xgeResourceFree(xge_resource_t* pResource)
+static void __xgeResourceRawDataFree(xge_resource_registration_t* entry,void* data)
 {
-	if ( (pResource == NULL) || (pResource->pData == NULL) ) {
-		return;
-	}
-	if ( pResource->free != NULL ) {
-		pResource->free(pResource->pData, pResource->pUser);
-	} else {
-		xrtFree(pResource->pData);
-	}
-	memset(pResource, 0, sizeof(*pResource));
+    if(entry->packed){if(entry->pack.free)entry->pack.free(data,entry->pack.pUser);else xrtFree(data);}
+    else if(entry->raw.free)entry->raw.free(data,entry->raw.pUser);
+    else xrtFree(data);
+}
+static void __xgeResourceFreeRegistration(void* data,void* user)
+{
+    xge_resource_registration_t* entry=user;
+    if(data)__xgeResourceRawDataFree(entry,data);
+    int status=__xgeResourceRegistrationRelease(entry);
+    if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+}
+static int __xgeResourceRegistrationLoad(xge_resource_registration_t* entry,const char* uri,xge_resource_t* output)
+{
+    char* packPath=NULL;
+    if(entry->packed){
+        int scheme=__xgeUriSchemeLen(uri);const char* path=scheme>0 ? uri+scheme+3:uri;
+        if(!__xgeResourceXPackPathSafe(path))return XGE_ERROR_INVALID_ARGUMENT;
+        packPath=__xgeResourceXPackMakePath(entry->root,path);
+        if(!packPath)return XGE_ERROR_OUT_OF_MEMORY;
+    }
+    int status=XGE_OK;
+    if(entry->read){
+        xerror* ambient=xrtTakeError();xge_callback_snapshot_t snapshot={0};
+        if(!__xgeCallbackNodePin(entry->owner))status=XGE_ERROR_INVALID_STATE;
+        else status=__xgeCallbackSnapshotBegin(entry->owner,false,&snapshot);
+        xge_resource_output_t value={0};
+        if(status==XGE_OK){
+            const char* path=packPath ? packPath:uri;xstrview text={path,strlen(path)};
+            status=entry->read(&text,&value,entry->raw.pUser);
+            if(status>0)status=XGE_ERROR_CALLBACK_FAILED;
+            if(status==XGE_OK)status=value._iStatus;
+        }
+        xerror* first=status!=XGE_OK ? xrtTakeError():NULL;
+        __xgeCallbackOutcome(XGE_OK,&status,&first);
+        __xgeCallbackOutcome(__xgeCallbackSnapshotEnd(&snapshot),&status,&first);
+        if(status==XGE_OK){output->pData=value.pData;output->iSize=value.iSize;}
+        else xrtFree(value.pData);
+        if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(first);}
+    }else{
+        void* data=NULL;int size=0;
+        if(entry->packed){
+            uint64_t bytes=0;data=entry->pack.read(entry->pack.pPack,packPath,&bytes,entry->pack.pUser);
+            if(!data)status=XGE_ERROR_FILE_NOT_FOUND;
+            else if(bytes>(uint64_t)INT32_MAX)status=XGE_ERROR_RESOURCE_FAILED;
+            else size=(int)bytes;
+        }else status=entry->raw.load(uri,&data,&size,entry->raw.pUser);
+        if(status==XGE_OK && (size<0 || (size && !data)))status=XGE_ERROR_RESOURCE_FAILED;
+        if(status==XGE_OK){
+            /* Transfer the in-flight reference into this independent payload. */
+            output->pData=data;output->iSize=size;output->free=__xgeResourceFreeRegistration;output->pUser=entry;
+        }else if(data){xerror* first=xrtTakeError();__xgeResourceRawDataFree(entry,data);
+            __xgeCallbackOutcome(XGE_OK,&status,&first);xrtSetErrorTake(first);}
+    }
+    xrtFree(packPath);return status;
+}
+static int __xgeResourceLoad(const char* uri,xge_resource_t* output)
+{
+    if(!uri || !output)return XGE_ERROR_INVALID_ARGUMENT;
+    memset(output,0,sizeof(*output));
+    int scheme=__xgeUriSchemeLen(uri);
+    if(scheme>0){
+        int ordinal=0,failure=XGE_OK;
+        xge_resource_registration_t* entry=__xgeResourceRegistryFind(uri,scheme,true,&ordinal,&failure);
+        if(failure!=XGE_OK)return failure;
+        if(entry){
+            int status=__xgeResourceRegistrationLoad(entry,uri,output);
+            if(status==XGE_OK)output->iProvider=ordinal;
+            bool transferred=status==XGE_OK && !entry->read;
+            if(!transferred){xerror* first=status!=XGE_OK ? xrtTakeError():NULL;
+                __xgeCallbackOutcome(__xgeResourceRegistrationRelease(entry),&status,&first);xrtSetErrorTake(first);}
+            if(status!=XGE_OK)xgeResourceFree(output);
+            return status;
+        }
+        if(__xgeSchemeEqual(uri,scheme,"res") || __xgeSchemeEqual(uri,scheme,"file"))uri+=scheme+3;
+        else return XGE_ERROR_UNSUPPORTED;
+    }
+    size_t bytes=0;void* data=__xgeFileGetAll(uri,&bytes);
+    if(!data){xerrkind kind=xrtErrorKind(xrtGetError());return kind==XERR_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:
+        kind==XERR_NOT_FOUND ? XGE_ERROR_FILE_NOT_FOUND:XGE_ERROR_RESOURCE_FAILED;}
+    if(bytes>(size_t)INT32_MAX){xrtFree(data);return XGE_ERROR_RESOURCE_FAILED;}
+    output->pData=data;output->iSize=(int)bytes;return XGE_OK;
+}
+int xgeResourceLoad(const char* uri,xge_resource_t* output)
+{
+    if(!uri || !output)return XGE_ERROR_INVALID_ARGUMENT;
+    xerror* ambient=xrtTakeError();int status=__xgeResourceLoad(uri,output);
+    xerror* first=status!=XGE_OK ? xrtTakeError():NULL;
+    __xgeCallbackOutcome(XGE_OK,&status,&first);
+    if(status!=XGE_OK && output)xgeResourceFree(output);
+    /* Cleanup may diagnose another failure; preserve the first outcome. */
+    __xgeCallbackOutcome(XGE_OK,&status,&first);xrtSetErrorTake(first);
+    return __xgeResourceOperationFinish(status,ambient);
+}
+int xgeResourceLoadMemory(const void* data,int bytes,xge_resource_t* output)
+{
+    if(!output || bytes<0 || (bytes && !data))return XGE_ERROR_INVALID_ARGUMENT;
+    memset(output,0,sizeof(*output));xge_resource_output_t value={0};
+    int status=xgeResourceOutputSet(&value,data,(size_t)bytes);
+    if(status==XGE_OK){output->pData=value.pData;output->iSize=value.iSize;}
+    return status;
+}
+void xgeResourceFree(xge_resource_t* output)
+{
+    if(!output)return;
+    xge_resource_t value=*output;memset(output,0,sizeof(*output));
+    /* Empty provider payloads can still own metadata and must release it. */
+    if(value.free)value.free(value.pData,value.pUser);else xrtFree(value.pData);
 }
 
 int xgeZstdDecompress(void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)

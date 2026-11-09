@@ -21,7 +21,8 @@ def main():
     cc=shutil.which('gcc');assert cc
     native=engine/meta['runtime_image'];library=engine/meta['import_library'] if os.name=='nt' else native
     font=tests/'tests/xge/data/xge_opentype_fixture.ttf'
-    cases=[('owned-graphics',tests/'tests/xge/xge_owned_graphics_test.c',[]),
+    cases=[('resource-providers',tests/'tests/xge/xge_resource_owned_test.c',[]),
+           ('owned-graphics',tests/'tests/xge/xge_owned_graphics_test.c',[]),
            ('storage',tests/'tests/xge/xge_storage_adoption_test.c',[font]),
            ('proxy',tests/'tests/xui/xui_proxy_xge_owned_test.c',[font]),
            ('global-callbacks',tests/'tests/xge/xge_owned_global_test.c',[])]

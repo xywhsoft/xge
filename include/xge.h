@@ -1135,6 +1135,17 @@ typedef struct xge_resource_t {
 	void* pUser;
 } xge_resource_t;
 
+/* A callback-scoped, transactional output. Set copies the exact byte span once;
+ * failure leaves the previous output intact and poisons this invocation. Do
+ * not copy or retain this record after the provider returns. */
+typedef struct xge_resource_output_t {
+	void* pData;
+	int iSize;
+	int _iStatus;
+} xge_resource_output_t;
+typedef int (*xge_resource_read_owned_proc)(const xstrview* pPath,
+    xge_resource_output_t* pOutput,void* pUser);
+
 typedef struct xge_resource_provider_t {
 	const char* sScheme;
 	int (*load)(const char* sURI, void** ppData, int* pSize, void* pUser);
@@ -2114,13 +2125,30 @@ XGE_API xge_vec2_t xgeScreenToWorld(xge_vec2_t tPoint);
 #endif
 /* 注册资源 scheme provider（最多 8 个，自定义 URI 解析）。 */
 XGE_API int xgeResourceProviderAdd(const xge_resource_provider_t* pProvider);
+/* Global external roots. Registration copies the scheme/root and holds the
+ * callback owner; each load holds a snapshot through its complete return.
+ * Clear may run inside the callback. Results own their copied bytes and do not
+ * retain the callback. Callbacks run on the loading caller, never an implicit
+ * worker. Metadata publication/clear is synchronized; callers synchronize
+ * mutable callback state and individual resource records. */
+XGE_API int xgeResourceProviderAddOwned(const char* sScheme,
+    xge_resource_read_owned_proc proc,void* pUser,const xge_callback_owner_t* pOwner);
+/* read receives a normalized pack path under root; rejects '..' segments.
+ * Capture the pack in the callback owner; no borrowed pack userdata is needed. */
+XGE_API int xgeResourceXPackProviderAddOwned(const char* sRoot,
+    xge_resource_read_owned_proc proc,void* pUser,const xge_callback_owner_t* pOwner);
+XGE_API int xgeResourceOutputSet(xge_resource_output_t* pOutput,const void* pData,size_t iSize);
 /* 移除全部自定义 provider。 */
 XGE_API void xgeResourceProviderClear(void);
+/* Detaches every registration before dropping any owner. Drop failures consume
+ * their acquired references and are reported once; clear must not be retried
+ * on those references. Unit also clears pre-init registrations. */
+XGE_API int xgeResourceProviderClearChecked(void);
 /* 注册 xpack 打包资源 provider（res:// 打包路径）。 */
 XGE_API int xgeResourceXPackProviderAdd(const xge_xpack_provider_t* pProvider);
 /* 按 URI 加载资源（依次查询 provider 链）。 */
 XGE_API int xgeResourceLoad(const char* sURI, xge_resource_t* pResource);
-/* 包装内存块为资源对象（不复制，调用方保证生命周期）。 */
+/* Copies the exact memory span. NULL is valid only with a zero size. */
 XGE_API int xgeResourceLoadMemory(const void* pData, int iSize, xge_resource_t* pResource);
 /* 释放资源对象。 */
 XGE_API void xgeResourceFree(xge_resource_t* pResource);

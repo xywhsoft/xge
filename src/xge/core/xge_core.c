@@ -139,6 +139,7 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(__xgeDragDropUnit(),&result,&first);
+	__xgeCallbackOutcome(xgeResourceProviderClearChecked(),&result,&first);
 	if(!initialized)goto finish;
 	g_xge.bRunning = 0;
 	XGE_UNIT_STEP(__xgeSceneClear());

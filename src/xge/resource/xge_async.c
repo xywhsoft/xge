@@ -97,21 +97,13 @@ static int __xgeAsyncStartThread(xge_async_request pRequest)
 {
 	xthread* pThread;
 	__xge_async_payload_t* pPayload;
-	int i;
 
 	if ( (pRequest->iType != XGE_ASYNC_IMAGE) && (pRequest->iType != XGE_ASYNC_TEXTURE) ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	/* A registered resource provider owns its own threading contract. Do not
 	 * invoke arbitrary provider callbacks from XGE's worker. */
-	for ( i = 0; i < g_xge.iResourceProviderCount; i++ ) {
-		const char* sScheme = g_xge.arrResourceProviders[i].sScheme;
-		if ( (sScheme != NULL) &&
-			 ((strncmp(pRequest->sURI, sScheme, strlen(sScheme)) == 0) &&
-			  (strncmp(pRequest->sURI + strlen(sScheme), "://", 3) == 0)) ) {
-			return XGE_ERROR_UNSUPPORTED;
-		}
-	}
+	if ( __xgeResourceHasProvider(pRequest->sURI) ) return XGE_ERROR_UNSUPPORTED;
 	if ( (strstr(pRequest->sURI, "://") != NULL) &&
 		 (strncmp(pRequest->sURI, "file://", 7) != 0) &&
 		 (strncmp(pRequest->sURI, "res://", 6) != 0) ) {

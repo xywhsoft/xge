@@ -64,35 +64,15 @@ static void __xgeMiniProgramResourceFree(void* pData, void* pUser)
 	__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
 }
 
+static void __xgeMiniProgramResourceProviderDrop(void* user)
+{__xgeMiniProgramBridgeSnapshotRelease((__xge_miniprogram_bridge_snapshot_t*)user);}
 static void __xgeMiniProgramResourceProviderRemove(void)
-{
-	int iRead;
-	int iWrite;
-
-	iWrite = 0;
-	for ( iRead = 0; iRead < g_xge.iResourceProviderCount; iRead++ ) {
-		xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[iRead];
-
-		if ( (pProvider->load == __xgeMiniProgramResourceLoad) &&
-		     (pProvider->free == __xgeMiniProgramResourceFree) ) {
-			__xgeMiniProgramBridgeSnapshotRelease((__xge_miniprogram_bridge_snapshot_t*)pProvider->pUser);
-			continue;
-		}
-		if ( iWrite != iRead ) g_xge.arrResourceProviders[iWrite] = *pProvider;
-		iWrite++;
-	}
-	if ( iWrite < g_xge.iResourceProviderCount ) {
-		memset(g_xge.arrResourceProviders + iWrite, 0,
-			sizeof(g_xge.arrResourceProviders[0]) * (size_t)(g_xge.iResourceProviderCount - iWrite));
-	}
-	g_xge.iResourceProviderCount = iWrite;
-}
+{(void)__xgeResourceRegistryRemove(__xgeMiniProgramResourceLoad,__xgeMiniProgramResourceFree);}
 
 static int __xgeMiniProgramResourceProviderSet(const xge_miniprogram_bridge_t* pBridge)
 {
 	xge_resource_provider_t tProvider;
 	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
-	int i;
 	if ( (pBridge == NULL) || (pBridge->load_resource == NULL) ) {
 		__xgeMiniProgramResourceProviderRemove();
 		return XGE_OK;
@@ -101,27 +81,15 @@ static int __xgeMiniProgramResourceProviderSet(const xge_miniprogram_bridge_t* p
 	if ( pSnapshot == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	pSnapshot->tBridge = *pBridge;
 	pSnapshot->iRefCount = 1; /* Provider ownership; loaded resources take another ref. */
-	for ( i = 0; i < g_xge.iResourceProviderCount; i++ ) {
-		xge_resource_provider_t* pProvider = &g_xge.arrResourceProviders[i];
-		if ( (pProvider->load == __xgeMiniProgramResourceLoad) &&
-		     (pProvider->free == __xgeMiniProgramResourceFree) ) {
-			__xge_miniprogram_bridge_snapshot_t* pOld =
-				(__xge_miniprogram_bridge_snapshot_t*)pProvider->pUser;
-			pProvider->pUser = pSnapshot;
-			__xgeMiniProgramBridgeSnapshotRelease(pOld);
-			return XGE_OK;
-		}
-	}
 	memset(&tProvider, 0, sizeof(tProvider));
 	tProvider.sScheme = "res";
 	tProvider.load = __xgeMiniProgramResourceLoad;
 	tProvider.free = __xgeMiniProgramResourceFree;
 	tProvider.pUser = pSnapshot;
-	if ( xgeResourceProviderAdd(&tProvider) != XGE_OK ) {
-		__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	return XGE_OK;
+	bool published=false;
+	int result=__xgeResourceProviderReplaceWithRelease(&tProvider,__xgeMiniProgramResourceProviderDrop,&published);
+	if(!published)__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
+	return result;
 }
 
 static int __xgeMiniProgramDimensionsValid(int iWidth, int iHeight, float fDevicePixelRatio)

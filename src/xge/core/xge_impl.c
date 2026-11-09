@@ -307,10 +307,6 @@ typedef struct xge_context_t {
 	xge_egl_desc_t tRenderThreadEGLDesc;
 	xge_egl_context_t tRenderThreadLastEGL;
 	xge_camera_t tCamera;
-	xge_resource_provider_t arrResourceProviders[XGE_RESOURCE_PROVIDER_MAX];
-	int iResourceProviderCount;
-	xge_xpack_provider_t arrXPackProviders[XGE_XPACK_PROVIDER_MAX];
-	int iXPackProviderCount;
 #ifndef XGE_NO_AUDIO
 	int bAudioInitialized;
 	void* pAudioEngine;
@@ -605,18 +601,6 @@ static int __xgeSchemeEqual(const char* sA, int iASize, const char* sB)
 		}
 	}
 	return sB[iASize] == '\0';
-}
-
-static int __xgeResourceFindProvider(const char* sURI, int iSchemeLen)
-{
-	int i;
-
-	for ( i = g_xge.iResourceProviderCount - 1; i >= 0; i-- ) {
-		if ( __xgeSchemeEqual(sURI, iSchemeLen, g_xge.arrResourceProviders[i].sScheme) ) {
-			return i;
-		}
-	}
-	return -1;
 }
 
 static int __xgeLogLevelValid(int iLevel)
