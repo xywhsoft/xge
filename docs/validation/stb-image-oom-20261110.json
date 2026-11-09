@@ -1,0 +1,36 @@
+{
+  "scope": "Vendored stb_image public memory load/info with deterministic allocation failure",
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\stb-image-oom-win-r3\\results.json",
+      "sha256": "70cd073459f4feaf9f6d814446e92d4f1f321dc037ccd8138f182477ba571f78",
+      "steps": 4,
+      "sanitizers": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\stb-image-oom-linux-r3\\results.json",
+      "sha256": "a8a13f53ac1be7902b94fd6958b5628705e1ce07f2bf444fe1f04fbb4c96beee",
+      "steps": 4,
+      "sanitizers": true
+    }
+  ],
+  "samples": [
+    "1x1 PNG",
+    "truncated JPEG",
+    "1x1 GIF",
+    "truncated GIF"
+  ],
+  "budgets": 20,
+  "optimization": [
+    "O0",
+    "O2"
+  ],
+  "networkTests": false,
+  "redNativeCrash": "F:\\xlang-validation\\xge-full-20261110\\texture-sized-debug-r1\\gdb-locals.log",
+  "redStandaloneCrash": "F:\\xlang-validation\\xge-full-20261110\\stb-image-oom-linux-r1\\O0-run.log",
+  "limits": [
+    "This is not a full image-format audit",
+    "No animated multi-frame GIF API is exposed by XGE or certified here",
+    "This report does not install or certify a shipping XGE binary"
+  ]
+}
