@@ -3442,7 +3442,8 @@ int xuiProxyXgeCreate(xui_proxy* output)
 	if(!output)return XUI_ERROR_INVALID_ARGUMENT;
 	*output=NULL;
 	int admission=xgeInternalGraphicsOwnerAcquire();
-	if(admission!=XGE_OK)return admission==XGE_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY:XUI_ERROR_BUSY;
+	if(admission!=XGE_OK)return admission==XGE_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY:
+        admission==XGE_ERROR_INVALID_STATE ? XUI_ERROR_INVALID_STATE:XUI_ERROR_BUSY;
 	xui_proxy_t source=xuiProxyXge();
 	int result=xuiInternalProxyCreateOwnedStorage(&source,NULL,true,0,__xuiProxyXgeStorageReleased,output);
     if(result!=XUI_OK)(void)xgeInternalGraphicsOwnerRelease();

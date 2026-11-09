@@ -14,6 +14,14 @@ the context record so `xgeInit` cannot erase an outstanding obligation. A
 spinlock covers only admission/count transitions, never allocation, GL or user
 callbacks; draw/update methods have no added epoch lookup or global lock.
 
+Initialization has its own cold admission reservation: duplicate Init and Unit
+cannot enter a partially initialized context, and failure releases that
+reservation for retry. Owned creation binds to the engine thread (or the
+pre-Init owner thread). Foreign-thread factories are rejected before native
+allocation/work. Preloaded texture queues and accounting survive Init, including
+failed Init; a required upload-queue allocation failure rolls creation back
+rather than returning a texture that will silently miss its first upload.
+
 Physical backend cleanup may be forced by the window system. It closes
 creation admission and leaves the context ended. Old owners can be released
 without calling dead GL functions; they must be released before checked Unit
@@ -57,10 +65,10 @@ updated to the existing `4d5257f6` deferred-raw-paint result; unchanged storage
 and no attempted allocation remain required.
 
 Exact source/build/test inputs and logs are outside Git under
-`F:/xlang-validation/xge-full-20261110/`: `native-freeze-r3.json`,
-`native-host-win-r3/`, `native-static-win-r3/`, `native-host-linux-r3/`,
-`native-graphics-win-r6/`, `native-graphics-linux-r6/`, and
-`domain-{win,linux}-r3/`. The host builds use an explicit, separately built
+`F:/xlang-validation/xge-full-20261110/`: `native-freeze-r7.json`,
+`native-host-win-r7/`, `native-static-win-r7/`, `native-host-linux-r7/`,
+`native-graphics-win-r8/`, `native-graphics-linux-r8/`, and
+`domain-{win,linux}-r5/`. The host builds use an explicit, separately built
 runtime matching the xlang XRT header. The runner separately pins immutable SDK
 headers and optional current test sources (`--test-root`); neither the upstream
 XRT header nor a source checkout can silently replace the built SDK. No release

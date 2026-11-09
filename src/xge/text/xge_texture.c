@@ -478,7 +478,8 @@ int xgeTextureCreateRGBAEx(xge_texture pTexture, int iWidth, int iHeight, const 
 			return iRet;
 		}
 	} else {
-		(void)xgeTextureUploadQueue(pTexture);
+		iRet=xgeTextureUploadQueue(pTexture);
+		if(iRet!=XGE_OK){xgeTextureFree(pTexture);return iRet;}
 	}
 	return XGE_OK;
 }
@@ -514,7 +515,8 @@ int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight)
 			return iRet;
 		}
 	} else {
-		(void)xgeTextureUploadQueue(pTexture);
+		iRet=xgeTextureUploadQueue(pTexture);
+		if(iRet!=XGE_OK){xgeTextureFree(pTexture);return iRet;}
 	}
 	return XGE_OK;
 }

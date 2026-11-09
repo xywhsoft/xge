@@ -20,12 +20,31 @@ static xge_host_xrt_proc resolve(void* user,const char* name)
     return NULL;
 }
 static int frame(void* user){++*(int*)user;return 17;}
+static int32 off_thread(ptr unused)
+{
+    (void)unused;xge_texture texture=(void*)(uintptr_t)1;xui_proxy proxy=(void*)(uintptr_t)1;
+    xge_render_target window=(void*)(uintptr_t)1;assert(xrtMemDebugFailAfter(0));
+    assert(xgeTextureCreateRGBAOwned(&texture,2,2,NULL,0)==XGE_ERROR_INVALID_STATE && !texture);
+    assert(xgeRenderTargetWindowOwned(&window)==XGE_ERROR_INVALID_STATE && !window);
+    assert(xuiProxyXgeCreate(&proxy)==XUI_ERROR_INVALID_STATE && !proxy);
+    assert(xgeUnitChecked()==XGE_ERROR_INVALID_STATE && xgeInit(NULL)==XGE_ERROR_INVALID_STATE);
+    assert(!xrtMemDebugFailTriggered());xrtMemDebugFailClear();
+    return 0;
+}
 static void shutdown_and_slots(void)
 {
-    assert(xgeInit(NULL)==XGE_OK);
-    int calls=0,result=0;assert(xgeSetFrameCallbackOwned(frame,&calls,NULL)==XGE_OK);
     xge_texture texture=NULL;assert(xgeTextureCreateRGBAOwned(&texture,2,2,NULL,0)==XGE_OK);
+    assert(xrtMemDebugFailAfter(0));assert(xgeInit(NULL)==XGE_ERROR_OUT_OF_MEMORY);
+    assert(xrtMemDebugFailAfter(-1));xrtClearError();
+    assert(xgeGraphicsOwnedResourceCount()==1);
+    assert(xgeInit(NULL)==XGE_OK);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xgeTextureUploadQueue(texture)==XGE_OK && !xrtMemDebugFailTriggered());
+    assert(xrtMemDebugFailAfter(-1));
+    int calls=0,result=0;assert(xgeSetFrameCallbackOwned(frame,&calls,NULL)==XGE_OK);
     assert(texture && xgeTextureIsOwned(texture) && xgeGraphicsOwnedResourceCount()==1);
+    xthread* worker=xrtThreadCreate(off_thread,NULL,0);assert(worker);
+    assert(xrtThreadWaitFor(worker,10000)==XWAIT_OK && xrtThreadExitCode(worker)==0);xrtThreadDestroy(worker);
     xge_material_t material; xgeMaterialInit(&material);
     assert(xgeMaterialSetTextureChecked(&material,texture)==XGE_OK);
     xgeTextureFree(texture); /* Material now owns the only reference. */
@@ -100,6 +119,7 @@ static void allocation_failures(void)
         xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
         assert(xrtMemDebugFailAfter(budget));xge_texture texture=NULL;
         int code=xgeTextureCreateRGBAOwned(&texture,2,2,NULL,0);
+        if(code==XGE_OK)assert(!xrtMemDebugFailTriggered());
         assert(xrtMemDebugFailAfter(-1));xrtClearError();
         assert((code==XGE_OK)==(texture!=NULL));xgeTextureFree(texture);
         assert(!xgeGraphicsOwnedResourceCount());

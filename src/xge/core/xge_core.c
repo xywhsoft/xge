@@ -23,15 +23,17 @@ int xgeInit(const xge_desc_t* pDesc)
 {
 	xge_desc_t objDesc;
 	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
-    int graphicsAdmission=__xgeGraphicsInitCheck(&g_xgeGraphicsLifetime);
+    int graphicsAdmission=__xgeGraphicsInitBegin(&g_xgeGraphicsLifetime);
     if(graphicsAdmission!=XGE_OK)return graphicsAdmission;
 
-	if ( g_xge.bInitialized ) {
-		return XGE_ERROR_ALREADY_INITIALIZED;
-	}
-
 	__xgeConfigureGraphicsProcessStartup();
+	/* Preloaded CPU textures retain their queued addresses across Init. */
+	xge_texture_upload_node_t* uploads=g_xge.pTextureUploadHead;
+	xge_texture_upload_node_t* uploadTail=g_xge.pTextureUploadTail;
+	int textureCount=g_xge.iTextureCount;uint64_t textureBytes=g_xge.iTextureMemoryBytes;
 	memset(&g_xge, 0, sizeof(g_xge));
+	g_xge.pTextureUploadHead=uploads;g_xge.pTextureUploadTail=uploadTail;
+	g_xge.iTextureCount=textureCount;g_xge.iTextureMemoryBytes=textureBytes;
 	memset(&objDesc, 0, sizeof(objDesc));
 
 	if ( pDesc != NULL ) {
@@ -55,6 +57,7 @@ int xgeInit(const xge_desc_t* pDesc)
 
 	if ( !__xgeInputEventQueueReserve(XGE_INPUT_EVENT_QUEUE_INITIAL_CAPACITY) ) {
 		__xgeLogError("input", "Ordered input queue allocation failed.");
+        __xgeGraphicsInitAbort(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -280,11 +283,9 @@ int xgeRunOwnedWithTransfer(xge_scene_proc procFrame,void* pUser,const xge_callb
 	UINT iOldErrorMode;
 #endif
 
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
     int graphicsAdmission=__xgeGraphicsRunCheck(&g_xgeGraphicsLifetime);
     if(graphicsAdmission!=XGE_OK)return graphicsAdmission;
+	if ( g_xge.bInitialized == 0 ) return XGE_ERROR_NOT_INITIALIZED;
 	xge_transfer_run_scope_t transfer={0};
 	int admission=__xgeTransferRunBegin(&transfer,services);if(admission!=XGE_OK)return admission;
 	xge_callback_run_outcome_t outcome={0};

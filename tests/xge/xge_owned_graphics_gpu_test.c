@@ -17,12 +17,13 @@ static xge_host_xrt_proc resolve(void* user,const char* name)
 #undef XGE_HOST_XRT_SLOT
     return NULL;
 }
-typedef struct State {int calls;xge_texture texture;xge_shader shader;xge_pass pass;} State;
+typedef struct State {int calls;xge_texture texture;xge_shader shader;xge_pass pass;xge_texture preload;} State;
 static const char vertex[]="#version 330\nin vec2 aPosition;void main(){gl_Position=vec4(aPosition,0.0,1.0);}";
 static const char fragment[]="#version 330\nuniform vec4 uTint;out vec4 fragColor;void main(){fragColor=uTint;}";
 static int render(void* raw)
 {
     State* state=raw;++state->calls;
+    assert(state->preload && state->preload->iBackendId);xgeTextureFree(state->preload);state->preload=NULL;
     xge_render_target first=NULL,second=NULL;
     assert(xgeRenderTargetCreateOwned(&first,2,2)==XGE_OK && xgeRenderTargetCreateOwned(&second,2,2)==XGE_OK);
     xge_pass outer=NULL,inner=NULL;
@@ -63,7 +64,9 @@ int main(void)
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
     xge_desc_t desc={0};desc.iWidth=128;desc.iHeight=96;desc.sTitle="XGE bounded ownership test";
-    State state={0};assert(xgeInit(&desc)==XGE_OK && xgeRun(render,&state)==XGE_OK && state.calls==1);
+    State state={0};const unsigned char white[4]={255,255,255,255};
+    assert(xgeTextureCreateRGBAOwned(&state.preload,1,1,white,sizeof(white))==XGE_OK);
+    assert(xgeInit(&desc)==XGE_OK && xgeRun(render,&state)==XGE_OK && state.calls==1);
     assert(xgeGraphicsOwnedResourceCount()==2 && xgeUnitChecked()==XGE_ERROR_BUSY);
     assert(xgeInit(&desc)==XGE_ERROR_BUSY && xgeRun(render,&state)==XGE_ERROR_BUSY && state.calls==1);
     /* Physical backend has ended: releasing old handles must not call GL. */

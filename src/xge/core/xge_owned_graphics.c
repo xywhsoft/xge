@@ -89,10 +89,9 @@ int xgeRenderTargetWindowOwned(xge_render_target* out)
 {
     if(!out)return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
-    if(!g_xge.bInitialized)return XGE_ERROR_NOT_INITIALIZED;
     int result;xge_render_target target=__xgeOwnedGraphicsAllocate(sizeof(*target),&result);
     if(!target)return result;
-    result=xgeRenderTargetWindow(target);
+    result=g_xge.bInitialized ? xgeRenderTargetWindow(target):XGE_ERROR_NOT_INITIALIZED;
     XGE_OWNED_GRAPHICS_FINISH(out,target,result,xgeRenderTargetFree,target->_iOwnerReferences=1);
 }
 #if XGE_ENABLE_TEXT

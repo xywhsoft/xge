@@ -2577,7 +2577,9 @@ XGE_API int xgePassEnd(xge_pass pPass);
 XGE_API bool xgePassIsIdle(void);
 XGE_API bool xgePassIsCurrent(const xge_pass_t* pPass);
 /* Native owned factories publish only on success. Their graphics admission is
- * held before allocation/native work and until final release. Do not copy an
+ * held before allocation/native work and until final release. Creation is on
+ * the engine thread; live pre-Init owned records establish that same thread.
+ * Do not copy an
  * owned record or pass it back to a caller-storage initializer. */
 XGE_API int xgeTextureCreateRGBAOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes);
 XGE_API int xgeTextureLoadMemoryOwned(xge_texture* out,const void* data,int bytes);

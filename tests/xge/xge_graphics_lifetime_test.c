@@ -1,5 +1,6 @@
 /* The production admission gate, using real XRT synchronization. No device. */
 #define XRT_MODULE_SPIN
+#define XRT_MODULE_THREAD
 #define XRT_IMPLEMENTATION
 #include "extlibs/xrt/xrt.h"
 #include "xge.h"
@@ -13,19 +14,28 @@
 #endif
 static xge_graphics_lifetime state=XGE_GRAPHICS_LIFETIME_INIT;
 static atomic_int failures;
+static int guardOnly;
 static void exercise(void)
 {
     for(int i=0;i<10000;++i){
         int result=__xgeGraphicsOwnerAcquire(&state);
         if(result==XGE_OK){
             if(__xgeGraphicsOwnerRelease(&state)!=XGE_OK)atomic_fetch_add(&failures,1);
-        }else if(result!=XGE_ERROR_BUSY)atomic_fetch_add(&failures,1);
+        }else if(result!=XGE_ERROR_BUSY && result!=XGE_ERROR_INVALID_STATE)atomic_fetch_add(&failures,1);
     }
 }
+static void guarded(void)
+{
+    assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_INVALID_STATE);
+    assert(__xgeGraphicsInitCheck(&state)==XGE_ERROR_INVALID_STATE);
+    assert(__xgeGraphicsRunCheck(&state)==XGE_ERROR_INVALID_STATE);
+    assert(__xgeGraphicsBackendStart(&state)==XGE_ERROR_INVALID_STATE);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_INVALID_STATE);
+}
 #if defined(_WIN32)
-static DWORD WINAPI worker(void* ignored){(void)ignored;exercise();return 0;}
+static DWORD WINAPI worker(void* ignored){(void)ignored;if(guardOnly)guarded();else exercise();return 0;}
 #else
-static void* worker(void* ignored){(void)ignored;exercise();return NULL;}
+static void* worker(void* ignored){(void)ignored;if(guardOnly)guarded();else exercise();return NULL;}
 #endif
 int main(void)
 {
@@ -39,6 +49,12 @@ int main(void)
     assert(__xgeGraphicsCloseBegin(&state)==XGE_OK);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_BUSY);
     __xgeGraphicsCloseAbort(&state);assert(__xgeGraphicsInitCheck(&state)==XGE_OK);
+    assert(__xgeGraphicsInitBegin(&state)==XGE_OK);
+    assert(__xgeGraphicsInitBegin(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsRunCheck(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK && __xgeGraphicsOwnerRelease(&state)==XGE_OK && state.creatorThread);
+    __xgeGraphicsInitAbort(&state);assert(!state.initializing && !state.creatorThread);
     __xgeGraphicsInitialized(&state);assert(__xgeGraphicsRunCheck(&state)==XGE_OK);
     assert(__xgeGraphicsBackendStart(&state)==XGE_OK);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
@@ -56,6 +72,15 @@ int main(void)
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_BUSY);
     assert(__xgeGraphicsInitCheck(&state)==XGE_ERROR_BUSY); /* Old context still live. */
     __xgeGraphicsBackendEnding(&state);__xgeGraphicsBackendEnded(&state,false);
+    __xgeGraphicsInitialized(&state);guardOnly=1;
+#if defined(_WIN32)
+    HANDLE guardedThread=CreateThread(NULL,0,worker,NULL,0,NULL);assert(guardedThread);
+    assert(WaitForSingleObject(guardedThread,INFINITE)==WAIT_OBJECT_0);CloseHandle(guardedThread);
+#else
+    pthread_t guardedThread;assert(!pthread_create(&guardedThread,NULL,worker,NULL));assert(!pthread_join(guardedThread,NULL));
+#endif
+    guardOnly=0;assert(!state.closing && state.phase==XGE_GRAPHICS_READY && !state.owners);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_OK);__xgeGraphicsCloseFinish(&state,false);
     state.owners=UINT64_MAX;
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_OUT_OF_MEMORY && state.owners==UINT64_MAX);
     state.owners=0;
