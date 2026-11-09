@@ -1,3 +1,4 @@
+#include "xge_byte_rows.h"
 int xgeTextureCoordinateContract(void)
 {
 	return XGE_TEXTURE_COORDINATE_CONTRACT;
@@ -181,7 +182,10 @@ static int __xgeTextureYUV420PAlloc(xge_texture pTexture, int iWidth, int iHeigh
 	for ( i = 0; i < 3; i++ ) {
 		size_t iSize;
 		pYUV->iPlaneStride[i] = pYUV->iPlaneWidth[i];
-		iSize = (size_t)pYUV->iPlaneStride[i] * (size_t)pYUV->iPlaneHeight[i];
+        if(!__xgeByteRowsLayout((size_t)pYUV->iPlaneWidth[i],pYUV->iPlaneHeight[i],pYUV->iPlaneStride[i],SIZE_MAX,&iSize,NULL)){
+            for(int j=0;j<i;++j)xrtFree(pYUV->pPlane[j]);
+            xrtFree(pYUV);return XGE_ERROR_OUT_OF_MEMORY;
+        }
 		pYUV->pPlane[i] = (unsigned char*)xrtMalloc(iSize);
 		if ( pYUV->pPlane[i] == NULL ) {
 			int j;
@@ -290,50 +294,34 @@ static int __xgeSamplerNormalize(xge_sampler_t* pSampler)
 	return XGE_OK;
 }
 
-static int __xgeTextureApplySampler(xge_texture pTexture)
-{
-	xge_sampler_t tSampler;
-	xge_texture_yuv420p_t* pYUV;
-	int i;
+#include "xge_texture_storage.h"
 
-	if ( (pTexture == NULL) || (pTexture->iBackendId == 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (g_xge.bSokolRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( (xge_glBindTexture == NULL) || (xge_glTexParameteri == NULL) ) {
-		return XGE_ERROR_GPU_FAILED;
-	}
-	tSampler = pTexture->tSampler;
-	if ( __xgeSamplerNormalize(&tSampler) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
-		if ( !__xgeTextureHasYUV420P(pTexture) ) {
-			return XGE_ERROR_RESOURCE_FAILED;
-		}
-		pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-		for ( i = 0; i < 3; i++ ) {
-			if ( pYUV->iPlaneTexture[i] == 0 ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
-			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-			xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
-		}
-	} else {
-		xge_glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-		xge_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
-	}
-	xge_glBindTexture(GL_TEXTURE_2D, 0);
-	pTexture->tSampler = tSampler;
-	return XGE_OK;
+static int __xgeTextureApplySampler(xge_texture texture)
+{
+    if(!texture || !texture->iBackendId)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!g_xge.bSokolRunning && !g_xge.bRenderThreadGLCurrent)return XGE_ERROR_NOT_INITIALIZED;
+    if(!xge_glBindTexture || !xge_glTexParameteri || !xge_glGetIntegerv || !xge_glGetError)return XGE_ERROR_GPU_FAILED;
+    xge_sampler_t sampler=texture->tSampler;
+    if(__xgeSamplerNormalize(&sampler)!=XGE_OK)return XGE_ERROR_INVALID_ARGUMENT;
+    GLuint textures[3]={(GLuint)texture->iBackendId,0,0};int count=1;
+    if(texture->iFormat==XGE_PIXEL_YUV420P){
+        if(!__xgeTextureHasYUV420P(texture))return XGE_ERROR_RESOURCE_FAILED;
+        xge_texture_yuv420p_t* planes=texture->pBackend;count=3;
+        for(int i=0;i<count;++i){if(!planes->iPlaneTexture[i])return XGE_ERROR_INVALID_ARGUMENT;textures[i]=planes->iPlaneTexture[i];}
+    }
+    GLint previous=0;xge_glGetIntegerv(GL_TEXTURE_BINDING_2D,&previous);
+    __xgeTextureClearGLErrors();int result=XGE_OK;
+    for(int i=0;i<count;++i){
+        xge_glBindTexture(GL_TEXTURE_2D,textures[i]);
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,__xgeSamplerFilterToGL(sampler.iMinFilter));
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,__xgeSamplerFilterToGL(sampler.iMagFilter));
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,__xgeSamplerWrapToGL(sampler.iWrapS));
+        xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,__xgeSamplerWrapToGL(sampler.iWrapT));
+        result=__xgeTextureGLError(xge_glGetError());if(result!=XGE_OK)break;
+    }
+    xge_glBindTexture(GL_TEXTURE_2D,(GLuint)previous);
+    if(result==XGE_OK)texture->tSampler=sampler;
+    return result;
 }
 
 static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
@@ -375,7 +363,6 @@ static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
 	return XGE_OK;
 }
 
-#include "xge_texture_storage.h"
 
 static int __xgeTextureUploadNow(xge_texture pTexture)
 {
@@ -967,50 +954,37 @@ static int __xgeTextureCopyPlane(unsigned char* pDst, int iDstStride, int iWidth
 	}
 	pSrc = (const unsigned char*)pSrcData;
 	for ( i = 0; i < iHeight; i++ ) {
-		memcpy(pDst + (i * iDstStride), pSrc + (i * iSrcStride), (size_t)iWidth);
+		memcpy(pDst + (size_t)i * (size_t)iDstStride, pSrc + (size_t)i * (size_t)iSrcStride, (size_t)iWidth);
 	}
 	return XGE_OK;
 }
 
-int xgeTextureUpdateYUV420P(xge_texture pTexture, const void* pY, int iStrideY, const void* pU, int iStrideU, const void* pV, int iStrideV)
+int xgeTextureUpdateYUV420P(xge_texture texture,const void* y,int strideY,const void* u,int strideU,const void* v,int strideV)
 {
-	xge_texture_yuv420p_t* pYUV;
-	int iRet;
-	int i;
-
-	if ( (pTexture == NULL) || (pY == NULL) || (pU == NULL) || (pV == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgeTextureHasYUV420P(pTexture) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-	iRet = __xgeTextureCopyPlane(pYUV->pPlane[0], pYUV->iPlaneStride[0], pYUV->iPlaneWidth[0], pYUV->iPlaneHeight[0], pY, iStrideY);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	iRet = __xgeTextureCopyPlane(pYUV->pPlane[1], pYUV->iPlaneStride[1], pYUV->iPlaneWidth[1], pYUV->iPlaneHeight[1], pU, iStrideU);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	iRet = __xgeTextureCopyPlane(pYUV->pPlane[2], pYUV->iPlaneStride[2], pYUV->iPlaneWidth[2], pYUV->iPlaneHeight[2], pV, iStrideV);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
-		if ( (xge_glBindTexture == NULL) || (xge_glTexSubImage2D == NULL) ) {
-			return XGE_ERROR_GPU_FAILED;
-		}
-		if ( xge_glPixelStorei != NULL ) {
-			xge_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		}
-		for ( i = 0; i < 3; i++ ) {
-			xge_glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
-			xge_glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
-		}
-		xge_glBindTexture(GL_TEXTURE_2D, 0);
-	}
-	return XGE_OK;
+    if(!texture || !y || !u || !v || !__xgeTextureHasYUV420P(texture))return XGE_ERROR_INVALID_ARGUMENT;
+    xge_texture_yuv420p_t* planes=texture->pBackend;
+    const void* source[3]={y,u,v};int stride[3]={strideY,strideU,strideV};
+    /* Validate all source AND destination planes before the first write. */
+    for(int i=0;i<3;++i){
+        if(!__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],stride[i],SIZE_MAX,NULL,&stride[i]) ||
+           !__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],planes->iPlaneStride[i],SIZE_MAX,NULL,NULL))return XGE_ERROR_INVALID_ARGUMENT;
+    }
+    bool upload=texture->iBackendId && g_xge.bSokolRunning;
+    if(upload && (!xge_glBindTexture || !xge_glTexSubImage2D || !xge_glPixelStorei || !xge_glGetIntegerv || !xge_glGetError))return XGE_ERROR_GPU_FAILED;
+    for(int i=0;i<3;++i){
+        int result=__xgeTextureCopyPlane(planes->pPlane[i],planes->iPlaneStride[i],planes->iPlaneWidth[i],planes->iPlaneHeight[i],source[i],stride[i]);
+        if(result!=XGE_OK)return result;
+    }
+    if(!upload)return XGE_OK;
+    GLint binding=0,alignment=4;xge_glGetIntegerv(GL_TEXTURE_BINDING_2D,&binding);xge_glGetIntegerv(GL_UNPACK_ALIGNMENT,&alignment);
+    __xgeTextureClearGLErrors();xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);int result=XGE_OK;
+    for(int i=0;i<3;++i){
+        xge_glBindTexture(GL_TEXTURE_2D,planes->iPlaneTexture[i]);
+        xge_glTexSubImage2D(GL_TEXTURE_2D,0,0,0,planes->iPlaneWidth[i],planes->iPlaneHeight[i],GL_RED,GL_UNSIGNED_BYTE,planes->pPlane[i]);
+        result=__xgeTextureGLError(xge_glGetError());if(result!=XGE_OK)break;
+    }
+    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,alignment);xge_glBindTexture(GL_TEXTURE_2D,(GLuint)binding);
+    return result;
 }
 
 xge_sampler_t xgeTextureGetSampler(xge_texture pTexture)
@@ -1040,9 +1014,12 @@ int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSampler)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+    xge_sampler_t previous=pTexture->tSampler;
 	pTexture->tSampler = tSampler;
 	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
-		return __xgeTextureApplySampler(pTexture);
+        int result=__xgeTextureApplySampler(pTexture);
+        if(result!=XGE_OK)pTexture->tSampler=previous;
+        return result;
 	}
 	return XGE_OK;
 }

@@ -78,3 +78,22 @@ The ended-Pass case also verifies that checked End failure and successful owner
 consumption are independent: it restores the stack, drops the target, reports
 NOT_INITIALIZED, and permits the following Unit. It must neither leak an owner
 nor retry cleanup on consumed storage.
+
+
+2026-11-10 Texture state correction: sampler changes restore the previous
+GL_TEXTURE_BINDING_2D; YUV upload restores it and GL_UNPACK_ALIGNMENT. All three
+YUV source and destination row layouts are validated before any plane is
+written. Invalid late-plane stride therefore leaves the CPU pixels unchanged.
+The shared byte-row calculation checks address-width overflow and excludes
+padding beyond the final row. Native nonpositive stride keeps its tight-row
+default. GPU upload failure can still leave partially committed pixel data;
+this change does not promise a GPU transaction. Sampler CPU metadata is restored
+when applying it fails, but a driver failure can have changed some parameters.
+
+Red reproductions against the preceding library failed all three targeted
+assertions. The matched new Windows/Linux libraries each passed 32 native
+build/run checks, including real GL state and YUV pixel assertions. O0/O2
+byte-row checks passed on both platforms, with Linux ASan/UBSan limited to that
+production arithmetic helper. Details: `validation/texture-state-20261110.json`.
+State preservation adds driver queries and restores around mutation; ordinary
+draws are unchanged, and no zero-overhead claim is made.

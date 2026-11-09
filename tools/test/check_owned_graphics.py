@@ -26,7 +26,9 @@ def main():
            ('storage',tests/'tests/xge/xge_storage_adoption_test.c',[font]),
            ('proxy',tests/'tests/xui/xui_proxy_xge_owned_test.c',[font]),
            ('global-callbacks',tests/'tests/xge/xge_owned_global_test.c',[])]
-    if a.graphics:cases.append(('graphics-device',tests/'tests/xge/xge_owned_graphics_gpu_test.c',[]))
+    if a.graphics:
+        cases.append(('graphics-device',tests/'tests/xge/xge_owned_graphics_gpu_test.c',[]))
+        cases.append(('texture-state',tests/'tests/xge/xge_texture_state_gpu_test.c',[]))
     pins={Path(__file__).resolve(),Path(cc),header,native,library,runtime,font,engine/'build-report.json',
           engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'extlibs/xrt/xrt.h'}
     pins.update(source for _,source,_ in cases)
@@ -50,8 +52,11 @@ def main():
     for name,source,arguments in cases:
         for opt in ('O0','O2'):
             exe=out/(name+'-'+opt+('.exe' if os.name=='nt' else ''))
-            run(name+'-'+opt+'-build',[cc,*flags,'-'+opt,source,library,runtime,*systems,'-o',exe])
-            run(name+'-'+opt+'-run',[exe,*arguments])
+            extra=['-lopengl32'] if name=='texture-state' and os.name=='nt' else ['-lGL'] if name=='texture-state' else []
+            run(name+'-'+opt+'-build',[cc,*flags,'-'+opt,source,library,runtime,*systems,*extra,'-o',exe])
+            if name=='texture-state':
+                for mode in ('1','2','3'):run(name+'-'+opt+'-mode'+mode,[exe,mode])
+            else:run(name+'-'+opt+'-run',[exe,*arguments])
     assert all(sha(path)==digest for path,digest in inputs.items())
     report.update(passed=True,inputsUnchanged=True);save()
 

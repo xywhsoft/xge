@@ -1,0 +1,37 @@
+{
+  "scope": "Native Texture GL state preservation and pre-write YUV row validation",
+  "networkTests": false,
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-texture-win-r1\\results.json",
+      "sha256": "d769c0e28989c9695ab0e2b7f816981de7cd01400c2bb36c39bae29df838cb36",
+      "checks": 32,
+      "sanitizers": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-texture-linux-r1\\results.json",
+      "sha256": "d36a9d9c74c3ad6098874a4176ac35d3b6e251f2d415ae2b780fad6cf68b88c8",
+      "checks": 32,
+      "sanitizers": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\byte-rows-win-r2\\results.json",
+      "sha256": "24ec3d35556f5b1308edb0a8061b430a7ff86d3607fc37c2cbac5200515f3929",
+      "checks": 4,
+      "sanitizers": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\byte-rows-linux-r1\\results.json",
+      "sha256": "ad92e7cecb7fef0a21a838fe82cf7d3048f000c00c8b2d3629724dc52c559a03",
+      "checks": 4,
+      "sanitizers": true
+    }
+  ],
+  "redEvidence": "F:\\xlang-validation\\xge-full-20261110\\texture-red-win-r1\\results.json",
+  "limits": [
+    "Only the production row-layout helper used Linux ASan/UBSan; not the complete engine",
+    "No physical GPU performance qualification",
+    "GPU upload errors may leave partially committed pixels; caller GL binding and unpack alignment are restored",
+    "No xlang release package installation in this native batch"
+  ]
+}
