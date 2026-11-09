@@ -62,44 +62,7 @@ void xgeDrawQuad3D(xge_texture pTexture, const xge_vertex_t* pVertices, uint32_t
 	__xgeFrameStatsAddDrawCall();
 }
 
-static void __xgeMeshFreeCPU(xge_mesh pMesh)
-{
-	if ( pMesh->pVertices != NULL ) {
-		xrtFree(pMesh->pVertices);
-		pMesh->pVertices = NULL;
-	}
-	if ( pMesh->pIndices != NULL ) {
-		xrtFree(pMesh->pIndices);
-		pMesh->pIndices = NULL;
-	}
-}
-
-static int __xgeMeshSetCPU(xge_mesh pMesh, const xge_vertex_t* pVertices, int iVertexCount, const uint16_t* pIndices, int iIndexCount)
-{
-	size_t iVertexBytes;
-	size_t iIndexBytes;
-
-	if ( (pMesh == NULL) || (pVertices == NULL) || (iVertexCount <= 0) || (pIndices == NULL) || (iIndexCount <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iVertexCount > INT32_MAX / (int)sizeof(xge_vertex_t)) || (iIndexCount > INT32_MAX / (int)sizeof(uint16_t)) ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iVertexBytes = (size_t)iVertexCount * sizeof(xge_vertex_t);
-	iIndexBytes = (size_t)iIndexCount * sizeof(uint16_t);
-	__xgeMeshFreeCPU(pMesh);
-	pMesh->pVertices = xrtMalloc(iVertexBytes);
-	pMesh->pIndices = xrtMalloc(iIndexBytes);
-	if ( (pMesh->pVertices == NULL) || (pMesh->pIndices == NULL) ) {
-		__xgeMeshFreeCPU(pMesh);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memcpy(pMesh->pVertices, pVertices, iVertexBytes);
-	memcpy(pMesh->pIndices, pIndices, iIndexBytes);
-	pMesh->iVertexCount = iVertexCount;
-	pMesh->iIndexCount = iIndexCount;
-	return XGE_OK;
-}
+#include "xge_mesh_cpu.inl"
 
 static int __xgeMeshUpload(xge_mesh pMesh, xge_texture pTexture, uint32_t iDrawFlags)
 {
