@@ -50,19 +50,26 @@ static int frame(void* user)
         xgeDrawEx(&draw);assert(xgeFlush()==XGE_OK);assert(xgePassEnd(pass)==XGE_OK);
         unsigned char pixels[16];assert(xgeRenderTargetReadPixelsSized(target,pixels,sizeof(pixels),8)==XGE_OK);
         printf("YUV sample: %u %u %u %u\n",pixels[0],pixels[1],pixels[2],pixels[3]);fflush(stdout);
-        for(int i=0;i<4;++i)assert(pixels[4*i]<=2 && pixels[4*i+1]<=2 && pixels[4*i+2]<=2 && pixels[4*i+3]==255);
+        for(int i=0;i<4;++i){
+            /* Native shader uses full-range Y, not video-range 16..235. */
+            if(testMode==5)assert(pixels[4*i]>=232 && pixels[4*i]<=238 && pixels[4*i+1]>=232 && pixels[4*i+1]<=238 && pixels[4*i+2]>=232 && pixels[4*i+2]<=238);
+            else assert(pixels[4*i]<=2 && pixels[4*i+1]<=2 && pixels[4*i+2]<=2);
+            assert(pixels[4*i+3]==255);
+        }
         xgePassFree(pass);xgeRenderTargetFree(target);
     }
     glBindTexture(GL_TEXTURE_2D,0);xgeTextureFree(yuv);xgeTextureFree(guardTexture);return 1;
 }
 int main(int argc,char** argv)
 {
-    assert(argc==2);testMode=argv[1][0]-'0';assert(testMode>=1 && testMode<=3);
+    assert(argc==2);testMode=argv[1][0]-'0';assert(testMode>=1 && testMode<=5);
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
     assert(xgeTextureCreateYUV420POwned(&yuv,3,3)==XGE_OK);
     const unsigned char pixel[4]={255,255,255,255};assert(xgeTextureCreateRGBAOwned(&guardTexture,1,1,pixel,4)==XGE_OK);
     if(testMode==3)assert(xgeTextureUpdateYUV420P(yuv,y,3,uv,2,uv,1)==XGE_ERROR_INVALID_ARGUMENT);
+    if(testMode==4)assert(xgeTextureUpdateYUV420PSized(yuv,y,9,3,uv,4,2,uv,3,2)==XGE_ERROR_INVALID_ARGUMENT);
+    if(testMode==5)assert(xgeTextureUpdateYUV420PSized(yuv,y,9,3,uv,4,2,uv,4,2)==XGE_OK);
     xge_desc_t desc={0};desc.iWidth=64;desc.iHeight=64;desc.sTitle="XGE bounded texture state";
     assert(xgeInit(&desc)==XGE_OK && xgeRun(frame,NULL)==XGE_OK);
     assert(xgeUnitChecked()==XGE_OK && !xgeGraphicsOwnedResourceCount());

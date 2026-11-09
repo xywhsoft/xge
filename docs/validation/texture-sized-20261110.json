@@ -1,0 +1,47 @@
+{
+  "scope": "Native sized Texture operations and owned Texture/system font factories",
+  "freeze": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r13.json",
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r13\\build-report.json",
+      "sha256": "a4ca4eed2179e503bd18fb10b7826bb35ac22b9e6c8840e32c55d9ab319f88f7",
+      "runtimeBytes": 9165749,
+      "seconds": 243.51475269999355,
+      "profile": "default"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r13\\build-report.json",
+      "sha256": "5fbb6102eff8a2afb5867bf7d0851b407b34493a66ecb69b41450556d09bdde7",
+      "runtimeBytes": 9964720,
+      "seconds": 332.82016326399753,
+      "profile": "default"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r13\\build-report.json",
+      "sha256": "135bab9a93b4f3e14372adb0be5aeaef5224890af411d872cb00277f6f330dfd",
+      "runtimeBytes": null,
+      "seconds": 204.5,
+      "profile": "default"
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-texture-win-r4\\results.json",
+      "sha256": "8569e338f48ce6f6acf180360ba06034bb9936e83526b496e2482f594a870b15",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-texture-linux-r2\\results.json",
+      "sha256": "920d96dfb21040aa11c4b2cea8a45b7cc6ae9ab4dda943c9ff7b8b8647592146",
+      "checks": 44
+    }
+  ],
+  "networkTests": false,
+  "sourceMatchesFrozenBuild": true,
+  "limits": [
+    "Native mutable graphics resource access/release remains on the engine creator thread; cross-thread language admission remains a separate integration task",
+    "No GPU transactional guarantee on driver errors",
+    "No hardware timing or complete engine sanitizer qualification",
+    "No release installation"
+  ]
+}

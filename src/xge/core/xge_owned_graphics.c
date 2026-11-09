@@ -17,29 +17,50 @@ static void* __xgeOwnedGraphicsAllocate(size_t bytes,int* result)
 
 int xgeTextureCreateRGBAOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes)
 {
+    return xgeTextureCreateRGBAExOwned(out,width,height,pixels,bytes,XGE_TEXTURE_COMPRESS_LOSSLESS);
+}
+int xgeTextureCreateRGBAExOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes,uint32_t flags)
+{
     if(!out)return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
     if(width<=0 || height<=0 || width>INT32_MAX/4 || height>INT32_MAX/(width*4) ||
         (pixels ? bytes<(size_t)width*(size_t)height*4:bytes!=0))return XGE_ERROR_INVALID_ARGUMENT;
     int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
     if(!texture)return result;
-    result=xgeTextureCreateRGBA(texture,width,height,pixels);
+    result=xgeTextureCreateRGBAEx(texture,width,height,pixels,flags);
     XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
 }
 int xgeTextureLoadMemoryOwned(xge_texture* out,const void* data,int bytes)
 {
-    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
-    *out=NULL;int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
-    if(!texture)return result;
-    result=xgeTextureLoadMemory(texture,data,bytes);
-    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+    return xgeTextureLoadMemoryExOwned(out,data,bytes,XGE_IMAGE_PREMULTIPLIED);
 }
-int xgeTextureLoadOwned(xge_texture* out,const char* path)
+int xgeTextureLoadMemoryExOwned(xge_texture* out,const void* data,int bytes,uint32_t flags)
 {
     if(!out)return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
     if(!texture)return result;
-    result=xgeTextureLoad(texture,path);
+    result=xgeTextureLoadMemoryEx(texture,data,bytes,flags);
+    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+}
+int xgeTextureLoadOwned(xge_texture* out,const char* path)
+{
+    return xgeTextureLoadExOwned(out,path,XGE_IMAGE_PREMULTIPLIED);
+}
+int xgeTextureLoadExOwned(xge_texture* out,const char* path,uint32_t flags)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
+    if(!texture)return result;
+    result=xgeTextureLoadEx(texture,path,flags);
+    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+}
+int xgeTextureCreateFromImageOwned(xge_texture* out,const xge_image_t* image,uint32_t flags)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
+    if(!texture)return result;
+    result=xgeTextureCreateFromImageEx(texture,image,flags);
     XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
 }
 int xgeTextureCreateYUV420POwned(xge_texture* out,int width,int height)
@@ -48,6 +69,15 @@ int xgeTextureCreateYUV420POwned(xge_texture* out,int width,int height)
     *out=NULL;int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
     if(!texture)return result;
     result=xgeTextureCreateYUV420P(texture,width,height);
+    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+}
+int xgeTextureFallbackGetOwned(xge_texture* out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
+    if(!texture)return result;
+    result=xgeTextureFallbackGet(texture);
     XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
 }
 int xgeBufferCreateOwned(xge_buffer* out,int kind,int usage,const void* data,int bytes)
@@ -109,6 +139,15 @@ int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadMemory(font,data,bytes,size);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
+int xgeFontLoadSystemOwned(xge_font* out,const xge_system_font_desc_t* desc)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontLoadSystem(font,desc);
     XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
 }
 int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size)

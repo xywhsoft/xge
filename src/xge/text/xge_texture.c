@@ -845,6 +845,11 @@ int xgeTextureAddRef(xge_texture pTexture)
 
 int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
 {
+    return xgeTextureUpdateRGBASized(pTexture,iX,iY,iWidth,iHeight,pPixels,SIZE_MAX,iStride);
+}
+
+int xgeTextureUpdateRGBASized(xge_texture pTexture,int iX,int iY,int iWidth,int iHeight,const void* pPixels,size_t bytes,int iStride)
+{
 	xge_texture_shadow_t* pShadow;
 	xge_texture_choice_t tChoice;
 	const unsigned char* pSrc = (const unsigned char*)pPixels;
@@ -864,9 +869,10 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 	     iX > pTexture->iWidth - iWidth || iY > pTexture->iHeight - iHeight ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( iWidth>INT_MAX/4 || !__xgeByteRowsLayout((size_t)iWidth*4,iHeight,iStride,bytes,NULL,&iStride) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	iCopyStride = iWidth * 4;
-	if ( iStride <= 0 ) iStride = iCopyStride;
-	if ( iStride < iCopyStride || (size_t)(iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) return XGE_ERROR_INVALID_ARGUMENT;
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
 	tChoice = (xge_texture_choice_t){pShadow->iStorage, pShadow->iSwizzle};
 	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
@@ -961,12 +967,18 @@ static int __xgeTextureCopyPlane(unsigned char* pDst, int iDstStride, int iWidth
 
 int xgeTextureUpdateYUV420P(xge_texture texture,const void* y,int strideY,const void* u,int strideU,const void* v,int strideV)
 {
+    return xgeTextureUpdateYUV420PSized(texture,y,SIZE_MAX,strideY,u,SIZE_MAX,strideU,v,SIZE_MAX,strideV);
+}
+
+int xgeTextureUpdateYUV420PSized(xge_texture texture,const void* y,size_t bytesY,int strideY,const void* u,size_t bytesU,int strideU,const void* v,size_t bytesV,int strideV)
+{
     if(!texture || !y || !u || !v || !__xgeTextureHasYUV420P(texture))return XGE_ERROR_INVALID_ARGUMENT;
     xge_texture_yuv420p_t* planes=texture->pBackend;
     const void* source[3]={y,u,v};int stride[3]={strideY,strideU,strideV};
+    size_t capacity[3]={bytesY,bytesU,bytesV};
     /* Validate all source AND destination planes before the first write. */
     for(int i=0;i<3;++i){
-        if(!__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],stride[i],SIZE_MAX,NULL,&stride[i]) ||
+        if(!__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],stride[i],capacity[i],NULL,&stride[i]) ||
            !__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],planes->iPlaneStride[i],SIZE_MAX,NULL,NULL))return XGE_ERROR_INVALID_ARGUMENT;
     }
     bool upload=texture->iBackendId && g_xge.bSokolRunning;
@@ -1026,17 +1038,26 @@ int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSampler)
 
 int xgeTextureFallbackSetRGBA(int iWidth, int iHeight, const void* pPixels)
 {
-	int iRet;
+    return xgeTextureFallbackSetRGBASized(iWidth,iHeight,pPixels,pPixels ? SIZE_MAX:0);
+}
 
-	if ( (iWidth <= 0) || (iHeight <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeTextureFallbackClear();
-	iRet = xgeTextureCreateRGBA(&g_xge.tFallbackTexture, iWidth, iHeight, pPixels);
-	if ( iRet != XGE_OK ) {
-		memset(&g_xge.tFallbackTexture, 0, sizeof(g_xge.tFallbackTexture));
-	}
-	return iRet;
+static void __xgeTextureUploadQueueRebind(xge_texture previous,xge_texture next);
+static void __xgeTextureUploadQueueRemove(xge_texture texture);
+
+int xgeTextureFallbackSetRGBASized(int width,int height,const void* pixels,size_t bytes)
+{
+    if(width<=0 || height<=0 || width>INT_MAX/4 || height>INT_MAX/(width*4) ||
+       (pixels ? !__xgeByteRowsLayout((size_t)width*4,height,0,bytes,NULL,NULL):bytes!=0))
+        return XGE_ERROR_INVALID_ARGUMENT;
+    xge_texture_t candidate={0};
+    int result=xgeTextureCreateRGBA(&candidate,width,height,pixels);
+    if(result!=XGE_OK)return result;
+    /* Queue nodes hold record addresses. Publish only after all allocation,
+     * then relocate the candidate node before its stack record disappears. */
+    xgeTextureFallbackClear();
+    __xgeTextureUploadQueueRebind(&candidate,&g_xge.tFallbackTexture);
+    g_xge.tFallbackTexture=candidate;
+    return XGE_OK;
 }
 
 int xgeTextureFallbackGet(xge_texture pTexture)
@@ -1213,6 +1234,11 @@ static void __xgeTextureUploadQueueRemove(xge_texture pTexture)
 
 int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 {
+    return xgeTextureReadPixelsSized(pTexture,pPixels,SIZE_MAX,iStride);
+}
+
+int xgeTextureReadPixelsSized(xge_texture pTexture,void* pPixels,size_t bytes,int iStride)
+{
 	xge_texture_shadow_t* pShadow;
 	unsigned char* pDst;
 	unsigned char* pSrc;
@@ -1233,14 +1259,8 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	iCopyStride = pTexture->iWidth * 4;
-	if ( iStride <= 0 ) {
-		iStride = iCopyStride;
-	}
-	if ( iStride < iCopyStride ) {
+	if ( !__xgeByteRowsLayout((size_t)iCopyStride,pTexture->iHeight,iStride,bytes,NULL,&iStride) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (size_t)(pTexture->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pTexture->pBackend == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;

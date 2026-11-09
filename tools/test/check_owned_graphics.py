@@ -22,6 +22,8 @@ def main():
     native=engine/meta['runtime_image'];library=engine/meta['import_library'] if os.name=='nt' else native
     font=tests/'tests/xge/data/xge_opentype_fixture.ttf'
     cases=[('resource-providers',tests/'tests/xge/xge_resource_owned_test.c',[]),
+           ('texture-sized',tests/'tests/xge/xge_texture_sized_test.c',[out/'tmp/texture.png']),
+           ('system-font',tests/'tests/xge/xge_system_font_owned_test.c',[]),
            ('owned-graphics',tests/'tests/xge/xge_owned_graphics_test.c',[]),
            ('storage',tests/'tests/xge/xge_storage_adoption_test.c',[font]),
            ('proxy',tests/'tests/xui/xui_proxy_xge_owned_test.c',[font]),
@@ -55,7 +57,7 @@ def main():
             extra=['-lopengl32'] if name=='texture-state' and os.name=='nt' else ['-lGL'] if name=='texture-state' else []
             run(name+'-'+opt+'-build',[cc,*flags,'-'+opt,source,library,runtime,*systems,*extra,'-o',exe])
             if name=='texture-state':
-                for mode in ('1','2','3'):run(name+'-'+opt+'-mode'+mode,[exe,mode])
+                for mode in ('1','2','3','4','5'):run(name+'-'+opt+'-mode'+mode,[exe,mode])
             else:run(name+'-'+opt+'-run',[exe,*arguments])
     assert all(sha(path)==digest for path,digest in inputs.items())
     report.update(passed=True,inputsUnchanged=True);save()

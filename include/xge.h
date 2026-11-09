@@ -2536,8 +2536,14 @@ XGE_API int xgeTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int 
 XGE_API int xgeTextureAddRef(xge_texture pTexture);
 /* 更新纹理子区域（脏区上传，行距 iStride 字节）。 */
 XGE_API int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride);
+/* Capacity-checked variants validate every row before reading/writing pixels.
+ * The final row needs no trailing stride padding; nonpositive stride is tight.
+ * Pixel ranges must be valid and disjoint from the texture's private storage.
+ * A GPU error can leave partially committed pixels; these are not transactions. */
+XGE_API int xgeTextureUpdateRGBASized(xge_texture texture,int x,int y,int width,int height,const void* pixels,size_t bytes,int stride);
 /* 更新 YUV420P 三平面（各自独立行距）。 */
 XGE_API int xgeTextureUpdateYUV420P(xge_texture pTexture, const void* pY, int iStrideY, const void* pU, int iStrideU, const void* pV, int iStrideV);
+XGE_API int xgeTextureUpdateYUV420PSized(xge_texture texture,const void* y,size_t bytesY,int strideY,const void* u,size_t bytesU,int strideU,const void* v,size_t bytesV,int strideV);
 /* 重置采样参数为默认（线性过滤/夹持寻址）。 */
 XGE_API xge_sampler_t xgeSamplerDefault(void);
 /* 设置采样参数（过滤/寻址）。 */
@@ -2546,6 +2552,8 @@ XGE_API int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSam
 XGE_API xge_sampler_t xgeTextureGetSampler(xge_texture pTexture);
 /* 设置全局兜底纹理（纹理加载失败时替代）。 */
 XGE_API int xgeTextureFallbackSetRGBA(int iWidth, int iHeight, const void* pPixels);
+/* Failed replacement preserves the previous fallback, including queued upload. */
+XGE_API int xgeTextureFallbackSetRGBASized(int width,int height,const void* pixels,size_t bytes);
 /* 获取全局兜底纹理实例。 */
 XGE_API int xgeTextureFallbackGet(xge_texture pTexture);
 /* 清除全局兜底纹理。 */
@@ -2562,6 +2570,7 @@ XGE_API xge_texture_uv_transform_t xgeTextureUVTransform(const xge_texture_t* pT
 XGE_API xge_vec2_t xgeTextureMapUV(const xge_texture_t* pTexture, xge_vec2_t tUV);
 /* 读回 top-down CPU 影子副本；GPU 渲染目标须用 xgeRenderTargetReadPixels。 */
 XGE_API int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride);
+XGE_API int xgeTextureReadPixelsSized(xge_texture texture,void* pixels,size_t bytes,int stride);
 /* 纹理引用计数减一，归零时释放。 */
 XGE_API void xgeTextureFree(xge_texture pTexture);
 /* Same record-storage transfer contract as xgeFontAdoptStorage. Sharing via
@@ -2610,9 +2619,14 @@ XGE_API bool xgePassIsCurrent(const xge_pass_t* pPass);
  * Do not copy an
  * owned record or pass it back to a caller-storage initializer. */
 XGE_API int xgeTextureCreateRGBAOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes);
+XGE_API int xgeTextureCreateRGBAExOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes,uint32_t flags);
 XGE_API int xgeTextureLoadMemoryOwned(xge_texture* out,const void* data,int bytes);
+XGE_API int xgeTextureLoadMemoryExOwned(xge_texture* out,const void* data,int bytes,uint32_t flags);
 XGE_API int xgeTextureLoadOwned(xge_texture* out,const char* path);
+XGE_API int xgeTextureLoadExOwned(xge_texture* out,const char* path,uint32_t flags);
+XGE_API int xgeTextureCreateFromImageOwned(xge_texture* out,const xge_image_t* image,uint32_t flags);
 XGE_API int xgeTextureCreateYUV420POwned(xge_texture* out,int width,int height);
+XGE_API int xgeTextureFallbackGetOwned(xge_texture* out);
 XGE_API int xgeBufferCreateOwned(xge_buffer* out,int kind,int usage,const void* data,int bytes);
 #if XGE_ENABLE_2D
 XGE_API int xgeMeshCreateOwned(xge_mesh* out,const xge_vertex_t* vertices,int vertex_count,const uint16_t* indices,int index_count,uint32_t flags);
@@ -2629,6 +2643,7 @@ XGE_API void xgePassFree(xge_pass pass);
 #if XGE_ENABLE_TEXT
 XGE_API int xgeFontLoadOwned(xge_font* out,const char* path,float size);
 XGE_API int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size);
+XGE_API int xgeFontLoadSystemOwned(xge_font* out,const xge_system_font_desc_t* desc);
 XGE_API int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size);
 XGE_API bool xgeFontIsOwned(const xge_font_t* font);
 #endif
