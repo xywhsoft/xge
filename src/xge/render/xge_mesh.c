@@ -170,6 +170,7 @@ void xgeMeshFree(xge_mesh pMesh)
 	if ( pMesh == NULL ) {
 		return;
 	}
+    bool owned=pMesh->_bOwnsRecord;
 	iBuffer = (GLuint)pMesh->iVertexBufferId;
 	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
 		xge_glDeleteBuffers(1, &iBuffer);
@@ -180,6 +181,7 @@ void xgeMeshFree(xge_mesh pMesh)
 	}
 	__xgeMeshFreeCPU(pMesh);
 	memset(pMesh, 0, sizeof(*pMesh));
+    if(owned){xrtFree(pMesh);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }
 
 void xgeMeshDraw(xge_mesh pMesh, xge_texture pTexture, uint32_t iFlags)

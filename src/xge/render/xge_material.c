@@ -55,10 +55,8 @@ int xgeShaderAddRef(xge_shader pShader)
 	if ( pShader == NULL ) {
 		return 0;
 	}
-	if ( pShader->iRefCount < INT32_MAX ) {
-		pShader->iRefCount++;
-	}
-	return pShader->iRefCount;
+    if(pShader->iRefCount<=0 || pShader->iRefCount==INT32_MAX)return 0;
+    return ++pShader->iRefCount;
 }
 
 void xgeShaderFree(xge_shader pShader)
@@ -70,10 +68,12 @@ void xgeShaderFree(xge_shader pShader)
 		pShader->iRefCount--;
 		return;
 	}
+    void* storage=pShader->_pStorageOwner;
 	if ( (pShader->iProgram != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteProgram != NULL) ) {
 		xge_glDeleteProgram((GLuint)pShader->iProgram);
 	}
 	memset(pShader, 0, sizeof(*pShader));
+    if(storage){xrtFree(storage);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }
 
 static int __xgeShaderUniformLocation(xge_shader pShader, const char* sName, GLint* pLocation)
@@ -293,7 +293,6 @@ void xgeShaderVariantSetFree(xge_shader_variant_set pSet)
 	while ( pVariant != NULL ) {
 		pNext = pVariant->pNext;
 		xgeShaderFree(&pVariant->tShader);
-		xrtFree(pVariant);
 		pVariant = pNext;
 	}
 	if ( pSet->sVertexSource != NULL ) {
@@ -332,8 +331,11 @@ int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, const xge_sh
 		}
 		pVariant = pVariant->pNext;
 	}
+    iRet=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+    if(iRet!=XGE_OK)return iRet;
 	pVariant = (xge_shader_variant)xrtMalloc(sizeof(*pVariant));
 	if ( pVariant == NULL ) {
+        (void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	memset(pVariant, 0, sizeof(*pVariant));
@@ -352,6 +354,7 @@ int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, const xge_sh
 			xrtFree(sFragmentSource);
 		}
 		xrtFree(pVariant);
+        (void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	iRet = xgeShaderCreate(&pVariant->tShader, sVertexSource, sFragmentSource);
@@ -359,13 +362,24 @@ int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, const xge_sh
 	xrtFree(sFragmentSource);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pVariant);
+        (void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
 		return iRet;
 	}
+    pVariant->tShader._pStorageOwner=pVariant;
 	pVariant->pNext = pSet->pVariants;
 	pSet->pVariants = pVariant;
 	pSet->iCount++;
 	*ppShader = &pVariant->tShader;
 	return XGE_OK;
+}
+
+int xgeShaderVariantGetOwned(xge_shader_variant_set set,uint32_t key,const xge_shader_define_t* defines,int count,xge_shader* out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;xge_shader shader=NULL;int result=xgeShaderVariantGet(set,key,defines,count,&shader);
+    if(result!=XGE_OK)return result;
+    if(xgeShaderAddRef(shader)<=0)return XGE_ERROR_INVALID_STATE;
+    *out=shader;return XGE_OK;
 }
 
 #if XGE_ENABLE_2D
@@ -384,6 +398,7 @@ void xgeMaterialFree(xge_material pMaterial)
 	if ( pMaterial == NULL ) {
 		return;
 	}
+    if(pMaterial->_bOwnsShader)xgeShaderFree(pMaterial->pShader);
 	if ( pMaterial->pTexture != NULL ) {
 		xgeTextureFree(pMaterial->pTexture);
 	}
@@ -399,8 +414,21 @@ void xgeMaterialFree(xge_material pMaterial)
 void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader)
 {
 	if ( pMaterial != NULL ) {
+        if(pMaterial->pShader==pShader)return;
+        xge_shader previous=pMaterial->_bOwnsShader ? pMaterial->pShader:NULL;
+		pMaterial->_bOwnsShader=false;
 		pMaterial->pShader = pShader;
+        xgeShaderFree(previous);
 	}
+}
+int xgeMaterialSetShaderChecked(xge_material material,xge_shader shader)
+{
+    if(!material)return XGE_ERROR_INVALID_ARGUMENT;
+    if(material->_bOwnsShader && material->pShader==shader)return XGE_OK;
+    if(shader && xgeShaderAddRef(shader)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_shader previous=material->_bOwnsShader ? material->pShader:NULL;
+    material->pShader=shader;material->_bOwnsShader=shader!=NULL;
+    xgeShaderFree(previous);return XGE_OK;
 }
 
 int xgeMaterialSetTextureChecked(xge_material pMaterial,xge_texture pTexture)

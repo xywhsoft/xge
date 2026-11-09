@@ -11,6 +11,7 @@ struct xui_proxy_capability_t {
     xui_owned_resource_t tResource;
     xui_callback_owner_t tOwner;
     xui_proxy_t tProxy;
+    int (*onStorageRelease)(void);
 };
 static const xrtownershipops resourceOps;
 static int resourceFinish(xui_owned_resource_t*);
@@ -287,7 +288,10 @@ static int resourceRelease(xui_owned_resource_t* value,bool owner,bool pin,bool*
         resourceLock(value);resourceClear(value);resourceUnlock(value);mutationEnd(&mutation);
     }
     outcome(resourceFinish(value),&status,&first);
+    int (*storageRelease)(void)=value->iKind==XUI_OWNED_PROXY ?
+        ((struct xui_proxy_capability_t*)value)->onStorageRelease:NULL;
     value->iMagic=0;xrtFree(value);
+    if(storageRelease)outcome(storageRelease(),&status,&first);
     if(status!=XUI_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
     else xrtSetErrorTake(previous);
     return status;
@@ -331,7 +335,7 @@ int xuiInternalProxyResourceUnpin(void* raw,unsigned kind)
 }
 static bool ownerValid(const xui_callback_owner_t* owner)
 {return owner && owner->tReference.Data && owner->tReference.Ops && owner->tReference.Ops->Count && owner->tReference.Ops->Trace && owner->onHold && owner->onDrop;}
-int xuiInternalProxyCreateOwned(const xui_proxy_t* source,const xui_callback_owner_t* owner,bool trusted,uint32_t flags,xui_proxy* output)
+int xuiInternalProxyCreateOwnedStorage(const xui_proxy_t* source,const xui_callback_owner_t* owner,bool trusted,uint32_t flags,int (*storageRelease)(void),xui_proxy* output)
 {
     if(!source || !output || source->iSize!=sizeof(*source) || source->iVersion!=XUI_PROXY_VERSION ||
         source->_pCapability || (flags&~XUI_PROXY_OWNED_ANYTHREAD_FINALIZE) || (!ownerValid(owner) && !(trusted && !owner)))return XUI_ERROR_INVALID_ARGUMENT;
@@ -351,9 +355,12 @@ int xuiInternalProxyCreateOwned(const xui_proxy_t* source,const xui_callback_own
         xrtSetErrorTake(previous);
     }
     resourceInit(&capability->tResource,XUI_OWNED_PROXY,xrtThreadCurrentId(),flags);
+    capability->onStorageRelease=storageRelease;
     capability->tProxy._pCapability=capability;
     *output=&capability->tProxy;return XUI_OK;
 }
+int xuiInternalProxyCreateOwned(const xui_proxy_t* source,const xui_callback_owner_t* owner,bool trusted,uint32_t flags,xui_proxy* output)
+{return xuiInternalProxyCreateOwnedStorage(source,owner,trusted,flags,NULL,output);}
 int xuiProxyCreateOwned(const xui_proxy_t* source,const xui_callback_owner_t* owner,xui_proxy* output)
 {return xuiInternalProxyCreateOwned(source,owner,false,0,output);}
 int xuiProxyCreateOwnedEx(const xui_proxy_t* source,const xui_callback_owner_t* owner,uint32_t flags,xui_proxy* output)

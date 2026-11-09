@@ -1013,6 +1013,7 @@ struct xge_shader_t {
 	int iLocColor;
 	int iLocTextureUVTransform[3];
 	void* pBackend;
+    void* _pStorageOwner; /* Native owned shader/variant allocation; never copy. */
 };
 
 typedef struct xge_shader_define_t {
@@ -1041,6 +1042,7 @@ struct xge_buffer_t {
 	int iSize;
 	uint32_t iBackendId;
 	void* pData;
+    bool _bOwnsRecord;
 };
 
 struct xge_material_t {
@@ -1050,6 +1052,7 @@ struct xge_material_t {
 	xge_texture pTexture3;
 	uint32_t iColor;
 	xge_pipeline_state_t tPipeline;
+    bool _bOwnsShader;
 };
 
 struct xge_mesh_t {
@@ -1060,6 +1063,7 @@ struct xge_mesh_t {
 	uint32_t iIndexBufferId;
 	void* pVertices;
 	void* pIndices;
+    bool _bOwnsRecord;
 };
 
 struct xge_shape_batch_t {
@@ -1093,6 +1097,8 @@ struct xge_render_target_t {
 	uint32_t iFramebufferId;
 	uint32_t iStencilRenderbufferId;
 	xge_texture_t tTexture;
+    int _iOwnerReferences; /* Positive only for native owned storage. */
+    int _iActivePasses;
 };
 
 struct xge_pass_t {
@@ -1109,6 +1115,7 @@ struct xge_pass_t {
 	xge_rect_t tPrevClipRect;
 	int bActive;
     struct xge_pass_t* _pPrevious; /* Native LIFO identity; private while live. */
+    bool _bOwnsRecord;
 };
 
 typedef struct xge_image_t {
@@ -1829,8 +1836,14 @@ XGE_API void xgeUnit(void);
 /* Retires frame/quit/drag registrations and engine resources. Reports cleanup
  * failure independently of a diagnostic allocation, and rejects reentry. The
  * error callback remains available for shutdown logging until explicitly cleared.
- * Owned callbacks/owner admission in progress return INVALID_STATE for retry. */
+ * Owned callbacks/owner admission in progress return INVALID_STATE for retry.
+ * Native owned graphics resources return BUSY before any registrations or
+ * engine state are changed. Release them (including user-installed retained
+ * slots) and retry. An ended backend cannot restart with its old resources. */
 XGE_API int xgeUnitChecked(void);
+/* Native owned records, including creation in progress; not a GPU allocation
+ * count. Raw caller-owned C records retain their explicit C lifetime contract. */
+XGE_API uint64_t xgeGraphicsOwnedResourceCount(void);
 /* 释放引擎 API 输出的堆块（如 xgeFontBuildXRFMemory 的产物）。 */
 XGE_API void xgeMemoryFree(void* pData);
 /* 创建窗口并进入主循环；每帧回调 onProc，直到退出。 */
@@ -2527,6 +2540,8 @@ XGE_API void xgeTextureFree(xge_texture pTexture);
  * xgeTextureAddRef keeps BOTH the resource and the adopted record alive until
  * the final xgeTextureFree. No public record layout or drawing ABI changes. */
 XGE_API int xgeTextureAdoptStorage(xge_texture pTexture);
+/* Includes a retained texture aggregated into a native owned RenderTarget. */
+XGE_API bool xgeTextureIsOwned(const xge_texture_t* texture);
 /* 绑定窗口帧缓冲为渲染目标。 */
 XGE_API int xgeRenderTargetWindow(xge_render_target pTarget);
 /* 创建 FBO 离屏渲染目标。 */
@@ -2541,6 +2556,9 @@ XGE_API int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, 
 XGE_API xge_texture xgeRenderTargetTexture(xge_render_target pTarget);
 /* 释放渲染目标。 */
 XGE_API void xgeRenderTargetFree(xge_render_target pTarget);
+XGE_API int xgeRenderTargetAddRef(xge_render_target target);
+XGE_API int xgeRenderTargetReleaseOwnerChecked(xge_render_target target,bool* consumed);
+XGE_API int xgeRenderTargetReadPixelsSized(xge_render_target target,void* pixels,size_t capacity,int stride);
 /* 创建 GPU 缓冲（顶点/索引）；XGE_BUFFER_UNIFORM 当前不支持。 */
 XGE_API int xgeBufferCreate(xge_buffer pBuffer, int iType, int iUsage, const void* pData, int iSize);
 /* 更新缓冲区间数据。 */
@@ -2558,6 +2576,32 @@ XGE_API int xgePassEnd(xge_pass pPass);
 /* Pure nonblocking metadata queries. Busy admission preserves diagnostics. */
 XGE_API bool xgePassIsIdle(void);
 XGE_API bool xgePassIsCurrent(const xge_pass_t* pPass);
+/* Native owned factories publish only on success. Their graphics admission is
+ * held before allocation/native work and until final release. Do not copy an
+ * owned record or pass it back to a caller-storage initializer. */
+XGE_API int xgeTextureCreateRGBAOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes);
+XGE_API int xgeTextureLoadMemoryOwned(xge_texture* out,const void* data,int bytes);
+XGE_API int xgeTextureLoadOwned(xge_texture* out,const char* path);
+XGE_API int xgeTextureCreateYUV420POwned(xge_texture* out,int width,int height);
+XGE_API int xgeBufferCreateOwned(xge_buffer* out,int kind,int usage,const void* data,int bytes);
+#if XGE_ENABLE_2D
+XGE_API int xgeMeshCreateOwned(xge_mesh* out,const xge_vertex_t* vertices,int vertex_count,const uint16_t* indices,int index_count,uint32_t flags);
+#endif
+XGE_API int xgeShaderCreateOwned(xge_shader* out,const char* vertex,const char* fragment);
+XGE_API int xgeShaderVariantGetOwned(xge_shader_variant_set set,uint32_t key,const xge_shader_define_t* defines,int count,xge_shader* out);
+XGE_API int xgeRenderTargetCreateOwned(xge_render_target* out,int width,int height);
+XGE_API int xgeRenderTargetWindowOwned(xge_render_target* out);
+XGE_API int xgePassCreateOwned(xge_pass* out,xge_render_target target,uint32_t clear_flags,uint32_t clear_color);
+/* Non-LIFO active releases return BUSY without consumption; a current pass is
+ * ended before release. A failing End can consume the owner: check consumed. */
+XGE_API int xgePassReleaseOwnerChecked(xge_pass pass,bool* consumed);
+XGE_API void xgePassFree(xge_pass pass);
+#if XGE_ENABLE_TEXT
+XGE_API int xgeFontLoadOwned(xge_font* out,const char* path,float size);
+XGE_API int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size);
+XGE_API int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size);
+XGE_API bool xgeFontIsOwned(const xge_font_t* font);
+#endif
 /* 编译顶点+片段着色器对。 */
 XGE_API int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* sFragmentSource);
 /* 着色器引用计数加一。 */
@@ -2583,10 +2627,13 @@ XGE_API int xgeShaderVariantGet(xge_shader_variant_set pSet, uint32_t iKey, cons
 /* 材质重置为默认（内置纹理着色器）。 */
 #if XGE_ENABLE_2D
 XGE_API void xgeMaterialInit(xge_material pMaterial);
-/* 清空材质并释放三个纹理槽持有的引用；shader 为借用，不释放记录存储。 */
+/* Clear material slots, releasing their texture references and a shader
+ * reference acquired by the checked setter. The legacy shader slot is borrowed. */
 XGE_API void xgeMaterialFree(xge_material pMaterial);
 /* 绑定借用的自定义着色器；调用方保证 shader 记录与程序在使用期间有效。 */
 XGE_API void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader);
+/* Retain a real shader reference. The legacy void setter remains borrowed. */
+XGE_API int xgeMaterialSetShaderChecked(xge_material material,xge_shader shader);
 /* 设置主纹理槽。 */
 XGE_API void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture);
 /* Checked retain-before-publish; failure preserves the prior texture slot. */

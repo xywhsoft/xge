@@ -336,6 +336,9 @@ typedef struct xge_texture_renderer_t {
 } xge_texture_renderer_t;
 
 static xge_context_t g_xge;
+#include "xge_graphics_lifetime.h"
+#include "xge_graphics_internal.h"
+static xge_graphics_lifetime g_xgeGraphicsLifetime=XGE_GRAPHICS_LIFETIME_INIT;
 static xge_texture_renderer_t g_xgeTextureRenderer;
 
 // 2.5D 透视四边形渲染器
@@ -1554,6 +1557,8 @@ static sapp_mouse_cursor __xgeSokolCursor(int iCursor);
 // Sokol 初始化回调
 static void __xgeSokolInit(void)
 {
+    int admission=__xgeGraphicsBackendStart(&g_xgeGraphicsLifetime);
+    if(admission!=XGE_OK){__xgeFrameRunFailure(admission);sapp_quit();return;}
 	xrtAtomic64Store(&g_xgeTransferUiThread,xrtThreadCurrentId(),XMEMORY_RELEASE);
 	g_xge.bSokolRunning = 1;
     /* Apply the cursor recorded before native window readiness exactly once. */
@@ -1696,6 +1701,7 @@ static void __xgeSokolFrame(void)
 // Sokol 清理回调
 static void __xgeSokolCleanup(void)
 {
+    __xgeGraphicsBackendEnding(&g_xgeGraphicsLifetime);
 	__xgeClipboardPlatformCleanup();
 	#if defined(_WIN32) || defined(_WIN64)
 		__xgeDragDropPlatformUnit();
@@ -1707,6 +1713,7 @@ static void __xgeSokolCleanup(void)
 #endif
 	__xgeBuiltinRenderersReset();
 	g_xge.bSokolRunning = 0;
+    __xgeGraphicsBackendEnded(&g_xgeGraphicsLifetime,g_xge.bInitialized!=0);
 #if XGE_ENABLE_3D
     xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
 #endif
@@ -2366,6 +2373,7 @@ static void __xgeWin32ClipboardOwnerRelease(void);
 #include "xge_material.c"
 #include "xge_render_target.c"
 #include "xge_buffer.c"
+#include "xge_owned_graphics.c"
 #if XGE_ENABLE_PARTICLES
 #include "xge_particle.c"
 #include "xge_particle_io.c"

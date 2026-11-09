@@ -37,6 +37,7 @@ bool xuiInternalOwnedTextShapeReady(const void*);
 bool xuiInternalOwnedTextShapeTrace(const void*,xrtownershipvisitor,void*);
 int xuiInternalOwnedTextShapeFinalize(xui_proxy,void*);
 int xuiInternalProxyCreateOwned(const xui_proxy_t*,const xui_callback_owner_t*,bool,uint32_t,xui_proxy*);
+int xuiInternalProxyCreateOwnedStorage(const xui_proxy_t*,const xui_callback_owner_t*,bool,uint32_t,int (*)(void),xui_proxy*);
 xui_proxy xuiInternalProxyCanonical(const xui_proxy_t*);
 bool xuiInternalProxyReady(const xui_proxy_t*);
 bool xuiInternalProxyCreator(const xui_proxy_t*);

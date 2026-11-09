@@ -120,6 +120,7 @@ void xgeBufferFree(xge_buffer pBuffer)
 	if ( pBuffer == NULL ) {
 		return;
 	}
+    bool owned=pBuffer->_bOwnsRecord;
 	iBuffer = (GLuint)pBuffer->iBackendId;
 	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
 		xge_glDeleteBuffers(1, &iBuffer);
@@ -128,4 +129,5 @@ void xgeBufferFree(xge_buffer pBuffer)
 		xrtFree(pBuffer->pData);
 	}
 	memset(pBuffer, 0, sizeof(*pBuffer));
+    if(owned){xrtFree(pBuffer);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }

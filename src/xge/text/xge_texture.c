@@ -54,6 +54,7 @@ typedef struct xge_texture_shadow_t {
 	int iSwizzle;
 	int bPackingDisabled;
     int bOwnsRecord;
+    xge_render_target pTargetOwner; /* Owned target aggregation, not a self ref. */
 } xge_texture_shadow_t;
 
 typedef struct xge_texture_yuv420p_t {
@@ -219,7 +220,7 @@ static void __xgeTextureYUV420PFree(xge_texture pTexture)
 		return;
 	}
 	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-	if ( xge_glDeleteTextures != NULL ) {
+	if ( g_xge.bSokolRunning && xge_glDeleteTextures != NULL ) {
 		for ( i = 0; i < 3; i++ ) {
 			if ( pYUV->iPlaneTexture[i] != 0 ) {
 				xge_glDeleteTextures(1, &pYUV->iPlaneTexture[i]);
@@ -846,6 +847,10 @@ int xgeTextureAddRef(xge_texture pTexture)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if(pTexture->iRefCount<=0 || pTexture->iRefCount==INT32_MAX)return XGE_ERROR_INVALID_STATE;
+    if(pTexture->iFormat==XGE_PIXEL_RGBA8 && pTexture->pBackend){
+        xge_render_target target=((xge_texture_shadow_t*)pTexture->pBackend)->pTargetOwner;
+        if(target && xgeRenderTargetAddRef(target)<=0)return XGE_ERROR_INVALID_STATE;
+    }
 	return ++pTexture->iRefCount;
 }
 
@@ -1189,6 +1194,12 @@ static void __xgeTextureUploadQueueFree(void)
 	}
 }
 
+static void __xgeTextureUploadQueueRebind(xge_texture previous,xge_texture next)
+{
+    for(xge_texture_upload_node_t* node=g_xge.pTextureUploadHead;node;node=node->pNext)
+        if(node->pTexture==previous){node->pTexture=next;return;}
+}
+
 static void __xgeTextureUploadQueueRemove(xge_texture pTexture)
 {
 	xge_texture_upload_node_t* pNode;
@@ -1283,8 +1294,17 @@ int xgeTextureAdoptStorage(xge_texture pTexture)
     if(!pTexture || pTexture->iRefCount!=1)return XGE_ERROR_INVALID_STATE;
     int* owner=__xgeTextureRecordOwner(pTexture);
     if(!owner || *owner)return XGE_ERROR_INVALID_STATE;
+    int result=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+    if(result!=XGE_OK)return result;
     *owner=1;
     return XGE_OK;
+}
+bool xgeTextureIsOwned(const xge_texture_t* texture)
+{
+    if(!texture || !texture->pBackend)return false;
+    if(texture->iFormat==XGE_PIXEL_YUV420P)return ((const xge_texture_yuv420p_t*)texture->pBackend)->bOwnsRecord!=0;
+    const xge_texture_shadow_t* shadow=texture->pBackend;
+    return shadow->bOwnsRecord || (shadow->pTargetOwner && shadow->pTargetOwner->_iOwnerReferences>0);
 }
 void xgeTextureFree(xge_texture pTexture)
 {
@@ -1297,6 +1317,9 @@ void xgeTextureFree(xge_texture pTexture)
 	}
 	if ( pTexture->iRefCount > 1 ) {
 		pTexture->iRefCount--;
+        xge_render_target target=pTexture->iFormat==XGE_PIXEL_RGBA8 && pTexture->pBackend ?
+            ((xge_texture_shadow_t*)pTexture->pBackend)->pTargetOwner:NULL;
+        if(target)xgeRenderTargetFree(target);
 		return;
 	}
     int* storageOwner=__xgeTextureRecordOwner(pTexture);
@@ -1317,12 +1340,12 @@ void xgeTextureFree(xge_texture pTexture)
 		__xgeTextureYUV420PFree(pTexture);
 	} else {
 		iTexture = (GLuint)pTexture->iBackendId;
-		if ( (iTexture != 0) && (xge_glDeleteTextures != NULL) ) {
+		if ( (iTexture != 0) && g_xge.bSokolRunning && (xge_glDeleteTextures != NULL) ) {
 			xge_glDeleteTextures(1, &iTexture);
 		}
 		__xgeTextureShadowFree(pTexture);
 	}
 	pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
 	memset(pTexture, 0, sizeof(*pTexture));
-    if(bOwnsRecord)xrtFree(pTexture);
+    if(bOwnsRecord){xrtFree(pTexture);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }

@@ -11,13 +11,16 @@ int xgePassBegin(xge_pass pass)
 {
     if(!pass || !pass->pTarget)return XGE_ERROR_INVALID_ARGUMENT;
     if(pass->bActive)return XGE_ERROR_ALREADY_INITIALIZED;
+    if(pass->pTarget->_iActivePasses==INT32_MAX)return XGE_ERROR_BUSY;
     if(!__xgePassStateReserve(&g_xgePassState,pass))return XGE_ERROR_INVALID_STATE;
+    ++pass->pTarget->_iActivePasses;
     xerror* previous=xrtTakeError();xerror* first=NULL;int status=XGE_OK;
     if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))status=XGE_ERROR_INVALID_STATE;
     else if(!g_xge.bInitialized || !g_xge.bSokolRunning)status=XGE_ERROR_NOT_INITIALIZED;
     if(status==XGE_OK)__xgeCallbackOutcome(xgeFlush(),&status,&first);
     if(status==XGE_OK)__xgeCallbackOutcome(__xgeRenderTargetEnsureFramebuffer(pass->pTarget),&status,&first);
     if(status!=XGE_OK){
+        --pass->pTarget->_iActivePasses;
         __xgePassStateAbort(&g_xgePassState,pass);xrtErrorFree(previous);xrtSetErrorTake(first);return status;
     }
     xge_render_target target=pass->pTarget;
@@ -60,6 +63,38 @@ int xgePassEnd(xge_pass pass)
     __xgeViewportApplyCurrent();__xgeCallbackOutcome(XGE_OK,&status,&first);
     __xgeClipApplyCurrent();__xgeCallbackOutcome(XGE_OK,&status,&first);
     __xgePassStateFinishEnd(&g_xgePassState,pass);
+    --pass->pTarget->_iActivePasses;
     if(status!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}else xrtSetErrorTake(previous);
     return status;
+}
+int xgePassCreateOwned(xge_pass* out,xge_render_target target,uint32_t flags,uint32_t color)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(xgeRenderTargetAddRef(target)<=0)return XGE_ERROR_INVALID_STATE;
+    xge_pass pass=xrtCalloc(1,sizeof(*pass));
+    if(!pass){xgeRenderTargetFree(target);return XGE_ERROR_OUT_OF_MEMORY;}
+    xgePassInit(pass,target,flags,color);pass->_bOwnsRecord=true;*out=pass;return XGE_OK;
+}
+int xgePassReleaseOwnerChecked(xge_pass pass,bool* consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!pass || !pass->_bOwnsRecord)return XGE_ERROR_INVALID_ARGUMENT;
+    if(pass->bActive && !xgePassIsCurrent(pass))return XGE_ERROR_BUSY;
+    xerror* previous=xrtTakeError();xerror* first=NULL;int result=XGE_OK;
+    if(pass->bActive)__xgeCallbackOutcome(xgePassEnd(pass),&result,&first);
+    if(!pass->bActive){
+        bool targetConsumed=false;
+        __xgeCallbackOutcome(xgeRenderTargetReleaseOwnerChecked(pass->pTarget,&targetConsumed),&result,&first);
+        if(targetConsumed){xrtFree(pass);*consumed=true;__xgeCallbackOutcome(XGE_OK,&result,&first);}
+    }
+    if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}else xrtSetErrorTake(previous);
+    return result;
+}
+void xgePassFree(xge_pass pass)
+{
+    if(!pass)return;
+    bool consumed=false;
+    if(xgePassReleaseOwnerChecked(pass,&consumed)!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
 }

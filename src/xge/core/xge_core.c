@@ -23,6 +23,8 @@ int xgeInit(const xge_desc_t* pDesc)
 {
 	xge_desc_t objDesc;
 	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
+    int graphicsAdmission=__xgeGraphicsInitCheck(&g_xgeGraphicsLifetime);
+    if(graphicsAdmission!=XGE_OK)return graphicsAdmission;
 
 	if ( g_xge.bInitialized ) {
 		return XGE_ERROR_ALREADY_INITIALIZED;
@@ -95,6 +97,7 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.bInitialized = 1;
 	g_xge.bRunning = 1;
 	g_xge.bRenderRequested = 1;
+    __xgeGraphicsInitialized(&g_xgeGraphicsLifetime);
 	return XGE_OK;
 }
 
@@ -110,11 +113,17 @@ int xgeUnitChecked(void)
 	uint32 expected=0;
 	(void)xrtSpinLock(&g_xgeFrameSpin);
 	bool busyFrame=g_xgeFrameDispatching || (g_xgeFrameRun && g_xgeFrameRunThread!=xrtThreadCurrentId());
+    if(busyFrame || xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
+        (void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;
+    }
+    int graphicsAdmission=__xgeGraphicsCloseBegin(&g_xgeGraphicsLifetime);
+    if(graphicsAdmission!=XGE_OK){(void)xrtSpinUnlock(&g_xgeFrameSpin);return graphicsAdmission;}
 	bool shutdown=!busyFrame && xrtAtomic32CompareExchange(&g_xgeCallbackShutdown,&expected,1,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE);
 	(void)xrtSpinUnlock(&g_xgeFrameSpin);
-	if(!shutdown)return XGE_ERROR_INVALID_STATE;
+	if(!shutdown){__xgeGraphicsCloseAbort(&g_xgeGraphicsLifetime);return XGE_ERROR_INVALID_STATE;}
 	if(xrtAtomic64Load(&g_xgeCallbackActivity,XMEMORY_ACQUIRE) || !xgePassIsIdle()){
-		xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);return XGE_ERROR_INVALID_STATE;
+		xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
+        __xgeGraphicsCloseAbort(&g_xgeGraphicsLifetime);return XGE_ERROR_INVALID_STATE;
 	}
 	bool initialized=g_xge.bInitialized!=0;
 	xerror* previous=xrtTakeError();xerror* first=NULL;int result=XGE_OK;
@@ -184,6 +193,7 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeLogFlush(),&result,&first);
 	__xgeCallbackOutcome(XGE_OK,&result,&first);
 finish:
+    __xgeGraphicsCloseFinish(&g_xgeGraphicsLifetime,g_xge.bSokolRunning!=0);
 	xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
 	if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
 	else xrtSetErrorTake(previous);
@@ -191,6 +201,13 @@ finish:
 	#undef XGE_UNIT_STEP
 	return result;
 }
+
+uint64_t xgeGraphicsOwnedResourceCount(void)
+{return __xgeGraphicsOwnerCount(&g_xgeGraphicsLifetime);}
+int xgeInternalGraphicsOwnerAcquire(void)
+{return __xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);}
+int xgeInternalGraphicsOwnerRelease(void)
+{return __xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 
 void xgeMemoryFree(void* pData)
 {
@@ -266,6 +283,8 @@ int xgeRunOwnedWithTransfer(xge_scene_proc procFrame,void* pUser,const xge_callb
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
+    int graphicsAdmission=__xgeGraphicsRunCheck(&g_xgeGraphicsLifetime);
+    if(graphicsAdmission!=XGE_OK)return graphicsAdmission;
 	xge_transfer_run_scope_t transfer={0};
 	int admission=__xgeTransferRunBegin(&transfer,services);if(admission!=XGE_OK)return admission;
 	xge_callback_run_outcome_t outcome={0};

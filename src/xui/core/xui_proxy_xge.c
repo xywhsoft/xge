@@ -7,6 +7,7 @@
 #include "xge_ime_owner_internal.h"
 #include "xge_data_lifetime_internal.h"
 #include "xge_transfer_internal_api.h"
+#include "xge_graphics_internal.h"
 #include "xui_text_item_internal.h"
 #if XUI_ENABLE_DOCUMENT_EDITOR
 #include "xui_document_ui.h"
@@ -3434,10 +3435,18 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	return tProxy;
 }
 
+static int __xuiProxyXgeStorageReleased(void)
+{return xgeInternalGraphicsOwnerRelease()==XGE_OK ? XUI_OK:XUI_ERROR_INVALID_STATE;}
 int xuiProxyXgeCreate(xui_proxy* output)
 {
+	if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+	*output=NULL;
+	int admission=xgeInternalGraphicsOwnerAcquire();
+	if(admission!=XGE_OK)return admission==XGE_ERROR_OUT_OF_MEMORY ? XUI_ERROR_OUT_OF_MEMORY:XUI_ERROR_BUSY;
 	xui_proxy_t source=xuiProxyXge();
-	return xuiInternalProxyCreateOwned(&source,NULL,true,0,output);
+	int result=xuiInternalProxyCreateOwnedStorage(&source,NULL,true,0,__xuiProxyXgeStorageReleased,output);
+    if(result!=XUI_OK)(void)xgeInternalGraphicsOwnerRelease();
+    return result;
 }
 
 #endif

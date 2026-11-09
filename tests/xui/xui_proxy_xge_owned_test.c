@@ -30,7 +30,10 @@ static int32 paintWrongThread(ptr raw)
     xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
     assert(!shape->pPaintOwnership->DropReady(shape->pPaint));assert(xrtOwnershipScopeEnd(&freeze));
     assert(xrtMemDebugFailAfter(0));
-    assert(xuiTextShapeFreeChecked(shape)==XUI_ERROR_BUSY && !memcmp(shape,&before,sizeof(before)));
+    /* Since native checked paint retirement (4d5257f6), a preflight that
+     * consumes nothing is DEFERRED. It must still preserve every byte and
+     * avoid even attempting an allocation on this non-creator thread. */
+    assert(xuiTextShapeFreeChecked(shape)==XUI_STATUS_DEFERRED && !memcmp(shape,&before,sizeof(before)));
     assert(!xrtMemDebugFailTriggered());xrtMemDebugFailClear();return 0;
 }
 static void rgbaRows(xui_proxy proxy,bool owned)

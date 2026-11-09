@@ -1549,9 +1549,13 @@ int xgeFontAdoptStorage(xge_font pFont)
     if(!pFont || pFont->iRefCount!=1 || !pFont->pBackend)return XGE_ERROR_INVALID_STATE;
     xge_font_instance_backend_t* backend=(xge_font_instance_backend_t*)pFont->pBackend;
     if(backend->bOwnsRecord)return XGE_ERROR_INVALID_STATE;
+    int result=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+    if(result!=XGE_OK)return result;
     backend->bOwnsRecord=1;
     return XGE_OK;
 }
+bool xgeFontIsOwned(const xge_font_t* font)
+{return font && font->pBackend && ((const xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord;}
 
 void xgeFontFree(xge_font pFont)
 {
@@ -1583,7 +1587,7 @@ void xgeFontFree(xge_font pFont)
 	}
 	__xgeFontAtlasFree(pFont);
 	memset(pFont, 0, sizeof(*pFont));
-    if(bOwnsRecord)xrtFree(pFont);
+    if(bOwnsRecord){xrtFree(pFont);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }
 
 int xgeFontSetFallbackChecked(xge_font pFont,xge_font pFallback)

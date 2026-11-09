@@ -108,24 +108,33 @@ int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHeight)
 	return XGE_OK;
 }
 
+static void __xgeRenderTargetDispose(xge_render_target pTarget);
 int xgeRenderTargetResize(xge_render_target pTarget, int iWidth, int iHeight)
 {
-	uint32_t iFlags;
-
 	if ( (pTarget == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+    if(pTarget->_iActivePasses || pTarget->tTexture.iRefCount>1)return XGE_ERROR_BUSY;
 	if ( (pTarget->iFlags & XGE_RENDER_TARGET_WINDOW) != 0 ) {
 		pTarget->iWidth = iWidth;
 		pTarget->iHeight = iHeight;
 		return XGE_OK;
 	}
-	iFlags = pTarget->iFlags;
-	xgeRenderTargetFree(pTarget);
-	if ( (iFlags & XGE_RENDER_TARGET_TEXTURE) == 0 ) {
+	if ( (pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return xgeRenderTargetCreate(pTarget, iWidth, iHeight);
+    xge_render_target_t next={0};int result=xgeRenderTargetCreate(&next,iWidth,iHeight);
+    if(result!=XGE_OK)return result;
+    /* The upload queue stores texture addresses. Relocate its prepared node
+     * before publishing the candidate; never leave a pointer to this stack
+     * record or detach the old node through a copied texture address. */
+    __xgeTextureUploadQueueRemove(&pTarget->tTexture);
+    __xgeTextureUploadQueueRebind(&next.tTexture,&pTarget->tTexture);
+    int owners=pTarget->_iOwnerReferences;
+    xge_render_target_t previous=*pTarget;*pTarget=next;pTarget->_iOwnerReferences=owners;
+    if(owners && pTarget->tTexture.pBackend)
+        ((xge_texture_shadow_t*)pTarget->tTexture.pBackend)->pTargetOwner=pTarget;
+    __xgeRenderTargetDispose(&previous);return XGE_OK;
 }
 
 int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrcY)
@@ -235,7 +244,7 @@ xge_texture xgeRenderTargetTexture(xge_render_target pTarget)
 	return &pTarget->tTexture;
 }
 
-void xgeRenderTargetFree(xge_render_target pTarget)
+static void __xgeRenderTargetDispose(xge_render_target pTarget)
 {
 	GLuint iFramebuffer;
 	GLuint iStencilRenderbuffer;
@@ -257,6 +266,42 @@ void xgeRenderTargetFree(xge_render_target pTarget)
 	}
 	xgeTextureFree(&pTarget->tTexture);
 	memset(pTarget, 0, sizeof(*pTarget));
+}
+
+int xgeRenderTargetAddRef(xge_render_target target)
+{
+    if(!target || target->_iOwnerReferences<=0 || target->_iOwnerReferences==INT32_MAX)return 0;
+    return ++target->_iOwnerReferences;
+}
+void xgeRenderTargetFree(xge_render_target target)
+{
+    if(!target)return;
+    if(target->_iOwnerReferences>0){
+        bool consumed=false;
+        if(xgeRenderTargetReleaseOwnerChecked(target,&consumed)!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+        return;
+    }
+    if(target->_iActivePasses || target->tTexture.iRefCount>1){xrtSetErrorKind(XERR_STATE);return;}
+    __xgeRenderTargetDispose(target);
+}
+int xgeRenderTargetReleaseOwnerChecked(xge_render_target target,bool* consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!target || target->_iOwnerReferences<=0)return XGE_ERROR_INVALID_ARGUMENT;
+    if(target->_iOwnerReferences>1){--target->_iOwnerReferences;*consumed=true;return XGE_OK;}
+    if(target->_iActivePasses || target->tTexture.iRefCount>1)return XGE_ERROR_BUSY;
+    __xgeRenderTargetDispose(target);xrtFree(target);*consumed=true;
+    return __xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
+}
+int xgeRenderTargetReadPixelsSized(xge_render_target target,void* pixels,size_t capacity,int stride)
+{
+    if(!target || !pixels || target->iWidth<=0 || target->iHeight<=0 || target->iWidth>INT32_MAX/4)return XGE_ERROR_INVALID_ARGUMENT;
+    size_t row=(size_t)target->iWidth*4;
+    if(stride<=0)stride=(int)row;
+    if((size_t)stride<row || (size_t)(target->iHeight-1)>(SIZE_MAX-row)/(size_t)stride ||
+        capacity<(size_t)(target->iHeight-1)*(size_t)stride+row)return XGE_ERROR_INVALID_ARGUMENT;
+    return xgeRenderTargetReadPixels(target,pixels,stride);
 }
 
 #include "xge_pass.inl"
