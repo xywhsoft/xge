@@ -9,20 +9,23 @@ import argparse,hashlib,json,os,shutil,subprocess,time
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','engine','runtime','host-header','out'):p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--test-root',type=Path,help='Separate test sources; --root remains the exact immutable engine SDK')
     p.add_argument('--graphics',action='store_true',help='Also run the bounded real OpenGL window test')
     a=p.parse_args();root,engine,runtime,header,out=[x.resolve() for x in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     sha=lambda path:hashlib.sha256(Path(path).read_bytes()).hexdigest()
     meta=json.loads((engine/'build-report.json').read_text())
     assert meta['linked'] and meta['xrt_mode']=='host'
     assert meta['xrt_host_header_sha256']==hashlib.sha256(header.read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+    assert meta['xrt_host_header_sha256']==hashlib.sha256((root/'extlibs/xrt/xrt.h').read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+    tests=a.test_root.resolve() if a.test_root else root
     cc=shutil.which('gcc');assert cc
     native=engine/meta['runtime_image'];library=engine/meta['import_library'] if os.name=='nt' else native
-    font=root/'tests/xge/data/xge_opentype_fixture.ttf'
-    cases=[('owned-graphics',root/'tests/xge/xge_owned_graphics_test.c',[]),
-           ('storage',root/'tests/xge/xge_storage_adoption_test.c',[font]),
-           ('proxy',root/'tests/xui/xui_proxy_xge_owned_test.c',[font]),
-           ('global-callbacks',root/'tests/xge/xge_owned_global_test.c',[])]
-    if a.graphics:cases.append(('graphics-device',root/'tests/xge/xge_owned_graphics_gpu_test.c',[]))
+    font=tests/'tests/xge/data/xge_opentype_fixture.ttf'
+    cases=[('owned-graphics',tests/'tests/xge/xge_owned_graphics_test.c',[]),
+           ('storage',tests/'tests/xge/xge_storage_adoption_test.c',[font]),
+           ('proxy',tests/'tests/xui/xui_proxy_xge_owned_test.c',[font]),
+           ('global-callbacks',tests/'tests/xge/xge_owned_global_test.c',[])]
+    if a.graphics:cases.append(('graphics-device',tests/'tests/xge/xge_owned_graphics_gpu_test.c',[]))
     pins={Path(__file__).resolve(),Path(cc),header,native,library,runtime,font,engine/'build-report.json',
           engine/'xge_build_config.h',root/'include/xge.h',root/'include/xui.h',root/'extlibs/xrt/xrt.h'}
     pins.update(source for _,source,_ in cases)

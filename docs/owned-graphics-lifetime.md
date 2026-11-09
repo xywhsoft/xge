@@ -59,6 +59,9 @@ and no attempted allocation remain required.
 Exact source/build/test inputs and logs are outside Git under
 `F:/xlang-validation/xge-full-20261110/`: `native-freeze-r3.json`,
 `native-host-win-r3/`, `native-static-win-r3/`, `native-host-linux-r3/`,
-`native-graphics-win-r4/`, `native-graphics-linux-r4/`, and
+`native-graphics-win-r5/`, `native-graphics-linux-r5/`, and
 `domain-{win,linux}-r3/`. The host builds use an explicit, separately built
-runtime matching the xlang XRT header. No release installation is implied.
+runtime matching the xlang XRT header. The runner separately pins immutable SDK
+headers and optional current test sources (`--test-root`); neither the upstream
+XRT header nor a source checkout can silently replace the built SDK. No release
+installation is implied.
