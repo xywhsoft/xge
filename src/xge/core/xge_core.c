@@ -1,5 +1,6 @@
 static int __xgeSceneFrame(void);
-static void __xgeSceneClear(void);
+static int __xgeSceneClear(void);
+static bool g_xgeSceneStepping;
 static void __xgeTextureUploadQueueFree(void);
 static void __xgeFrameStatsRecordTime(double fSeconds);
 static void __xgeRenderCommandReset(void);
@@ -130,6 +131,14 @@ int xgeUnitChecked(void)
 	}
 	bool initialized=g_xge.bInitialized!=0;
 	xerror* previous=xrtTakeError();xerror* first=NULL;int result=XGE_OK;
+    if(initialized){
+        __xgeCallbackOutcome(__xgeSceneClear(),&result,&first);
+        if(result!=XGE_OK){
+            __xgeGraphicsCloseAbort(&g_xgeGraphicsLifetime);
+            xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
+            xrtErrorFree(previous);xrtSetErrorTake(first);return result;
+        }
+    }
 #define XGE_UNIT_STEP(Operation) do{(void)(Operation);__xgeCallbackOutcome(XGE_OK,&result,&first);}while(0)
 	/* Clear pre-init registrations as well, without starting a graphics backend.
 	 * Ending admission prevents arbitrary owner Drop from reinitializing the
@@ -142,7 +151,6 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeResourceProviderClearChecked(),&result,&first);
 	if(!initialized)goto finish;
 	g_xge.bRunning = 0;
-	XGE_UNIT_STEP(__xgeSceneClear());
 #if XGE_ENABLE_2D
 	XGE_UNIT_STEP(__xgeRenderThreadJoin());
 #endif
@@ -462,6 +470,7 @@ int xgeFrame(void)
 {
 	double fNow;
 	double fDelta;
+	if ( g_xgeSceneStepping ) return XGE_ERROR_BUSY;
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
@@ -929,341 +938,7 @@ static void __xgeFrameStatsRecordTime(double fSeconds)
 	}
 }
 
-static int __xgeSceneCall(xge_scene pScene, xge_scene_lifecycle_proc proc)
-{
-	if ( (pScene == NULL) || (proc == NULL) ) {
-		return XGE_OK;
-	}
-	return proc(pScene);
-}
-
-static int __xgeSceneEnter(xge_scene pScene)
-{
-	int iRet;
-
-	if ( pScene == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pScene->bEntered ) {
-		pScene->bPaused = 0;
-		return XGE_OK;
-	}
-	iRet = __xgeSceneCall(pScene, pScene->onEnter);
-	if ( iRet != 0 ) {
-		return iRet;
-	}
-	pScene->bEntered = 1;
-	pScene->bPaused = 0;
-	return XGE_OK;
-}
-
-static int __xgeSceneLeave(xge_scene pScene)
-{
-	int iRet;
-
-	if ( pScene == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pScene->bEntered == 0 ) {
-		pScene->bPaused = 0;
-		return XGE_OK;
-	}
-	iRet = __xgeSceneCall(pScene, pScene->onLeave);
-	if ( iRet != 0 ) {
-		return iRet;
-	}
-	pScene->bEntered = 0;
-	pScene->bPaused = 0;
-	return XGE_OK;
-}
-
-static int __xgeScenePause(xge_scene pScene)
-{
-	int iRet;
-
-	if ( (pScene == NULL) || (pScene->bPaused != 0) ) {
-		return XGE_OK;
-	}
-	iRet = __xgeSceneCall(pScene, pScene->onPause);
-	if ( iRet != 0 ) {
-		return iRet;
-	}
-	pScene->bPaused = 1;
-	return XGE_OK;
-}
-
-static int __xgeSceneResume(xge_scene pScene)
-{
-	int iRet;
-
-	if ( (pScene == NULL) || (pScene->bPaused == 0) ) {
-		return XGE_OK;
-	}
-	iRet = __xgeSceneCall(pScene, pScene->onResume);
-	if ( iRet != 0 ) {
-		return iRet;
-	}
-	pScene->bPaused = 0;
-	return XGE_OK;
-}
-
-static int __xgeSceneFree(xge_scene pScene)
-{
-	return __xgeSceneCall(pScene, pScene ? pScene->onFree : NULL);
-}
-
-static void __xgeSceneClear(void)
-{
-	xge_scene pScene;
-
-	while ( g_xge.iSceneStackCount > 0 ) {
-		pScene = g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
-		g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = NULL;
-		g_xge.iSceneStackCount--;
-		(void)__xgeSceneLeave(pScene);
-		(void)__xgeSceneFree(pScene);
-	}
-}
-
-static int __xgeSceneFrame(void)
-{
-	xge_scene pScene;
-	int iRet;
-	int iUpdateCount;
-	float fOldDelta;
-
-	pScene = xgeSceneCurrent();
-	if ( pScene == NULL ) {
-		return XGE_OK;
-	}
-	if ( pScene->onUpdate != NULL ) {
-		if ( g_xge.iSceneUpdateMode == XGE_UPDATE_FIXED ) {
-			fOldDelta = g_xge.fDelta;
-			g_xge.fSceneAccumulator += fOldDelta;
-			iUpdateCount = 0;
-			while ( (g_xge.fSceneAccumulator >= g_xge.fSceneFixedStep) && (iUpdateCount < g_xge.iSceneMaxUpdates) ) {
-				g_xge.fDelta = g_xge.fSceneFixedStep;
-				iRet = pScene->onUpdate(pScene, g_xge.fSceneFixedStep);
-				if ( iRet != 0 ) {
-					g_xge.fDelta = fOldDelta;
-					return iRet;
-				}
-				g_xge.fSceneAccumulator -= g_xge.fSceneFixedStep;
-				iUpdateCount++;
-			}
-			if ( iUpdateCount >= g_xge.iSceneMaxUpdates ) {
-				g_xge.fSceneAccumulator = 0.0f;
-			}
-			g_xge.fDelta = fOldDelta;
-		} else {
-			iRet = pScene->onUpdate(pScene, g_xge.fDelta);
-			if ( iRet != 0 ) {
-				return iRet;
-			}
-		}
-	}
-	if ( pScene->onDraw != NULL ) {
-		iRet = pScene->onDraw(pScene);
-		if ( iRet != 0 ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-int xgeSceneSet(xge_scene pScene)
-{
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
-	g_xge.iSceneTransitionDepth++;
-	__xgeSceneClear();
-	if ( pScene == NULL ) {
-		g_xge.iSceneTransitionDepth--;
-		return XGE_OK;
-	}
-	g_xge.fSceneAccumulator = 0.0f;
-	g_xge.arrSceneStack[0] = pScene;
-	g_xge.iSceneStackCount = 1;
-	{
-		int iRet = __xgeSceneEnter(pScene);
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-}
-
-int xgeScenePush(xge_scene pScene)
-{
-	xge_scene pCurrent;
-	int iRet;
-
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( pScene == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
-	if ( g_xge.iSceneStackCount >= XGE_SCENE_STACK_MAX ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	g_xge.iSceneTransitionDepth++;
-	pCurrent = xgeSceneCurrent();
-	iRet = __xgeScenePause(pCurrent);
-	if ( iRet != XGE_OK ) {
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	g_xge.fSceneAccumulator = 0.0f;
-	g_xge.arrSceneStack[g_xge.iSceneStackCount++] = pScene;
-	iRet = __xgeSceneEnter(pScene);
-	if ( iRet != XGE_OK ) {
-		g_xge.iSceneStackCount--;
-		g_xge.arrSceneStack[g_xge.iSceneStackCount] = NULL;
-		(void)__xgeSceneResume(pCurrent);
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	g_xge.iSceneTransitionDepth--;
-	return XGE_OK;
-}
-
-int xgeScenePop(void)
-{
-	xge_scene pScene;
-	int iRet;
-
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( g_xge.iSceneStackCount <= 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
-	g_xge.iSceneTransitionDepth++;
-	pScene = g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
-	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = NULL;
-	g_xge.iSceneStackCount--;
-	iRet = __xgeSceneLeave(pScene);
-	if ( iRet != XGE_OK ) {
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	iRet = __xgeSceneFree(pScene);
-	if ( iRet != XGE_OK ) {
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	g_xge.fSceneAccumulator = 0.0f;
-	iRet = __xgeSceneResume(xgeSceneCurrent());
-	g_xge.iSceneTransitionDepth--;
-	return iRet;
-}
-
-int xgeSceneReplace(xge_scene pScene)
-{
-	xge_scene pOld;
-	int iRet;
-
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( pScene == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.iSceneTransitionDepth > 0 ) return XGE_ERROR_UNSUPPORTED;
-	if ( g_xge.iSceneStackCount <= 0 ) {
-		return xgeScenePush(pScene);
-	}
-	g_xge.iSceneTransitionDepth++;
-	pOld = g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
-	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = NULL;
-	iRet = __xgeSceneLeave(pOld);
-	if ( iRet != XGE_OK ) {
-		g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pOld;
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	iRet = __xgeSceneFree(pOld);
-	if ( iRet != XGE_OK ) {
-		g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pOld;
-		g_xge.iSceneTransitionDepth--;
-		return iRet;
-	}
-	g_xge.arrSceneStack[g_xge.iSceneStackCount - 1] = pScene;
-	g_xge.fSceneAccumulator = 0.0f;
-	iRet = __xgeSceneEnter(pScene);
-	g_xge.iSceneTransitionDepth--;
-	return iRet;
-}
-
-xge_scene xgeSceneCurrent(void)
-{
-	if ( (g_xge.bInitialized == 0) || (g_xge.iSceneStackCount <= 0) ) {
-		return NULL;
-	}
-	return g_xge.arrSceneStack[g_xge.iSceneStackCount - 1];
-}
-
-int xgeSceneCount(void)
-{
-	if ( g_xge.bInitialized == 0 ) {
-		return 0;
-	}
-	return g_xge.iSceneStackCount;
-}
-
-int xgeSceneDispatchEvent(const xge_event_t* pEvent)
-{
-	xge_scene pScene;
-
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( pEvent == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pScene = xgeSceneCurrent();
-	if ( (pScene == NULL) || (pScene->onEvent == NULL) ) {
-		return XGE_OK;
-	}
-	return pScene->onEvent(pScene, pEvent);
-}
-
-int xgeSceneUpdateStrategySet(int iMode, float fFixedStep, int iMaxUpdates)
-{
-	if ( g_xge.bInitialized == 0 ) {
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
-	if ( (iMode != XGE_UPDATE_VARIABLE) && (iMode != XGE_UPDATE_FIXED) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( fFixedStep <= 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iMaxUpdates <= 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	g_xge.iSceneUpdateMode = iMode;
-	g_xge.fSceneFixedStep = fFixedStep;
-	g_xge.iSceneMaxUpdates = iMaxUpdates;
-	g_xge.fSceneAccumulator = 0.0f;
-	return XGE_OK;
-}
-
-void xgeSceneUpdateStrategyGet(int* pMode, float* pFixedStep, int* pMaxUpdates)
-{
-	if ( pMode != NULL ) {
-		*pMode = g_xge.iSceneUpdateMode;
-	}
-	if ( pFixedStep != NULL ) {
-		*pFixedStep = g_xge.fSceneFixedStep;
-	}
-	if ( pMaxUpdates != NULL ) {
-		*pMaxUpdates = g_xge.iSceneMaxUpdates;
-	}
-}
+#include "xge_scene.c"
 
 int xgeRender(void)
 {

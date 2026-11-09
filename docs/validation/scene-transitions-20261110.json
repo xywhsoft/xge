@@ -1,0 +1,71 @@
+{
+  "scope": "Native caller-owned Scene transition state machine; not managed Scene graphs or shipping delivery",
+  "networkTests": false,
+  "sourceMatchesFrozenBuild": true,
+  "source": {
+    "include/xge.h": "4d6ed52cc3546f4e7ec0a170875b6caef350cdd31193ff1a33d04b0dd6801c6f",
+    "src/xge/core/xge_core.c": "a447a46cddad2eb24c0e9d740b868eae1a264df02b6c6b113ead505a5b40953d",
+    "src/xge/core/xge_scene.c": "7a6d8b9133ed210cd8c77af5027bf43b7d2aee07126170aaa90334005f9367e6",
+    "tests/xge/xge_scene_transition_test.c": "73c5d704b4d7f80ffe5c979eb420f4441ecbc6621cc250fcdb685ba34418da0d",
+    "tools/test/check_scene_transitions.py": "7a572b82d683fcb3f685436e6905cd27eb13a4ec5a6c8240a3a9fa445a2e012c"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r15.json",
+    "sha256": "65c38d723cf5b0e1bb8c3d7b46e1d2def67a5d8df6f926bc7e06ce089fe8e9e4"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r15\\build-report.json",
+      "sha256": "944734301ab244b4848675eba77bb9cd258514ccd7172e2d0451848e3ea861d9",
+      "runtimeBytes": 9168821
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r15\\build-report.json",
+      "sha256": "5ab8a629c4eaa9456bd255f972e5c31b7e1e993cf5bc08c5934a421fa0f16071",
+      "runtimeBytes": 9968816
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-win-r2\\results.json",
+      "sha256": "6fd34a54776d8678114941a09003202b94fca313736b77ae305b5b637dedb984",
+      "checks": 48,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-linux-r2\\results.json",
+      "sha256": "29ca52e46ad185bacffef1e596199264c4224dc47e5e8fc72a73969e70d464c3",
+      "checks": 48,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-regression-win-r2\\results.json",
+      "sha256": "ae5245d0666b28e6f0c0084c2fafbd8f904208a04fff4b7e24c3169c2be23eaa",
+      "checks": 44,
+      "graphicsDevice": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-regression-linux-r2\\results.json",
+      "sha256": "6c3c68e480b307c1418ffedcb3adebbbd506127ab89b2b79b99cc7344ba0633c",
+      "checks": 44,
+      "graphicsDevice": true
+    }
+  ],
+  "redEvidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene-red-win-r1\\results.json",
+      "sha256": "b8011868030489c28d7c785e608951b22c2d4df2f020022a47ab55608b897c4d",
+      "sourceSnapshot": "F:\\xlang-validation\\xge-full-20261110\\scene-red-win-r1\\source-snapshot.c"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene-positive-red-win-r1\\results.json",
+      "sha256": "37b7cff114687faee9b8d72e7bb83244148484f91cccef4240e735094be072bc",
+      "sourceSnapshot": "F:\\xlang-validation\\xge-full-20261110\\scene-positive-red-win-r1\\source-snapshot.c"
+    }
+  ],
+  "limits": [
+    "Raw records and callbacks remain caller owned",
+    "Managed Scene refs callbacks graphs and code lifetime remain pending",
+    "No release installation or hardware timing qualification"
+  ]
+}

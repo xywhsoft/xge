@@ -2029,6 +2029,11 @@ XGE_API int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, i
 XGE_API int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping);
 /* 直接切换当前场景（不压栈）。 */
 XGE_API int xgeSceneSet(xge_scene pScene);
+/* Checked clear may make partial progress. A failed Leave preserves its
+ * entry; onFree consumes the removed entry even on failure and may free it.
+ * A scene occupies at most one stack slot. Setting the sole current scene
+ * or replacing the current scene with itself is an idempotent no-op. */
+XGE_API int xgeSceneClear(void);
 /* 压栈并切换场景（可 xgeScenePop 返回）。 */
 XGE_API int xgeScenePush(xge_scene pScene);
 /* 弹出栈顶场景并恢复上一场景。 */
