@@ -48,9 +48,11 @@ static int __xgeAsyncFinishEx(xge_async_request pRequest, int iResult, int bInvo
 	/* Completion callbacks may release the request. Do not inspect it after this
 	 * point; every public caller receives the result captured here. */
 	iFinalResult = pRequest->iResult;
-	if ( bInvokeCallback && (pRequest->onComplete != NULL) ) {
+	/* Cancellation's public contract suppresses completion on every path,
+	 * including a provider cancelling reentrantly during synchronous decode. */
+	if ( bInvokeCallback && !pRequest->bCancel && (pRequest->onComplete != NULL) ) {
 		pRequest->onComplete(pRequest, pRequest->pUser);
-	} else if ( !bInvokeCallback ) {
+	} else if ( !bInvokeCallback && !pRequest->bCancel ) {
 		pRequest->bCallbackPending = 1;
 	}
 	return iFinalResult;

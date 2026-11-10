@@ -1,0 +1,62 @@
+{
+  "scope": "Raw C async cancellation suppresses completion; successful and callback self-release paths preserved",
+  "shippingDelivery": false,
+  "managedAsyncGraph": false,
+  "networkTests": false,
+  "graphicsDevice": false,
+  "source": {
+    "src/xge/resource/xge_async.c": "f4d5ca90f89120e25179b3b4b5cfe3193ff971b6bdaf54e1efa1bc7d2364c859",
+    "tests/xge/xge_async_contract_test.c": "6518b91364876086809bac40e31fa638b22e614b0a139226f9478ac6275047ca",
+    "tools/test/check_async_cancellation.py": "30b3c45483dd1fd68c034a7ff872022f8ec45a10c5e2e01a5c32065456460237"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r19.json",
+    "sha256": "3fa701498e343887635999c1808cd4280b61b28e1adaed61440e45c447252302"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r19\\build-report.json",
+      "sha256": "9ef7c0de500dd86690e7bfc6d854a58ae2efbd497c96fb0cad91fc315825f2d9"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r19\\build-report.json",
+      "sha256": "128af607194384e0c6cf561c11aa13dee476b30718e4e546810e8eefbabdeae9"
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-win-r1\\results.json",
+      "sha256": "c2e0d5f682039c16b0b41e2ec6929490023c36e370b6a895f94c8db6213fb41b",
+      "checks": 14
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-linux-r1\\results.json",
+      "sha256": "72557193d8468977853de104acc77e51584e60f4b246a180415d2bb0eea47a94",
+      "checks": 14
+    }
+  ],
+  "negativeControl": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-red-win-r2\\results.json",
+    "sha256": "79b736a367bbf70acbc0feb3097705a5daf0cb7f4b9862577e34008c1ca270a5",
+    "cancelFailures": 4,
+    "positiveControls": 4,
+    "preservedSource": [
+      {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-red-win-r2\\source-xge_async.c",
+        "sha256": "c0e322e0e1b12edf6248f21bbdff593233a545c83491ad54a158f79c3f8f9ebf"
+      },
+      {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-red-win-r2\\source-xge_async_contract_test.c",
+        "sha256": "65e10c5d0b6a97eca49032e0de145807386f576a722f462fbc753a798e7f6eb7"
+      },
+      {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-red-win-r2\\source-snapshot-map.json",
+        "sha256": "b0254e55b72c9264d3e1d93939acf4e99149810c99ef6fbec63b9f47973600ad"
+      }
+    ]
+  },
+  "remaining": [
+    "Managed request/target/result/callback/code owning graph and xlang API",
+    "SDK/static archive and final runtime delivery with subsequent managed-async batch"
+  ]
+}
