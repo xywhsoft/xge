@@ -44,6 +44,10 @@ that point; the independent code owner is dropped last by the finishing phase.
 The existing Count/Trace, preparation, quiescence, finalization and completion
 protocols expose the real references and deferred steps to language runtimes.
 
+File workers retain only the final read diagnostic. A failed application-directory
+probe is discarded before the working-directory fallback; terminal memory errors
+and genuine final IO failures are retained. See `async-relative-path-contract.md`.
+
 The 23-mode O0/O2 native gate covers shared refs, private result independence,
 callback removal/last-owner release/failure/reentry, provider and worker errors,
 both cancellation paths, wrong-thread refusal, synchronous and threaded OOM

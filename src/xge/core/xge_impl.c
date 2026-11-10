@@ -567,6 +567,10 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 		}
 	}
 
+	/* The application-directory lookup is only a probe. Its non-memory error
+	 * must not accompany a successful working-directory read (in particular
+	 * into the private worker diagnostic). OOM above remains terminal. */
+	xrtClearError();
 	return __xgeFileReadCandidate(sPath, pSize);
 }
 
