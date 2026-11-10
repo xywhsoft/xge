@@ -1548,7 +1548,7 @@ static sapp_mouse_cursor __xgeSokolCursor(int iCursor);
 static void __xgeSokolInit(void)
 {
     int admission=__xgeGraphicsBackendStart(&g_xgeGraphicsLifetime);
-    if(admission!=XGE_OK){__xgeFrameRunFailure(admission);sapp_quit();return;}
+    if(admission!=XGE_OK){g_xge.bRunning=0;__xgeFrameRunFailure(admission);sapp_quit();return;}
 	xrtAtomic64Store(&g_xgeTransferUiThread,xrtThreadCurrentId(),XMEMORY_RELEASE);
 	g_xge.bSokolRunning = 1;
     /* Apply the cursor recorded before native window readiness exactly once. */
@@ -1573,8 +1573,12 @@ static void __xgeSokolInit(void)
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
+		/* Sokol calls frame immediately after init, even when init requested
+		 * quit. Stop it before publishing callbacks or touching a GL slot. */
+		g_xge.bRunning = 0;
 		__xgeLogError("backend", "OpenGL function load failed.");
 		__xgeLogError("platform", "OpenGL function load failed.");
+		__xgeFrameRunFailure(XGE_ERROR_BACKEND_FAILED);
 		sapp_quit();
 		return;
 	}

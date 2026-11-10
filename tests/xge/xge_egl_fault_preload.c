@@ -5,10 +5,16 @@
 #include <dlfcn.h>
 #include <string.h>
 #include "xge_egl_fault_preload.h"
-static int mode,contexts,surfaces,terminated;
-void xgeEglFaultSet(int value){mode=value;contexts=surfaces=terminated=0;}
+static int mode,contexts,surfaces,terminated,cleanupStage;
+static EGLint injectedError;
+void xgeEglFaultSet(int value){mode=value;contexts=surfaces=terminated=cleanupStage=0;injectedError=EGL_SUCCESS;}
 void xgeEglFaultCounts(int* c,int* s,int* t){*c=contexts;*s=surfaces;*t=terminated;}
+void xgeEglCleanupFaultArm(int stage){assert(stage>=1 && stage<=4);cleanupStage=stage;}
+static int cleanupFail(int stage)
+{if(cleanupStage!=stage)return 0;cleanupStage=0;injectedError=EGL_BAD_ACCESS;return 1;}
 #define REAL(Name,Type) Type real;do{void* p=dlsym(RTLD_NEXT,#Name);assert(p && sizeof(real)==sizeof(p));memcpy(&real,&p,sizeof(real));}while(0)
+EGLint eglGetError(void)
+{typedef EGLint (*Fn)(void);REAL(eglGetError,Fn);if(injectedError!=EGL_SUCCESS){EGLint e=injectedError;injectedError=EGL_SUCCESS;return e;}return real();}
 EGLDisplay eglGetDisplay(EGLNativeDisplayType d)
 {typedef EGLDisplay (*Fn)(EGLNativeDisplayType);REAL(eglGetDisplay,Fn);return mode==1 ? EGL_NO_DISPLAY:real(d);}
 EGLBoolean eglInitialize(EGLDisplay d,EGLint* a,EGLint* b)
@@ -24,11 +30,11 @@ EGLSurface eglCreateWindowSurface(EGLDisplay d,EGLConfig c,EGLNativeWindowType w
 EGLContext eglCreateContext(EGLDisplay d,EGLConfig c,EGLContext shared,const EGLint* a)
 {typedef EGLContext (*Fn)(EGLDisplay,EGLConfig,EGLContext,const EGLint*);REAL(eglCreateContext,Fn);return mode==6 ? EGL_NO_CONTEXT:real(d,c,shared,a);}
 EGLBoolean eglMakeCurrent(EGLDisplay d,EGLSurface a,EGLSurface b,EGLContext c)
-{typedef EGLBoolean (*Fn)(EGLDisplay,EGLSurface,EGLSurface,EGLContext);REAL(eglMakeCurrent,Fn);return mode==7 && c!=EGL_NO_CONTEXT ? EGL_FALSE:real(d,a,b,c);}
+{typedef EGLBoolean (*Fn)(EGLDisplay,EGLSurface,EGLSurface,EGLContext);REAL(eglMakeCurrent,Fn);return (mode==7 && c!=EGL_NO_CONTEXT) || (c==EGL_NO_CONTEXT && cleanupFail(1)) ? EGL_FALSE:real(d,a,b,c);}
 EGLBoolean eglDestroyContext(EGLDisplay d,EGLContext c)
-{typedef EGLBoolean (*Fn)(EGLDisplay,EGLContext);REAL(eglDestroyContext,Fn);++contexts;EGLBoolean ok=real(d,c);assert(ok==EGL_TRUE);return ok;}
+{typedef EGLBoolean (*Fn)(EGLDisplay,EGLContext);REAL(eglDestroyContext,Fn);if(cleanupFail(2))return EGL_FALSE;++contexts;EGLBoolean ok=real(d,c);assert(ok==EGL_TRUE);return ok;}
 EGLBoolean eglDestroySurface(EGLDisplay d,EGLSurface s)
-{typedef EGLBoolean (*Fn)(EGLDisplay,EGLSurface);REAL(eglDestroySurface,Fn);++surfaces;EGLBoolean ok=real(d,s);assert(ok==EGL_TRUE);return ok;}
+{typedef EGLBoolean (*Fn)(EGLDisplay,EGLSurface);REAL(eglDestroySurface,Fn);if(cleanupFail(3))return EGL_FALSE;++surfaces;EGLBoolean ok=real(d,s);assert(ok==EGL_TRUE);return ok;}
 EGLBoolean eglTerminate(EGLDisplay d)
-{typedef EGLBoolean (*Fn)(EGLDisplay);REAL(eglTerminate,Fn);++terminated;EGLBoolean ok=real(d);assert(ok==EGL_TRUE);return ok;}
+{typedef EGLBoolean (*Fn)(EGLDisplay);REAL(eglTerminate,Fn);if(cleanupFail(4))return EGL_FALSE;++terminated;EGLBoolean ok=real(d);assert(ok==EGL_TRUE);return ok;}
 #undef REAL

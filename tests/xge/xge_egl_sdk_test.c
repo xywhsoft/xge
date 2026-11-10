@@ -110,7 +110,7 @@ int main(int argc,char** argv)
 #if XGE_ENABLE_EGL
     int contexts=0,surfaces=0,terminated=0;xgeEglFaultCounts(&contexts,&surfaces,&terminated);
     if(mode==0 || mode==8 || mode==9){
-        assert(result==XGE_OK && context.bInitialized && p.iType==XGE_PLATFORM_BACKEND_EGL && g.iType==XGE_GPU_BACKEND_GLES30);
+        assert(result==XGE_OK && context.bInitialized && context.bCleanupPending && p.iType==XGE_PLATFORM_BACKEND_EGL && g.iType==XGE_GPU_BACKEND_GLES30);
         assert(eglGetCurrentContext()==(EGLContext)context.pContext && !contexts && !surfaces && !terminated);
         printf("Actual EGL vendor/version: %s / %s; GLES: %s\n",eglQueryString((EGLDisplay)context.pDisplay,EGL_VENDOR),eglQueryString((EGLDisplay)context.pDisplay,EGL_VERSION),glGetString(GL_VERSION));
         pixels();assert(xgeEGLMakeCurrent(&context)==XGE_OK);
@@ -119,7 +119,7 @@ int main(int argc,char** argv)
         xgeEglFaultCounts(&contexts,&surfaces,&terminated);
         assert(eglGetCurrentContext()==EGL_NO_CONTEXT && contexts==1 && surfaces==(mode!=8) && terminated==1);
     }else{
-        assert(result==XGE_ERROR_BACKEND_FAILED && !context.bInitialized);
+        assert(result==XGE_ERROR_BACKEND_FAILED && !context.bInitialized && !context.bCleanupPending);
         assert(terminated==(mode>=3) && surfaces==(mode>=6 && mode!=10) && contexts==(mode==7));
 #else
     assert(result==XGE_ERROR_UNSUPPORTED && !context.bInitialized);
@@ -135,5 +135,5 @@ int main(int argc,char** argv)
 #if XGE_ENABLE_EGL
     closeWindow();
 #endif
-    assert(!context.bInitialized && !xrtGetError());puts("Matched EGL SDK capabilities, raw context transaction and pixel checks passed");return 0;
+    assert(!context.bInitialized && !context.bCleanupPending && !xrtGetError());puts("Matched EGL SDK capabilities, raw context transaction and pixel checks passed");return 0;
 }

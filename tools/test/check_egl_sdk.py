@@ -18,6 +18,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('root','test-root','engine','static','runtime','host-header','out'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--cleanup',action='store_true',help='qualify checked teardown and startup-rollback retry')
     a=p.parse_args();root,tests,engine,static,runtime,header,out=[v.resolve() for v in
         (a.root,a.test_root,a.engine,a.static,a.runtime,a.host_header,a.out)]
     sha=lambda v:hashlib.sha256(Path(v).read_bytes()).hexdigest()
@@ -35,7 +36,7 @@ def main():
         if sdk:assert all(sha(v)==h for v,h in sdk['inputs'].items())
     cc=Path(shutil.which('gcc')).resolve();image=engine/dynamic['runtime_image']
     library=engine/dynamic['import_library'] if windows else image
-    raw=tests/'tests/xge/xge_egl_sdk_test.c';fault=tests/'tests/xge/xge_egl_fault_preload.c'
+    raw=tests/('tests/xge/xge_egl_cleanup_test.c' if a.cleanup else 'tests/xge/xge_egl_sdk_test.c');fault=tests/'tests/xge/xge_egl_fault_preload.c'
     files=[Path(__file__).resolve(),cc,raw,fault,fault.with_suffix('.h'),header,image,library,runtime,
         engine/'build-report.json',static/'build-report.json',static/archive['archive'],
         engine/'xge_build_config.h',static/'xge_build_config.h',static/'xge_static_xrt_contract.h',
@@ -50,7 +51,7 @@ def main():
         for v in (runtime,image):shutil.copy2(v,out/v.name)
     else:env['LD_LIBRARY_PATH']=str(out)+':'+str(runtime.parent)+':'+str(engine)+':'+env.get('LD_LIBRARY_PATH','')
     report=dict(passed=False,scope=__doc__,eglEnabled=enabled,graphicsDevice=enabled,
-        hardwarePerformance=False,networkTests=False,inputs=inputs,rows=[])
+        checkedCleanup=a.cleanup,hardwarePerformance=False,networkTests=False,inputs=inputs,rows=[])
     def save():(out/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')
     def run(name,args):
         args=list(map(str,args));z=subprocess.run(args,cwd=out,env=env,capture_output=True,timeout=60)
@@ -73,8 +74,12 @@ def main():
         for opt in ('O0','O2'):
             binary=out/(variant+'-'+opt+('.exe' if windows else ''))
             run(variant+'-'+opt+'-build',[cc,*flags,'-'+opt,raw,*shim,lib,runtime,*systems,'-o',binary])
-            for mode in (range(11) if enabled else (0,8)):
-                run(variant+'-'+opt+'-mode'+str(mode),[binary,str(mode)])
+            if a.cleanup:
+                cases=[(0,s) for s in range(1,5)]+[(6,s) for s in (3,4)]+[(7,s) for s in (2,3,4)] if enabled else [(0,0)]
+                if enabled:cases.extend((0,s,'checked') for s in range(1,5))
+            else:cases=[(m,) for m in (range(11) if enabled else (0,8))]
+            for case in cases:
+                run(variant+'-'+opt+'-mode'+'-'.join(map(str,case)),[binary,*map(str,case)])
     report.update(passed=True,inputsUnchanged=all(sha(v)==h for v,h in inputs.items()))
     assert report['inputsUnchanged'];save()
 

@@ -8,9 +8,15 @@
 #include <GL/gl.h>
 #endif
 
-_Static_assert(sizeof(GLintptr) == sizeof(void*), "GL offsets use the pointer ABI");
-_Static_assert(sizeof(GLsizeiptr) == sizeof(void*), "GL sizes use the pointer ABI");
-_Static_assert((GLintptr)-1 < 0 && (GLsizeiptr)-1 < 0, "GL offsets and sizes are signed");
+#ifdef __cplusplus
+#define GL_TEST_ASSERT static_assert
+#else
+#define GL_TEST_ASSERT _Static_assert
+#endif
+GL_TEST_ASSERT(sizeof(GLintptr) == sizeof(void*), "GL offsets use the pointer ABI");
+GL_TEST_ASSERT(sizeof(GLsizeiptr) == sizeof(void*), "GL sizes use the pointer ABI");
+GL_TEST_ASSERT((GLintptr)-1 < 0 && (GLsizeiptr)-1 < 0, "GL offsets and sizes are signed");
+#undef GL_TEST_ASSERT
 int xge_gl_system_header_coexist(void)
 {
     PFNGLVIEWPORTPROC system_viewport = glViewport;

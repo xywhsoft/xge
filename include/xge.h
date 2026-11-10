@@ -1228,6 +1228,9 @@ typedef struct xge_egl_caps_t {
 
 typedef struct xge_egl_context_t {
 	int bInitialized;
+/* Native cleanup is still owed, including after a failed startup. Retry
+ * xgeEGLUnitChecked before reinitializing or discarding this caller-owned record. */
+	int bCleanupPending;
 	int bPBuffer;
 	int bSurfaceless;
 	int bBoardLinux;
@@ -2257,6 +2260,10 @@ XGE_API int xgeEGLCapsGet(xge_egl_caps_t* pCaps);
 XGE_API int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc);
 /* 释放 EGL 上下文。 */
 XGE_API void xgeEGLUnit(xge_egl_context_t* pContext);
+/* Checked, retryable reverse-order cleanup. Successfully released handles are
+ * cleared individually; failures preserve the remaining cleanup obligation.
+ * The legacy void entry also preserves the record on failure. */
+XGE_API int xgeEGLUnitChecked(xge_egl_context_t* pContext);
 /* 绑定 EGL 上下文到当前线程。 */
 XGE_API int xgeEGLMakeCurrent(xge_egl_context_t* pContext);
 /* 初始化离屏渲染上下文（自带目标尺寸）。 */

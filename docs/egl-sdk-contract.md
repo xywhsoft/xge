@@ -1,5 +1,9 @@
 # Optional EGL SDK
 
+For the subsequent complete GL startup transaction and checked, retryable raw
+EGL teardown contract, see [graphics context safety](graphics-context-startup.md).
+Its additional cleanup-duty flag requires a newly matched SDK/runtime pair.
+
 `XGE_ENABLE_EGL` is an explicit 0/1 build feature, defaulting to 0 in all normal
 profiles. Bit 10 of `XGE_FEATURES` records it, and the shared SDK configuration
 and ABI fingerprint include it. A source-only `XGE_HAS_EGL` selects the same bit

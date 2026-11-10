@@ -94,6 +94,21 @@ static int __xgeEGLHasExtension(EGLDisplay hDisplay, const char* sName)
 	return 0;
 }
 
+static int __xgeEGLRollback(xge_egl_context_t* context,const char* stage,int status)
+{
+    (void)__xgeEGLFail(context,stage,status);
+    int error=context->iLastError;
+    char firstStage[sizeof(context->sLastStage)];
+    memcpy(firstStage,context->sLastStage,sizeof(firstStage));
+    /* Preserve the startup error when rollback completes. A failed rollback
+     * instead records its failing cleanup stage and leaves explicit duty. */
+    if(xgeEGLUnitChecked(context)==XGE_OK){
+        context->iLastError=error;
+        memcpy(context->sLastStage,firstStage,sizeof(firstStage));
+    }
+    return status;
+}
+
 static int __xgeEGLCreateContext(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 {
 	EGLDisplay hDisplay;
@@ -121,10 +136,10 @@ static int __xgeEGLCreateContext(xge_egl_context_t* pContext, const xge_egl_desc
 	if ( eglInitialize(hDisplay, NULL, NULL) == EGL_FALSE ) {
 		return __xgeEGLFail(pContext, "eglInitialize", XGE_ERROR_BACKEND_FAILED);
 	}
+	pContext->pDisplay=(void*)hDisplay;
+	pContext->bCleanupPending=1;
 	if ( eglBindAPI(EGL_OPENGL_ES_API) == EGL_FALSE ) {
-		(void)__xgeEGLFail(pContext, "eglBindAPI", XGE_ERROR_BACKEND_FAILED);
-		eglTerminate(hDisplay);
-		return XGE_ERROR_BACKEND_FAILED;
+		return __xgeEGLRollback(pContext,"eglBindAPI",XGE_ERROR_BACKEND_FAILED);
 	}
 	iSurfaceBits = 0;
 	if ( pDesc->bPBuffer != 0 ) {
@@ -155,18 +170,15 @@ static int __xgeEGLCreateContext(xge_egl_context_t* pContext, const xge_egl_desc
 	arrConfigAttribs[i++] = 0;
 	arrConfigAttribs[i++] = EGL_NONE;
 	if ( eglChooseConfig(hDisplay, arrConfigAttribs, &hConfig, 1, &iConfigCount) == EGL_FALSE || iConfigCount <= 0 ) {
-		(void)__xgeEGLFail(pContext, "eglChooseConfig", XGE_ERROR_BACKEND_FAILED);
-		eglTerminate(hDisplay);
-		return XGE_ERROR_BACKEND_FAILED;
+		return __xgeEGLRollback(pContext,"eglChooseConfig",XGE_ERROR_BACKEND_FAILED);
 	}
+	pContext->pConfig=(void*)hConfig;
 	hSurface = EGL_NO_SURFACE;
 	if ( pDesc->pNativeWindow != NULL ) {
 		hSurface = eglCreateWindowSurface(hDisplay, hConfig, (EGLNativeWindowType)pDesc->pNativeWindow, NULL);
 	} else if ( pDesc->bSurfaceless != 0 ) {
 		if ( __xgeEGLHasExtension(hDisplay, "EGL_KHR_surfaceless_context") == 0 ) {
-			(void)__xgeEGLFail(pContext, "EGL_KHR_surfaceless_context", XGE_ERROR_UNSUPPORTED);
-			eglTerminate(hDisplay);
-			return XGE_ERROR_UNSUPPORTED;
+			return __xgeEGLRollback(pContext,"EGL_KHR_surfaceless_context",XGE_ERROR_UNSUPPORTED);
 		}
 	} else {
 		arrPBufferAttribs[1] = pDesc->iWidth;
@@ -174,27 +186,16 @@ static int __xgeEGLCreateContext(xge_egl_context_t* pContext, const xge_egl_desc
 		hSurface = eglCreatePbufferSurface(hDisplay, hConfig, arrPBufferAttribs);
 	}
 	if ( (pDesc->bSurfaceless == 0) && (hSurface == EGL_NO_SURFACE) ) {
-		(void)__xgeEGLFail(pContext, "eglCreateSurface", XGE_ERROR_BACKEND_FAILED);
-		eglTerminate(hDisplay);
-		return XGE_ERROR_BACKEND_FAILED;
+		return __xgeEGLRollback(pContext,"eglCreateSurface",XGE_ERROR_BACKEND_FAILED);
 	}
+	pContext->pSurface=(void*)hSurface;
 	hContext = eglCreateContext(hDisplay, hConfig, EGL_NO_CONTEXT, arrContextAttribs);
 	if ( hContext == EGL_NO_CONTEXT ) {
-		(void)__xgeEGLFail(pContext, "eglCreateContext", XGE_ERROR_BACKEND_FAILED);
-		if ( hSurface != EGL_NO_SURFACE ) {
-			eglDestroySurface(hDisplay, hSurface);
-		}
-		eglTerminate(hDisplay);
-		return XGE_ERROR_BACKEND_FAILED;
+		return __xgeEGLRollback(pContext,"eglCreateContext",XGE_ERROR_BACKEND_FAILED);
 	}
+	pContext->pContext=(void*)hContext;
 	if ( eglMakeCurrent(hDisplay, hSurface, hSurface, hContext) == EGL_FALSE ) {
-		(void)__xgeEGLFail(pContext, "eglMakeCurrent", XGE_ERROR_BACKEND_FAILED);
-		eglDestroyContext(hDisplay, hContext);
-		if ( hSurface != EGL_NO_SURFACE ) {
-			eglDestroySurface(hDisplay, hSurface);
-		}
-		eglTerminate(hDisplay);
-		return XGE_ERROR_BACKEND_FAILED;
+		return __xgeEGLRollback(pContext,"eglMakeCurrent",XGE_ERROR_BACKEND_FAILED);
 	}
 	pContext->pDisplay = (void*)hDisplay;
 	pContext->pConfig = (void*)hConfig;
@@ -220,8 +221,6 @@ int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 	pContext->bPBuffer = pDesc->bPBuffer ? 1 : 0;
 	pContext->bSurfaceless = pDesc->bSurfaceless ? 1 : 0;
 	pContext->bBoardLinux = pDesc->bBoardLinux ? 1 : 0;
-	pContext->pDisplay = pDesc->pNativeDisplay;
-	pContext->pSurface = pDesc->pNativeWindow;
 	pContext->pUser = pDesc->pUser;
 	memset(&tCaps, 0, sizeof(tCaps));
 	(void)xgeEGLCapsGet(&tCaps);
@@ -261,35 +260,40 @@ int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 #endif
 }
 
-void xgeEGLUnit(xge_egl_context_t* pContext)
+int xgeEGLUnitChecked(xge_egl_context_t* pContext)
 {
+    if(!pContext)return XGE_ERROR_INVALID_ARGUMENT;
 #if defined(XGE_HAS_EGL)
-	EGLDisplay hDisplay;
-	EGLSurface hSurface;
-	EGLContext hContext;
+    if(pContext->bCleanupPending || pContext->bInitialized){
+        EGLDisplay display=(EGLDisplay)pContext->pDisplay;
+        EGLContext context=(EGLContext)pContext->pContext;
+        if(display==EGL_NO_DISPLAY)return XGE_ERROR_INVALID_STATE;
+        pContext->bInitialized=0;pContext->bCleanupPending=1;
+        /* Do not unbind an unrelated context after a failed MakeCurrent. */
+        if(context!=EGL_NO_CONTEXT && eglGetCurrentContext()==context &&
+            eglMakeCurrent(display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT)==EGL_FALSE)
+            return __xgeEGLFail(pContext,"eglUnbind",XGE_ERROR_BACKEND_FAILED);
+        if(context!=EGL_NO_CONTEXT){
+            if(eglDestroyContext(display,context)==EGL_FALSE)
+                return __xgeEGLFail(pContext,"eglDestroyContext",XGE_ERROR_BACKEND_FAILED);
+            pContext->pContext=NULL;
+        }
+        if(pContext->pSurface){
+            if(eglDestroySurface(display,(EGLSurface)pContext->pSurface)==EGL_FALSE)
+                return __xgeEGLFail(pContext,"eglDestroySurface",XGE_ERROR_BACKEND_FAILED);
+            pContext->pSurface=NULL;
+        }
+        if(eglTerminate(display)==EGL_FALSE)
+            return __xgeEGLFail(pContext,"eglTerminate",XGE_ERROR_BACKEND_FAILED);
+    }
+#else
+    if(pContext->bCleanupPending || pContext->bInitialized)return XGE_ERROR_UNSUPPORTED;
 #endif
-	if ( pContext == NULL ) {
-		return;
-	}
-#if defined(XGE_HAS_EGL)
-	if ( pContext->bInitialized != 0 ) {
-		hDisplay = (EGLDisplay)pContext->pDisplay;
-		hSurface = (EGLSurface)pContext->pSurface;
-		hContext = (EGLContext)pContext->pContext;
-		if ( hDisplay != EGL_NO_DISPLAY ) {
-			eglMakeCurrent(hDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-			if ( hContext != EGL_NO_CONTEXT ) {
-				eglDestroyContext(hDisplay, hContext);
-			}
-			if ( hSurface != EGL_NO_SURFACE ) {
-				eglDestroySurface(hDisplay, hSurface);
-			}
-			eglTerminate(hDisplay);
-		}
-	}
-#endif
-	memset(pContext, 0, sizeof(*pContext));
+    memset(pContext,0,sizeof(*pContext));return XGE_OK;
 }
+
+void xgeEGLUnit(xge_egl_context_t* pContext)
+{if(pContext)(void)xgeEGLUnitChecked(pContext);}
 
 int xgeEGLMakeCurrent(xge_egl_context_t* pContext)
 {
@@ -323,8 +327,8 @@ int xgeOffscreenInit(xge_offscreen pOffscreen, int iWidth, int iHeight)
 	tDesc.iHeight = iHeight;
 	tDesc.bPBuffer = 1;
 	iRet = xgeEGLInit(&pOffscreen->tEGL, &tDesc);
+	if(iRet!=XGE_OK && pOffscreen->tEGL.bCleanupPending)return iRet;
 	if ( (iRet != XGE_OK) && (iRet != XGE_ERROR_UNSUPPORTED) ) {
-		memset(pOffscreen, 0, sizeof(*pOffscreen));
 		return iRet;
 	}
 	if ( iRet == XGE_OK ) {
@@ -335,7 +339,7 @@ int xgeOffscreenInit(xge_offscreen pOffscreen, int iWidth, int iHeight)
 	iRet = xgeRenderTargetCreate(&pOffscreen->tTarget, iWidth, iHeight);
 	if ( iRet != XGE_OK ) {
 		xgeEGLUnit(&pOffscreen->tEGL);
-		memset(pOffscreen, 0, sizeof(*pOffscreen));
+		if(!pOffscreen->tEGL.bCleanupPending)memset(pOffscreen, 0, sizeof(*pOffscreen));
 		return iRet;
 	}
 	pOffscreen->bActive = 1;
@@ -349,7 +353,7 @@ void xgeOffscreenUnit(xge_offscreen pOffscreen)
 	}
 	xgeRenderTargetFree(&pOffscreen->tTarget);
 	xgeEGLUnit(&pOffscreen->tEGL);
-	memset(pOffscreen, 0, sizeof(*pOffscreen));
+	if(!pOffscreen->tEGL.bCleanupPending)memset(pOffscreen, 0, sizeof(*pOffscreen));
 }
 
 xge_render_target xgeOffscreenRenderTarget(xge_offscreen pOffscreen)

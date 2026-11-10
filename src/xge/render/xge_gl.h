@@ -313,112 +313,6 @@ typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum inte
 typedef void (APIENTRYP PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
 
 /* ============================================================================
- * GL 函数指针声明
- * ============================================================================ */
-
-extern PFNGLVIEWPORTPROC xge_glViewport;
-extern PFNGLCLEARPROC xge_glClear;
-extern PFNGLCLEARCOLORPROC xge_glClearColor;
-extern PFNGLFLUSHPROC xge_glFlush;
-extern PFNGLENABLEPROC xge_glEnable;
-extern PFNGLDISABLEPROC xge_glDisable;
-extern PFNGLSCISSORPROC xge_glScissor;
-extern PFNGLREADPIXELSPROC xge_glReadPixels;
-extern PFNGLBLENDFUNCPROC xge_glBlendFunc;
-extern PFNGLBLENDEQUATIONPROC xge_glBlendEquation;
-extern PFNGLDEPTHFUNCPROC xge_glDepthFunc;
-#if XGE_ENABLE_3D
-#if XGE3D_ENABLE_SHADOW
-extern PFNGLDRAWBUFFERSPROC xge_glDrawBuffers;
-#endif
-extern PFNGLREADBUFFERPROC xge_glReadBuffer;
-extern PFNGLDEPTHMASKPROC xge_glDepthMask;
-extern PFNGLCLEARDEPTHPROC xge_glClearDepth;
-extern PFNGLCLEARDEPTHFPROC xge_glClearDepthf;
-extern PFNGLGETFLOATVPROC xge_glGetFloatv;
-extern PFNGLBLENDFUNCSEPARATEPROC xge_glBlendFuncSeparate;
-extern PFNGLBLENDEQUATIONSEPARATEPROC xge_glBlendEquationSeparate;
-#endif
-extern PFNGLCULLFACEPROC xge_glCullFace;
-extern PFNGLFRONTFACEPROC xge_glFrontFace;
-extern PFNGLGETERRORPROC xge_glGetError;
-extern PFNGLGETSTRINGPROC xge_glGetString;
-extern PFNGLGETINTEGERVPROC xge_glGetIntegerv;
-extern PFNGLCLEARSTENCILPROC xge_glClearStencil;
-extern PFNGLSTENCILFUNCPROC xge_glStencilFunc;
-extern PFNGLSTENCILOPPROC xge_glStencilOp;
-extern PFNGLSTENCILMASKPROC xge_glStencilMask;
-extern PFNGLCOLORMASKPROC xge_glColorMask;
-
-extern PFNGLGENBUFFERSPROC xge_glGenBuffers;
-extern PFNGLDELETEBUFFERSPROC xge_glDeleteBuffers;
-extern PFNGLBINDBUFFERPROC xge_glBindBuffer;
-extern PFNGLBUFFERDATAPROC xge_glBufferData;
-extern PFNGLBUFFERSUBDATAPROC xge_glBufferSubData;
-
-extern PFNGLGENVERTEXARRAYSPROC xge_glGenVertexArrays;
-extern PFNGLDELETEVERTEXARRAYSPROC xge_glDeleteVertexArrays;
-extern PFNGLBINDVERTEXARRAYPROC xge_glBindVertexArray;
-extern PFNGLENABLEVERTEXATTRIBARRAYPROC xge_glEnableVertexAttribArray;
-extern PFNGLVERTEXATTRIBPOINTERPROC xge_glVertexAttribPointer;
-
-extern PFNGLDRAWARRAYSPROC xge_glDrawArrays;
-extern PFNGLDRAWELEMENTSPROC xge_glDrawElements;
-#if XGE_ENABLE_3D
-extern PFNGLDRAWARRAYSINSTANCEDPROC xge_glDrawArraysInstanced;
-extern PFNGLDRAWELEMENTSINSTANCEDPROC xge_glDrawElementsInstanced;
-#endif
-
-extern PFNGLGENTEXTURESPROC xge_glGenTextures;
-extern PFNGLDELETETEXTURESPROC xge_glDeleteTextures;
-extern PFNGLBINDTEXTUREPROC xge_glBindTexture;
-extern PFNGLACTIVETEXTUREPROC xge_glActiveTexture;
-extern PFNGLTEXIMAGE2DPROC xge_glTexImage2D;
-extern PFNGLTEXSUBIMAGE2DPROC xge_glTexSubImage2D;
-extern PFNGLCOPYTEXSUBIMAGE2DPROC xge_glCopyTexSubImage2D;
-extern PFNGLPIXELSTOREIPROC xge_glPixelStorei;
-extern PFNGLTEXPARAMETERIPROC xge_glTexParameteri;
-extern PFNGLGENERATEMIPMAPPROC xge_glGenerateMipmap;
-
-extern PFNGLCREATESHADERPROC xge_glCreateShader;
-extern PFNGLDELETESHADERPROC xge_glDeleteShader;
-extern PFNGLSHADERSOURCEPROC xge_glShaderSource;
-extern PFNGLCOMPILESHADERPROC xge_glCompileShader;
-extern PFNGLGETSHADERIVPROC xge_glGetShaderiv;
-extern PFNGLGETSHADERINFOLOGPROC xge_glGetShaderInfoLog;
-
-extern PFNGLCREATEPROGRAMPROC xge_glCreateProgram;
-extern PFNGLDELETEPROGRAMPROC xge_glDeleteProgram;
-extern PFNGLATTACHSHADERPROC xge_glAttachShader;
-extern PFNGLLINKPROGRAMPROC xge_glLinkProgram;
-extern PFNGLUSEPROGRAMPROC xge_glUseProgram;
-extern PFNGLGETPROGRAMIVPROC xge_glGetProgramiv;
-extern PFNGLGETPROGRAMINFOLOGPROC xge_glGetProgramInfoLog;
-extern PFNGLGETUNIFORMLOCATIONPROC xge_glGetUniformLocation;
-
-extern PFNGLUNIFORM1IPROC xge_glUniform1i;
-extern PFNGLUNIFORM1FPROC xge_glUniform1f;
-extern PFNGLUNIFORM2FPROC xge_glUniform2f;
-extern PFNGLUNIFORM3FPROC xge_glUniform3f;
-extern PFNGLUNIFORM4FPROC xge_glUniform4f;
-extern PFNGLUNIFORMMATRIX4FVPROC xge_glUniformMatrix4fv;
-
-extern PFNGLGENFRAMEBUFFERSPROC xge_glGenFramebuffers;
-extern PFNGLDELETEFRAMEBUFFERSPROC xge_glDeleteFramebuffers;
-extern PFNGLBINDFRAMEBUFFERPROC xge_glBindFramebuffer;
-extern PFNGLFRAMEBUFFERTEXTURE2DPROC xge_glFramebufferTexture2D;
-extern PFNGLCHECKFRAMEBUFFERSTATUSPROC xge_glCheckFramebufferStatus;
-#if XGE_ENABLE_3D
-extern PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC xge_glGetFramebufferAttachmentParameteriv;
-extern PFNGLBLITFRAMEBUFFERPROC xge_glBlitFramebuffer;
-#endif
-extern PFNGLGENRENDERBUFFERSPROC xge_glGenRenderbuffers;
-extern PFNGLDELETERENDERBUFFERSPROC xge_glDeleteRenderbuffers;
-extern PFNGLBINDRENDERBUFFERPROC xge_glBindRenderbuffer;
-extern PFNGLRENDERBUFFERSTORAGEPROC xge_glRenderbufferStorage;
-extern PFNGLFRAMEBUFFERRENDERBUFFERPROC xge_glFramebufferRenderbuffer;
-
-/* ============================================================================
  * GL 加载函数
  * ============================================================================ */
 
@@ -429,14 +323,14 @@ typedef void (APIENTRYP D3GLDELETEQUERIESPROC)(GLsizei,const GLuint*);
 typedef void (APIENTRYP D3GLQUERYCOUNTERPROC)(GLuint,GLenum);
 typedef void (APIENTRYP D3GLGETQUERYOBJECTIVPROC)(GLuint,GLenum,GLint*);
 typedef void (APIENTRYP D3GLGETQUERYOBJECTUI64VPROC)(GLuint,GLenum,uint64_t*);
-extern D3GLGENQUERIESPROC xge_glGenQueries;
-extern D3GLDELETEQUERIESPROC xge_glDeleteQueries;
-extern D3GLQUERYCOUNTERPROC xge_glQueryCounter;
-extern D3GLGETQUERYOBJECTIVPROC xge_glGetQueryObjectiv;
-extern D3GLGETQUERYOBJECTUI64VPROC xge_glGetQueryObjectui64v;
 #endif
 
+#define XGE_GL_SLOT(Type,Name,Required) extern Type xge_##Name;
+#include "xge_gl_slots.inc"
+#undef XGE_GL_SLOT
+
 typedef void* (*XgeGLLoadProc)(const char *name);
+typedef void* (*XgeGLLoadProcEx)(const char* name,void* user);
 
 /**
  * @brief 加载 GL 函数
@@ -444,6 +338,9 @@ typedef void* (*XgeGLLoadProc)(const char *name);
  * @return 成功返回1, 失败返回0
  */
 int xge_gl_load(XgeGLLoadProc procLoad);
+/* Transactional loading: failure leaves every previously committed slot intact. */
+int xge_gl_load_ex(XgeGLLoadProcEx load,void* user);
+void xge_gl_unload(void);
 
 #ifdef __cplusplus
 }
@@ -455,236 +352,33 @@ int xge_gl_load(XgeGLLoadProc procLoad);
 
 #ifdef XGE_GL_IMPL
 
-#if XGE_ENABLE_3D
-D3GLGENQUERIESPROC xge_glGenQueries;
-D3GLDELETEQUERIESPROC xge_glDeleteQueries;
-D3GLQUERYCOUNTERPROC xge_glQueryCounter;
-D3GLGETQUERYOBJECTIVPROC xge_glGetQueryObjectiv;
-D3GLGETQUERYOBJECTUI64VPROC xge_glGetQueryObjectui64v;
-#endif
-PFNGLVIEWPORTPROC xge_glViewport = NULL;
-PFNGLCLEARPROC xge_glClear = NULL;
-PFNGLCLEARCOLORPROC xge_glClearColor = NULL;
-PFNGLFLUSHPROC xge_glFlush = NULL;
-PFNGLENABLEPROC xge_glEnable = NULL;
-PFNGLDISABLEPROC xge_glDisable = NULL;
-PFNGLSCISSORPROC xge_glScissor = NULL;
-PFNGLREADPIXELSPROC xge_glReadPixels = NULL;
-PFNGLBLENDFUNCPROC xge_glBlendFunc = NULL;
-PFNGLBLENDEQUATIONPROC xge_glBlendEquation = NULL;
-PFNGLDEPTHFUNCPROC xge_glDepthFunc = NULL;
-#if XGE_ENABLE_3D
-#if XGE3D_ENABLE_SHADOW
-PFNGLDRAWBUFFERSPROC xge_glDrawBuffers = NULL;
-#endif
-PFNGLREADBUFFERPROC xge_glReadBuffer = NULL;
-PFNGLDEPTHMASKPROC xge_glDepthMask = NULL;
-PFNGLCLEARDEPTHPROC xge_glClearDepth = NULL;
-PFNGLCLEARDEPTHFPROC xge_glClearDepthf = NULL;
-PFNGLGETFLOATVPROC xge_glGetFloatv = NULL;
-PFNGLBLENDFUNCSEPARATEPROC xge_glBlendFuncSeparate = NULL;
-PFNGLBLENDEQUATIONSEPARATEPROC xge_glBlendEquationSeparate = NULL;
-#endif
-PFNGLCULLFACEPROC xge_glCullFace = NULL;
-PFNGLFRONTFACEPROC xge_glFrontFace = NULL;
-PFNGLGETERRORPROC xge_glGetError = NULL;
-PFNGLGETSTRINGPROC xge_glGetString = NULL;
-PFNGLGETINTEGERVPROC xge_glGetIntegerv = NULL;
-PFNGLCLEARSTENCILPROC xge_glClearStencil = NULL;
-PFNGLSTENCILFUNCPROC xge_glStencilFunc = NULL;
-PFNGLSTENCILOPPROC xge_glStencilOp = NULL;
-PFNGLSTENCILMASKPROC xge_glStencilMask = NULL;
-PFNGLCOLORMASKPROC xge_glColorMask = NULL;
+#define XGE_GL_SLOT(Type,Name,Required) Type xge_##Name=NULL;
+#include "xge_gl_slots.inc"
+#undef XGE_GL_SLOT
 
-PFNGLGENBUFFERSPROC xge_glGenBuffers = NULL;
-PFNGLDELETEBUFFERSPROC xge_glDeleteBuffers = NULL;
-PFNGLBINDBUFFERPROC xge_glBindBuffer = NULL;
-PFNGLBUFFERDATAPROC xge_glBufferData = NULL;
-PFNGLBUFFERSUBDATAPROC xge_glBufferSubData = NULL;
-
-PFNGLGENVERTEXARRAYSPROC xge_glGenVertexArrays = NULL;
-PFNGLDELETEVERTEXARRAYSPROC xge_glDeleteVertexArrays = NULL;
-PFNGLBINDVERTEXARRAYPROC xge_glBindVertexArray = NULL;
-PFNGLENABLEVERTEXATTRIBARRAYPROC xge_glEnableVertexAttribArray = NULL;
-PFNGLVERTEXATTRIBPOINTERPROC xge_glVertexAttribPointer = NULL;
-
-PFNGLDRAWARRAYSPROC xge_glDrawArrays = NULL;
-PFNGLDRAWELEMENTSPROC xge_glDrawElements = NULL;
-#if XGE_ENABLE_3D
-PFNGLDRAWARRAYSINSTANCEDPROC xge_glDrawArraysInstanced = NULL;
-PFNGLDRAWELEMENTSINSTANCEDPROC xge_glDrawElementsInstanced = NULL;
-#endif
-
-PFNGLGENTEXTURESPROC xge_glGenTextures = NULL;
-PFNGLDELETETEXTURESPROC xge_glDeleteTextures = NULL;
-PFNGLBINDTEXTUREPROC xge_glBindTexture = NULL;
-PFNGLACTIVETEXTUREPROC xge_glActiveTexture = NULL;
-PFNGLTEXIMAGE2DPROC xge_glTexImage2D = NULL;
-PFNGLTEXSUBIMAGE2DPROC xge_glTexSubImage2D = NULL;
-PFNGLCOPYTEXSUBIMAGE2DPROC xge_glCopyTexSubImage2D = NULL;
-PFNGLPIXELSTOREIPROC xge_glPixelStorei = NULL;
-PFNGLTEXPARAMETERIPROC xge_glTexParameteri = NULL;
-PFNGLGENERATEMIPMAPPROC xge_glGenerateMipmap = NULL;
-
-PFNGLCREATESHADERPROC xge_glCreateShader = NULL;
-PFNGLDELETESHADERPROC xge_glDeleteShader = NULL;
-PFNGLSHADERSOURCEPROC xge_glShaderSource = NULL;
-PFNGLCOMPILESHADERPROC xge_glCompileShader = NULL;
-PFNGLGETSHADERIVPROC xge_glGetShaderiv = NULL;
-PFNGLGETSHADERINFOLOGPROC xge_glGetShaderInfoLog = NULL;
-
-PFNGLCREATEPROGRAMPROC xge_glCreateProgram = NULL;
-PFNGLDELETEPROGRAMPROC xge_glDeleteProgram = NULL;
-PFNGLATTACHSHADERPROC xge_glAttachShader = NULL;
-PFNGLLINKPROGRAMPROC xge_glLinkProgram = NULL;
-PFNGLUSEPROGRAMPROC xge_glUseProgram = NULL;
-PFNGLGETPROGRAMIVPROC xge_glGetProgramiv = NULL;
-PFNGLGETPROGRAMINFOLOGPROC xge_glGetProgramInfoLog = NULL;
-PFNGLGETUNIFORMLOCATIONPROC xge_glGetUniformLocation = NULL;
-
-PFNGLUNIFORM1IPROC xge_glUniform1i = NULL;
-PFNGLUNIFORM1FPROC xge_glUniform1f = NULL;
-PFNGLUNIFORM2FPROC xge_glUniform2f = NULL;
-PFNGLUNIFORM3FPROC xge_glUniform3f = NULL;
-PFNGLUNIFORM4FPROC xge_glUniform4f = NULL;
-PFNGLUNIFORMMATRIX4FVPROC xge_glUniformMatrix4fv = NULL;
-
-PFNGLGENFRAMEBUFFERSPROC xge_glGenFramebuffers = NULL;
-PFNGLDELETEFRAMEBUFFERSPROC xge_glDeleteFramebuffers = NULL;
-PFNGLBINDFRAMEBUFFERPROC xge_glBindFramebuffer = NULL;
-PFNGLFRAMEBUFFERTEXTURE2DPROC xge_glFramebufferTexture2D = NULL;
-PFNGLCHECKFRAMEBUFFERSTATUSPROC xge_glCheckFramebufferStatus = NULL;
-#if XGE_ENABLE_3D
-PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC xge_glGetFramebufferAttachmentParameteriv = NULL;
-PFNGLBLITFRAMEBUFFERPROC xge_glBlitFramebuffer = NULL;
-#endif
-PFNGLGENRENDERBUFFERSPROC xge_glGenRenderbuffers = NULL;
-PFNGLDELETERENDERBUFFERSPROC xge_glDeleteRenderbuffers = NULL;
-PFNGLBINDRENDERBUFFERPROC xge_glBindRenderbuffer = NULL;
-PFNGLRENDERBUFFERSTORAGEPROC xge_glRenderbufferStorage = NULL;
-PFNGLFRAMEBUFFERRENDERBUFFERPROC xge_glFramebufferRenderbuffer = NULL;
-
-int xge_gl_load(XgeGLLoadProc procLoad)
+int xge_gl_load_ex(XgeGLLoadProcEx load,void* user)
 {
-	if ( !procLoad ) {
-		return 0;
-	}
-
-	xge_glViewport = (PFNGLVIEWPORTPROC)procLoad("glViewport");
-	xge_glClear = (PFNGLCLEARPROC)procLoad("glClear");
-	xge_glClearColor = (PFNGLCLEARCOLORPROC)procLoad("glClearColor");
-	xge_glFlush = (PFNGLFLUSHPROC)procLoad("glFlush");
-	xge_glEnable = (PFNGLENABLEPROC)procLoad("glEnable");
-	xge_glDisable = (PFNGLDISABLEPROC)procLoad("glDisable");
-	xge_glScissor = (PFNGLSCISSORPROC)procLoad("glScissor");
-	xge_glReadPixels = (PFNGLREADPIXELSPROC)procLoad("glReadPixels");
-	xge_glBlendFunc = (PFNGLBLENDFUNCPROC)procLoad("glBlendFunc");
-	xge_glBlendEquation = (PFNGLBLENDEQUATIONPROC)procLoad("glBlendEquation");
-	xge_glDepthFunc = (PFNGLDEPTHFUNCPROC)procLoad("glDepthFunc");
+    if(!load)return 0;
+#define XGE_GL_SLOT(Type,Name,Required) Type pending_##Name=(Type)load(#Name,user); if((Required) && !pending_##Name)return 0;
+#include "xge_gl_slots.inc"
+#undef XGE_GL_SLOT
 #if XGE_ENABLE_3D
-#if XGE3D_ENABLE_SHADOW
-	xge_glDrawBuffers = (PFNGLDRAWBUFFERSPROC)procLoad("glDrawBuffers");
+    if(!pending_glClearDepth && !pending_glClearDepthf)return 0;
 #endif
-	xge_glReadBuffer = (PFNGLREADBUFFERPROC)procLoad("glReadBuffer");
-	xge_glDepthMask = (PFNGLDEPTHMASKPROC)procLoad("glDepthMask");
-	xge_glClearDepth = (PFNGLCLEARDEPTHPROC)procLoad("glClearDepth");
-	xge_glClearDepthf = (PFNGLCLEARDEPTHFPROC)procLoad("glClearDepthf");
-	xge_glGetFloatv = (PFNGLGETFLOATVPROC)procLoad("glGetFloatv");
-	xge_glBlendFuncSeparate = (PFNGLBLENDFUNCSEPARATEPROC)procLoad("glBlendFuncSeparate");
-	xge_glBlendEquationSeparate = (PFNGLBLENDEQUATIONSEPARATEPROC)procLoad("glBlendEquationSeparate");
-#endif
-	xge_glCullFace = (PFNGLCULLFACEPROC)procLoad("glCullFace");
-	xge_glFrontFace = (PFNGLFRONTFACEPROC)procLoad("glFrontFace");
-	xge_glGetError = (PFNGLGETERRORPROC)procLoad("glGetError");
-	xge_glGetString = (PFNGLGETSTRINGPROC)procLoad("glGetString");
-	xge_glGetIntegerv = (PFNGLGETINTEGERVPROC)procLoad("glGetIntegerv");
-	xge_glClearStencil = (PFNGLCLEARSTENCILPROC)procLoad("glClearStencil");
-	xge_glStencilFunc = (PFNGLSTENCILFUNCPROC)procLoad("glStencilFunc");
-	xge_glStencilOp = (PFNGLSTENCILOPPROC)procLoad("glStencilOp");
-	xge_glStencilMask = (PFNGLSTENCILMASKPROC)procLoad("glStencilMask");
-	xge_glColorMask = (PFNGLCOLORMASKPROC)procLoad("glColorMask");
-
-	xge_glGenBuffers = (PFNGLGENBUFFERSPROC)procLoad("glGenBuffers");
-	xge_glDeleteBuffers = (PFNGLDELETEBUFFERSPROC)procLoad("glDeleteBuffers");
-	xge_glBindBuffer = (PFNGLBINDBUFFERPROC)procLoad("glBindBuffer");
-	xge_glBufferData = (PFNGLBUFFERDATAPROC)procLoad("glBufferData");
-	xge_glBufferSubData = (PFNGLBUFFERSUBDATAPROC)procLoad("glBufferSubData");
-
-	xge_glGenVertexArrays = (PFNGLGENVERTEXARRAYSPROC)procLoad("glGenVertexArrays");
-	xge_glDeleteVertexArrays = (PFNGLDELETEVERTEXARRAYSPROC)procLoad("glDeleteVertexArrays");
-	xge_glBindVertexArray = (PFNGLBINDVERTEXARRAYPROC)procLoad("glBindVertexArray");
-	xge_glEnableVertexAttribArray = (PFNGLENABLEVERTEXATTRIBARRAYPROC)procLoad("glEnableVertexAttribArray");
-	xge_glVertexAttribPointer = (PFNGLVERTEXATTRIBPOINTERPROC)procLoad("glVertexAttribPointer");
-
-#if XGE_ENABLE_3D
-    xge_glGenQueries=(D3GLGENQUERIESPROC)procLoad("glGenQueries");
-    xge_glDeleteQueries=(D3GLDELETEQUERIESPROC)procLoad("glDeleteQueries");
-    xge_glQueryCounter=(D3GLQUERYCOUNTERPROC)procLoad("glQueryCounter");
-    xge_glGetQueryObjectiv=(D3GLGETQUERYOBJECTIVPROC)procLoad("glGetQueryObjectiv");
-    xge_glGetQueryObjectui64v=(D3GLGETQUERYOBJECTUI64VPROC)procLoad("glGetQueryObjectui64v");
-#endif
-	xge_glDrawArrays = (PFNGLDRAWARRAYSPROC)procLoad("glDrawArrays");
-	xge_glDrawElements = (PFNGLDRAWELEMENTSPROC)procLoad("glDrawElements");
-#if XGE_ENABLE_3D
-    xge_glDrawArraysInstanced = (PFNGLDRAWARRAYSINSTANCEDPROC)procLoad("glDrawArraysInstanced");
-    xge_glDrawElementsInstanced = (PFNGLDRAWELEMENTSINSTANCEDPROC)procLoad("glDrawElementsInstanced");
-#endif
-
-	xge_glGenTextures = (PFNGLGENTEXTURESPROC)procLoad("glGenTextures");
-	xge_glDeleteTextures = (PFNGLDELETETEXTURESPROC)procLoad("glDeleteTextures");
-	xge_glBindTexture = (PFNGLBINDTEXTUREPROC)procLoad("glBindTexture");
-	xge_glActiveTexture = (PFNGLACTIVETEXTUREPROC)procLoad("glActiveTexture");
-	xge_glTexImage2D = (PFNGLTEXIMAGE2DPROC)procLoad("glTexImage2D");
-	xge_glTexSubImage2D = (PFNGLTEXSUBIMAGE2DPROC)procLoad("glTexSubImage2D");
-	xge_glCopyTexSubImage2D = (PFNGLCOPYTEXSUBIMAGE2DPROC)procLoad("glCopyTexSubImage2D");
-	xge_glPixelStorei = (PFNGLPIXELSTOREIPROC)procLoad("glPixelStorei");
-	xge_glTexParameteri = (PFNGLTEXPARAMETERIPROC)procLoad("glTexParameteri");
-	xge_glGenerateMipmap = (PFNGLGENERATEMIPMAPPROC)procLoad("glGenerateMipmap");
-
-	xge_glCreateShader = (PFNGLCREATESHADERPROC)procLoad("glCreateShader");
-	xge_glDeleteShader = (PFNGLDELETESHADERPROC)procLoad("glDeleteShader");
-	xge_glShaderSource = (PFNGLSHADERSOURCEPROC)procLoad("glShaderSource");
-	xge_glCompileShader = (PFNGLCOMPILESHADERPROC)procLoad("glCompileShader");
-	xge_glGetShaderiv = (PFNGLGETSHADERIVPROC)procLoad("glGetShaderiv");
-	xge_glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC)procLoad("glGetShaderInfoLog");
-
-	xge_glCreateProgram = (PFNGLCREATEPROGRAMPROC)procLoad("glCreateProgram");
-	xge_glDeleteProgram = (PFNGLDELETEPROGRAMPROC)procLoad("glDeleteProgram");
-	xge_glAttachShader = (PFNGLATTACHSHADERPROC)procLoad("glAttachShader");
-	xge_glLinkProgram = (PFNGLLINKPROGRAMPROC)procLoad("glLinkProgram");
-	xge_glUseProgram = (PFNGLUSEPROGRAMPROC)procLoad("glUseProgram");
-	xge_glGetProgramiv = (PFNGLGETPROGRAMIVPROC)procLoad("glGetProgramiv");
-	xge_glGetProgramInfoLog = (PFNGLGETPROGRAMINFOLOGPROC)procLoad("glGetProgramInfoLog");
-	xge_glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)procLoad("glGetUniformLocation");
-
-	xge_glUniform1i = (PFNGLUNIFORM1IPROC)procLoad("glUniform1i");
-	xge_glUniform1f = (PFNGLUNIFORM1FPROC)procLoad("glUniform1f");
-	xge_glUniform2f = (PFNGLUNIFORM2FPROC)procLoad("glUniform2f");
-	xge_glUniform3f = (PFNGLUNIFORM3FPROC)procLoad("glUniform3f");
-	xge_glUniform4f = (PFNGLUNIFORM4FPROC)procLoad("glUniform4f");
-	xge_glUniformMatrix4fv = (PFNGLUNIFORMMATRIX4FVPROC)procLoad("glUniformMatrix4fv");
-
-	xge_glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)procLoad("glGenFramebuffers");
-	xge_glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)procLoad("glDeleteFramebuffers");
-	xge_glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)procLoad("glBindFramebuffer");
-	xge_glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC)procLoad("glFramebufferTexture2D");
-	xge_glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)procLoad("glCheckFramebufferStatus");
-#if XGE_ENABLE_3D
-	xge_glGetFramebufferAttachmentParameteriv = (PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)procLoad("glGetFramebufferAttachmentParameteriv");
-	xge_glBlitFramebuffer = (PFNGLBLITFRAMEBUFFERPROC)procLoad("glBlitFramebuffer");
-#endif
-	xge_glGenRenderbuffers = (PFNGLGENRENDERBUFFERSPROC)procLoad("glGenRenderbuffers");
-	xge_glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)procLoad("glDeleteRenderbuffers");
-	xge_glBindRenderbuffer = (PFNGLBINDRENDERBUFFERPROC)procLoad("glBindRenderbuffer");
-	xge_glRenderbufferStorage = (PFNGLRENDERBUFFERSTORAGEPROC)procLoad("glRenderbufferStorage");
-	xge_glFramebufferRenderbuffer = (PFNGLFRAMEBUFFERRENDERBUFFERPROC)procLoad("glFramebufferRenderbuffer");
-
-	/* 验证核心函数是否加载成功 */
-	if ( (!xge_glViewport) || (!xge_glClear) || (!xge_glCreateShader) || (!xge_glCreateProgram) ) {
-		return 0;
-	}
-
-	return 1;
+#define XGE_GL_SLOT(Type,Name,Required) xge_##Name=pending_##Name;
+#include "xge_gl_slots.inc"
+#undef XGE_GL_SLOT
+    return 1;
+}
+static void* __xgeGlLegacyLoad(const char* name,void* user)
+{return (*(XgeGLLoadProc*)user)(name);}
+int xge_gl_load(XgeGLLoadProc load)
+{return load ? xge_gl_load_ex(__xgeGlLegacyLoad,&load):0;}
+void xge_gl_unload(void)
+{
+#define XGE_GL_SLOT(Type,Name,Required) xge_##Name=NULL;
+#include "xge_gl_slots.inc"
+#undef XGE_GL_SLOT
 }
 
 #endif /* XGE_GL_IMPL */
