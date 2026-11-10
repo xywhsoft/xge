@@ -51,8 +51,18 @@ int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip 
     if(!frames)goto done;
     if(desc->cancelled&&desc->cancelled(desc->user)){error=XGE_ERROR_INVALID_STATE;goto done;}
     clip->info=(xge_audio_clip_info_t){channels,rate,frames,frames*channels*sizeof(float)};
-    /* Shrinking is optional; keep a valid clip if the allocator cannot shrink. */
-    {float *data=xrtRealloc(clip->samples,(size_t)clip->info.bytes);if(data)clip->samples=data;}
+    /* Shrinking is optional. Discard only its allocation diagnostic, while
+     * preserving any error already present before this optional operation. */
+    if(frames<capacity){
+        xerror* saved=xrtTakeError();
+        float *data=xrtRealloc(clip->samples,(size_t)clip->info.bytes);
+        xerror* shrinkError=xrtTakeError();
+        if(data)clip->samples=data;
+        if(shrinkError && xrtErrorKind(shrinkError)!=XERR_MEMORY){
+            xrtErrorFree(saved);xrtSetErrorTake(shrinkError);goto done;
+        }
+        xrtErrorFree(shrinkError);xrtSetErrorTake(saved);
+    }
     *out=clip;clip=NULL;error=XGE_OK;
 done:
     ma_decoder_uninit(&decoder);if(clip){xrtFree(clip->samples);xrtFree(clip);}return error;

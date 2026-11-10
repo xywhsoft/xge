@@ -1,0 +1,63 @@
+{
+  "scope": "CPU clip optional shrink OOM diagnostic preservation; no audio device, window, network or language delivery",
+  "nativeParentRevision": "2f8d708439a17e7504bc42f39a9bd5eb49cbe9be",
+  "productionSource": {
+    "src/xge/audio/xge_audio_clip.inc": "385ec6a17bc40afb89912ae34cd8d549dc448ef54101844feef2295bade50bde"
+  },
+  "testSource": {
+    "tests/xge/xge_audio_clip_oom_test.c": "969b706d28949ef20379168710e9baa337dd1d5048e82eff26e8385e4d8f5ab2",
+    "tools/test/check_audio_clip_oom.py": "1ea00eb5ef34e9f0e132eff8ebb9ce07d04d885ffc6e4999b1cb7d2f0755d256"
+  },
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-native-win-r1\\results.json",
+      "sha256": "1698eabf4c04434ab84baaa81749251eb11f558dcb6f24b92ca0ebda78bc4d41",
+      "positive": true,
+      "rows": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-native-linux-r1\\results.json",
+      "sha256": "b3b9f6a9f058b427f7188f18640c7871c754049b7a036882b20ed705977577ed",
+      "positive": true,
+      "rows": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-baseline-win-r2\\results.json",
+      "sha256": "c9f2ac29d7fa79a15165deb03e71f54c138a50a8b36c7468f24c5547a4ef571e",
+      "positive": false,
+      "rows": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-baseline-linux-r2\\results.json",
+      "sha256": "d539bd6ba5cbd941eaf044c268e62d1134c748b82e9d12e5a0f1eded1946bd91",
+      "positive": false,
+      "rows": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r42\\build-report.json",
+      "sha256": "ff15e2271964a84921656252612239f260d03d5f806ece4d35df42e688c6c4f4",
+      "build": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r42\\build-report.json",
+      "sha256": "fd7d4ee920f0b5bdb441f17a2b649d1fcbc4d2923b5f4f9d61b3f22dae9b8bd5",
+      "build": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r42\\build-report.json",
+      "sha256": "3bd170dcf550c38a26d1b23832e87e77a7ceb9367d1feee6cae280c9b242e560",
+      "build": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r42\\build-report.json",
+      "sha256": "2d1f93f90ee21a1831be728035e0b2f4423ebce2338af68a42a821cc73a720ff",
+      "build": true
+    }
+  ],
+  "positiveRows": 16,
+  "allocationBudgetsPerRun": 8,
+  "ambientErrorAndHeapBalance": true,
+  "publicAbiChanged": false,
+  "shippingDelivery": false,
+  "languageAudioIntegrationComplete": false
+}
