@@ -1,0 +1,107 @@
+{
+  "schema": "xge-audio-reference-1",
+  "passed": true,
+  "shippingDelivery": false,
+  "scope": "Reject empty/dead Sound counts and signed reference overflow; preserve valid retains, caller diagnostic and allocation-free hot behavior",
+  "nativeParentRevision": "dd6585ab95d40ea7cbcbba33580fd25fe203541c",
+  "source": {
+    "src/xge/audio/xge_audio.c": "7adf78ac01c8c576c1be8b362ac65df33e75400b6dba73a3495c0e51b22959d9",
+    "tests/xge/xge_audio_reference_test.c": "87832d8904ef95beffd1b881789c2b5a9cf66305a1eadc7e43df8955e15aef66",
+    "tools/test/check_audio_references.py": "f36264e7c04c892dec1bec7f1f9f774c46d0cb168b9660b2fe7318b3bf5b72d6"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r45.json",
+    "sha256": "719e2c6384bda3b2ac423633816273569a0f9b081a72375020eda872eb6e18b3"
+  },
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-ref-references-win-r1\\results.json",
+      "sha256": "2e328984c126f7a7b9616db5626a19bec775c2d39c5c716dcf2e9284423d03b4",
+      "checks": 24
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-ref-clip-regression-win-r1\\results.json",
+      "sha256": "1d6c8e89536e5959e9d6dbb48dc5faa26a3215a0659d4d6cb4a00ebfc0e0737e",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-ref-references-linux-r1\\results.json",
+      "sha256": "9f0fd3b7bc2177f959a397fe7450ff9ae27b9149dd445486f9db1d40adf6324d",
+      "checks": 24
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-ref-clip-regression-linux-r1\\results.json",
+      "sha256": "e72731edf742d4c1fbd916466a7771b880155c7c1c948ac436bc320bae80f402",
+      "checks": 16
+    }
+  ],
+  "checks": 80,
+  "failureControls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-reference-baseline-win-r1\\results.json",
+      "sha256": "ffb7e7a676fa6ec40511948d404b21fd15d1d076cb2a58bd110741a6502751b1",
+      "expectedFailure": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-reference-baseline-linux-r1\\results.json",
+      "sha256": "3c8dfd5ae89d47c196923bd9c63b275398482771d823604ee06349dc2027a6e0",
+      "expectedFailure": true
+    }
+  ],
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r45-win.json",
+      "sha256": "3f3b6f5a71275eacdfd975be748fdbeee96edb087fc91285004792938d082547"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r45\\build-report.json",
+      "sha256": "b3ef3ccdfc26b08d3703e2eae9d92b040eb96e73c4879568b86df4c4ab0246f2",
+      "compiled": [
+        "single/xge.c"
+      ],
+      "reusedObjects": 145
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r45\\build-report.json",
+      "sha256": "dcea45b5429faa0d65309c5d24fc6ee053b3f7c871e340068340850ebc42ba6d",
+      "compiled": [
+        "single/xge.c",
+        "F:/xlang-validation/xge-full-20261110/native-static-win-r45/xge_static_contract.c"
+      ],
+      "reusedObjects": 144
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r45-linux.json",
+      "sha256": "4ed8d6b351a0aff7f18c931c14e4667b3f10aa85849f7e6ac222d52c8b65f58f"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r45\\build-report.json",
+      "sha256": "7901967c2d55069ed90530a050b3c6fd4f94e6996ac187e59c4b731d8d5a4ef8",
+      "compiled": [
+        "single/xge.c"
+      ],
+      "reusedObjects": 145
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r45\\build-report.json",
+      "sha256": "cfabadcc8ff1f2c937dbbf6de72ba05ce1ab4349016d3156e25bd4705616f42a",
+      "compiled": [
+        "single/xge.c",
+        "/mnt/f/xlang-validation/xge-full-20261110/native-static-linux-r45/xge_static_contract.c"
+      ],
+      "reusedObjects": 144
+    }
+  ],
+  "publicHeadersChanged": false,
+  "positiveHotLoops": 1000,
+  "hotHeapAllocations": 0,
+  "audioDeviceTests": false,
+  "graphicsTests": false,
+  "networkTests": false,
+  "canonicalXrtSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "remaining": [
+    "Owned engine/group/voice and Sound request lifecycle",
+    "Complete xlang audio API and generic callback/immutable sequence inputs",
+    "Final current-mainline matched release/IDE delivery"
+  ]
+}

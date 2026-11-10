@@ -1,4 +1,5 @@
 #ifndef XGE_NO_AUDIO
+#include <limits.h>
 #include "xge_audio_clip.inc"
 static xge_sound __xgeAudioAsSound(void* pObject)
 {
@@ -335,7 +336,9 @@ int xgeSoundResume(xge_sound pSound)
 
 int xgeSoundAddRef(xge_sound pSound)
 {
-	if ( pSound == NULL ) {
+	/* Empty/dead records cannot be resurrected; overflow must not report a
+	 * retained reference which was never acquired. Match Font's contract. */
+	if ( pSound == NULL || pSound->iRefCount <= 0 || pSound->iRefCount == INT_MAX ) {
 		return 0;
 	}
 	pSound->iRefCount++;
