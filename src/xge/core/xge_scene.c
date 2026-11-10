@@ -2,9 +2,13 @@
  * activation changes before onFree, which may physically free a C record.
  * Dispatch revisions never wrap, so a callback cannot cause pointer ABA. */
 static uint64_t g_xgeSceneRevision;
+static xge_scene_owned g_xgeSceneOwners[XGE_SCENE_STACK_MAX];
+static int __xgeSceneStackRetain(xge_scene_owned);
+static int __xgeSceneStackRelease(xge_scene_owned);
 /* Lifecycle callbacks may configure scheduling without nesting a stack
  * transition. Keep that dispatch invalidation independent of stack budgets. */
 static uint64_t g_xgeSceneStrategyRevision;
+static uint64_t g_xgeSceneCallbackRevision;
 
 typedef struct xge_scene_outcome {
     int status;
@@ -93,10 +97,12 @@ static int __xgeSceneResume(xge_scene scene)
     if(status==XGE_OK)scene->bPaused=0;
     return status;
 }
-static void __xgeSceneUnpublish(void)
+static xge_scene_owned __xgeSceneUnpublish(void)
 {
-    g_xge.arrSceneStack[--g_xge.iSceneStackCount]=NULL;
-    ++g_xgeSceneRevision;g_xge.fSceneAccumulator=0;
+    int index=--g_xge.iSceneStackCount;
+    xge_scene_owned owner=g_xgeSceneOwners[index];
+    g_xgeSceneOwners[index]=NULL;g_xge.arrSceneStack[index]=NULL;
+    ++g_xgeSceneRevision;g_xge.fSceneAccumulator=0;return owner;
 }
 /* False means Leave rejected removal: its original entry remains published.
  * True consumes the entry even when onFree or the following Resume failed. */
@@ -106,18 +112,21 @@ static bool __xgeSceneRemove(xge_scene_outcome* outcome,bool resume)
     int status=__xgeSceneLeave(scene);__xgeSceneRemember(outcome,status);
     if(status!=XGE_OK)return false;
     xge_scene_lifecycle_proc release=scene->onFree;
-    __xgeSceneUnpublish();
+    xge_scene_owned owner=__xgeSceneUnpublish();
     __xgeSceneRemember(outcome,__xgeSceneCall(scene,release));
+    __xgeSceneRemember(outcome,__xgeSceneStackRelease(owner));
     /* Never inspect scene after onFree: a raw C callback may have freed it. */
     if(resume)__xgeSceneRemember(outcome,__xgeSceneResume(__xgeSceneTop()));
     return true;
 }
-static void __xgeSceneAppend(xge_scene_outcome* outcome,xge_scene scene)
+/* Consumes an already reserved stack owner on both outcomes. */
+static void __xgeSceneAppend(xge_scene_outcome* outcome,xge_scene scene,xge_scene_owned owner)
 {
+    g_xgeSceneOwners[g_xge.iSceneStackCount]=owner;
     g_xge.arrSceneStack[g_xge.iSceneStackCount++]=scene;
     ++g_xgeSceneRevision;g_xge.fSceneAccumulator=0;
     int status=__xgeSceneEnter(scene);__xgeSceneRemember(outcome,status);
-    if(status!=XGE_OK)__xgeSceneUnpublish();
+    if(status!=XGE_OK)__xgeSceneRemember(outcome,__xgeSceneStackRelease(__xgeSceneUnpublish()));
 }
 static void __xgeSceneClearBody(xge_scene_outcome* outcome)
 {
@@ -137,17 +146,22 @@ int xgeSceneClear(void)
     int status=__xgeSceneAdmission(XGE_SCENE_STACK_MAX);
     return status==XGE_OK ? __xgeSceneClear():status;
 }
-int xgeSceneSet(xge_scene scene)
+static int __xgeSceneSetValue(xge_scene scene,xge_scene_owned owner)
 {
     int status=__xgeSceneAdmission(XGE_SCENE_STACK_MAX+2u);
     if(status!=XGE_OK)return status;
     if(scene && __xgeSceneContains(scene))
         return g_xge.iSceneStackCount==1 && __xgeSceneTop()==scene ? XGE_OK:XGE_ERROR_INVALID_STATE;
-    xge_scene_outcome outcome=__xgeSceneBegin();__xgeSceneClearBody(&outcome);
-    if(outcome.status==XGE_OK && scene)__xgeSceneAppend(&outcome,scene);
+    xge_scene_outcome outcome=__xgeSceneBegin();
+    status=__xgeSceneStackRetain(owner);__xgeSceneRemember(&outcome,status);
+    if(status==XGE_OK){
+        __xgeSceneClearBody(&outcome);
+        if(outcome.status==XGE_OK && scene){__xgeSceneAppend(&outcome,scene,owner);owner=NULL;}
+        __xgeSceneRemember(&outcome,__xgeSceneStackRelease(owner));
+    }
     return __xgeSceneEnd(&outcome);
 }
-int xgeScenePush(xge_scene scene)
+static int __xgeScenePushValue(xge_scene scene,xge_scene_owned owner)
 {
     int status=__xgeSceneAdmission(2);
     if(status!=XGE_OK)return status;
@@ -155,10 +169,14 @@ int xgeScenePush(xge_scene scene)
     if(__xgeSceneContains(scene))return XGE_ERROR_INVALID_STATE;
     if(g_xge.iSceneStackCount>=XGE_SCENE_STACK_MAX)return XGE_ERROR_OUT_OF_MEMORY;
     xge_scene_outcome outcome=__xgeSceneBegin();xge_scene previous=__xgeSceneTop();
-    status=__xgeScenePause(previous);__xgeSceneRemember(&outcome,status);
+    status=__xgeSceneStackRetain(owner);__xgeSceneRemember(&outcome,status);
     if(status==XGE_OK){
-        __xgeSceneAppend(&outcome,scene);
-        if(outcome.status!=XGE_OK)__xgeSceneRemember(&outcome,__xgeSceneResume(previous));
+        status=__xgeScenePause(previous);__xgeSceneRemember(&outcome,status);
+        if(status==XGE_OK){
+            __xgeSceneAppend(&outcome,scene,owner);owner=NULL;
+            if(outcome.status!=XGE_OK)__xgeSceneRemember(&outcome,__xgeSceneResume(previous));
+        }
+        __xgeSceneRemember(&outcome,__xgeSceneStackRelease(owner));
     }
     return __xgeSceneEnd(&outcome);
 }
@@ -170,18 +188,22 @@ int xgeScenePop(void)
     xge_scene_outcome outcome=__xgeSceneBegin();
     (void)__xgeSceneRemove(&outcome,true);return __xgeSceneEnd(&outcome);
 }
-int xgeSceneReplace(xge_scene scene)
+static int __xgeSceneReplaceValue(xge_scene scene,xge_scene_owned owner)
 {
     int status=__xgeSceneAdmission(3);
     if(status!=XGE_OK)return status;
     if(!scene)return XGE_ERROR_INVALID_ARGUMENT;
     if(__xgeSceneTop()==scene)return XGE_OK;
     if(__xgeSceneContains(scene))return XGE_ERROR_INVALID_STATE;
-    if(!g_xge.iSceneStackCount)return xgeScenePush(scene);
+    if(!g_xge.iSceneStackCount)return __xgeScenePushValue(scene,owner);
     xge_scene_outcome outcome=__xgeSceneBegin();
-    if(__xgeSceneRemove(&outcome,false)){
-        if(outcome.status==XGE_OK)__xgeSceneAppend(&outcome,scene);
-        if(outcome.status!=XGE_OK)__xgeSceneRemember(&outcome,__xgeSceneResume(__xgeSceneTop()));
+    status=__xgeSceneStackRetain(owner);__xgeSceneRemember(&outcome,status);
+    if(status==XGE_OK){
+        if(__xgeSceneRemove(&outcome,false)){
+            if(outcome.status==XGE_OK){__xgeSceneAppend(&outcome,scene,owner);owner=NULL;}
+            if(outcome.status!=XGE_OK)__xgeSceneRemember(&outcome,__xgeSceneResume(__xgeSceneTop()));
+        }
+        __xgeSceneRemember(&outcome,__xgeSceneStackRelease(owner));
     }
     return __xgeSceneEnd(&outcome);
 }
@@ -234,6 +256,7 @@ static int __xgeSceneFrame(void)
     xge_scene scene=__xgeSceneTop();if(!scene)return XGE_OK;
     uint64_t revision=g_xgeSceneRevision;
     uint64_t strategyRevision=g_xgeSceneStrategyRevision;
+    uint64_t callbackRevision=g_xgeSceneCallbackRevision;
     float delta=g_xge.fDelta;
     xge_scene_outcome outcome={XGE_OK,NULL,xrtTakeError()};
     g_xgeSceneStepping=true;
@@ -249,7 +272,7 @@ static int __xgeSceneFrame(void)
             __xgeCallbackActivityLeave();__xgeSceneRemember(&outcome,status);
             /* Check identity BEFORE any further access to the old record or
              * accumulator. A transition/strategy change owns the next frame. */
-            if(outcome.status!=XGE_OK || revision!=g_xgeSceneRevision || strategyRevision!=g_xgeSceneStrategyRevision)goto finish;
+            if(outcome.status!=XGE_OK || revision!=g_xgeSceneRevision || strategyRevision!=g_xgeSceneStrategyRevision || callbackRevision!=g_xgeSceneCallbackRevision)goto finish;
             if(fixed)g_xge.fSceneAccumulator-=g_xge.fSceneFixedStep;
             ++updates;
         }
@@ -261,3 +284,8 @@ finish:
     g_xge.fDelta=delta;g_xgeSceneStepping=false;
     return __xgeSceneOutcomeEnd(&outcome);
 }
+
+int xgeSceneSet(xge_scene scene){return __xgeSceneSetValue(scene,NULL);}
+int xgeScenePush(xge_scene scene){return __xgeScenePushValue(scene,NULL);}
+int xgeSceneReplace(xge_scene scene){return __xgeSceneReplaceValue(scene,NULL);}
+#include "xge_scene_owned.c"

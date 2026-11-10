@@ -1706,6 +1706,13 @@ typedef int (*xge_scene_event_proc)(xge_scene pScene, const xge_event_t* pEvent)
 typedef int (*xge_scene_update_proc)(xge_scene pScene, float fDelta);
 typedef int (*xge_scene_draw_proc)(xge_scene pScene);
 
+/* Managed scenes are opaque shared objects. Stack slots retain a real owner;
+ * callback slots retain and trace their supplied owners. Raw scene records
+ * above retain their separate caller-owned C contract. */
+typedef struct xge_scene_owned_t* xge_scene_owned;
+typedef int (*xge_scene_owned_event_proc)(const xge_event_t* event,void* user);
+typedef int (*xge_scene_owned_update_proc)(float delta,void* user);
+
 struct xge_scene_t {
 	void* pUser;
 	xge_scene_lifecycle_proc onEnter;
@@ -2050,6 +2057,41 @@ XGE_API int xgeSceneDispatchEvent(const xge_event_t* pEvent);
 XGE_API int xgeSceneUpdateStrategySet(int iMode, float fFixedStep, int iMaxUpdates);
 /* 读取当前更新策略参数。 */
 XGE_API void xgeSceneUpdateStrategyGet(int* pMode, float* pFixedStep, int* pMaxUpdates);
+
+/* Creator-thread configuration and stack operations. Create clears output on
+ * failure and does not require an initialized renderer. Removal calls onFree
+ * once per completed activation, independently of final object destruction.
+ * Release consumes iff *consumed, even when cleanup reports a failure. */
+XGE_API int xgeSceneCreateOwned(xge_scene_owned* output);
+/* The independent owner protects native policy/engine code even with no
+ * callbacks. Its hooks must be resident or otherwise cover their own native
+ * return tails. NULL keeps the explicit C-host code-residency contract. */
+XGE_API int xgeSceneCreateOwnedWithCode(xge_scene_owned* output,const xge_callback_owner_t* codeOwner);
+XGE_API int xgeSceneShareOwned(xge_scene_owned scene,xge_scene_owned* output);
+XGE_API int xgeSceneReleaseOwnerChecked(xge_scene_owned scene,bool* consumed);
+XGE_API int xgeSceneReleaseChecked(xge_scene_owned scene);
+XGE_API int xgeSceneSetOwned(xge_scene_owned scene);
+XGE_API int xgeScenePushOwned(xge_scene_owned scene);
+XGE_API int xgeSceneReplaceOwned(xge_scene_owned scene);
+/* Empty stack succeeds with NULL; a caller-owned raw top is UNSUPPORTED. */
+XGE_API int xgeSceneCurrentOwned(xge_scene_owned* output);
+XGE_API int xgeSceneEnteredGet(xge_scene_owned scene,bool* output);
+XGE_API int xgeScenePausedGet(xge_scene_owned scene,bool* output);
+XGE_API int xgeSceneEnterCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneLeaveCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeScenePauseCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneResumeCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneDrawCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneFreeCallbackSetOwned(xge_scene_owned scene,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneEventCallbackSetOwned(xge_scene_owned scene,xge_scene_owned_event_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API int xgeSceneUpdateCallbackSetOwned(xge_scene_owned scene,xge_scene_owned_update_proc callback,void* user,const xge_callback_owner_t* owner);
+XGE_API xrtownershipref xgeSceneOwnership(xge_scene_owned scene);
+XGE_API const xrtownershipadapterv1* xgeSceneOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeSceneOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeSceneOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeSceneOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeSceneOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeSceneOwnershipReadReady(xrtownershipref ref);
 
 /* 读取窗口客户区宽度（像素）。 */
 XGE_API int xgeGetWidth(void);

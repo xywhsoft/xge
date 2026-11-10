@@ -1,0 +1,91 @@
+{
+  "scope": "Opaque owned Scene, actual native stack/callback/code references and checked retirement; separate raw C records preserved",
+  "shippingDelivery": false,
+  "networkTests": false,
+  "source": {
+    "include/xge.h": "40c65cfb54ee2a5a862f2fc0f9c7af5f5f349b47b907af77a6d0204c2c85ac5b",
+    "src/xge/core/xge_scene.c": "e128963cbbc2c2747402f22bdc1ac7a8a319dcb8b057b69b8097b6ddf4f09f93",
+    "src/xge/core/xge_scene_owned.c": "3058f2f311fe34abc4a35f34260113d251d11525c9089e8d0986a114fdad15ff",
+    "tests/xge/xge_scene_owned_test.c": "c2eb5a07c25152d82de794e0683f72f0338f07e75a2b75c2c28eb2064441d71d",
+    "tools/test/check_scene_transitions.py": "52afa6d3f0b3caa7487ecdd7bdc1714f05ef18156f3efd4565ca01e6bb3955ae"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r18.json",
+    "sha256": "bb548849cfa85bbe040e9c83d9ba6465ac09be93dfde68e28bd05ec5fb6898f8"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r18\\build-report.json",
+      "sha256": "0ab8b88920c81e9bc2950437bb82ee997a5ba854127c360e4f33b21baf7273a6",
+      "linkage": "dynamic-host",
+      "xrtMode": "host",
+      "bytes": 9187765
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r18\\build-report.json",
+      "sha256": "771e99af8900295b784683fc1144ffbaf90892c6da44e70963a7f84ac046b01f",
+      "linkage": "dynamic-host",
+      "xrtMode": "host",
+      "bytes": 9993424
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r18\\build-report.json",
+      "sha256": "737ad202aa180d203ae5241ca1b71948a8064805a342440b89f78014204969b9",
+      "linkage": "static-archive",
+      "xrtMode": "direct-external",
+      "bytes": 18787104
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r18\\build-report.json",
+      "sha256": "725e47b52ffe4b0395dfb6764f80b6ad1acd99f5d9033ed642c41fea46147515",
+      "linkage": "static-archive",
+      "xrtMode": "direct-external",
+      "bytes": 17040412
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-owned-win-r3\\results.json",
+      "sha256": "8a3aa7145452001d69fd734d97d59e7ff8d1f81245633d7772908f068af35268",
+      "checks": 38,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-owned-linux-r2\\results.json",
+      "sha256": "23b8e0a50f244c82034a9bb7dc927c5af7d82f02a31aba207ef8b9bda832246f",
+      "checks": 38,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-raw-win-r4\\results.json",
+      "sha256": "42a7ffd46f697b8f1af1cdd3aa6b62227e667683b6c918f79f48029cf244a7a4",
+      "checks": 48,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-raw-linux-r3\\results.json",
+      "sha256": "21021dddd4f330c8196775fcc267b2fb057e37b3f743cd94d114b006d365ecb7",
+      "checks": 48,
+      "graphicsDevice": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-regression-win-r4\\results.json",
+      "sha256": "3fe5cb7f34f38dc098351c1fada261a6165da56b4f01f0b3df697e1ad4de8c45",
+      "checks": 44,
+      "graphicsDevice": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-scene-regression-linux-r3\\results.json",
+      "sha256": "1d76d1e48d6c9d5a809aed4b53c9bcb2d16146bdcad631d878f1596e31d16683",
+      "checks": 44,
+      "graphicsDevice": true
+    }
+  ],
+  "limits": [
+    "Native C owners must satisfy residency and callback-return contracts",
+    "No arbitrary concurrent Scene mutation",
+    "Native C gates do not certify a complete language/compiler/SDK release",
+    "Actual xlang code-owner empty/nonempty module graph qualified separately",
+    "No GPU timing or zero-overhead claim"
+  ]
+}

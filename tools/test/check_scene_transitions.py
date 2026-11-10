@@ -18,6 +18,7 @@ def main():
     for name in ('root','engine','runtime','host-header','out'):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--test-root',type=Path)
+    parser.add_argument('--owned',action='store_true',help='Qualify opaque owned Scene refs callbacks and lifecycle instead of raw records')
     args=parser.parse_args()
     root,engine,runtime,header,out=[v.resolve() for v in
         (args.root,args.engine,args.runtime,args.host_header,args.out)]
@@ -29,11 +30,12 @@ def main():
     cc=shutil.which('gcc');assert cc
     image=engine/metadata['runtime_image']
     library=engine/metadata['import_library'] if os.name=='nt' else image
-    source=tests/'tests/xge/xge_scene_transition_test.c'
+    source=tests/'tests/xge'/('xge_scene_owned_test.c' if args.owned else 'xge_scene_transition_test.c')
     sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
     files=[Path(__file__).resolve(),Path(cc),source,header,image,library,runtime,
         engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',
         root/'src/xge/core/xge_core.c',root/'src/xge/core/xge_scene.c']
+    if args.owned:files.append(root/'src/xge/core/xge_scene_owned.c')
     files.extend(p for p in (engine/'host-xrt').iterdir() if p.is_file())
     inputs={str(p):sha(p) for p in files}
     out.mkdir(parents=True,exist_ok=False);(out/'tmp').mkdir()
@@ -41,7 +43,7 @@ def main():
     if os.name=='nt':
         for p in (runtime,image):shutil.copy2(p,out/p.name)
     else:env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+str(engine)+':'+env.get('LD_LIBRARY_PATH','')
-    report=dict(passed=False,scope=__doc__,networkTests=False,graphicsDevice=False,inputs=inputs,rows=[])
+    report=dict(passed=False,scope=__doc__,ownedScenes=args.owned,networkTests=False,graphicsDevice=False,inputs=inputs,rows=[])
     def save():
         (out/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')
     def run(name,command):
@@ -59,7 +61,7 @@ def main():
     for optimization in ('O0','O2'):
         exe=out/(optimization+('.exe' if os.name=='nt' else ''))
         run(optimization+'-build',[cc,*flags,'-'+optimization,source,library,runtime,*systems,'-o',exe])
-        for mode in range(1,24):run(optimization+'-'+str(mode),[exe,str(mode)])
+        for mode in range(1,19 if args.owned else 24):run(optimization+'-'+str(mode),[exe,str(mode)])
     assert all(sha(p)==value for p,value in inputs.items())
     report.update(passed=True,inputsUnchanged=True);save()
 

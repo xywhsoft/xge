@@ -54,3 +54,41 @@ The matched existing resource, callback and real OpenGL gates also pass.
 Pins and external report paths are in
 `docs/validation/scene-transitions-20261110.json`. These results certify this
 native state machine, not managed Scene graphs, a language binding, or a release.
+
+## Opaque owned scenes
+
+`xgeSceneCreateOwned` creates a creator-thread shared object with an embedded
+raw record. Its Set/Push/Replace variants reserve a real stack reference before
+any destructive transition. CurrentOwned returns another real reference;
+an empty stack returns a successful NULL, and a caller-owned raw top returns
+UNSUPPORTED. Dropping a view/reference does not remove a stacked scene.
+
+Each of the eight typed callback setters publishes an immutable owner node.
+The Scene traces the real callback references; invocation holds a separate
+snapshot and Scene activity through the entire callback return/cleanup tail.
+A callback may replace itself or remove its Scene. Changing a current callback
+invalidates the rest of that frame before its old update/draw pointers are read.
+Final object destruction clears callbacks; it does not invent an onFree call.
+onFree still means removal of a completed activation, not object destruction.
+
+The common native lifetime implementation exposes Count/Trace, preparation,
+quiescence, consuming checked Release, staged finalization and completion.
+Last release on another thread returns Busy without consuming its duty. A
+language runtime may defer that duty to the creator; raw C must retry there.
+Status and consumption remain independent when callback cleanup fails.
+
+`xgeSceneCreateOwnedWithCode` additionally retains and traces one independent
+code owner. This is needed when a Scene stack outlives language views even if
+there is no callback. The owner's hooks must be resident or otherwise protect
+their own native return tails; Hold is an RC operation and Drop consumes its
+duty. The empty descriptor keeps the explicit C-host code-residency contract.
+The code owner survives callback finalization and is dropped in the finishing
+phase. Managed callbacks never borrow a constructor's temporary descriptor.
+
+The additional owned gate covers 18 modes at O0/O2 on Windows/Linux: stack
+refs, shared handles, exact graph edges, all callback signatures, self-clear,
+owner-hook reentry, removal during update, error consumption, checked retry,
+wrong-thread final release, allocation rollback, independent code owners and
+1,000 warmed frames with no additional heap allocations. It does not certify
+arbitrary concurrent mutation, a malicious C owner, or hardware performance.
+See `docs/validation/scene-owned-20261110.json` for the exact candidate and pins.
