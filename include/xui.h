@@ -2757,6 +2757,7 @@ struct xui_code_virtual_text_t {
 
 typedef int (*xui_code_lexer_proc)(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser);
 /* Optional owner/render-thread foreground override for a visible lexical token.
+ * Token offsets are document-wide UTF-8 bytes, including on later lines.
  * Document/token are borrowed for this call only. Do not retain them, mutate
  * UI/document state or reenter rendering. User data lives until uninstalled or
  * the editor is destroyed. Return XUI_OK with a defined nontransparent style

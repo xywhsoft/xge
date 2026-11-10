@@ -16,11 +16,11 @@ static int spans(xui_proxy p,xui_draw_context d,const xui_text_item_t* text,xui_
 {for(int i=0;i<count && paintCount<4096;++i)paints[paintCount++]=rows[i].iColor;return baseSpans(p,d,text,rect,color,flags,rows,count);}
 static int shapeSpans(xui_proxy p,xui_draw_context d,const xui_text_shape_t* shape,int start,int end,xui_rect_t rect,uint32_t color,uint32_t flags,float x,const xui_text_paint_span_t* rows,int count)
 {for(int i=0;i<count && paintCount<4096;++i)paints[paintCount++]=rows[i].iColor;return baseShapeSpans(p,d,shape,start,end,rect,color,flags,x,rows,count);}
-typedef struct style_state {xui_code_document doc;uint32_t version;int mode,calls,offscreen,hidden;} style_state;
+typedef struct style_state {xui_code_document doc;uint32_t version;int mode,calls,offscreen,hidden,start,end;} style_state;
 static int resolve(xui_code_document_t* doc,const xui_code_token_t* token,int* style,void* user)
 {
     style_state* s=user;++s->calls;if(token->iStartOffset>=s->hidden)s->offscreen=1;
-    if(doc!=s->doc || xuiCodeDocumentGetVersion(doc)!=s->version || token->iStartOffset!=4 || token->iEndOffset!=9)return XUI_ERROR_NOT_FOUND;
+    if(doc!=s->doc || xuiCodeDocumentGetVersion(doc)!=s->version || token->iStartOffset!=s->start || token->iEndOffset!=s->end)return XUI_ERROR_NOT_FOUND;
     *style=s->mode==2?999999:s->mode==3?XUI_CODE_STYLE_CUSTOM_BASE+1:XUI_CODE_STYLE_CUSTOM_BASE;
     return s->mode==4?XUI_ERROR_NOT_FOUND:XUI_OK;
 }
@@ -42,7 +42,7 @@ int main(void)
     CHECK(xuiCodeEditSetStyle(edit,XUI_CODE_STYLE_CUSTOM_BASE,&custom)==XUI_OK);custom.iForeground=0;CHECK(xuiCodeEditSetStyle(edit,XUI_CODE_STYLE_CUSTOM_BASE+1,&custom)==XUI_OK);
     xui_style_property_t property={0};property.iSize=sizeof(property);property.sName="codeedit.text.color";property.tValue.iSize=sizeof(property.tValue);property.tValue.iType=XUI_STYLE_VALUE_COLOR;property.tValue.iColor=0x123abcffu;
     CHECK(xuiStyleSetDefault(ctx,&property,1)==XUI_OK);
-    style_state state={.doc=xuiCodeEditGetDocument(edit),.mode=1,.hidden=hidden};state.version=xuiCodeDocumentGetVersion(state.doc);
+    style_state state={.doc=xuiCodeEditGetDocument(edit),.mode=1,.hidden=hidden,.start=4,.end=9};state.version=xuiCodeDocumentGetVersion(state.doc);
     xui_code_token_t tokens[128],after[128];int count=0,afterCount=0;
     CHECK(xuiCodeLexerCTokenize(text,(int)strlen(text),tokens,128,&count)==XUI_OK && count>5);
     xui_code_token_buffer buffer=xuiCodeEditGetTokenBuffer(edit);CHECK(buffer);
@@ -56,6 +56,10 @@ int main(void)
     paintCount=0;CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0xe10102ffu));
     CHECK(state.calls>0 && !state.offscreen && proxy.iTextShapeCount==shapes);
     CHECK(xuiCodeTokenBufferGetTokens(buffer,state.version,after,128,&afterCount)==XUI_OK && afterCount==count && !memcmp(tokens,after,(size_t)count*sizeof(*tokens)));
+    state.start=(int)(strstr(text,"s=\"")-text);state.end=state.start+1;
+    CHECK(xuiCodeEditSetTokenStyleResolver(edit,resolve,&state)==XUI_OK);paintCount=0;
+    CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0xe10102ffu) && proxy.iTextShapeCount==shapes);
+    state.start=4;state.end=9;
     /* The long-line chunk renderer must use the same resolver without reshaping. */
     static char longLine[70001];memset(longLine,' ',sizeof(longLine)-1);memcpy(longLine,"int alpha = 7;",14);
     CHECK(xuiCodeEditSetText(edit,longLine)==XUI_OK);state.version=xuiCodeDocumentGetVersion(state.doc);

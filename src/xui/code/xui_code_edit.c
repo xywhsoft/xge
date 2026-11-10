@@ -5773,13 +5773,16 @@ static int __xuiCodeEditGetTokenStyle(xui_code_theme pTheme,
 }
 
 static int __xuiCodeEditTokenForeground(xui_widget pWidget,
-    xui_code_edit_data_t* pData, const xui_code_token_t* pToken, uint32_t* pColor)
+    xui_code_edit_data_t* pData, const xui_code_token_t* pToken, int iDocumentStart, uint32_t* pColor)
 {
     xui_code_style_t tStyle;
     const char* sProperty;
     int iStyleId = pToken->iStyle;
+    xui_code_token_t tGlobal = *pToken;
+    tGlobal.iStartOffset += iDocumentStart;
+    tGlobal.iEndOffset += iDocumentStart;
     if ( pData->onTokenStyle != NULL &&
-         pData->onTokenStyle(pData->pDocument, pToken, &iStyleId, pData->pTokenStyleUser) == XUI_OK &&
+         pData->onTokenStyle(pData->pDocument, &tGlobal, &iStyleId, pData->pTokenStyleUser) == XUI_OK &&
          xuiCodeThemeGetStyle(pData->pTheme, iStyleId, &tStyle) == XUI_OK &&
          __xuiCodeEditAlpha(tStyle.iForeground) != 0 ) {
         *pColor = tStyle.iForeground;
@@ -5793,7 +5796,7 @@ static int __xuiCodeEditTokenForeground(xui_widget pWidget,
     return XUI_OK;
 }
 
-static int __xuiCodeEditRenderTokenSpan(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData, const char* sText, int iLineStart, int iLineEnd, xui_code_token_t tToken, float fTextX, float fY, float fColumnWidth, float fLineHeight)
+static int __xuiCodeEditRenderTokenSpan(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData, const char* sText, int iLineStart, int iLineEnd, int iDocumentStart, xui_code_token_t tToken, float fTextX, float fY, float fColumnWidth, float fLineHeight)
 {
 	uint32_t iColor;
 	int iStart;
@@ -5804,14 +5807,14 @@ static int __xuiCodeEditRenderTokenSpan(xui_widget pWidget, xui_proxy pProxy, xu
 	iStart = (tToken.iStartOffset > iLineStart) ? tToken.iStartOffset : iLineStart;
 	iEnd = (tToken.iEndOffset < iLineEnd) ? tToken.iEndOffset : iLineEnd;
 	if ( iEnd <= iStart ) return XUI_OK;
-	iRet = __xuiCodeEditTokenForeground(pWidget, pData, &tToken, &iColor);
+	iRet = __xuiCodeEditTokenForeground(pWidget, pData, &tToken, iDocumentStart, &iColor);
 	if ( iRet != XUI_OK ) return XUI_OK;
 	return __xuiCodeEditRenderLineTextVisual(pProxy, pDraw, pFont, pData, sText, iLineStart, iStart, iEnd, fTextX, fY, fColumnWidth, fLineHeight, iColor);
 }
 
 static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy,
 	xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData,
-	const char* sText, int iLineStart, int iRenderStart, int iRenderEnd,
+	const char* sText, int iLineStart, int iDocumentStart, int iRenderStart, int iRenderEnd,
 	const xui_code_token_t* pTokens, int iTokenCount, xui_rect_t tViewport,
 	float fTextX, float fY, float fColumnWidth, float fLineHeight,
 	uint32_t iTextColor)
@@ -5871,7 +5874,7 @@ static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy,
 					int iSpanStart = pTokens[iToken].iStartOffset;
 					int iSpanEnd = pTokens[iToken].iEndOffset;
 					if ( iSpanEnd <= iPaintStart || iSpanStart >= iPaintEnd ) continue;
-					if ( __xuiCodeEditTokenForeground(pWidget, pData, &pTokens[iToken], &iTokenColor) != XUI_OK ) continue;
+					if ( __xuiCodeEditTokenForeground(pWidget, pData, &pTokens[iToken], iDocumentStart, &iTokenColor) != XUI_OK ) continue;
 					arrSpans[iSpanCount].iSize = sizeof(arrSpans[iSpanCount]);
 					arrSpans[iSpanCount].iStart = (iSpanStart > iPaintStart ? iSpanStart : iPaintStart) - iSpanOrigin;
 					arrSpans[iSpanCount].iEnd = (iSpanEnd < iPaintEnd ? iSpanEnd : iPaintEnd) - iSpanOrigin;
@@ -5917,7 +5920,7 @@ fallback:
 			tToken = pTokens[iToken];
 			tToken.iStartOffset = iStart;
 			tToken.iEndOffset = iEnd;
-			iRet = __xuiCodeEditRenderTokenSpan(pWidget, pProxy, pDraw, pFont, pData, sText, iLineStart, iRenderEnd, tToken, fTextX, fY, fColumnWidth, fLineHeight);
+			iRet = __xuiCodeEditRenderTokenSpan(pWidget, pProxy, pDraw, pFont, pData, sText, iLineStart, iRenderEnd, iDocumentStart, tToken, fTextX, fY, fColumnWidth, fLineHeight);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( iEnd > iCursor ) iCursor = iEnd;
 		}
@@ -6744,7 +6747,7 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 			}
 			if ( iRet == XUI_OK ) {
 				iRet = __xuiCodeEditRenderStyledLine(pWidget, pProxy, pDraw, pFont,
-					pData, sText, 0, iRenderStart - iStart, iRenderEnd - iStart,
+					pData, sText, 0, iStart, iRenderStart - iStart, iRenderEnd - iStart,
 					arrTokens, iTokenCount, tTextContent, fTextBaseX, fTextY,
 					fColumnWidth, fLineHeight, iTextColor);
 			}
