@@ -2756,6 +2756,15 @@ struct xui_code_virtual_text_t {
 };
 
 typedef int (*xui_code_lexer_proc)(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser);
+/* Optional owner/render-thread foreground override for a visible lexical token.
+ * Document/token are borrowed for this call only. Do not retain them, mutate
+ * UI/document state or reenter rendering. User data lives until uninstalled or
+ * the editor is destroyed. Return XUI_OK with a defined nontransparent style
+ * id to override; all other outcomes preserve lexical theme/CSS foreground. */
+#define XUI_CODE_TOKEN_STYLE_RESOLVER 1
+typedef int (*xui_code_token_style_proc)(xui_code_document_t* pDocument,
+    const xui_code_token_t* pToken, int* pStyleId, void* pUser);
+
 typedef int (*xui_code_fold_proc)(xui_code_document_t* pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser);
 
 struct xui_code_language_t {
@@ -8075,6 +8084,10 @@ XUI_API xui_code_theme xuiCodeEditGetTheme(xui_widget pWidget);
 XUI_API int xuiCodeEditSetTheme(xui_widget pWidget, xui_code_theme pTheme);
 /* 按样式 id 覆盖主题某样式颜色。 */
 XUI_API int xuiCodeEditSetStyle(xui_widget pWidget, int iStyleId, const xui_code_style_t* pStyle);
+/* O(1) callback/user switch: repaint only; lexical cache and layout are intact.
+ * NULL callback uninstalls and clears user. Getter requires at least one output. */
+XUI_API int xuiCodeEditSetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc onStyle, void* pUser);
+XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc* pStyle, void** pUser);
 /* 取折叠状态（展开/折叠记录，编辑器持有）。 */
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 /* 取注释存储（标记/指示器/诊断，编辑器持有）。 */
