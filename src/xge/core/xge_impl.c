@@ -2365,6 +2365,7 @@ static void __xgeWin32ClipboardOwnerRelease(void);
 #include "xge_particle_render.c"
 #endif
 #include "xge_async.c"
+#include "xge_async_owned.c"
 #include "xge_input.c"
 #if defined(_WIN32) || defined(_WIN64)
 static int __xgeWin32PreTranslateMessage(const void* pMessage)

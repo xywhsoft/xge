@@ -1,12 +1,14 @@
 typedef struct __xge_async_payload_t {
 	xge_image_t tImage;
 	int iResult;
+	xerror* pError;
 } __xge_async_payload_t;
 
 static void __xgeAsyncPayloadFree(__xge_async_payload_t* pPayload)
 {
 	if ( pPayload == NULL ) return;
 	xgeImageFree(&pPayload->tImage);
+	xrtErrorFree(pPayload->pError);
 	xrtFree(pPayload);
 }
 
@@ -63,7 +65,7 @@ static int __xgeAsyncFinish(xge_async_request pRequest, int iResult)
 	return __xgeAsyncFinishEx(pRequest, iResult, 1);
 }
 
-static uint32 __xgeAsyncThreadProc(ptr pParam)
+static int32 __xgeAsyncThreadProc(ptr pParam)
 {
 	xge_async_request pRequest;
 	__xge_async_payload_t* pPayload;
@@ -92,7 +94,8 @@ static uint32 __xgeAsyncThreadProc(ptr pParam)
 	}
 	/* Only this private payload is touched by the worker. Public request state,
 	 * target objects and callbacks are committed by xgeAsyncPoll on the caller thread. */
-	return (uint32)(pPayload->iResult == XGE_OK ? 0 : 1);
+	pPayload->pError = xrtTakeError();
+	return pPayload->iResult == XGE_OK ? 0 : 1;
 }
 
 static int __xgeAsyncStartThread(xge_async_request pRequest)
@@ -115,7 +118,7 @@ static int __xgeAsyncStartThread(xge_async_request pRequest)
 	if ( pPayload == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	pRequest->pPayload = pPayload;
 
-	pThread = xrtThreadCreate((ptr)__xgeAsyncThreadProc, pRequest, 0);
+	pThread = xrtThreadCreate(__xgeAsyncThreadProc, pRequest, 0);
 	if ( pThread == NULL ) {
 		__xgeAsyncPayloadFree(pPayload);
 		pRequest->pPayload = NULL;

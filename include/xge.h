@@ -1326,6 +1326,21 @@ struct xge_async_request_t {
 	void* pPayload;
 };
 
+/* Creator-thread owned load; worker output is private until Poll. No caller
+ * target pointer is retained. Empty construction permits callback registration
+ * before Start, including providers which complete synchronously. */
+typedef struct xge_async_owned_t* xge_async_owned;
+typedef struct xge_async_load_info_t {
+    uint32_t size;
+    int kind;
+    int status;
+    int result;
+    float progress;
+    bool hasResult;
+    bool cancelRequested;
+    bool threaded;
+} xge_async_load_info_t;
+
 typedef struct xge_font_t xge_font_t;
 typedef xge_font_t* xge_font;
 typedef struct xge_font_face_t* xge_font_face;
@@ -2254,6 +2269,37 @@ XGE_API int xgeAsyncThreadingSet(int bEnabled);
 XGE_API int xgeAsyncThreadingGet(void);
 /* Returns an XGE_ASYNC_* status. A completion callback may release pRequest. */
 XGE_API int xgeAsyncPoll(xge_async_request pRequest);
+/* Code owner hooks follow xgeSceneCreateOwnedWithCode's resident-tail rule.
+ * NULL is reserved for C hosts which independently guarantee code residency. */
+XGE_API int xgeAsyncImageCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
+XGE_API int xgeAsyncTextureCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
+XGE_API int xgeAsyncLoadShareOwned(xge_async_owned request,xge_async_owned* out);
+XGE_API int xgeAsyncLoadReleaseOwnerChecked(xge_async_owned request,bool* consumed);
+XGE_API int xgeAsyncLoadReleaseChecked(xge_async_owned request);
+XGE_API int xgeAsyncLoadInfoGet(xge_async_owned request,xge_async_load_info_t* out);
+/* Start accepts a valid operation, even if a synchronous provider completes
+ * with a load error. Inspect status or ThrowIfFailed for that stored error.
+ * Callback failures are delivered by the initiating Start/Poll boundary. */
+XGE_API int xgeAsyncImageStartOwned(xge_async_owned request,const char* path,uint32_t flags);
+XGE_API int xgeAsyncTextureStartOwned(xge_async_owned request,const char* path,uint32_t flags);
+XGE_API int xgeAsyncLoadPollOwned(xge_async_owned request,int* status);
+XGE_API int xgeAsyncLoadCancelOwned(xge_async_owned request);
+/* Reset is explicit and nonblocking: active decoding/callbacks return BUSY.
+ * It discards an unclaimed result and error; the callback remains registered. */
+XGE_API int xgeAsyncLoadResetOwned(xge_async_owned request);
+XGE_API int xgeAsyncLoadThrowIfFailed(xge_async_owned request);
+XGE_API int xgeAsyncLoadCallbackSetOwned(xge_async_owned request,xge_scene_proc callback,void* user,const xge_callback_owner_t* owner);
+/* One-time move; failure leaves the request's result intact. Image output
+ * must be empty caller storage. Texture output is an independent owned ref. */
+XGE_API int xgeAsyncImageTakeOwned(xge_async_owned request,xge_image output);
+XGE_API int xgeAsyncTextureTakeOwned(xge_async_owned request,xge_texture* output);
+XGE_API xrtownershipref xgeAsyncLoadOwnership(xge_async_owned request);
+XGE_API const xrtownershipadapterv1* xgeAsyncLoadOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeAsyncLoadOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeAsyncLoadOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeAsyncLoadOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeAsyncLoadOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeAsyncLoadOwnershipReadReady(xrtownershipref ref);
 /* 异步解码图片（可走工作线程）。 */
 XGE_API int xgeAsyncImageLoad(xge_async_request pRequest, xge_image pImage, const char* sPath, uint32_t iFlags, xge_async_proc onComplete, void* pUser);
 /* 异步加载纹理（可走工作线程）。 */

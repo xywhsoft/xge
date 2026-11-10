@@ -17,6 +17,7 @@ def main():
     for name in ('root','engine','runtime','host-header','out'):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--test-root',type=Path)
+    parser.add_argument('--owned',action='store_true',help='Check owning requests, private results, callback/code graph and deferred physical worker retirement')
     a=parser.parse_args()
     root,engine,runtime,header,out=[p.resolve() for p in (a.root,a.engine,a.runtime,a.host_header,a.out)]
     tests=a.test_root.resolve() if a.test_root else root
@@ -28,10 +29,11 @@ def main():
     cc=Path(shutil.which('gcc')).resolve()
     image=engine/metadata['runtime_image']
     library=engine/metadata['import_library'] if os.name=='nt' else image
-    source=tests/'tests/xge/xge_async_contract_test.c'
+    source=tests/'tests/xge'/('xge_async_owned_test.c' if a.owned else 'xge_async_contract_test.c')
     files=[Path(__file__).resolve(),cc,source,header,image,library,runtime,
         engine/'build-report.json',engine/'xge_build_config.h',root/'include/xge.h',
         root/'src/xge/resource/xge_async.c']
+    if a.owned:files.extend([root/'src/xge/resource/xge_async_owned.c',root/'src/xge/core/xge_data_lifetime.inl'])
     files.extend(p for p in (engine/'host-xrt').iterdir() if p.is_file())
     inputs={str(p):sha(p) for p in files}
     out.mkdir(parents=True,exist_ok=False)
@@ -39,7 +41,7 @@ def main():
     if os.name=='nt':
         for p in (runtime,image):shutil.copy2(p,out/p.name)
     else:env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+str(engine)+':'+env.get('LD_LIBRARY_PATH','')
-    report=dict(passed=False,scope=__doc__,networkTests=False,graphicsDevice=False,inputs=inputs,rows=[])
+    report=dict(passed=False,scope=__doc__,ownedRequests=a.owned,networkTests=False,graphicsDevice=False,inputs=inputs,rows=[])
     def save():(out/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')
     def run(name,command):
         command=list(map(str,command))
@@ -56,7 +58,7 @@ def main():
     for optimization in ('O0','O2'):
         binary=out/(optimization+('.exe' if os.name=='nt' else ''))
         assert not run(optimization+'-build',[cc,*flags,'-'+optimization,source,library,runtime,*systems,'-o',binary])
-        for mode in range(1,7):
+        for mode in range(1,22 if a.owned else 7):
             run(optimization+'-'+str(mode),[binary,mode,out/('fixture-'+optimization+'.tga')])
     report.update(passed=all(not row['exitCode'] for row in report['rows']),
         inputsUnchanged=all(sha(p)==digest for p,digest in inputs.items()))

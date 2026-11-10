@@ -20,6 +20,8 @@ static const Symbol symbols[]={
 static xge_host_xrt_proc resolve(void* user,const char* name)
 {(void)user;for(size_t i=0;i<sizeof(symbols)/sizeof(*symbols);++i)if(!strcmp(symbols[i].name,name))return symbols[i].proc;return NULL;}
 static unsigned char imageBytes[]={0,0,2,0,0,0,0,0,0,0,0,0,1,0,1,0,24,32,3,2,1};
+static void borrowedBytesFree(void* data,void* user)
+{(void)user;if(data!=imageBytes)abort();}
 typedef struct State {xge_async_request request;int cancel,callbacks,freeOnComplete,callbackStatus;} State;
 static void complete(xge_async_request request,void* user)
 {
@@ -39,6 +41,7 @@ int main(int argc,char** argv)
     CHECK(argc==3);int mode=atoi(argv[1]);CHECK(mode>=1 && mode<=6);
     static const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     CHECK(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_OK);
+    CHECK(xrtMemDebugEnable(true));xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
     xge_async_request_t request; xge_image_t image={0};
     xgeAsyncRequestInit(&request);State state={&request,mode<=2,0,mode>=5,0};
     int threaded=mode==1 || mode==3 || mode==5;
@@ -49,7 +52,7 @@ int main(int argc,char** argv)
         size_t written=fwrite(imageBytes,1,sizeof(imageBytes),file);int closed=fclose(file);
         CHECK(written==sizeof(imageBytes) && !closed);path=argv[2];
     }else{
-        xge_resource_provider_t source={"cancel",provider,NULL,&state};
+        xge_resource_provider_t source={"cancel",provider,borrowedBytesFree,&state};
         CHECK(xgeResourceProviderAdd(&source)==XGE_OK);
     }
     int result=xgeAsyncImageLoad(&request,&image,path,XGE_IMAGE_STRAIGHT_ALPHA,complete,&state);
@@ -66,6 +69,8 @@ int main(int argc,char** argv)
     xgeImageFree(&image);xgeAsyncRequestFree(&request);
     CHECK(xgeResourceProviderClearChecked()==XGE_OK);
     if(threaded)CHECK(!remove(argv[2]));
+    xrtMemDebugSnapshot(&after);
+    CHECK(before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     printf("async mode %d: completion callbacks=%d, expected=%d\n",mode,calls,state.cancel ? 0:1);
     return calls==(state.cancel ? 0:1) ? 0:91;
 }
