@@ -65,12 +65,12 @@ static int callback(void* data)
 static unsigned char imageBytes[]={0,0,2,0,0,0,0,0,0,0,0,0,1,0,1,0,24,32,3,2,1};
 static void borrowedBytesFree(void* data,void* user)
 {(void)user;assert(data==imageBytes);}
-typedef struct Source {Owner* owner;bool cancel,fail;} Source;
+typedef struct Source {Owner* owner;bool cancel;int fail;} Source;
 static int provider(const char* path,void** data,int* bytes,void* context)
 {
     (void)path;Source* source=context;
     if(source->cancel)assert(xgeAsyncLoadCancelOwned(source->owner->request)==XGE_OK);
-    if(source->fail){xrtSetErrorKind(XERR_IO);return XGE_ERROR_FILE_NOT_FOUND;}
+    if(source->fail){xrtSetErrorKind(XERR_IO);return source->fail;}
     *data=imageBytes;*bytes=(int)sizeof(imageBytes);return XGE_OK;
 }
 static void settle(xge_async_owned request)
@@ -100,7 +100,7 @@ static void pixels(const xge_image_t* image)
 {assert(image->iWidth==1 && image->iHeight==1 && image->pPixels);const unsigned char* p=image->pPixels;assert(p[0]==1 && p[1]==2 && p[2]==3 && p[3]==255);}
 int main(int argc,char** argv)
 {
-    assert(argc==3);int mode=atoi(argv[1]);assert(mode>=1 && mode<=21);
+    assert(argc==3);int mode=atoi(argv[1]);assert(mode>=1 && mode<=23);
     static const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_OK && xrtMemDebugEnable(true));
     xge_desc_t desc={0};desc.iRunMode=XGE_RUN_MANUAL;assert(xgeInit(&desc)==XGE_OK);
@@ -143,12 +143,13 @@ int main(int argc,char** argv)
         }
         bool threaded=mode==2 || mode==4 || mode==12 || mode==13 || mode==16 || mode==17 || mode==21;
         assert(xgeAsyncThreadingSet(threaded)==XGE_OK);
-        source.cancel=mode==3;source.fail=mode==8;
+        source.cancel=mode==3 || mode==23;
+        source.fail=mode==8 ? XGE_ERROR_FILE_NOT_FOUND:(mode==22 || mode==23) ? XGE_ERROR_CALLBACK_FAILED:0;
         if(mode==16 || mode==17 || mode==21)atomic_store(&gate,0);
         const char* path=threaded ? argv[2]:"owned://image";
         char missing[1024];if(mode==13){assert(snprintf(missing,sizeof(missing),"%s.missing",argv[2])>0);path=missing;}
         int status=texture ? xgeAsyncTextureStartOwned(request,path,XGE_IMAGE_STRAIGHT_ALPHA):xgeAsyncImageStartOwned(request,path,XGE_IMAGE_STRAIGHT_ALPHA);
-        assert(status==(mode==7 ? -71:XGE_OK));
+        assert(status==(mode==7 ? -71:(mode==22 || mode==23) ? XGE_ERROR_CALLBACK_FAILED:XGE_OK));
         if(mode==6){request=owner.request=NULL;assert(owner.refs==1 && owner.calls==1);}
         else if(mode==21){
             xrtownershipref ref=xgeAsyncLoadOwnership(request);int token=0;
@@ -178,9 +179,9 @@ int main(int argc,char** argv)
             if(mode==3 || mode==4 || mode==17){
                 assert(value.status==XGE_ASYNC_CANCELLED && !value.hasResult && owner.calls==0);
                 assert(xgeAsyncLoadThrowIfFailed(request)!=XGE_OK && xrtGetError());xrtClearError();
-            }else if(mode==8 || mode==13){
-                assert(value.status==XGE_ASYNC_FAILED && !value.hasResult && owner.calls==1);
-                assert(xgeAsyncLoadThrowIfFailed(request)==XGE_ERROR_FILE_NOT_FOUND && xrtGetError());xrtClearError();
+            }else if(mode==8 || mode==13 || mode==22 || mode==23){
+                assert(value.status==XGE_ASYNC_FAILED && !value.hasResult && owner.calls==((mode==22 || mode==23) ? 0u:1u));
+                assert(xgeAsyncLoadThrowIfFailed(request)==((mode==22 || mode==23) ? XGE_ERROR_CALLBACK_FAILED:XGE_ERROR_FILE_NOT_FOUND) && xrtGetError());xrtClearError();
             }else if(mode==14){
                 xrtownershipref ref=xgeAsyncLoadOwnership(request);size_t refs=0;assert(ref.Ops->Count(ref.Data,&refs) && refs==1);
                 visited=0;assert(ref.Ops->Trace(ref.Data,visit,&owner) && visited==2);

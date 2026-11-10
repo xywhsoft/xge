@@ -15,8 +15,11 @@ run outside locks; failed callback replacement preserves the previous slot.
 Start accepts a valid operation even if a synchronous provider immediately fails.
 Info exposes Failed and the original result code; ThrowIfFailed delivers its
 stored diagnostic. Worker diagnostics are captured before the XRT thread boundary
-clears them. Callback failures are separately reported by Start/Poll and do not
-rewrite the load's settled result. A notification is attempted at most once.
+clears them. A source callback contract failure is immediately checked, kept
+as the failed result and never followed by a completion callback. It remains
+observable even when that callback also requested cancellation. A completion
+callback failure is separately reported by Start/Poll and does not rewrite an
+already settled result. A notification is attempted at most once.
 
 File image/texture decoding can use a worker. Providers still run synchronously
 on the creator; resource failures starting a worker do not silently switch to a
@@ -41,7 +44,7 @@ that point; the independent code owner is dropped last by the finishing phase.
 The existing Count/Trace, preparation, quiescence, finalization and completion
 protocols expose the real references and deferred steps to language runtimes.
 
-The 21-mode O0/O2 native gate covers shared refs, private result independence,
+The 23-mode O0/O2 native gate covers shared refs, private result independence,
 callback removal/last-owner release/failure/reentry, provider and worker errors,
 both cancellation paths, wrong-thread refusal, synchronous and threaded OOM
 prefixes, failed output transfer rollback, graph edges, code owner hold failure,

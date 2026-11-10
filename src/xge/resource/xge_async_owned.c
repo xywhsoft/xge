@@ -171,8 +171,9 @@ static int __xgeLoadNotify(xge_async_owned request)
 }
 static int __xgeLoadSettle(xge_async_owned request,int status,xerror* workerError)
 {
+    bool callbackFailure=status==XGE_ERROR_CALLBACK_FAILED;
     xerror* error=xrtTakeError();if(error)xrtErrorFree(workerError);else error=workerError;
-    if(request->raw.bCancel){xrtErrorFree(error);error=NULL;request->raw.iStatus=XGE_ASYNC_CANCELLED;status=XGE_ERROR;}
+    if(request->raw.bCancel && !callbackFailure){xrtErrorFree(error);error=NULL;request->raw.iStatus=XGE_ASYNC_CANCELLED;status=XGE_ERROR;}
     else if(status!=XGE_OK || error){request->raw.iStatus=XGE_ASYNC_FAILED;if(status==XGE_OK)status=XGE_ERROR_RESOURCE_FAILED;}
     else request->raw.iStatus=XGE_ASYNC_READY;
     request->raw.iResult=status;request->raw.fProgress=1.0f;
@@ -182,6 +183,12 @@ static int __xgeLoadSettle(xge_async_owned request,int status,xerror* workerErro
     if(!request->hasResult){
         int cleanup=__xgeLoadDiscard(request);
         if(cleanup!=XGE_OK)return cleanup;
+    }
+    /* An invalid/throwing source callback is a checked invocation failure,
+     * rather than an ordinary IO result. Do not enter another language
+     * callback while its caller's failure boundary is already latched. */
+    if(callbackFailure){
+        request->notified=true;xrtSetErrorTake(xrtErrorRef(request->error));return XGE_ERROR_CALLBACK_FAILED;
     }
     return __xgeLoadNotify(request);
 }

@@ -58,7 +58,7 @@ def main():
     for optimization in ('O0','O2'):
         binary=out/(optimization+('.exe' if os.name=='nt' else ''))
         assert not run(optimization+'-build',[cc,*flags,'-'+optimization,source,library,runtime,*systems,'-o',binary])
-        for mode in range(1,22 if a.owned else 7):
+        for mode in range(1,24 if a.owned else 7):
             run(optimization+'-'+str(mode),[binary,mode,out/('fixture-'+optimization+'.tga')])
     report.update(passed=all(not row['exitCode'] for row in report['rows']),
         inputsUnchanged=all(sha(p)==digest for p,digest in inputs.items()))

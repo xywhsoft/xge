@@ -1,60 +1,61 @@
 {
   "scope": "Owned Image/Texture async requests, private results, exact callbacks and independent code lifetime",
   "shippingDelivery": false,
-  "languageIntegration": "separate qualification pending",
+  "languageIntegration": "Separate matched compiler, module lifetime and static AOT qualification; not a shipping delivery",
   "networkTests": false,
   "graphicsDevice": false,
   "source": {
     "include/xge.h": "632ab476634ff747584311afc7e77fad92ba2c2df51030092de53116c1965f95",
     "src/xge/core/xge_impl.c": "0c3f6b15475182e46435f9f788418f15e997d05d0e1e55b1dc4b6be767a27e9c",
     "src/xge/resource/xge_async.c": "ca44fb9bbb3a47a1ad7a49fa85c7f3affb51fb1c1b29c7a8034e1b9d21373441",
-    "src/xge/resource/xge_async_owned.c": "dccfaa014ea6ffc370c730f51342726910910194c6680c77a80ba6c14a6fedf3",
-    "tests/xge/xge_async_owned_test.c": "30da85070baf05d594d0e30880bd1d825318245928075c86f15661f490c92a5b",
+    "src/xge/resource/xge_async_owned.c": "c32840270f84eca13f7805eabb921b01cb9222de9a246bd453999fc647676f29",
+    "tests/xge/xge_async_owned_test.c": "e53b2970e93d8888674ef94972939774f1c01ef610bdadfcdb1a794630b76615",
     "tests/xge/xge_async_contract_test.c": "d411be97607019c1e90f6a62a45e7637f0fb4fc0da0940051454bf30f796f0a8",
-    "tools/test/check_async_cancellation.py": "b52d7a0fd30dcddb326ebd2017b427946c97d22859bd753eab4e5dfae9f0db9f"
+    "tools/test/check_async_cancellation.py": "3a6d7e16627e5e41b079280fedfa10852a725d8d82f99484cf1e2d36580b3610",
+    "docs/async-owned-contract.md": "fb696f61ac363a420146a7e734b31b461b5c6187302f11692b13a6262270c481"
   },
   "freeze": {
-    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r20.json",
-    "sha256": "7b8305270314933673e74051874b4ba36e9f8a815140669fbccf3ff2e95bf5d9",
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r21.json",
+    "sha256": "c063b1fdaa1aabf036b3257f098751f39b2879fae423190c1b33f0d6a4b70057",
     "testFixtureOverridesArePinnedByReports": true
   },
   "builds": [
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r20\\build-report.json",
-      "sha256": "6ad30af402f98e28e2831bef85025f5fb6e1f2e9b6fe077153a090915bdefb91"
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r21\\build-report.json",
+      "sha256": "023caaef3f0cd419bd0e46a1b816998d0d020f7d059c3d1331b98e88d9204e25"
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r20\\build-report.json",
-      "sha256": "cd88660dbbeb4a4cc5b2704553dca3cb8f8eedd8c4b7f6f2d0ac0775438cb18d"
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r21\\build-report.json",
+      "sha256": "ff4ca9d385173f57dfaea5f149ca0c1dd33f16ff97d71858edffd5a8483da067"
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r20\\build-report.json",
-      "sha256": "3d7a34f4b7c1118b0e43346182adf995ff6482d91b9cf9cdf86e0165f7309395"
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r21\\build-report.json",
+      "sha256": "502282d7b1ad03e697086a83720f539aa3c784dcc7cd482e57cc70f7ed876316"
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r20\\build-report.json",
-      "sha256": "f3708288d412cfeab8b6c65f39817e844650157c151936e23585a19e3f5a6730"
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r21\\build-report.json",
+      "sha256": "ccec5c0139ba1fff42f716dfe89a902d8e01bd2adb7928502a9d32db59cb7f61"
     }
   ],
   "reports": [
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-owned-win-r4\\results.json",
-      "sha256": "f207089248f70be220ea1909347f669efa80500d07c8becfd2564c8c7308869a",
-      "checks": 44
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-owned-win-r5\\results.json",
+      "sha256": "5c7354f578754bb50e35bbcfdf91d67d4b3e3b79f98cd2ad6815494fe83071f8",
+      "checks": 48
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-owned-linux-r3\\results.json",
-      "sha256": "8bb22a30eb6e3e80354041f307ca3a21b70de179f61d33192e2b50e459d319a8",
-      "checks": 44
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-owned-linux-r4\\results.json",
+      "sha256": "a4b093cb8afd809a03992c1db0f9267cddaa2e7231d23a9f9cb85c7f5bfa3de5",
+      "checks": 48
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-win-r2\\results.json",
-      "sha256": "cc85f66f9305abbf75a153a50a08d9077cd15b37e30df75ecd46bab603883e3e",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-win-r3\\results.json",
+      "sha256": "63a7c555de872e9a300beeaf8f8010527535daed69460901833de383d88e8d86",
       "checks": 14
     },
     {
-      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-linux-r2\\results.json",
-      "sha256": "0d3e2fd1fb9d8f1114b49eb6a15d9e16992d4dc8543d3d0626a47a0a01d05988",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-async-linux-r3\\results.json",
+      "sha256": "585728079842eb0fdebc85fc4ec5b1a6c980b32619506ba91420721aa48a8aa3",
       "checks": 14
     }
   ],
@@ -82,5 +83,7 @@
     "Font/Sound owned request/resource admission",
     "Current matched xlang compiler/SDK/module lifetime and static AOT integration",
     "Final shipping delivery and full ecosystem scope"
-  ]
+  ],
+  "checks": 124,
+  "sourceCallbackFailure": "Immediate checked original diagnostic; failed result retained; no later completion, including cancel-then-throw"
 }
