@@ -28,3 +28,20 @@ This is a CPU decoder error-boundary qualification. It does not qualify device
 playback, engine/group/voice ownership or the pending complete xlang audio API.
 Exact frozen inputs and evidence are indexed in
 `docs/validation/audio-clip-errors-20261111.json`.
+
+The additive `xgeAudioClipGetSamples(clip,&samples,&count)` API supplies the
+immutable interleaved PCM pointer and exact scalar-sample count together. It
+resets both outputs on invalid input and borrows the caller's retained clip.
+The legacy pointer-only getter remains available. The new function performs no
+allocation, copy, device access or global engine operation; its count is not a
+frame or byte count. This provides a typed producer for owning read-only
+language sequences without a language-side forwarding function.
+
+After a full native rebuild for the public header change, Windows and Linux
+host/static O0/O2 programs pass 32 build/run rows across both the OOM fixture and
+the span fixture. Span runs verify exact PCM/count, independent native retention
+after the original reference is freed, invalid-output reset and 1,000 repeated
+reads with allocation prohibited. Their source/SDK/runtime hashes are indexed in
+`docs/validation/audio-clip-span-20261111.json`. This native producer does not
+mean that the xlang AudioClip API, its thread contract, cancellation or playback
+resource integration is complete.

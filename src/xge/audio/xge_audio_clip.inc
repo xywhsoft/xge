@@ -70,6 +70,15 @@ done:
 xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip *clip)
 {return clip?clip->info:(xge_audio_clip_info_t){0};}
 const float *xgeAudioClipSamples(const xge_audio_clip *clip){return clip?clip->samples:NULL;}
+int xgeAudioClipGetSamples(const xge_audio_clip *clip,const float **samples,size_t *count)
+{
+    if(samples)*samples=NULL;
+    if(count)*count=0;
+    if(!clip || !samples || !count)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!clip->samples || clip->info.bytes%sizeof(float) || clip->info.bytes/sizeof(float)>SIZE_MAX)
+        return XGE_ERROR_INVALID_STATE;
+    *samples=clip->samples;*count=(size_t)(clip->info.bytes/sizeof(float));return XGE_OK;
+}
 int xgeAudioClipAddRef(xge_audio_clip *clip)
 {
     if(!clip)return XGE_ERROR_INVALID_ARGUMENT;

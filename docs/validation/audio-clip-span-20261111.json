@@ -1,0 +1,51 @@
+{
+  "scope": "Additive immutable PCM pointer/count producer; CPU only, no audio device/window/network",
+  "nativeParentRevision": "4d0c686da3148534fd5a39df3cde560a3476e131",
+  "productionSource": {
+    "include/xge.h": "445428aad9186b580c5663772a41bf8e9a2b4597a785bfbec508a21b7295e686",
+    "src/xge/audio/xge_audio_clip.inc": "c13949cebf842507671decd8862815d9265b778da2f2d75d3935db1be3c53895"
+  },
+  "testSource": {
+    "tests/xge/xge_audio_clip_span_test.c": "fcad91d30d13a1abca5e83d1dd4afa0d08b59542c6fc94d75f88208f15e2d3ee",
+    "tests/xge/xge_audio_clip_oom_test.c": "969b706d28949ef20379168710e9baa337dd1d5048e82eff26e8385e4d8f5ab2",
+    "tools/test/check_audio_clip_oom.py": "78fd267c04f7804310b85527513018121be60c17f739061e532e9284c316ebd3"
+  },
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-span-native-win-r1\\results.json",
+      "sha256": "e00d0a7cc9d3885ec8b356abd41122f5629975cd559ee741aef91941c7c47cdf",
+      "positiveRows": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-clip-span-native-linux-r1\\results.json",
+      "sha256": "dfeb23df541387e1874573d9f1911fd0c19b74d1cad1d6f7d5a00e58b0b234ee",
+      "positiveRows": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r43\\build-report.json",
+      "sha256": "ba79788e6b28a164bbfbcc6d73882c2f805a7ec709b3ba87e24c54a7cc3ec05f",
+      "fullNativeBuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r43\\build-report.json",
+      "sha256": "4c4ba25413812676c012b4ea572bae599f1f17a932682999ec807d58c4bac07f",
+      "fullNativeBuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r43\\build-report.json",
+      "sha256": "a52f081b31f5230edc11d7a424342d0ed11d161b80bc7aabc405ee7a5e4aee7c",
+      "fullNativeBuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r43\\build-report.json",
+      "sha256": "86fb39c01971d74090ccbf8aa101ded8c299a8963035dd02d5b5d022a418e587",
+      "fullNativeBuild": true
+    }
+  ],
+  "positiveRows": 32,
+  "spanReadsPerRun": 1000,
+  "extraSpanAllocations": 0,
+  "wholeArrayCopies": 0,
+  "shippingDelivery": false,
+  "languageAudioIntegrationComplete": false
+}

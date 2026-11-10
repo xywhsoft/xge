@@ -2387,6 +2387,9 @@ XGE_API int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_aud
 XGE_API xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip *clip);
 /* 借用音频剪辑的交错浮点 PCM 样本，生命周期不超过剪辑引用。 */
 XGE_API const float *xgeAudioClipSamples(const xge_audio_clip *clip); /* Borrowed. */
+/* Borrow the immutable interleaved PCM span. Count is scalar samples, not
+ * frames or bytes. Both outputs reset on failure; caller retains the clip. */
+XGE_API int xgeAudioClipGetSamples(const xge_audio_clip *clip,const float **samples,size_t *count);
 /* 增加音频剪辑引用计数。 */
 XGE_API int xgeAudioClipAddRef(xge_audio_clip *clip);
 /* 释放一个音频剪辑引用，最后一个引用负责销毁资源。 */
