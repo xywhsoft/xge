@@ -224,7 +224,7 @@ static void __xgeTextureYUV420PFree(xge_texture pTexture)
 		return;
 	}
 	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
-	if ( g_xge.bSokolRunning && xge_glDeleteTextures != NULL ) {
+	if ( g_xge.bGraphicsRunning && xge_glDeleteTextures != NULL ) {
 		for ( i = 0; i < 3; i++ ) {
 			if ( pYUV->iPlaneTexture[i] != 0 ) {
 				xge_glDeleteTextures(1, &pYUV->iPlaneTexture[i]);
@@ -299,7 +299,7 @@ static int __xgeSamplerNormalize(xge_sampler_t* pSampler)
 static int __xgeTextureApplySampler(xge_texture texture)
 {
     if(!texture || !texture->iBackendId)return XGE_ERROR_INVALID_ARGUMENT;
-    if(!g_xge.bSokolRunning && !g_xge.bRenderThreadGLCurrent)return XGE_ERROR_NOT_INITIALIZED;
+    if(!g_xge.bGraphicsRunning && !g_xge.bRenderThreadGLCurrent)return XGE_ERROR_NOT_INITIALIZED;
     if(!xge_glBindTexture || !xge_glTexParameteri || !xge_glGetIntegerv || !xge_glGetError)return XGE_ERROR_GPU_FAILED;
     xge_sampler_t sampler=texture->tSampler;
     if(__xgeSamplerNormalize(&sampler)!=XGE_OK)return XGE_ERROR_INVALID_ARGUMENT;
@@ -336,7 +336,7 @@ static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
 	if ( pTexture->iBackendId != 0 ) {
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( !__xgeTextureHasYUV420P(pTexture) ) {
@@ -384,7 +384,7 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 	if ( pTexture->iBackendId != 0 ) {
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( !__xgeTextureHasShadow(pTexture) ) {
@@ -458,7 +458,7 @@ int xgeTextureCreateRGBAEx(xge_texture pTexture, int iWidth, int iHeight, const 
 	pTexture->tSampler = xgeSamplerDefault();
 	g_xge.iTextureCount++;
 	g_xge.iTextureMemoryBytes += (uint64_t)iWidth * (uint64_t)iHeight * 4u;
-	if ( g_xge.bSokolRunning != 0 ) {
+	if ( g_xge.bGraphicsRunning != 0 ) {
 		iRet = __xgeTextureUploadNow(pTexture);
 		if ( iRet != XGE_OK ) {
 			xgeTextureFree(pTexture);
@@ -495,7 +495,7 @@ int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight)
 	pTexture->tSampler = xgeSamplerDefault();
 	g_xge.iTextureCount++;
 	g_xge.iTextureMemoryBytes += __xgeTextureMemoryBytes(pTexture);
-	if ( g_xge.bSokolRunning != 0 ) {
+	if ( g_xge.bGraphicsRunning != 0 ) {
 		iRet = __xgeTextureUploadNow(pTexture);
 		if ( iRet != XGE_OK ) {
 			xgeTextureFree(pTexture);
@@ -875,7 +875,7 @@ int xgeTextureUpdateRGBASized(xge_texture pTexture,int iX,int iY,int iWidth,int 
 	iCopyStride = iWidth * 4;
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
 	tChoice = (xge_texture_choice_t){pShadow->iStorage, pShadow->iSwizzle};
-	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
+	if ( (pTexture->iBackendId != 0) && (g_xge.bGraphicsRunning != 0) ) {
 		if ( xge_glBindTexture == NULL || xge_glTexSubImage2D == NULL ) return XGE_ERROR_GPU_FAILED;
 		if ( !__xgeTexturePatchFits(tChoice, pSrc, iWidth, iHeight, iStride) ) goto promote;
 		pUpload = pSrc;
@@ -981,7 +981,7 @@ int xgeTextureUpdateYUV420PSized(xge_texture texture,const void* y,size_t bytesY
         if(!__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],stride[i],capacity[i],NULL,&stride[i]) ||
            !__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],planes->iPlaneStride[i],SIZE_MAX,NULL,NULL))return XGE_ERROR_INVALID_ARGUMENT;
     }
-    bool upload=texture->iBackendId && g_xge.bSokolRunning;
+    bool upload=texture->iBackendId && g_xge.bGraphicsRunning;
     if(upload && (!xge_glBindTexture || !xge_glTexSubImage2D || !xge_glPixelStorei || !xge_glGetIntegerv || !xge_glGetError))return XGE_ERROR_GPU_FAILED;
     for(int i=0;i<3;++i){
         int result=__xgeTextureCopyPlane(planes->pPlane[i],planes->iPlaneStride[i],planes->iPlaneWidth[i],planes->iPlaneHeight[i],source[i],stride[i]);
@@ -1028,7 +1028,7 @@ int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSampler)
 	}
     xge_sampler_t previous=pTexture->tSampler;
 	pTexture->tSampler = tSampler;
-	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
+	if ( (pTexture->iBackendId != 0) && (g_xge.bGraphicsRunning != 0) ) {
         int result=__xgeTextureApplySampler(pTexture);
         if(result!=XGE_OK)pTexture->tSampler=previous;
         return result;
@@ -1155,7 +1155,7 @@ int xgeTextureUploadFlush(void)
 	xge_texture_upload_node_t* pNext;
 	int iCount;
 
-	if ( (g_xge.bSokolRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
+	if ( (g_xge.bGraphicsRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
 		return 0;
 	}
 	iCount = 0;
@@ -1249,7 +1249,7 @@ int xgeTextureReadPixelsSized(xge_texture pTexture,void* pPixels,size_t bytes,in
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	/* GPU rendering does not update the CPU shadow. Do not return a stale screenshot. */
-	if ( (pTexture->iFlags & XGE_TEXTURE_RENDER_TARGET) && g_xge.bSokolRunning ) {
+	if ( (pTexture->iFlags & XGE_TEXTURE_RENDER_TARGET) && g_xge.bGraphicsRunning ) {
 		return XGE_ERROR_INVALID_STATE;
 	}
 	if ( (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {
@@ -1339,7 +1339,7 @@ void xgeTextureFree(xge_texture pTexture)
 		__xgeTextureYUV420PFree(pTexture);
 	} else {
 		iTexture = (GLuint)pTexture->iBackendId;
-		if ( (iTexture != 0) && g_xge.bSokolRunning && (xge_glDeleteTextures != NULL) ) {
+		if ( (iTexture != 0) && g_xge.bGraphicsRunning && (xge_glDeleteTextures != NULL) ) {
 			xge_glDeleteTextures(1, &iTexture);
 		}
 		__xgeTextureShadowFree(pTexture);

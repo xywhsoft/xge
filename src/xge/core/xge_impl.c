@@ -188,6 +188,8 @@ typedef struct xge_context_t {
 	int bInitialized;
 	int bRunning;
 	int bSokolRunning;
+	/* An initialized graphics context is independent of its window backend. */
+	int bGraphicsRunning;
 	int iWidth;
 	int iHeight;
 	int iWindowWidth;
@@ -1299,7 +1301,7 @@ static xge_vec2_t __xgeVec2Make(float fX, float fY)
 
 static void __xgeBlendApply(int iBlend)
 {
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 
@@ -1366,7 +1368,7 @@ static void __xgeBlendApply(int iBlend)
 
 static void __xgeDepthTestApply(void)
 {
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( g_xge.bDepthTestEnabled ) {
@@ -1554,7 +1556,6 @@ static void __xgeSokolInit(void)
 #if XGE_ENABLE_3D
 	xrtAtomic64FetchAdd(&g_xge3d_context_serial,1,XMEMORY_RELAXED);
 	xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
-    xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
 #endif
 	g_xge.iWidth = sapp_width();
 	g_xge.iHeight = sapp_height();
@@ -1577,6 +1578,10 @@ static void __xgeSokolInit(void)
 		sapp_quit();
 		return;
 	}
+	g_xge.bGraphicsRunning = 1;
+#if XGE_ENABLE_3D
+	xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
+#endif
 	__xgeBlendApply(g_xge.iBlend);
 	__xgeDepthTestApply();
 }
@@ -1700,6 +1705,7 @@ static void __xgeSokolCleanup(void)
 	__xgeShapeExRendererUnit();
 #endif
 	__xgeBuiltinRenderersReset();
+	g_xge.bGraphicsRunning = 0;
 	g_xge.bSokolRunning = 0;
     __xgeGraphicsBackendEnded(&g_xgeGraphicsLifetime,g_xge.bInitialized!=0);
 #if XGE_ENABLE_3D

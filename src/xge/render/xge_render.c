@@ -457,7 +457,7 @@ static void __xgeViewportApplyCurrent(void)
 	GLsizei iW;
 	GLsizei iH;
 
-	if ( (g_xge.bSokolRunning == 0) || (xge_glViewport == NULL) ) {
+	if ( (g_xge.bGraphicsRunning == 0) || (xge_glViewport == NULL) ) {
 		return;
 	}
 	iX = (GLint)__xgeRenderFloatToInt((double)tRect.fX);
@@ -585,7 +585,7 @@ xge_rect_i_t xgeViewportGetPixels(void)
 static void __xgeClipApplyCurrent(void)
 {
     if(!g_xge.bClipEnabled){
-        if(g_xge.bSokolRunning && xge_glDisable)xge_glDisable(GL_SCISSOR_TEST);
+        if(g_xge.bGraphicsRunning && xge_glDisable)xge_glDisable(GL_SCISSOR_TEST);
         return;
     }
     xge_rect_t tRect=g_xge.tClipRect;
@@ -599,7 +599,7 @@ static void __xgeClipApplyCurrent(void)
 	float fBottom;
 	float fScissorBottom;
 
-	if ( (g_xge.bSokolRunning == 0) || (xge_glScissor == NULL) ) {
+	if ( (g_xge.bGraphicsRunning == 0) || (xge_glScissor == NULL) ) {
 		return;
 	}
 	fLeft = floorf(tRect.fX);

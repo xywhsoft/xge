@@ -22091,7 +22091,7 @@ static int __xgeSvgRasterizeMemoryEx(const void* pData, int iSize, int iWidth, i
 	if ( iStride < (iWidth * 4) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 

@@ -268,7 +268,7 @@ int xgeParticleRender(xge_particle_renderer r, xge_particle_world w, const xge_r
 		return XGE_ERROR_INVALID_ARGUMENT;
 	if (r->busy || w->busy)
 		return XGE_ERROR_INVALID_STATE;
-	if (!g_xge.bSokolRunning)
+	if (!g_xge.bGraphicsRunning)
 		return XGE_ERROR_NOT_INITIALIZED;
 	if (g_xge.bRenderThreadEnabled)
 		return XGE_ERROR_UNSUPPORTED;

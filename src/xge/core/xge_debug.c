@@ -11,7 +11,7 @@ static xge_debug_stats_t __xgeDebugStatsGetValue(void)
 	tStats.iTextureMemoryBytes = g_xge.iTextureMemoryBytes;
 	tStats.iFontCount = g_xge.iFontCount;
 	tStats.iAudioCount = g_xge.iAudioCount;
-	if ( (g_xge.bSokolRunning != 0) && (xge_glGetError != NULL) ) {
+	if ( (g_xge.bGraphicsRunning != 0) && (xge_glGetError != NULL) ) {
 		g_xge.iLastGLError = (int)xge_glGetError();
 	}
 	tStats.iLastGLError = g_xge.iLastGLError;

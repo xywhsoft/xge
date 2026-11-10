@@ -10,7 +10,7 @@ static int __xgeRenderTargetEnsureFramebuffer(xge_render_target pTarget)
 	if ( (pTarget->iFlags & XGE_RENDER_TARGET_WINDOW) != 0 ) {
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( pTarget->tTexture.iBackendId == 0 ) {
@@ -98,7 +98,7 @@ int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHeight)
 	pTarget->iWidth = iWidth;
 	pTarget->iHeight = iHeight;
 	pTarget->iFlags = XGE_RENDER_TARGET_TEXTURE;
-	if ( g_xge.bSokolRunning != 0 ) {
+	if ( g_xge.bGraphicsRunning != 0 ) {
 		iRet = __xgeRenderTargetEnsureFramebuffer(pTarget);
 		if ( iRet != XGE_OK ) {
 			xgeRenderTargetFree(pTarget);
@@ -150,7 +150,7 @@ int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrc
 	     (iSrcY > (g_xge.iHeight - pTarget->iHeight)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (g_xge.bSokolRunning == 0) || (xge_glCopyTexSubImage2D == NULL) || (xge_glActiveTexture == NULL) || (xge_glBindTexture == NULL) ) {
+	if ( (g_xge.bGraphicsRunning == 0) || (xge_glCopyTexSubImage2D == NULL) || (xge_glActiveTexture == NULL) || (xge_glBindTexture == NULL) ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	iRet = xgeFlush();
@@ -199,7 +199,7 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	if ( (size_t)(pTarget->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		if ( (pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) != 0 ) {
 			iRet = xgeTextureReadPixels(&pTarget->tTexture, pPixels, iStride);
 			if ( iRet == XGE_OK ) __xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
@@ -254,14 +254,14 @@ static void __xgeRenderTargetDispose(xge_render_target pTarget)
 	}
 	iFramebuffer = (GLuint)pTarget->iFramebufferId;
 	iStencilRenderbuffer = (GLuint)pTarget->iStencilRenderbufferId;
-	if ( (iFramebuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteFramebuffers != NULL) ) {
+	if ( (iFramebuffer != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteFramebuffers != NULL) ) {
 		if ( g_xge.iCurrentFramebufferId == pTarget->iFramebufferId ) {
 			xge_glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			g_xge.iCurrentFramebufferId = 0;
 		}
 		xge_glDeleteFramebuffers(1, &iFramebuffer);
 	}
-	if ( (iStencilRenderbuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteRenderbuffers != NULL) ) {
+	if ( (iStencilRenderbuffer != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteRenderbuffers != NULL) ) {
 		xge_glDeleteRenderbuffers(1, &iStencilRenderbuffer);
 	}
 	xgeTextureFree(&pTarget->tTexture);

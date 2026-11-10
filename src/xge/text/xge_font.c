@@ -649,7 +649,7 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 	if ( (pFont == NULL) || (iPage < 0) || (iPage >= pFont->tAtlas.iPageCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	pPages = (xge_glyph_atlas_page_t*)pFont->tAtlas.pPages;

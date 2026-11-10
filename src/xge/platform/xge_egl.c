@@ -209,8 +209,6 @@ static int __xgeEGLCreateContext(xge_egl_context_t* pContext, const xge_egl_desc
 
 int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 {
-	xge_platform_backend_t tPlatform;
-	xge_graphics_backend_t tGraphics;
 	xge_egl_caps_t tCaps;
 
 	if ( (pContext == NULL) || (pDesc == NULL) || (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ) {
@@ -225,14 +223,6 @@ int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 	pContext->pDisplay = pDesc->pNativeDisplay;
 	pContext->pSurface = pDesc->pNativeWindow;
 	pContext->pUser = pDesc->pUser;
-	memset(&tPlatform, 0, sizeof(tPlatform));
-	tPlatform.iType = XGE_PLATFORM_BACKEND_EGL;
-	tPlatform.sName = pContext->bBoardLinux ? "egl-board-linux" : "egl-offscreen";
-	xgePlatformBackendSet(&tPlatform);
-	memset(&tGraphics, 0, sizeof(tGraphics));
-	tGraphics.iType = XGE_GPU_BACKEND_GLES30;
-	tGraphics.sName = "gles30";
-	xgeGraphicsBackendSet(&tGraphics);
 	memset(&tCaps, 0, sizeof(tCaps));
 	(void)xgeEGLCapsGet(&tCaps);
 	if ( (pDesc->bSurfaceless != 0) && (tCaps.bSurfaceless == 0) ) {
@@ -252,7 +242,19 @@ int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc)
 		return XGE_ERROR_UNSUPPORTED;
 	}
 #if defined(XGE_HAS_EGL)
-	return __xgeEGLCreateContext(pContext, pDesc);
+	int result = __xgeEGLCreateContext(pContext, pDesc);
+	if ( result != XGE_OK ) return result;
+	/* Backend selection commits only with a real initialized context. Failed
+	 * capability/native attempts must not change an existing host's tables. */
+	xge_platform_backend_t tPlatform = {0};
+	tPlatform.iType = XGE_PLATFORM_BACKEND_EGL;
+	tPlatform.sName = pContext->bBoardLinux ? "egl-board-linux" : "egl-offscreen";
+	xgePlatformBackendSet(&tPlatform);
+	xge_graphics_backend_t tGraphics = {0};
+	tGraphics.iType = XGE_GPU_BACKEND_GLES30;
+	tGraphics.sName = "gles30";
+	xgeGraphicsBackendSet(&tGraphics);
+	return XGE_OK;
 #else
 	__xgeEGLStageCopy(pContext->sLastStage, (int)sizeof(pContext->sLastStage), "not-compiled");
 	return XGE_ERROR_UNSUPPORTED;

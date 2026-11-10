@@ -122,7 +122,7 @@ static int __xgeShapeAutoBatchFlush(void)
 	if ( g_xge.iShapeAutoVertexCount <= 0 ) {
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		g_xge.iShapeAutoVertexCount = 0;
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
@@ -830,7 +830,7 @@ static int __xgeShapeRoundRectSdfDraw(xge_rect_t tRect, xge_shape_round_rect_t t
 	if ( (__xgeShapeColorVisible(iFillColor) == 0) && ((fStrokeWidth <= 0.0f) || (__xgeShapeColorVisible(iStrokeColor) == 0)) ) {
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
@@ -1116,7 +1116,7 @@ static void __xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor, int bScreenSpa
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
@@ -1184,7 +1184,7 @@ static void __xgeShapeQuadFill(const xge_vec2_t* pPoints, uint32_t iColor, int b
 	if ( (pPoints == NULL) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
@@ -1227,7 +1227,7 @@ static void __xgeShapePointsFill(const xge_vec2_t* pPoints, int iCount, uint32_t
 	if ( (pPoints == NULL) || (iCount < 3) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
@@ -1918,7 +1918,7 @@ int xgeShapeBatchFlush(xge_shape_batch pBatch)
 		xgeShapeBatchClear(pBatch);
 		return XGE_OK;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( __xgeShapeRendererInit() != XGE_OK ) {

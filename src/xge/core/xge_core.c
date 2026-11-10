@@ -816,7 +816,7 @@ int xgeGpuCapsGet(xge_gpu_caps_t* pCaps)
 	sVersion = "";
 	sShading = "";
 	iMaxTextureSize = 0;
-	if ( (g_xge.bSokolRunning != 0) && (xge_glGetString != NULL) ) {
+	if ( (g_xge.bGraphicsRunning != 0) && (xge_glGetString != NULL) ) {
 		sVendor = (const char*)xge_glGetString(GL_VENDOR);
 		sRenderer = (const char*)xge_glGetString(GL_RENDERER);
 		sVersion = (const char*)xge_glGetString(GL_VERSION);
@@ -1117,7 +1117,7 @@ int xgeFlush(void)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	if ( (g_xge.bRenderThreadEnabled != 0) && (g_xge.bSokolRunning == 0) ) {
+	if ( (g_xge.bRenderThreadEnabled != 0) && (g_xge.bGraphicsRunning == 0) ) {
 		iRet = __xgeRenderCommandFlushThreaded();
 	} else {
 		iRet = __xgeRenderCommandFlush();
@@ -1126,7 +1126,7 @@ int xgeFlush(void)
 		return iRet;
 	}
 #endif
-	if ( (g_xge.bSokolRunning != 0) && (xge_glFlush != NULL) ) {
+	if ( (g_xge.bGraphicsRunning != 0) && (xge_glFlush != NULL) ) {
 		xge_glFlush();
 	}
 	return XGE_OK;
@@ -1224,7 +1224,7 @@ void xgeClear(uint32_t iColor)
 	tRect.fH = (float)g_xge.iHeight;
 	xgeInvalidateRect(tRect);
 	g_xge.iSurfaceDirtyGeneration++;
-	if ( g_xge.bSokolRunning ) {
+	if ( g_xge.bGraphicsRunning ) {
 #if XGE_ENABLE_2D
 		(void)__xgeShapeAutoBatchFlush();
 #endif

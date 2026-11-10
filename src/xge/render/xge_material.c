@@ -8,7 +8,7 @@ int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* s
 	if ( (pShader == NULL) || (sVertexSource == NULL) || (sFragmentSource == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	memset(pShader, 0, sizeof(*pShader));
@@ -69,7 +69,7 @@ void xgeShaderFree(xge_shader pShader)
 		return;
 	}
     void* storage=pShader->_pStorageOwner;
-	if ( (pShader->iProgram != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteProgram != NULL) ) {
+	if ( (pShader->iProgram != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteProgram != NULL) ) {
 		xge_glDeleteProgram((GLuint)pShader->iProgram);
 	}
 	memset(pShader, 0, sizeof(*pShader));
@@ -81,7 +81,7 @@ static int __xgeShaderUniformLocation(xge_shader pShader, const char* sName, GLi
 	if ( (pShader == NULL) || (sName == NULL) || (pLocation == NULL) || (pShader->iProgram == 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (g_xge.bSokolRunning == 0) || (xge_glGetUniformLocation == NULL) ) {
+	if ( (g_xge.bGraphicsRunning == 0) || (xge_glGetUniformLocation == NULL) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	*pLocation = xge_glGetUniformLocation((GLuint)pShader->iProgram, sName);
@@ -560,7 +560,7 @@ static int __xgeMaterialSubmit(const xge_material_t* pMaterial, xge_texture pTex
 	if ( (pMaterial->pTexture3 != NULL) && (pMaterial->pTexture3->iBackendId == 0) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {

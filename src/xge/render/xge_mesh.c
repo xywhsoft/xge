@@ -13,7 +13,7 @@ void xgeDrawQuad3D(xge_texture pTexture, const xge_vertex_t* pVertices, uint32_t
 	if ( (pTexture == NULL) || (pVertices == NULL) || (pTexture->iBackendId == 0) ) {
 		return;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {
@@ -81,7 +81,7 @@ static int __xgeMeshUpload(xge_mesh pMesh, xge_texture pTexture, uint32_t iDrawF
 	if ( (pMesh == NULL) || (pMesh->pVertices == NULL) || (pMesh->pIndices == NULL) || (pMesh->iVertexCount <= 0) || (pMesh->iIndexCount <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	pPacked = (float*)xrtMalloc((size_t)pMesh->iVertexCount * 10u * sizeof(float));
@@ -172,11 +172,11 @@ void xgeMeshFree(xge_mesh pMesh)
 	}
     bool owned=pMesh->_bOwnsRecord;
 	iBuffer = (GLuint)pMesh->iVertexBufferId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+	if ( (iBuffer != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
 		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	iBuffer = (GLuint)pMesh->iIndexBufferId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+	if ( (iBuffer != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
 		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	__xgeMeshFreeCPU(pMesh);
@@ -189,7 +189,7 @@ void xgeMeshDraw(xge_mesh pMesh, xge_texture pTexture, uint32_t iFlags)
 	if ( (pMesh == NULL) || (pTexture == NULL) || (pTexture->iBackendId == 0) || (pMesh->iVertexCount <= 0) || (pMesh->iIndexCount <= 0) ) {
 		return;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return;
 	}
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {

@@ -29,7 +29,7 @@ int xgeBufferUpload(xge_buffer pBuffer)
 	if ( iTarget == 0 ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( g_xge.bGraphicsRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( (xge_glGenBuffers == NULL) || (xge_glBindBuffer == NULL) || (xge_glBufferData == NULL) ) {
@@ -74,7 +74,7 @@ int xgeBufferCreate(xge_buffer pBuffer, int iType, int iUsage, const void* pData
 	} else {
 		memset(pBuffer->pData, 0, (size_t)iSize);
 	}
-	if ( (g_xge.bSokolRunning != 0) && (iType != XGE_BUFFER_UNIFORM) ) {
+	if ( (g_xge.bGraphicsRunning != 0) && (iType != XGE_BUFFER_UNIFORM) ) {
 		iRet = xgeBufferUpload(pBuffer);
 		if ( iRet != XGE_OK ) {
 			xgeBufferFree(pBuffer);
@@ -95,7 +95,7 @@ int xgeBufferUpdate(xge_buffer pBuffer, int iOffset, const void* pData, int iSiz
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memcpy(((unsigned char*)pBuffer->pData) + iOffset, pData, (size_t)iSize);
-	if ( (g_xge.bSokolRunning != 0) && (pBuffer->iType != XGE_BUFFER_UNIFORM) ) {
+	if ( (g_xge.bGraphicsRunning != 0) && (pBuffer->iType != XGE_BUFFER_UNIFORM) ) {
 		if ( pBuffer->iBackendId == 0 ) {
 			return xgeBufferUpload(pBuffer);
 		}
@@ -122,7 +122,7 @@ void xgeBufferFree(xge_buffer pBuffer)
 	}
     bool owned=pBuffer->_bOwnsRecord;
 	iBuffer = (GLuint)pBuffer->iBackendId;
-	if ( (iBuffer != 0) && (g_xge.bSokolRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
+	if ( (iBuffer != 0) && (g_xge.bGraphicsRunning != 0) && (xge_glDeleteBuffers != NULL) ) {
 		xge_glDeleteBuffers(1, &iBuffer);
 	}
 	if ( pBuffer->pData != NULL ) {

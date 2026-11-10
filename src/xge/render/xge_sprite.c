@@ -154,7 +154,7 @@ int xgeSpriteBatchFlush(xge_sprite_batch pBatch)
 	if ( pBatch->iCount <= 0 ) {
 		return XGE_OK;
 	}
-	if ( (g_xge.bSokolRunning == 0) || (pBatch->pTexture->iBackendId == 0) ) {
+	if ( (g_xge.bGraphicsRunning == 0) || (pBatch->pTexture->iBackendId == 0) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( __xgeQuad3DRendererInit() != XGE_OK ) {
