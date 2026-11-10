@@ -873,6 +873,7 @@ int xgeTextureUpdateRGBASized(xge_texture pTexture,int iX,int iY,int iWidth,int 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iCopyStride = iWidth * 4;
+	if(pTexture->iBackendId && !g_xge.bGraphicsRunning)return XGE_ERROR_NOT_INITIALIZED;
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
 	tChoice = (xge_texture_choice_t){pShadow->iStorage, pShadow->iSwizzle};
 	if ( (pTexture->iBackendId != 0) && (g_xge.bGraphicsRunning != 0) ) {
@@ -981,6 +982,7 @@ int xgeTextureUpdateYUV420PSized(xge_texture texture,const void* y,size_t bytesY
         if(!__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],stride[i],capacity[i],NULL,&stride[i]) ||
            !__xgeByteRowsLayout((size_t)planes->iPlaneWidth[i],planes->iPlaneHeight[i],planes->iPlaneStride[i],SIZE_MAX,NULL,NULL))return XGE_ERROR_INVALID_ARGUMENT;
     }
+    if(texture->iBackendId && !g_xge.bGraphicsRunning)return XGE_ERROR_NOT_INITIALIZED;
     bool upload=texture->iBackendId && g_xge.bGraphicsRunning;
     if(upload && (!xge_glBindTexture || !xge_glTexSubImage2D || !xge_glPixelStorei || !xge_glGetIntegerv || !xge_glGetError))return XGE_ERROR_GPU_FAILED;
     for(int i=0;i<3;++i){
@@ -1026,6 +1028,7 @@ int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSampler)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+    if(pTexture->iBackendId && !g_xge.bGraphicsRunning)return XGE_ERROR_NOT_INITIALIZED;
     xge_sampler_t previous=pTexture->tSampler;
 	pTexture->tSampler = tSampler;
 	if ( (pTexture->iBackendId != 0) && (g_xge.bGraphicsRunning != 0) ) {
@@ -1249,7 +1252,7 @@ int xgeTextureReadPixelsSized(xge_texture pTexture,void* pPixels,size_t bytes,in
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	/* GPU rendering does not update the CPU shadow. Do not return a stale screenshot. */
-	if ( (pTexture->iFlags & XGE_TEXTURE_RENDER_TARGET) && g_xge.bGraphicsRunning ) {
+	if ( pTexture->iFlags & XGE_TEXTURE_RENDER_TARGET ) {
 		return XGE_ERROR_INVALID_STATE;
 	}
 	if ( (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {

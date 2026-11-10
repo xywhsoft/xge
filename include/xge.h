@@ -1245,6 +1245,16 @@ typedef struct xge_egl_context_t {
 	char sLastStage[64];
 } xge_egl_context_t;
 
+/* Exclusive, creator-thread graphics context; all lifecycle state is private.
+ * RenderTarget/Pass are independent owned resources used with this context. */
+typedef struct xge_graphics_context_t* xge_graphics_context;
+typedef struct xge_graphics_context_info_t {
+    uint32_t size;
+    int width,height,backend;
+    bool surfaceless,current,graphicsReady;
+    uint64_t otherResources;
+} xge_graphics_context_info_t;
+
 typedef struct xge_offscreen_t {
 	int iWidth;
 	int iHeight;
@@ -2266,6 +2276,29 @@ XGE_API void xgeEGLUnit(xge_egl_context_t* pContext);
 XGE_API int xgeEGLUnitChecked(xge_egl_context_t* pContext);
 /* 绑定 EGL 上下文到当前线程。 */
 XGE_API int xgeEGLMakeCurrent(xge_egl_context_t* pContext);
+/* Requires an initialized manual engine, no other active graphics context and
+ * no current foreign EGL context. Disabled SDKs return UNSUPPORTED.
+ * On failure, a non-NULL output retains a checked cleanup obligation. */
+XGE_API int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int height,bool surfaceless,
+    const xge_callback_owner_t* codeOwner);
+XGE_API int xgeGraphicsContextShareOwned(xge_graphics_context context,xge_graphics_context* out);
+/* Last release logically retires the renderer, cancelling its private queues.
+ * Existing children remain usable with the retained context; new graphics
+ * owners are refused. Storage/code remain until all children have released and
+ * checked EGL/API cleanup completes. DEFERRED consumes none. A completed graphics
+ * epoch requires engine Unit/Init before another context, as with Sokol Run.
+ * An active callback/pass or a wrong thread cannot physically destroy it. */
+XGE_API int xgeGraphicsContextReleaseOwnerChecked(xge_graphics_context context,bool* consumed);
+XGE_API int xgeGraphicsContextReleaseChecked(xge_graphics_context context);
+XGE_API int xgeGraphicsContextInfoGet(xge_graphics_context context,xge_graphics_context_info_t* out);
+XGE_API int xgeGraphicsContextMakeCurrent(xge_graphics_context context);
+XGE_API xrtownershipref xgeGraphicsContextOwnership(xge_graphics_context context);
+XGE_API const xrtownershipadapterv1* xgeGraphicsContextOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeGraphicsContextOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeGraphicsContextOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeGraphicsContextOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeGraphicsContextOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeGraphicsContextOwnershipReadReady(xrtownershipref ref);
 /* 初始化离屏渲染上下文（自带目标尺寸）。 */
 XGE_API int xgeOffscreenInit(xge_offscreen pOffscreen, int iWidth, int iHeight);
 /* 释放离屏渲染上下文。 */

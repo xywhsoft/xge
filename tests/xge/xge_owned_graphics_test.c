@@ -77,8 +77,9 @@ static void target_children(void)
     unsigned char bytes[40];memset(bytes,0xA5,sizeof(bytes));
     assert(xgeRenderTargetReadPixelsSized(target,bytes,35,12)==XGE_ERROR_INVALID_ARGUMENT);
     for(size_t i=0;i<sizeof(bytes);++i)assert(bytes[i]==0xA5);
-    assert(xgeRenderTargetReadPixelsSized(target,bytes,36,12)==XGE_OK);
-    for(size_t i=36;i<sizeof(bytes);++i)assert(bytes[i]==0xA5);
+    /* No current renderer: a render target's CPU shadow is not a screenshot. */
+    assert(xgeRenderTargetReadPixelsSized(target,bytes,36,12)==XGE_ERROR_INVALID_STATE);
+    for(size_t i=0;i<sizeof(bytes);++i)assert(bytes[i]==0xA5);
     xge_pass pass=NULL;assert(xgePassCreateOwned(&pass,target,0,0)==XGE_OK);
     assert(target->_iOwnerReferences==2 && xgeGraphicsOwnedResourceCount()==1);
     xgeRenderTargetFree(target);assert(xgePassBegin(pass)==XGE_ERROR_NOT_INITIALIZED);

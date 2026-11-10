@@ -1,0 +1,99 @@
+{
+  "scope": "Owning exclusive EGL/GLES renderer; native creator/child/code/retirement contracts, default Sokol regression and strict O2 build reuse",
+  "nativeBaseRevision": "fda7bb39",
+  "buildToolRevision": "6f40378d8de59246e0bba779c34a0ba4f97967d3",
+  "excludedConcurrentNativeRevisions": [
+    "cc3da5be",
+    "fb17797d"
+  ],
+  "compiledSource": {
+    "include/xge.h": "4abb5bbcb84f92d93a12ea0e5613de72a3163d109276c4cacbdd55e8fbb58f80",
+    "src/xge/core/xge_core.c": "76f0b962683d2311904b7e013afa9c4c5758a2543b2dee6624f8ec98f829024b",
+    "src/xge/core/xge_graphics_context.c": "728cb368a149e089ca9c0d92afd48bc37241489e9f81cd4ddaf3e0b76f207e82",
+    "src/xge/core/xge_graphics_lifetime.h": "2b2a27fee7b4c46744cf6a1a66e01237f7033e2e691ec99c4d12ecb2be300e8d",
+    "src/xge/core/xge_impl.c": "cb6d52c8da4c1a13ef9ab7f58d9deb20aa45a9c6406c05c8dfae971303b48891",
+    "src/xge/platform/xge_egl.c": "32449b311b0c49e8b0f5d65468aeabc820ae4b7781117521dcc2c2ad68144455",
+    "src/xge/render/xge_gl.h": "9d5037de8b6825a55b9e797664931544c79daca84dac5881c603a29326937555",
+    "src/xge/render/xge_pass.inl": "d776ced400af2185c331db837f229572baa0fe629eb24875a4b09f49dee2b338",
+    "src/xge/text/xge_texture.c": "33f8231dea5c6b29a07477b712678e37f13803a1208aa4e847cbbf287df88ffa"
+  },
+  "testSource": {
+    "tests/xge/xge_graphics_context_test.c": "fe6acbeb963b0f2227ff9412d355d4694eb05a427fb3a0527d4a919cbc86c525",
+    "tests/xge/xge_graphics_context_fault_test.c": "3f0c901b772065e675d25ef3b58b1af96fe02fde13b66655bc5c21c9d0df8dda",
+    "tests/xge/xge_graphics_lifetime_test.c": "23ae5cac942ff8a08cf60682e0646ed839cf0f031dd443a0ab3d48fc041a7313",
+    "tests/xge/xge_owned_graphics_test.c": "cbd8e578e547c75390e30bc342eaa0907ff3ed974d05f585acf2fe549792c27e",
+    "tests/xui/xui_proxy_xge_owned_test.c": "98f241ee1c424c74a5a786e29cc50503a686bf28a76dc652ab61cc70807e60b5",
+    "tests/xge/xge_egl_fault_preload.c": "51d4b307a63d35bdbe2acff03f4ae0d6c0f2f216961a95ba7566efabe7ac818a",
+    "tests/xge/xge_egl_fault_preload.h": "ea0b661f6d947157f1de010c31935154a0e0719011eaea9745d405094cb77cc6",
+    "tools/test/check_graphics_context.py": "8f13d44abb1674d22542a04e4e46989c9390362f82ed22b941b6843137129885"
+  },
+  "checks": 263,
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\owned-context-native-evidence-win-r1.json",
+      "sha256": "7de2510a9da123039bf3e9787f821ddd51e731079dacf3320d8290f5fc7182d5",
+      "checks": 66
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\owned-context-native-evidence-linux-r1.json",
+      "sha256": "1d01a7c9c3ef29c9ea5ccfaa905e63313f400ef390a227db9819c9e36ed2b526",
+      "checks": 197
+    }
+  ],
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r30\\build-report.json",
+      "sha256": "2a2f707924e46198eacb694660ef49eefd559b666a0865e49340be5d0481153d",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r30\\xge3_host.dll",
+      "artifactSha256": "3df72942c448b0f4dba3afb2b2579d0c9f9acdf429d348ad237c8edce3dda494",
+      "bytes": 9210805
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r30\\build-report.json",
+      "sha256": "151a3a20f5796d3c2d8e1d09573ec7075649c155a7df80c7b4c189f8ffd6e075",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r30\\libxge3_static.a",
+      "artifactSha256": "26c3f31a38c1852704afccc62c58d937ec4db07a0453a811c88985f131355572",
+      "bytes": 18879058
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r30\\build-report.json",
+      "sha256": "c6c31f8ef32aaa80dc5a0f311a4d4301a720ea17aa6411acc1f55c31105b5c14",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r30\\libxge3_host.so",
+      "artifactSha256": "a0071eee0afeebad6d2733f4fec0099e46d264433357a92f78e0ba0345f830c7",
+      "bytes": 10026256
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r30\\build-report.json",
+      "sha256": "7f350175e2de58e2c1fab995c178386eb0cf16d4b12aa353fed033885860a00e",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r30\\libxge3_static.a",
+      "artifactSha256": "fc1aceefaacb9098880b23829aec8e39dcd13c73156bafb30d35fc4d9028ca39",
+      "bytes": 17116306
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r30\\build-report.json",
+      "sha256": "14fcb5ab9c6fa351196847efe527d3875ed261bdfedf57b429fdbb262b2a2201",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r30\\libxge3_host.so",
+      "artifactSha256": "b6813491f648d7c788393875a725f3aa1e13e42fa6d3a4e4f1b7b61356da87c5",
+      "bytes": 10030512
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r30\\build-report.json",
+      "sha256": "3b84a9a7c46017bd29b171f20bf3c7487c069b924d5f9c31e0ae596f5916fbf3",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r30\\libxge3_static.a",
+      "artifactSha256": "3be09a47bb5f7c7c884628b165e88dbb41731d701eaa3a3c505ba0d58a4a5ad3",
+      "bytes": 17130946
+    }
+  ],
+  "actualMesaRenderer": true,
+  "actualSokolRegression": true,
+  "networkTests": false,
+  "hardwarePerformance": false,
+  "shippingDelivery": false,
+  "languageModuleGlobalQualified": false,
+  "remaining": [
+    "Language global-context/code-residency cycle",
+    "Owned WGL and replaceable host dispatch",
+    "Windows EGL SDK/runtime delivery",
+    "TCC ELF as-needed dependency trimming"
+  ]
+}

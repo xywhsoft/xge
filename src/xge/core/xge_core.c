@@ -507,6 +507,8 @@ int xgeFrame(void)
 	if ( g_xge.objDesc.iRunMode != XGE_RUN_MANUAL ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
+	int access=__xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if(access!=XGE_OK)return access;
 	fNow = xrtTimer();
 	fDelta = g_xge.bManualFrameTimeValid ? fNow - g_xge.fManualFrameLastTime :
 		1.0 / (double)g_xge.objDesc.iTargetFPS;

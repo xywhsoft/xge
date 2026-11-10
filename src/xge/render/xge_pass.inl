@@ -16,7 +16,7 @@ int xgePassBegin(xge_pass pass)
     ++pass->pTarget->_iActivePasses;
     xerror* previous=xrtTakeError();xerror* first=NULL;int status=XGE_OK;
     if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))status=XGE_ERROR_INVALID_STATE;
-    else if(!g_xge.bInitialized || !g_xge.bSokolRunning)status=XGE_ERROR_NOT_INITIALIZED;
+    else if(!g_xge.bInitialized || !g_xge.bGraphicsRunning)status=XGE_ERROR_NOT_INITIALIZED;
     if(status==XGE_OK)__xgeCallbackOutcome(xgeFlush(),&status,&first);
     if(status==XGE_OK)__xgeCallbackOutcome(__xgeRenderTargetEnsureFramebuffer(pass->pTarget),&status,&first);
     if(status!=XGE_OK){
@@ -53,9 +53,9 @@ int xgePassEnd(xge_pass pass)
     /* No Flush, state publication or error mutation may precede this check. */
     if(!__xgePassStateBeginEnd(&g_xgePassState,pass))return XGE_ERROR_INVALID_STATE;
     xerror* previous=xrtTakeError();xerror* first=NULL;int status=XGE_OK;
-    if(g_xge.bSokolRunning)__xgeCallbackOutcome(xgeFlush(),&status,&first);
+    if(g_xge.bGraphicsRunning)__xgeCallbackOutcome(xgeFlush(),&status,&first);
     else status=XGE_ERROR_NOT_INITIALIZED;
-    if(g_xge.bSokolRunning && xge_glBindFramebuffer)xge_glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)pass->iPrevFramebufferId);
+    if(g_xge.bGraphicsRunning && xge_glBindFramebuffer)xge_glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)pass->iPrevFramebufferId);
     g_xge.iCurrentFramebufferId=pass->iPrevFramebufferId;g_xge.iWidth=pass->iPrevWidth;g_xge.iHeight=pass->iPrevHeight;
     g_xge.tCamera=pass->tPrevCamera;g_xge.bViewportEnabled=pass->bPrevViewportEnabled;g_xge.tViewportRect=pass->tPrevViewportRect;
     g_xge.bClipEnabled=pass->bPrevClipEnabled;g_xge.tClipRect=pass->tPrevClipRect;

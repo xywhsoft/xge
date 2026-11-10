@@ -69,9 +69,10 @@ static void rgbaTextureTarget(void)
     xgeTextureFree(&texture);
     xge_render_target_t target={0};assert(xgeRenderTargetCreate(&target,2,2)==XGE_OK);
     assert(xgeTextureUpdateRGBA(&target.tTexture,0,0,2,2,source,8)==XGE_OK);
-    memset(output,0xCC,sizeof(output));assert(xgeRenderTargetReadPixels(&target,output,12)==XGE_OK);
-    assert(output[0]==255 && output[3]==128 && !memcmp(output+4,source+4,4) && !memcmp(output+12,source+8,8));
-    for(unsigned i=8;i<12;++i)assert(output[i]==0xCC && output[i+12]==0xCC);
+    /* Render-target readback requires the actual GPU contents, even if an
+     * earlier CPU upload happened to populate its private shadow. */
+    memset(output,0xCC,sizeof(output));assert(xgeRenderTargetReadPixels(&target,output,12)==XGE_ERROR_INVALID_STATE);
+    for(unsigned i=0;i<sizeof(output);++i)assert(output[i]==0xCC);
     xgeRenderTargetFree(&target);
     for(unsigned mode=0;mode<2;++mode){
         texture=(xge_texture_t){0};texture.iWidth=mode ? 1:INT_MAX;texture.iHeight=mode ? INT_MAX:1;texture.iFormat=XGE_PIXEL_RGBA8;

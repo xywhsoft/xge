@@ -189,6 +189,10 @@ typedef float GLclampf;
 #define GL_VENDOR 0x1F00
 #define GL_RENDERER 0x1F01
 #define GL_VERSION 0x1F02
+/* GLES3 / desktop GL3 context validation and viewport limits. */
+#define GL_MAJOR_VERSION 0x821B
+#define GL_MINOR_VERSION 0x821C
+#define GL_MAX_VIEWPORT_DIMS 0x0D3A
 #define GL_SHADING_LANGUAGE_VERSION 0x8B8C
 
 /* 错误 */

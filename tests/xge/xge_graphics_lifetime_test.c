@@ -26,6 +26,7 @@ static void exercise(void)
 }
 static void guarded(void)
 {
+    assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsInitCheck(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsRunCheck(&state)==XGE_ERROR_INVALID_STATE);
@@ -39,6 +40,7 @@ static void* worker(void* ignored){(void)ignored;if(guardOnly)guarded();else exe
 #endif
 int main(void)
 {
+    assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_NOT_INITIALIZED);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
     assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
@@ -56,6 +58,20 @@ int main(void)
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK && __xgeGraphicsOwnerRelease(&state)==XGE_OK && state.creatorThread);
     __xgeGraphicsInitAbort(&state);assert(!state.initializing && !state.creatorThread);
     __xgeGraphicsInitialized(&state);assert(__xgeGraphicsRunCheck(&state)==XGE_OK);
+    assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
+    assert(__xgeGraphicsContextBegin(&state)==XGE_OK && state.phase==XGE_GRAPHICS_ATTACHING && state.initializing && state.owners==2);
+    assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsBackendStart(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsWindowAccess(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
+    __xgeGraphicsContextCommit(&state);assert(state.phase==XGE_GRAPHICS_RUNNING && !state.initializing);
+    __xgeGraphicsBackendEnding(&state);__xgeGraphicsContextFinish(&state,false);
+    assert(state.phase==XGE_GRAPHICS_READY && state.owners==1 && !state.initializing && !state.closing);
+    assert(__xgeGraphicsOwnerRelease(&state)==XGE_OK);
+    assert(__xgeGraphicsContextBegin(&state)==XGE_OK);
+    __xgeGraphicsContextFinish(&state,false); /* Failed attachment restores READY. */
+    assert(state.phase==XGE_GRAPHICS_READY && !state.owners);
     assert(__xgeGraphicsBackendStart(&state)==XGE_OK);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
     __xgeGraphicsBackendEnding(&state);assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_BUSY);

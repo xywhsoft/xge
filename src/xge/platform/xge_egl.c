@@ -351,6 +351,7 @@ void xgeOffscreenUnit(xge_offscreen pOffscreen)
 	if ( pOffscreen == NULL ) {
 		return;
 	}
+	pOffscreen->bActive=0;
 	xgeRenderTargetFree(&pOffscreen->tTarget);
 	xgeEGLUnit(&pOffscreen->tEGL);
 	if(!pOffscreen->tEGL.bCleanupPending)memset(pOffscreen, 0, sizeof(*pOffscreen));
