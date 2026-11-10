@@ -1,0 +1,119 @@
+{
+  "scope": "Optional Linux system EGL SDK, matched default configurations and raw context/GLES qualification; owning XGE renderer session still pending",
+  "nativeBaseRevision": "79f20427",
+  "compiledSource": {
+    "include/xge_config.h": "4c812ea0173e6dde0eb2bbd28fa3d5422b1611a5b5090150573ccb1c382de1f5",
+    "include/xge.h": "c3c93ce8795576acff61796c06bcdad6e2e17419db6214798ff56857c05ad0d3",
+    "tools/build/egl.py": "19e6fa55b8411fba254235276e57b32b7d45c3e678fcc3630332572642b98a93",
+    "tools/build/build.py": "08356445ade656af8c7936b304dfae3e670fbc74e431c222b1b8f03da2e07ffc",
+    "tools/build/static.py": "bfe47a664cb42fde89c1ab2fb11a4108f604b11e6fd017b4f233252b7febacbb"
+  },
+  "testSource": {
+    "tests/xge/xge_egl_fault_preload.c": "a787d229aca1a06366b2239204b486b7a76c1300654116285120540af90ae0cf",
+    "tests/xge/xge_egl_fault_preload.h": "3acae9e7c7ec287e493e21457a505c97918f3e90d19de076b753f468f9df2468",
+    "tests/xge/xge_egl_sdk_test.c": "4272cf366894b678dcc2cd3bb75fafeabf13713fad97a48029b6959cb2bec3b6",
+    "tools/test/check_egl_sdk.py": "88f3084d0fde3d364bc189bac3e54fc7d4662d52a13c73ae886bb5fd0855a60a"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r25.json",
+    "sha256": "694113db8dbe5d0e0a0d7e0e35b138b20f24b16b13606911b22d6505756e5b68"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r25\\build-report.json",
+      "sha256": "da79373961a48a4949883ce2051e719b4f6dd9f9bd9b1baed3bcbf5f52857e33"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r25\\build-report.json",
+      "sha256": "3930ebace736cd3d8f78448afff6e66feab1b97f6f7baacaf000f41f7ea350aa"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r25\\build-report.json",
+      "sha256": "645927e56fe5f459aeb462fc556ee85837d185fa267ae883f4d73a39b071a63f"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r25\\build-report.json",
+      "sha256": "a55b1e195ead0dd9731fba2716f16f514452b03826c649b24d4fc137200fac37"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r25\\build-report.json",
+      "sha256": "3fe0e4a9c66ee8f84132cf099cd2864c3b966c9cd76f0bcc69d7eee3bf226aeb"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r25\\build-report.json",
+      "sha256": "cf420a0a6777ef19955ac13f6b2f5300a3ac09d47f54b9bd5f6b334444d327db"
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-sdk-win-default-r3\\results.json",
+      "sha256": "f3fa548ce17280e8502917282a2bbb4b32d0a3b1e387489210b15ea72df02ca0",
+      "checks": 12
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-sdk-linux-enabled-r3\\results.json",
+      "sha256": "f1ccc5c5dab551e105268e4c36a17e6115a61dabf6c8eaff3773c36e80edc94b",
+      "checks": 49
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-sdk-linux-default-r2\\results.json",
+      "sha256": "3ffa859263f3fdfc1d6e2f32dc6e396c381d80c94ed720fe6d39b1eeb787edc6",
+      "checks": 12
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-build-policy-win-r1\\results.json",
+      "sha256": "ca8a19b3b3111af8823fe0efa9784fa7e7c406579318c39b77d86c23398e5761",
+      "checks": 7
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-build-policy-linux-r1\\results.json",
+      "sha256": "394ae2c9d62bb46b49018abceab110e82225728e8016e6a165cfe3a33d118569",
+      "checks": 6
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-headless-linux-r1\\results.json",
+      "sha256": "209ea2db88ec228d8597ea07483c13e440a481c72e75b5ad1015fcace9765f47",
+      "checks": 10
+    }
+  ],
+  "qualification": {
+    "defaultWindowsChecks": 12,
+    "defaultLinuxChecks": 12,
+    "enabledLinuxChecks": 49,
+    "configurationPolicyChecks": 13,
+    "headlessRuntimeChecks": 10
+  },
+  "systemEglSdk": {
+    "provider": "system-pkg-config",
+    "version": "1.5",
+    "inputs": {
+      "/mnt/f/xlang-validation/xge-full-20261110/native-source-r25-linux/tools/build/egl.py": "19e6fa55b8411fba254235276e57b32b7d45c3e678fcc3630332572642b98a93",
+      "/usr/lib/x86_64-linux-gnu/libEGL.so": "6fa3af4903be9ce007f56f0a0cd2fff01d6500b5eecb59df13c93f17c2059341",
+      "/usr/lib/x86_64-linux-gnu/libEGL.so.1.1.0": "6fa3af4903be9ce007f56f0a0cd2fff01d6500b5eecb59df13c93f17c2059341",
+      "/usr/include/EGL/egl.h": "b7fc152de7981da4e36957a8c8d085075c7366c81bbd27e920880464b87b7f7c",
+      "/usr/include/EGL/eglplatform.h": "1081d0dd1099f5f0367d21c2949e3be344d3fe37c41e7cab907b12ef71f95703",
+      "/usr/include/KHR/khrplatform.h": "7b1e01aaa7ad8f6fc34b5c7bdf79ebf5189bb09e2c4d2e79fc5d350623d11e83",
+      "/usr/lib/x86_64-linux-gnu/pkgconfig/egl.pc": "bd2816ae31e03e9e69634029a801fd783468b325781201110cb919e31aa71654",
+      "/usr/bin/pkgconf": "33fe3cef13ad2e476c13416867bf0ba152423738ce299e03cdd3859aff780a91"
+    },
+    "systemLibraries": [
+      "EGL"
+    ],
+    "deployment": "System EGL dispatcher and graphics driver must remain installed; no driver bytes are bundled"
+  },
+  "baseline": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\egl-offscreen-renderer-red-linux-r1\\results.json",
+    "sha256": "c1dacf16381e1a1b2e48971328bce2855f8ffce0dbc04489564b81f208e88f34"
+  },
+  "remaining": [
+    "Owning context/renderer attachment and native host callback dispatch",
+    "Windows EGL SDK/runtime deployment",
+    "Explicit graphics resource/context retirement and final integrated delivery"
+  ],
+  "fullCurrentNativeTree": false,
+  "excludedConcurrentNativeRevisions": [
+    "cc3da5be",
+    "fb17797d"
+  ],
+  "networkTests": false
+}

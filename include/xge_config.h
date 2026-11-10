@@ -18,6 +18,35 @@
 #ifndef XGE_ENABLE_2D
 #define XGE_ENABLE_2D (XGE_BUILD_PROFILE != XGE_PROFILE_CORE && XGE_BUILD_PROFILE != XGE_PROFILE_3D)
 #endif
+/* Optional native EGL context support. SDKs record this switch explicitly;
+ * defining the old source-only capability also selects the same feature bit. */
+#ifndef XGE_ENABLE_EGL
+#ifdef XGE_HAS_EGL
+#define XGE_ENABLE_EGL 1
+#else
+#define XGE_ENABLE_EGL 0
+#endif
+#endif
+#if XGE_ENABLE_EGL != 0 && XGE_ENABLE_EGL != 1
+#error "XGE_ENABLE_EGL must be 0 or 1"
+#endif
+#if defined(XGE_HAS_EGL) && !XGE_ENABLE_EGL
+#error "XGE_HAS_EGL conflicts with the SDK's disabled XGE_ENABLE_EGL"
+#endif
+#if XGE_ENABLE_EGL
+#ifndef XGE_HAS_EGL
+#define XGE_HAS_EGL 1
+#endif
+#ifndef XGE_HAS_EGL_PBUFFER
+#define XGE_HAS_EGL_PBUFFER 1
+#endif
+#ifndef XGE_HAS_EGL_SURFACELESS
+#define XGE_HAS_EGL_SURFACELESS 1
+#endif
+#ifndef XGE_HAS_EGL_NATIVE_WINDOW
+#define XGE_HAS_EGL_NATIVE_WINDOW 1
+#endif
+#endif
 #ifndef XGE_ENABLE_3D
 #define XGE_ENABLE_3D (XGE_BUILD_PROFILE == XGE_PROFILE_3D || XGE_BUILD_PROFILE == XGE_PROFILE_FULL_DEV)
 #endif
@@ -213,7 +242,8 @@
     ((unsigned int)(XGE_ENABLE_SHAPE_EX) << 2) | ((unsigned int)(XGE_ENABLE_XUI) << 3) | \
     ((unsigned int)(XGE_ENABLE_TEXT) << 4) | ((unsigned int)(XGE_ENABLE_AUDIO) << 5) | \
     ((unsigned int)(XGE_ENABLE_SVG) << 6) | ((unsigned int)(XGE_ENABLE_PARTICLES) << 7) | \
-    ((unsigned int)(XGE_ENABLE_EMOJI) << 8) | ((unsigned int)(XGE_ENABLE_HARFBUZZ) << 9))
+    ((unsigned int)(XGE_ENABLE_EMOJI) << 8) | ((unsigned int)(XGE_ENABLE_HARFBUZZ) << 9) | \
+    ((unsigned int)(XGE_ENABLE_EGL) << 10))
 
 
 #if (XGE3D_ENABLE_ANIMATION != 0 && XGE3D_ENABLE_ANIMATION != 1) || (XGE3D_ENABLE_IBL != 0 && XGE3D_ENABLE_IBL != 1) || (XGE3D_ENABLE_LIGHTING != 0 && XGE3D_ENABLE_LIGHTING != 1) || (XGE3D_ENABLE_MODEL != 0 && XGE3D_ENABLE_MODEL != 1) || (XGE3D_ENABLE_SHADOW != 0 && XGE3D_ENABLE_SHADOW != 1) || (XGE3D_ENABLE_TERRAIN != 0 && XGE3D_ENABLE_TERRAIN != 1) || (XGE_ENABLE_2D != 0 && XGE_ENABLE_2D != 1) || (XGE_ENABLE_3D != 0 && XGE_ENABLE_3D != 1) || (XGE_ENABLE_AUDIO != 0 && XGE_ENABLE_AUDIO != 1) || (XGE_ENABLE_EMOJI != 0 && XGE_ENABLE_EMOJI != 1) || (XGE_ENABLE_HARFBUZZ != 0 && XGE_ENABLE_HARFBUZZ != 1) || (XGE_ENABLE_PARTICLES != 0 && XGE_ENABLE_PARTICLES != 1) || (XGE_ENABLE_SHAPE_EX != 0 && XGE_ENABLE_SHAPE_EX != 1) || (XGE_ENABLE_SVG != 0 && XGE_ENABLE_SVG != 1) || (XGE_ENABLE_TEXT != 0 && XGE_ENABLE_TEXT != 1) || (XGE_ENABLE_XUI != 0 && XGE_ENABLE_XUI != 1)

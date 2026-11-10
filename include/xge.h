@@ -2251,7 +2251,9 @@ XGE_API int xgeMiniProgramRequestFrame(void);
 XGE_API int xgeMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int iSize);
 /* 输出 EGL 能力信息。 */
 XGE_API int xgeEGLCapsGet(xge_egl_caps_t* pCaps);
-/* 初始化 EGL 离屏上下文（PBuffer/Surfaceless）；预留：当前无构建脚本启用。 */
+/* Raw caller-owned EGL context (PBuffer/Surfaceless/native surface), enabled
+ * by XGE_ENABLE_EGL. This alone does not attach the XGE renderer or manage
+ * engine/GPU resource lifetimes; safe owning sessions use a separate contract. */
 XGE_API int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc);
 /* 释放 EGL 上下文。 */
 XGE_API void xgeEGLUnit(xge_egl_context_t* pContext);

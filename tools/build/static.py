@@ -9,6 +9,7 @@ No XRT implementation or generated host import slots enter this archive.
 """
 from pathlib import Path
 from static_support import windows_support,linux_support
+import egl
 import argparse,hashlib,json,os,re,shlex,shutil,subprocess,sys,time
 
 
@@ -94,6 +95,8 @@ def main():
         flags+=['-DXGE_ENABLE_HARFBUZZ=1'];features=probe('text')
     unknown={v.split('=')[0]for v in a.define}-set(names)-{'XUI_ENABLE_WEBVIEW2'}
     if unknown:raise RuntimeError('Unknown feature switches: '+str(sorted(unknown)))
+    egl_sdk=egl.configure(features,windows,cc);flags+=egl_sdk['cflags']
+    if egl_sdk['metadata']:inputs.update(egl_sdk['metadata']['inputs'])
     external_links=[];runtime_dependencies=[]
     webview2=windows and 'XUI_ENABLE_WEBVIEW'in features and (
         os.environ.get('XUI_ENABLE_WEBVIEW2')=='1' or 'XUI_ENABLE_WEBVIEW2=1'in a.define)
@@ -199,6 +202,7 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
     temporary.replace(archive)
     symbols=sorted(set(re.findall(r'\b(?:__imp_)?((?:__)?xrt[A-Z]\w*)\s*$',undefined,re.M)))
     libraries=(['kernel32','advapi32','ws2_32','iphlpapi','gdi32','user32','shell32','ole32','oleaut32','uuid','imm32','winmm','avrt','dwrite']if windows else['m','X11','Xi','Xcursor','GL','dl','pthread'])
+    libraries+=egl_sdk['libraries']
     global_definitions=set(re.findall(r'^\S*\s+[A-Za-z]\s+(\S+)\s*$',defined,re.M))
     cpp_runtime=sorted({v for v in re.findall(r'^\s+U\s+(\S+)\s*$',undefined,re.M)
         if v.startswith(('_Z','__cxa','__gxx')) and v not in global_definitions})
@@ -214,7 +218,7 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
     if section_count<2:raise RuntimeError('Compiler did not emit independent function/data sections')
     unchanged=all(sha(path)==digest for path,digest in inputs.items())
     report.update(complete=True,passed=unchanged,sourceUnchanged=unchanged,api_major=api,compiler=[cc,sha(cc),version],
-        flags=flags,features=features,sources=sources,objects=rows,compiled=compiled,reused=reused,
+        flags=flags,features=features,egl_sdk=egl_sdk['metadata'],sources=sources,objects=rows,compiled=compiled,reused=reused,
         linkage='static-archive',platform='win_x64'if windows else'linux_x64',archive=archive.name,
         archive_sha256=sha(archive),archive_bytes=archive.stat().st_size,xrt_header_sha256=xrt_sha,
         xrt_undefined_symbols=symbols,system_libraries=libraries,resource=resource.name if resource else None,

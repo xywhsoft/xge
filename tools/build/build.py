@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import host_xrt
+import egl
 from relink import QualifiedRelink, check_locations, image_names
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -148,6 +149,8 @@ def main():
     if not config_path.exists() or config_path.read_text() != config:
         config_path.write_text(config)
     libs = ["-lm"]
+    egl_sdk=egl.configure(features,windows,cc)
+    flags+=egl_sdk['cflags'];libs+=['-l'+name for name in egl_sdk['libraries']]
     runtime_dependencies = []
     if windows:
         libs += ["-lws2_32", "-liphlpapi", "-lgdi32", "-luser32", "-lshell32", "-lole32", "-loleaut32", "-luuid", "-limm32", "-lwinmm", "-lavrt", "-ldwrite"]
@@ -276,12 +279,13 @@ def main():
         packaged_runtime.append({"source": str(dependency.resolve()), "path": str(target.resolve()),
                                  "sha256": expected, "bytes": target.stat().st_size})
     qualification = relink.finish() if relink else None
+    egl.verify(egl_sdk)
     report = {"api_major": api_major, "public_abi_schema": 2, "profile": args.profile, "defines": args.define, "compiler": identity, "flags": flags,
               "source_root": str(ROOT), **artifacts, "qualified_object_build": qualification,
               "xrt_mode": "host" if args.host_xrt else "embedded", "xrt_host_imports": host_imports,
               "xrt_host_header_sha256": host_metadata["headerSha256"] if host_metadata else None,
               "features": sorted(features), "sources": sources, "compiled": compiled, "reused": reused,
-              "linked": linked, "runtime_dependencies": packaged_runtime, "seconds": time.perf_counter() - started,
+              "linked": linked, "runtime_dependencies": packaged_runtime, "egl_sdk": egl_sdk['metadata'], "seconds": time.perf_counter() - started,
               "runtime_bytes": library.stat().st_size, "unstripped_bytes": unstripped.stat().st_size}
     report_name = "build-report-debug.json" if args.debug else "build-report.json"
     (out / report_name).write_text(json.dumps(report, indent=2) + "\n")
