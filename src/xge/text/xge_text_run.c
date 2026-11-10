@@ -496,7 +496,7 @@ static void __xgeGlyphRunPrepareAtlas(const xge_glyph_run_t* pRun)
 	for ( i = 0; i < pBackend->iFontCount; i++ ) {
 		pPages = (xge_glyph_atlas_page_t*)pBackend->ppFonts[i]->tAtlas.pPages;
 		for ( j = 0; (pPages != NULL) && (j < pBackend->ppFonts[i]->tAtlas.iPageCount); j++ ) {
-			if ( pPages[j].bDirty || (pPages[j].tTexture.iBackendId == 0) ) (void)__xgeFontAtlasUploadPage(pBackend->ppFonts[i], j);
+			if ( pPages[j].bDirty || !pPages[j].pTexture ) (void)__xgeFontAtlasUploadPage(pBackend->ppFonts[i], j);
 		}
 	}
 }
@@ -641,11 +641,11 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 		     (tGlyph.iPage >= 0) && (tGlyph.iWidth > 0) && (tGlyph.iHeight > 0) ) {
 			pPages = (xge_glyph_atlas_page_t*)pPosition->pFont->tAtlas.pPages;
 			if ( (pPosition->iItemKind == XGE_TEXT_ITEM_EMOJI) &&
-			     (pPages[tGlyph.iPage].bDirty || (pPages[tGlyph.iPage].tTexture.iBackendId == 0)) ) {
+			     (pPages[tGlyph.iPage].bDirty || !pPages[tGlyph.iPage].pTexture) ) {
 				(void)__xgeFontAtlasUploadPage(pPosition->pFont, tGlyph.iPage);
 			}
 			memset(&tDraw, 0, sizeof(tDraw));
-			tDraw.pTexture = &pPages[tGlyph.iPage].tTexture;
+			tDraw.pTexture = pPages[tGlyph.iPage].pTexture;
 			tDraw.tSrc.fX = (float)tGlyph.iX;
 			tDraw.tSrc.fY = (float)tGlyph.iY;
 			tDraw.tSrc.fW = (float)tGlyph.iWidth;
@@ -666,7 +666,7 @@ static void __xgeGlyphRunDrawSpans(const xge_glyph_run_t* pRun, float fX, float 
 			tDraw.tDst.fH = (float)tGlyph.iHeight;
 			tDraw.iColor = __xgeGlyphRunSpanColor(pPosition, iColor, pSpans, iSpanCount);
 			tDraw.iFlags = iFlags;
-			__xgeGlyphRunDrawPaint(pRun, pPosition, &tDraw, fClusterX, fClusterAdvance, iColor, pSpans, iSpanCount);
+			if(tDraw.pTexture)__xgeGlyphRunDrawPaint(pRun, pPosition, &tDraw, fClusterX, fClusterAdvance, iColor, pSpans, iSpanCount);
 		}
 		fPenX += pPosition->fAdvanceX;
 	}

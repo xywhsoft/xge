@@ -158,5 +158,45 @@ int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size)
     result=xgeFontCreateSized(font,source,size);
     XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
 }
+int xgeFontCreateOwned(xge_font* out,xge_font_face face,const xge_font_instance_desc_t* desc)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontCreate(font,face,desc);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
+int xgeFontLoadXRFOwned(xge_font* out,const char* path)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontLoadXRF(font,path);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
+int xgeFontLoadXRFMemoryOwned(xge_font* out,const void* data,int bytes)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontLoadXRFMemory(font,data,bytes);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
+int xgeFontLoadCachedOwned(xge_font* out,const char* ttf,const char* xrf,float size,uint32_t first,uint32_t count)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontLoadCached(font,ttf,xrf,size,first,count);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
+int xgeFontFallbackGetOwned(xge_font* out,float size,uint32_t flags)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
+    if(!font)return result;
+    result=xgeFontFallbackGetEx(font,size,flags);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+}
 #endif
 #undef XGE_OWNED_GRAPHICS_FINISH

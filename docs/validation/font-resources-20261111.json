@@ -1,0 +1,140 @@
+{
+  "scope": "Owned Face/Family/Font factories, numeric and failure contracts, stable queued atlas records; no final all-mainline delivery",
+  "nativeBaseRevision": "74a0a5872098829243d9776d4f5e3d540e30c3e2",
+  "excludedConcurrentNativeRevisions": [
+    "cc3da5be",
+    "fb17797d"
+  ],
+  "compiledSource": {
+    "include/xge.h": "9103e03a6c690b4e879b22d695cf1983563c3caacadd690d22244691e9bf91df",
+    "src/xge/core/xge_owned_graphics.c": "e6e9b8490d5ed1d40775522a58f446d7490daaf88aa7724b342d6c32ab78d3b2",
+    "src/xge/text/xge_font.c": "33bd86b95efd2d81744ab20764715f2c624b7f3500f82da0fe3253c92fc3ff07",
+    "src/xge/text/xge_texture.c": "5b515da553d3f747b28e45c134dd2745587eac2b23c3bed109b1930dd2d1f905",
+    "src/xge/text/xge_text_run.c": "e6187c4a5757a6ab5b7909d655928c7fcdb501c6f623ac76d4547d0cbf6307f8"
+  },
+  "testSource": {
+    "tests/xge/xge_font_resources_test.c": "f46a098ee42336baf30744917ca2ce302280205f3c9236ccc37eabd62e5599fc",
+    "tools/test/check_font_resources.py": "365df0b8a196dd63fd1652ae968ad77b93373a939c4a18820796fe28f8668375"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r37.json",
+    "sha256": "bc10da52d30dd5b7d31e7616b6755a0c060d249c0c058a4256e9d7e6c98ec575"
+  },
+  "testSnapshot": "F:\\xlang-validation\\xge-full-20261110\\native-tests-r38",
+  "checks": 280,
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-native-win-r6\\results.json",
+      "sha256": "15a383d3978019a98b9a953de78a66cc408afcde7f719648a3d19070b9cacc42",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-native-linux-r5\\results.json",
+      "sha256": "645a23a860acbfed8ed4a9445d7c7f9415838a04e3e04baa95a564c897be8c9e",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-native-egl-linux-r3\\results.json",
+      "sha256": "26d4805385bdb6312c066e6b9911583a0f1212c2778e1eed9adf369302cf2f83",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-owned-graphics-win-r1\\results.json",
+      "sha256": "9c80e36be34fe7a8d0c590e997f4251b0932e6854ec66df12d61f91c444a7d59",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-owned-graphics-linux-r1\\results.json",
+      "sha256": "c655e13d7e94c1bd3b044d196e3b5f54fa9ecd32123f400dd92b29f3176a6179",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-context-regression-egl-linux-r1\\results.json",
+      "sha256": "72517d0695a180b56ac031e28fdd1718fa4d7f7c9080e948a2fba1b032e08fe2",
+      "checks": 60
+    }
+  ],
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r37\\build-report.json",
+      "sha256": "0f5298e2707a9251fd3ad3ddec66279322293e6c64521f60064f71a3466dba6e",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r37\\xge3_host.dll",
+      "artifactSha256": "8cb86cbb626c0bda8da63e43677158e8c1ad03609552c5617e5443fbecbe615b",
+      "bytes": 9214389
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r37\\build-report.json",
+      "sha256": "f2d943d1e1f2f55241214fe87ec36d22627b0d8a38ea071184e73183863c4e55",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r37\\libxge3_static.a",
+      "artifactSha256": "9106291ae87d652e25c29b1fb558b149a18e360ac309c0f371b57c5f074d7825",
+      "bytes": 18888554
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r37\\build-report.json",
+      "sha256": "446d8a498adca0d1df996ee0da4e221f30a2ddcc70b39f8341caf370670b435e",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r37\\libxge3_host.so",
+      "artifactSha256": "bba5c8d2ce2925cfba5b9baacf0610ff6dfee266337e6837a4fde8a5fbc17988",
+      "bytes": 10030384
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r37\\build-report.json",
+      "sha256": "4ca6306f4ebbe8c6ea3ed8681bc0c3825d73621438b792a56278094ba0c8dbca",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r37\\libxge3_static.a",
+      "artifactSha256": "00dc41203aba9b960d48080e2bfa4f7c6cae8e33e8a0fb88655de3d80d9b7302",
+      "bytes": 17127390
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r37\\build-report.json",
+      "sha256": "ec9275bc1d8ce05fc937e6dc33728f6cd870bf44f539108af9aa29dc37c14f53",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r37\\libxge3_host.so",
+      "artifactSha256": "697b0426705b78cc5207a408af9c1502017b59d279af18441b370fe7a3914714",
+      "bytes": 10034608
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r37\\build-report.json",
+      "sha256": "6f96ee5bcc315399a5de69baf9b369145662b5f41cbf9fad4003e284cd2f8d61",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r37\\libxge3_static.a",
+      "artifactSha256": "47b5cb0daf1a2112159969e73bb713716cd20ceddb4deb34c2d15393ddb1fa4f",
+      "bytes": 17142030
+    }
+  ],
+  "priorFailures": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-baseline-linux-r2\\results.json",
+      "sha256": "de6b88d34dfdb3afd86bd492a0fe6b55a651eb615e0c8a597d26f2e879e274f1",
+      "reason": "Old extreme family score, nonfinite sizes, invalid glyph index, scaled glyph and transactional fallback boundaries"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-queue-discovery-r35\\results.json",
+      "sha256": "287416e5eada0c4826443e65e5a91d009d1123764bd12188d5159b9e24f1bd90",
+      "reason": "Old actual EGL queued text crashes with SIGSEGV after Font clear/free"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-oom-discovery-r34.log",
+      "sha256": "864c1a0309155abf5c179a42566a6c3b481ae079ace394434d5b8ad4ac23dba7",
+      "reason": "Old OOM cache insertion leaves 3 allocations / 168 bytes"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\font-native-egl-linux-r1\\results.json",
+      "sha256": "bc17dbf8a1434ef9e49052a21ff32636eb3052a7049f03f0970d4cd21b5a7786",
+      "reason": "Intermediate internal-texture storage tag was collapsed to bool; final Unit failed"
+    }
+  ],
+  "networkTests": false,
+  "audioTests": false,
+  "malformedFontFuzzing": false,
+  "hardwarePerformance": false,
+  "shippingDelivery": false,
+  "releaseOrIdeInstalled": false,
+  "costs": {
+    "nativeCold": "One stable independently allocated texture record per uploaded atlas page; CPU-only pages have no texture record",
+    "nativeHot": "One texture-pointer read per glyph instead of an embedded record address; existing native queue AddRef/Free retained",
+    "language": "Direct native methods; generic view/call/thread/code-lifetime and C-string projection checks remain"
+  },
+  "remaining": [
+    "Complete font-file parser trust boundary, CFF/variable fonts",
+    "GlyphRun/Bitmap complete language resources and font async handoff",
+    "Module-global code-residency cycle",
+    "Remaining XGE/XUI/Document and all-mainline delivery"
+  ]
+}

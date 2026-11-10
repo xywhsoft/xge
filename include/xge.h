@@ -2498,7 +2498,7 @@ XGE_API void xgeFontFaceFree(xge_font_face pFace);
 XGE_API int xgeFontFaceGetInfo(xge_font_face pFace, xge_font_face_info_t* pInfo);
 /* 创建空字体族。 */
 XGE_API int xgeFontFamilyCreate(xge_font_family* ppFamily);
-/* 释放字体族（不释放其内 face）。 */
+/* 释放字体族持有的 face 引用；外部仍持有的 face 继续有效。 */
 XGE_API void xgeFontFamilyFree(xge_font_family pFamily);
 /* 向字体族添加候选 face。 */
 XGE_API int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace);
@@ -2791,6 +2791,12 @@ XGE_API int xgeFontLoadOwned(xge_font* out,const char* path,float size);
 XGE_API int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size);
 XGE_API int xgeFontLoadSystemOwned(xge_font* out,const xge_system_font_desc_t* desc);
 XGE_API int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size);
+/* Native owned-record creation; desc is call-scoped and the face is retained. */
+XGE_API int xgeFontCreateOwned(xge_font* out,xge_font_face face,const xge_font_instance_desc_t* desc);
+XGE_API int xgeFontLoadXRFOwned(xge_font* out,const char* path);
+XGE_API int xgeFontLoadXRFMemoryOwned(xge_font* out,const void* data,int bytes);
+XGE_API int xgeFontLoadCachedOwned(xge_font* out,const char* ttf,const char* xrf,float size,uint32_t first,uint32_t count);
+XGE_API int xgeFontFallbackGetOwned(xge_font* out,float size,uint32_t flags);
 XGE_API bool xgeFontIsOwned(const xge_font_t* font);
 #endif
 /* 编译顶点+片段着色器对。 */

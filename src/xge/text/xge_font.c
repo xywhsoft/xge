@@ -1,4 +1,5 @@
 #ifndef XGE_NO_TEXT
+static int __xgeTextureAdoptInternalStorage(xge_texture texture);
 #if XGE_ENABLE_HARFBUZZ
 #include "extlibs/harfbuzz/src/hb.h"
 #include "extlibs/harfbuzz/src/hb-ot.h"
@@ -88,7 +89,7 @@ typedef struct xge_glyph_atlas_page_t {
 	int iDirtyX1;
 	int iDirtyY1;
 	unsigned char* pPixels;
-	xge_texture_t tTexture;
+	xge_texture pTexture; /* Independent, stable native record; queued draws retain it. */
 } xge_glyph_atlas_page_t;
 
 #define XGE_FONT_CACHE_INITIAL_BUCKETS 256u
@@ -410,15 +411,35 @@ static int __xgeFontCacheAddGlyph(xge_font pFont, xge_glyph_cache_t* pGlyph)
 	return XGE_OK;
 }
 
+/* Optional file/cache probes may decline normally. Never turn OOM, callback
+ * failure, cancellation/state or an unexpected diagnostic into success. */
+static int __xgeFontOptionalFailure(int status)
+{
+    xerrkind kind=xrtErrorKind(xrtGetError());
+    if(status==XGE_ERROR_OUT_OF_MEMORY || kind==XERR_MEMORY)return XGE_ERROR_OUT_OF_MEMORY;
+    if(status==XGE_ERROR_CALLBACK_FAILED || status==XGE_ERROR_BUSY || status==XGE_ERROR_INVALID_STATE)return status;
+    if(status==XGE_OK)return kind==XERR_NONE ? XGE_OK:XGE_ERROR_CALLBACK_FAILED;
+    if(status!=XGE_ERROR_RESOURCE_FAILED && status!=XGE_ERROR_FILE_NOT_FOUND && status!=XGE_ERROR_NOT_FOUND && status!=XGE_ERROR_UNSUPPORTED && status!=XGE_ERROR_INVALID_ARGUMENT)return status;
+    if(kind!=XERR_NONE && kind!=XERR_IO && kind!=XERR_NOT_FOUND && kind!=XERR_PERMISSION && kind!=XERR_UNSUPPORTED)
+        return status;
+    xrtClearError();return XGE_OK;
+}
+static int __xgeFontProbeResult(int status,xerror* ambient)
+{
+    xerror* error=xrtTakeError();
+    if(error && xrtErrorKind(error)==XERR_MEMORY)status=XGE_ERROR_OUT_OF_MEMORY;
+    else if(status==XGE_OK && error)status=XGE_ERROR_CALLBACK_FAILED;
+    if(error)xrtErrorFree(ambient);else error=ambient;
+    xrtSetErrorTake(error);return status;
+}
 static int __xgeFontFallbackUse(xge_font pFont, float fSize, int iOriginalError)
 {
 	if ( (pFont == NULL) || (g_xge.tFallbackFont.iRefCount <= 0) ) {
 		return iOriginalError;
 	}
-	if ( xgeFontFallbackGet(pFont, fSize) != XGE_OK ) {
-		return iOriginalError;
-	}
-	return XGE_OK;
+	int terminal=__xgeFontOptionalFailure(iOriginalError);
+	if(terminal!=XGE_OK)return terminal;
+	return xgeFontFallbackGet(pFont,fSize);
 }
 
 static void __xgeFontAtlasFree(xge_font pFont)
@@ -437,7 +458,7 @@ static void __xgeFontAtlasFree(xge_font pFont)
 	pPages = (xge_glyph_atlas_page_t*)pFont->tAtlas.pPages;
 	if ( pPages != NULL ) {
 		for ( i = 0; i < pFont->tAtlas.iPageCount; i++ ) {
-			xgeTextureFree(&pPages[i].tTexture);
+			xgeTextureFree(pPages[i].pTexture);
 			xrtFree(pPages[i].pPixels);
 		}
 		xrtFree(pPages);
@@ -654,14 +675,18 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 	}
 	pPages = (xge_glyph_atlas_page_t*)pFont->tAtlas.pPages;
 	pPage = &pPages[iPage];
-	if ( pPage->tTexture.iBackendId == 0 ) {
-		if ( xgeTextureCreateRGBA(&pPage->tTexture, pFont->tAtlas.iPageWidth, pFont->tAtlas.iPageHeight, pPage->pPixels) != XGE_OK ) {
-			return XGE_ERROR_GPU_FAILED;
-		}
+	if ( pPage->pTexture == NULL ) {
+		xge_texture texture=xrtCalloc(1,sizeof(*texture));
+		if(!texture)return XGE_ERROR_OUT_OF_MEMORY;
+		int status=xgeTextureCreateRGBA(texture,pFont->tAtlas.iPageWidth,pFont->tAtlas.iPageHeight,pPage->pPixels);
+		if(status==XGE_OK && !texture->iBackendId)status=XGE_ERROR_GPU_FAILED;
+		if(status==XGE_OK)status=__xgeTextureAdoptInternalStorage(texture);
+		if(status!=XGE_OK){xgeTextureFree(texture);xrtFree(texture);return status;}
+		pPage->pTexture=texture;
 		tSampler = xgeSamplerDefault();
 		tSampler.iMinFilter = XGE_FILTER_NEAREST;
 		tSampler.iMagFilter = XGE_FILTER_NEAREST;
-		(void)xgeTextureSetSampler(&pPage->tTexture, &tSampler);
+		(void)xgeTextureSetSampler(pPage->pTexture, &tSampler);
 		pPage->bDirty = 0;
 		return XGE_OK;
 	}
@@ -673,7 +698,7 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 			return XGE_OK;
 		}
 		pDirtyPixels = pPage->pPixels + (((size_t)pPage->iDirtyY0 * (size_t)pFont->tAtlas.iPageWidth + (size_t)pPage->iDirtyX0) * 4u);
-		if ( xgeTextureUpdateRGBA(&pPage->tTexture, pPage->iDirtyX0, pPage->iDirtyY0, iDirtyWidth, iDirtyHeight, pDirtyPixels, pFont->tAtlas.iPageWidth * 4) != XGE_OK ) {
+		if ( xgeTextureUpdateRGBA(pPage->pTexture, pPage->iDirtyX0, pPage->iDirtyY0, iDirtyWidth, iDirtyHeight, pDirtyPixels, pFont->tAtlas.iPageWidth * 4) != XGE_OK ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
 		pPage->bDirty = 0;
@@ -860,11 +885,12 @@ int xgeFontFaceLoadMemory(xge_font_face* ppFace, const void* pData, int iSize, c
 	int iFaceIndex;
 	int iOffset;
 
-	if ( (ppFace == NULL) || (pData == NULL) || (iSize <= 0) ||
+	if ( ppFace == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppFace = NULL;
+	if ( (pData == NULL) || (iSize <= 0) ||
 	     ((pDesc != NULL) && (pDesc->iSize < sizeof(*pDesc))) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	*ppFace = NULL;
 	iFaceIndex = (pDesc != NULL) ? pDesc->iFaceIndex : 0;
 	if ( iFaceIndex < 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -901,7 +927,9 @@ int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_fac
 	xge_resource_t tResource;
 	int iRet;
 
-	if ( (ppFace == NULL) || (sPath == NULL) ) {
+	if ( ppFace == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppFace = NULL;
+	if ( sPath == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = xgeResourceLoad(sPath, &tResource);
@@ -999,7 +1027,9 @@ int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace)
 		if ( pFamily->ppFaces[i] == pFace ) return XGE_OK;
 	}
 	if ( pFamily->iFaceCount >= pFamily->iFaceCapacity ) {
+		if ( pFamily->iFaceCapacity > INT32_MAX / 2 ) return XGE_ERROR_OUT_OF_MEMORY;
 		iCapacity = (pFamily->iFaceCapacity > 0) ? pFamily->iFaceCapacity * 2 : 4;
+		if ( (size_t)iCapacity > SIZE_MAX / sizeof(*ppFaces) ) return XGE_ERROR_OUT_OF_MEMORY;
 		ppFaces = (xge_font_face*)xrtRealloc(pFamily->ppFaces, sizeof(*ppFaces) * (size_t)iCapacity);
 		if ( ppFaces == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 		pFamily->ppFaces = ppFaces;
@@ -1013,19 +1043,21 @@ int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace)
 int xgeFontFamilyResolveEx(xge_font_family pFamily, int iWeight, int iStretch, int iSlant, xge_font_face* ppFace)
 {
 	xge_font_face pBest;
-	int iBestScore;
-	int iScore;
+	int64_t iBestScore;
+	int64_t iScore;
 	int i;
 
-	if ( (pFamily == NULL) || (ppFace == NULL) || (pFamily->iFaceCount <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( ppFace == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	*ppFace = NULL;
+	if ( pFamily == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pFamily->iFaceCount <= 0 ) return XGE_ERROR_RESOURCE_FAILED;
 	if ( iWeight <= 0 ) iWeight = XGE_FONT_WEIGHT_NORMAL;
 	if ( iStretch <= 0 ) iStretch = XGE_FONT_STRETCH_NORMAL;
 	pBest = NULL;
-	iBestScore = INT32_MAX;
+	iBestScore = INT64_MAX;
 	for ( i = 0; i < pFamily->iFaceCount; i++ ) {
-		iScore = abs(pFamily->ppFaces[i]->iWeight - iWeight);
-		iScore += abs(pFamily->ppFaces[i]->iStretch - iStretch) * 4;
+		iScore = llabs((int64_t)pFamily->ppFaces[i]->iWeight - iWeight);
+		iScore += llabs((int64_t)pFamily->ppFaces[i]->iStretch - iStretch) * 4;
 		if ( pFamily->ppFaces[i]->iSlant != iSlant ) iScore += 1000;
 		if ( iScore < iBestScore ) {
 			iBestScore = iScore;
@@ -1052,7 +1084,7 @@ int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_d
 	int iLineGap;
 
 	if ( (pFont == NULL) || (pFace == NULL) || (pDesc == NULL) ||
-	     (pDesc->iSize < sizeof(*pDesc)) || (pDesc->fPixelSize <= 0.0f) ||
+	     (pDesc->iSize < sizeof(*pDesc)) || !isfinite(pDesc->fPixelSize) || (pDesc->fPixelSize <= 0.0f) ||
 	     (pFont->iRefCount > 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -1096,7 +1128,7 @@ int xgeFontCreateSized(xge_font pFont, xge_font pSource, float fPixelSize)
 {
 	xge_font_instance_backend_t* pBackend;
 	xge_font_instance_desc_t tDesc;
-	if ( pFont == NULL || pSource == NULL || fPixelSize <= 0.0f || pFont->iRefCount > 0 )
+	if ( pFont == NULL || pSource == NULL || !isfinite(fPixelSize) || fPixelSize <= 0.0f || pFont->iRefCount > 0 )
 		return XGE_ERROR_INVALID_ARGUMENT;
 	pBackend = (xge_font_instance_backend_t*)pSource->pBackend;
 	if ( pSource->iRefCount <= 0 || pBackend == NULL || pBackend->pFace == NULL )
@@ -1108,13 +1140,13 @@ int xgeFontCreateSized(xge_font pFont, xge_font pSource, float fPixelSize)
 	return xgeFontCreate(pFont, pBackend->pFace, &tDesc);
 }
 
-int xgeFontLoad(xge_font pFont, const char* sPath, float fSize)
+static int __xgeFontLoad(xge_font pFont, const char* sPath, float fSize)
 {
 	xge_font_face pFace;
 	xge_font_instance_desc_t tDesc;
 	int iRet;
 
-	if ( (pFont == NULL) || (sPath == NULL) || (fSize <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (pFont == NULL) || (sPath == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
 	pFace = NULL;
 	iRet = xgeFontFaceLoad(&pFace, sPath, NULL);
 	if ( iRet != XGE_OK ) return __xgeFontFallbackUse(pFont, fSize, iRet);
@@ -1127,13 +1159,19 @@ int xgeFontLoad(xge_font pFont, const char* sPath, float fSize)
 	return XGE_OK;
 }
 
+int xgeFontLoad(xge_font pFont,const char* sPath,float fSize)
+{
+    xerror* ambient=xrtTakeError();
+    return __xgeFontProbeResult(__xgeFontLoad(pFont,sPath,fSize),ambient);
+}
+
 int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
 {
 	xge_font_face pFace;
 	xge_font_instance_desc_t tDesc;
 	int iRet;
 
-	if ( (pFont == NULL) || (pData == NULL) || (iSize <= 0) || (fSize <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (pFont == NULL) || (pData == NULL) || (iSize <= 0) || !isfinite(fSize) || (fSize <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
 	pFace = NULL;
 	iRet = xgeFontFaceLoadMemory(&pFace, pData, iSize, NULL);
 	if ( iRet != XGE_OK ) return iRet;
@@ -1304,7 +1342,7 @@ int xgeFontLoadXRFMemory(xge_font pFont, const void* pData, int iSize)
 	return XGE_OK;
 }
 
-int xgeFontBuildXRFMemory(xge_font pFont, uint32_t iFirstCodepoint, uint32_t iCount, void** ppData, int* pSize)
+static int __xgeFontBuildXRFMemory(xge_font pFont, uint32_t iFirstCodepoint, uint32_t iCount, void** ppData, int* pSize)
 {
 	xge_xrf_header_t* pHeader;
 	xge_xrf_header_v2_t* pHeaderV2;
@@ -1329,14 +1367,18 @@ int xgeFontBuildXRFMemory(xge_font pFont, uint32_t iFirstCodepoint, uint32_t iCo
 	uint32_t iTotalSize;
 	uint64_t iLayoutSize;
 
-	if ( (pFont == NULL) || (ppData == NULL) || (pSize == NULL) || (iCount == 0) ||
+	if(ppData)*ppData=NULL;
+	if(pSize)*pSize=0;
+	if ( (pFont == NULL) || (ppData == NULL) || (pSize == NULL) || (pFont->iRefCount<=0) || (iCount == 0) ||
 	     (iFirstCodepoint > XGE_UNICODE_MAX) || ((iCount - 1u) > (XGE_UNICODE_MAX - iFirstCodepoint)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	for ( i = 0; i < iCount; i++ ) {
-		if ( (xgeFontGlyphGet(pFont, iFirstCodepoint + i, &tMetrics) == XGE_OK) &&
-		     ((tMetrics.iGlyph != 0) || ((iFirstCodepoint + i) == 0)) ) {
-			(void)xgeFontGlyphAtlasGet(pFont, iFirstCodepoint + i, &tGlyph);
+		int result=xgeFontGlyphGet(pFont,iFirstCodepoint+i,&tMetrics);
+		if(result==XGE_ERROR_OUT_OF_MEMORY || result==XGE_ERROR_CALLBACK_FAILED)return result;
+		if ( result==XGE_OK && ((tMetrics.iGlyph != 0) || ((iFirstCodepoint + i) == 0)) ) {
+			result=xgeFontGlyphAtlasGet(pFont,iFirstCodepoint+i,&tGlyph);
+			if(result!=XGE_OK)return result;
 		}
 	}
 	iGlyphCount = 0;
@@ -1450,6 +1492,17 @@ int xgeFontBuildXRFMemory(xge_font pFont, uint32_t iFirstCodepoint, uint32_t iCo
 	return XGE_OK;
 }
 
+int xgeFontBuildXRFMemory(xge_font font,uint32_t first,uint32_t count,void** data,int* bytes)
+{
+    xerror* ambient=xrtTakeError();
+    int status=__xgeFontBuildXRFMemory(font,first,count,data,bytes);
+    if((status!=XGE_OK || xrtGetError()) && data && *data){
+        xerror* primary=xrtTakeError();xrtFree(*data);xrtClearError();xrtSetErrorTake(primary);
+        *data=NULL;if(bytes)*bytes=0;
+    }
+    return __xgeFontProbeResult(status,ambient);
+}
+
 int xgeFontSaveXRF(xge_font pFont, const char* sPath, uint32_t iFirstCodepoint, uint32_t iCount)
 {
 	FILE* pFile;
@@ -1483,12 +1536,12 @@ int xgeFontSaveXRF(xge_font pFont, const char* sPath, uint32_t iFirstCodepoint, 
 		xrtFree(pData);
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	fclose(pFile);
+	iRet=fclose(pFile)==0 ? XGE_OK:XGE_ERROR_RESOURCE_FAILED;
 	xrtFree(pData);
-	return XGE_OK;
+	return iRet;
 }
 
-int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath, float fSize, uint32_t iFirstCodepoint, uint32_t iCount)
+static int __xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath, float fSize, uint32_t iFirstCodepoint, uint32_t iCount)
 {
 	xge_font_t tDynamicFont;
 	xge_font_instance_backend_t* pCachedBackend;
@@ -1496,7 +1549,7 @@ int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath
 	int bCompatible;
 	int iRet;
 
-	if ( (pFont == NULL) || (sTTFPath == NULL) || (sXRFPath == NULL) || (pFont->iRefCount > 0) ) {
+	if ( (pFont == NULL) || (sTTFPath == NULL) || (sXRFPath == NULL) || !isfinite(fSize) || (fSize <= 0.0f) || (pFont->iRefCount > 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = xgeFontLoadXRF(pFont, sXRFPath);
@@ -1504,7 +1557,7 @@ int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath
 		memset(&tDynamicFont, 0, sizeof(tDynamicFont));
 		iRet = xgeFontLoad(&tDynamicFont, sTTFPath, fSize);
 		if ( iRet != XGE_OK ) {
-			return XGE_OK;
+			return __xgeFontOptionalFailure(iRet);
 		}
 		pCachedBackend = (xge_font_instance_backend_t*)pFont->pBackend;
 		pDynamicFace = __xgeFontFace(&tDynamicFont);
@@ -1525,13 +1578,22 @@ int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath
 		}
 		xgeFontFree(&tDynamicFont);
 		xgeFontFree(pFont);
+	}else{
+		int terminal=__xgeFontOptionalFailure(iRet);
+		if(terminal!=XGE_OK)return terminal;
 	}
 	iRet = xgeFontLoad(pFont, sTTFPath, fSize);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	(void)xgeFontSaveXRF(pFont, sXRFPath, iFirstCodepoint, iCount);
-	return XGE_OK;
+	iRet=xgeFontSaveXRF(pFont,sXRFPath,iFirstCodepoint,iCount);
+	return iRet==XGE_OK ? XGE_OK:__xgeFontOptionalFailure(iRet);
+}
+
+int xgeFontLoadCached(xge_font pFont,const char* ttf,const char* xrf,float size,uint32_t first,uint32_t count)
+{
+    xerror* ambient=xrtTakeError();
+    return __xgeFontProbeResult(__xgeFontLoadCached(pFont,ttf,xrf,size,first,count),ambient);
 }
 
 int xgeFontAddRef(xge_font pFont)
@@ -1613,7 +1675,7 @@ int xgeFontFallbackSet(const char* sPath, float fSize)
 	xge_resource_t tResource;
 	int iRet;
 
-	if ( (sPath == NULL) || (fSize <= 0.0f) ) {
+	if ( (sPath == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = xgeResourceLoad(sPath, &tResource);
@@ -1628,17 +1690,19 @@ int xgeFontFallbackSet(const char* sPath, float fSize)
 int xgeFontFallbackSetMemory(const void* pData, int iSize, float fSize)
 {
 	int iRet;
+	xge_font_t replacement = {0};
 
-	if ( (pData == NULL) || (iSize <= 0) || (fSize <= 0.0f) ) {
+	if ( (pData == NULL) || (iSize <= 0) || !isfinite(fSize) || (fSize <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	xgeFontFallbackClear();
-	iRet = xgeFontLoadMemory(&g_xge.tFallbackFont, pData, iSize, fSize);
+	iRet = xgeFontLoadMemory(&replacement, pData, iSize, fSize);
 	if ( iRet != XGE_OK ) {
-		memset(&g_xge.tFallbackFont, 0, sizeof(g_xge.tFallbackFont));
+		xgeFontFree(&replacement);
 		return iRet;
 	}
-	g_xge.tFallbackFont.iFlags |= XGE_FONT_FALLBACK;
+	replacement.iFlags |= XGE_FONT_FALLBACK;
+	xgeFontFallbackClear();
+	g_xge.tFallbackFont = replacement;
 	return XGE_OK;
 }
 
@@ -1648,7 +1712,7 @@ int xgeFontFallbackGetEx(xge_font pFont, float fSize, uint32_t iFlags)
 	xge_font_instance_desc_t tDesc;
 	int iRet;
 
-	if ( (pFont == NULL) || (fSize <= 0.0f) ) {
+	if ( (pFont == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( g_xge.tFallbackFont.iRefCount <= 0 ) {
@@ -1726,7 +1790,7 @@ int xgeFontCacheGetStats(xge_font pFont, xge_font_cache_stats_t* pStats)
 	for ( i = 0; (pPages != NULL) && (i < pFont->tAtlas.iPageCount); i++ ) {
 		xge_texture_storage_info_t tStorage = {0};
 		tStorage.iSize = sizeof(tStorage);
-		if ( xgeTextureGetStorageInfo(&pPages[i].tTexture, &tStorage) == XGE_OK )
+		if ( pPages[i].pTexture && xgeTextureGetStorageInfo(pPages[i].pTexture, &tStorage) == XGE_OK )
 			pStats->iAtlasGpuBytes += tStorage.iGpuBytes;
 	}
 	return XGE_OK;
@@ -1769,11 +1833,30 @@ int xgeFontGlyphGet(xge_font pFont, uint32_t iCodepoint, xge_glyph_metrics_t* pM
 	if ( (iGlyph == 0) && (pFont->pFallback != NULL) ) {
 		return xgeFontGlyphGet(pFont->pFallback, iCodepoint, pMetrics);
 	}
-	if ( xgeFontGlyphGetByIndex(pFont, iGlyph, pMetrics) != XGE_OK ) return XGE_ERROR_RESOURCE_FAILED;
+	int result=xgeFontGlyphGetByIndex(pFont,iGlyph,pMetrics);
+	if(result!=XGE_OK)return result;
 	pMetrics->iCodepoint = iCodepoint;
 	return XGE_OK;
 }
 
+/* Validate before stb's float-to-int bitmap conversion and signed dimension
+ * subtraction. This also rejects out-of-range public glyph indices before
+ * the unbounded stb metrics routines touch their tables. */
+static int __xgeFontBitmapBox(stbtt_fontinfo* info,int glyph,float scale,int* x0,int* y0,int* x1,int* y1)
+{
+    if(glyph<0 || glyph>=info->numGlyphs)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!isfinite(scale) || scale<=0.0f)return XGE_ERROR_INVALID_ARGUMENT;
+    int left=0,bottom=0,right=0,top=0;
+    if(!stbtt_GetGlyphBox(info,glyph,&left,&bottom,&right,&top)){*x0=*y0=*x1=*y1=0;return XGE_OK;}
+    float bounds[4]={floorf((float)left*scale),floorf(-(float)top*scale),
+        ceilf((float)right*scale),ceilf(-(float)bottom*scale)};
+    for(unsigned i=0;i<4;++i)
+        if(!isfinite(bounds[i]) || (double)bounds[i]<INT32_MIN || (double)bounds[i]>INT32_MAX)return XGE_ERROR_OUT_OF_MEMORY;
+    int64_t width=(int64_t)bounds[2]-(int64_t)bounds[0],height=(int64_t)bounds[3]-(int64_t)bounds[1];
+    if(width<0 || height<0)return XGE_ERROR_RESOURCE_FAILED;
+    if(width>INT32_MAX || height>INT32_MAX)return XGE_ERROR_OUT_OF_MEMORY;
+    *x0=(int)bounds[0];*y0=(int)bounds[1];*x1=(int)bounds[2];*y1=(int)bounds[3];return XGE_OK;
+}
 int xgeFontGlyphGetByIndex(xge_font pFont, int iGlyph, xge_glyph_metrics_t* pMetrics)
 {
 	stbtt_fontinfo* pInfo;
@@ -1802,10 +1885,12 @@ int xgeFontGlyphGetByIndex(xge_font pFont, int iGlyph, xge_glyph_metrics_t* pMet
 	}
 	pInfo = __xgeFontInfo(pFont);
 	if ( pInfo == NULL ) return XGE_ERROR_NOT_INITIALIZED;
+	int result=__xgeFontBitmapBox(pInfo,iGlyph,pFont->fScale,&iX0,&iY0,&iX1,&iY1);
+	if(result!=XGE_OK)return result;
+	stbtt_GetGlyphHMetrics(pInfo, iGlyph, &iAdvance, &iBearing);
+	if(!isfinite((float)iAdvance*pFont->fScale) || !isfinite((float)iBearing*pFont->fScale))return XGE_ERROR_OUT_OF_MEMORY;
 	memset(pMetrics, 0, sizeof(*pMetrics));
 	pMetrics->iGlyph = iGlyph;
-	stbtt_GetGlyphHMetrics(pInfo, iGlyph, &iAdvance, &iBearing);
-	stbtt_GetGlyphBitmapBox(pInfo, iGlyph, pFont->fScale, pFont->fScale, &iX0, &iY0, &iX1, &iY1);
 	pMetrics->fAdvanceX = (float)iAdvance * pFont->fScale;
 	pMetrics->fLeftSideBearing = (float)iBearing * pFont->fScale;
 	pMetrics->fX0 = (float)iX0;
@@ -1828,11 +1913,13 @@ int xgeFontGlyphRasterizeByIndex(xge_font pFont, int iGlyph, xge_glyph_bitmap_t*
 	pInfo = __xgeFontInfo(pFont);
 	if ( pInfo == NULL ) return XGE_ERROR_NOT_INITIALIZED;
 	memset(pBitmap, 0, sizeof(*pBitmap));
+	int x1,y1;
+	int bounds=__xgeFontBitmapBox(pInfo,iGlyph,pFont->fScale,&iOffsetX,&iOffsetY,&x1,&y1);
+	if(bounds!=XGE_OK)return bounds;
 	if (pInfo->glyf) {
-		const stbtt_vertex* vertices; int vertex_count, x1, y1, result; stbtt__bitmap bitmap;
+		const stbtt_vertex* vertices; int vertex_count, result; stbtt__bitmap bitmap;
 		result = __xgeFontGlyphOutlineGet(pFont, iGlyph, &vertices, &vertex_count);
 		if (result != XGE_OK) return result;
-		stbtt_GetGlyphBitmapBox(pInfo, iGlyph, pFont->fScale, pFont->fScale, &iOffsetX, &iOffsetY, &x1, &y1);
 		iWidth = x1 - iOffsetX; iHeight = y1 - iOffsetY; pPixels = NULL;
 		if (iWidth < 0 || iHeight < 0 || (iHeight && (size_t)iWidth > SIZE_MAX / (size_t)iHeight)) return XGE_ERROR_RESOURCE_FAILED;
 		if (iWidth && iHeight) {
@@ -2002,7 +2089,14 @@ int xgeFontGlyphAtlasGet(xge_font pFont, uint32_t iCodepoint, xge_glyph_t* pGlyp
 		pCache->tGlyph.iX = iX;
 		pCache->tGlyph.iY = iY;
 	}
-	if ( (__xgeFontCacheAddGlyph(pFont, pCache) != XGE_OK) || (__xgeFontCacheMapCodepoint(pFont, iCodepoint, pCache) != XGE_OK) ) {
+	iRet=__xgeFontCacheAddGlyph(pFont,pCache);
+	if(iRet!=XGE_OK){
+		xrtFree(pCache);
+		xgeGlyphBitmapFree(&tBitmap);
+		return iRet;
+	}
+	/* Once inserted, the font owns pCache even if codepoint publication fails. */
+	if ( __xgeFontCacheMapCodepoint(pFont, iCodepoint, pCache) != XGE_OK ) {
 		xgeGlyphBitmapFree(&tBitmap);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}

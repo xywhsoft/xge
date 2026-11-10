@@ -1308,6 +1308,18 @@ bool xgeTextureIsOwned(const xge_texture_t* texture)
     const xge_texture_shadow_t* shadow=texture->pBackend;
     return shadow->bOwnsRecord || (shadow->pTargetOwner && shadow->pTargetOwner->_iOwnerReferences>0);
 }
+/* Engine-private atlas storage has no independent public graphics admission.
+ * Its Font or the renderer's private queue owns it; context/engine teardown
+ * drains that queue before unloading GL. Its record must nevertheless survive
+ * Font cache clear, page-array relocation and delayed drawing. */
+enum { XGE_TEXTURE_RECORD_EXTERNAL=1, XGE_TEXTURE_RECORD_INTERNAL=2 };
+static int __xgeTextureAdoptInternalStorage(xge_texture texture)
+{
+    if(!texture || texture->iRefCount!=1 || texture->iFormat!=XGE_PIXEL_RGBA8 || !texture->pBackend)return XGE_ERROR_INVALID_STATE;
+    int* owner=__xgeTextureRecordOwner(texture);
+    if(!owner || *owner)return XGE_ERROR_INVALID_STATE;
+    *owner=XGE_TEXTURE_RECORD_INTERNAL;return XGE_OK;
+}
 void xgeTextureFree(xge_texture pTexture)
 {
 	GLuint iTexture;
@@ -1325,7 +1337,7 @@ void xgeTextureFree(xge_texture pTexture)
 		return;
 	}
     int* storageOwner=__xgeTextureRecordOwner(pTexture);
-    bOwnsRecord=storageOwner && *storageOwner;
+    bOwnsRecord=storageOwner ? *storageOwner : 0;
 	iBytes = __xgeTextureMemoryBytes(pTexture);
 	if ( iBytes > 0 ) {
 		if ( g_xge.iTextureMemoryBytes >= iBytes ) {
@@ -1349,5 +1361,5 @@ void xgeTextureFree(xge_texture pTexture)
 	}
 	pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
 	memset(pTexture, 0, sizeof(*pTexture));
-    if(bOwnsRecord){xrtFree(pTexture);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
+    if(bOwnsRecord){xrtFree(pTexture);if(bOwnsRecord==XGE_TEXTURE_RECORD_EXTERNAL)(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
 }
