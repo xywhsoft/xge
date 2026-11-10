@@ -1856,8 +1856,13 @@ typedef struct xge_gamepad_state_t {
 
 typedef int (*xge_scene_proc)(void* pUser);
 
-/* 填充引擎全局描述并完成预初始化；此时不创建窗口（窗口在 xgeRun 创建）。 */
+/* Preinitialize; the window is created by Run. Copies the UTF-8 title. Other
+ * descriptor pointers retain their explicit C lifetime contract. */
 XGE_API int xgeInit(const xge_desc_t* pDesc);
+/* Retain one independent code owner until successful Unit, including manual
+ * mode with no callback. Failed initialization rolls it back. Hold/Drop obey
+ * xge_callback_owner_t; the final Drop must cover the native return tail. */
+XGE_API int xgeInitWithCode(const xge_desc_t* pDesc,const xge_callback_owner_t* codeOwner);
 /* Compiled feature bits; compare with XGE_FEATURES in the consumer. */
 XGE_API uint32_t xgeGetBuildFeatures(void);
 /* Set size=sizeof(*out). A zero expected fingerprint checks features only. */
@@ -2128,6 +2133,12 @@ XGE_API int64_t xgeTimeNow(void);
 XGE_API void xgeSleep(uint32_t iMilliseconds);
 /* 设置窗口标题。 */
 XGE_API void xgeSetTitle(const char* sTitle);
+/* Creator-thread only. Copy first, then publish; OOM preserves the old title.
+ * Valid after Init and during Run. Before Run it updates the future window. */
+XGE_API int xgeSetTitleChecked(const char* sTitle);
+/* Creator-thread borrowed snapshot, valid until successful SetTitle or Unit;
+ * NULL when unavailable. Language bindings must copy it during the call. */
+XGE_API const char* xgeGetTitle(void);
 
 /* 手动帧开始：进入帧上下文（配合 xgeEnd 使用）。 */
 XGE_API int xgeBegin(void);

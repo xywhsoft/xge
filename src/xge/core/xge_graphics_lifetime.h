@@ -105,6 +105,16 @@ static int __xgeGraphicsRunCheck(xge_graphics_lifetime* state)
     if(state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
     (void)xrtSpinUnlock(&state->lock);return result;
 }
+/* Creator-thread window configuration, valid both before and during Run. */
+static int __xgeGraphicsWindowAccess(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);
+    int result=state->initializing || state->closing ? XGE_ERROR_BUSY:
+        state->phase==XGE_GRAPHICS_COLD ? XGE_ERROR_NOT_INITIALIZED:
+        state->phase==XGE_GRAPHICS_READY || state->phase==XGE_GRAPHICS_RUNNING ? XGE_OK:XGE_ERROR_BUSY;
+    if(state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
+    (void)xrtSpinUnlock(&state->lock);return result;
+}
 static void __xgeGraphicsBackendEnding(xge_graphics_lifetime* state)
 {
     (void)xrtSpinLock(&state->lock);state->closing=true;

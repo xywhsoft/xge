@@ -19,13 +19,25 @@ static xge_callback_node_t* g_xgeFrameOwner;
 static bool g_xgeFrameDispatching;
 static xge_callback_run_outcome_t* g_xgeFrameRun;
 static uint64 g_xgeFrameRunThread;
+/* Independent of callbacks: an initialized engine can retain commands and
+ * owned data even when no language callback is registered. */
+static xge_callback_owner_t g_xgeEngineCode;
+static char* g_xgeTitle;
 
 int xgeInit(const xge_desc_t* pDesc)
+{return xgeInitWithCode(pDesc,NULL);}
+
+int xgeInitWithCode(const xge_desc_t* pDesc,const xge_callback_owner_t* codeOwner)
 {
 	xge_desc_t objDesc;
+	if(!__xgeCallbackOwnerValid(codeOwner))return XGE_ERROR_INVALID_ARGUMENT;
 	if(xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE))return XGE_ERROR_INVALID_STATE;
     int graphicsAdmission=__xgeGraphicsInitBegin(&g_xgeGraphicsLifetime);
     if(graphicsAdmission!=XGE_OK)return graphicsAdmission;
+	xge_callback_owner_t code=codeOwner ? *codeOwner:(xge_callback_owner_t){0};
+	bool held=false;int status=__xgeCallbackOwnerHold(code,&held);
+	char* title=NULL;
+	if(status!=XGE_OK)goto rollback;
 
 	__xgeConfigureGraphicsProcessStartup();
 	/* Preloaded CPU textures retain their queued addresses across Init. */
@@ -55,13 +67,17 @@ int xgeInit(const xge_desc_t* pDesc)
 	if ( objDesc.iTargetFPS <= 0 ) {
 		objDesc.iTargetFPS = 60;
 	}
+	size_t titleBytes=strlen(objDesc.sTitle)+1;
+	title=xrtMalloc(titleBytes);
+	if(!title){status=XGE_ERROR_OUT_OF_MEMORY;goto rollback;}
+	memcpy(title,objDesc.sTitle,titleBytes);objDesc.sTitle=title;
 
 	if ( !__xgeInputEventQueueReserve(XGE_INPUT_EVENT_QUEUE_INITIAL_CAPACITY) ) {
 		__xgeLogError("input", "Ordered input queue allocation failed.");
-        __xgeGraphicsInitAbort(&g_xgeGraphicsLifetime);
-		return XGE_ERROR_OUT_OF_MEMORY;
+		status=XGE_ERROR_OUT_OF_MEMORY;goto rollback;
 	}
 
+	g_xgeEngineCode=code;g_xgeTitle=title;
 	g_xge.objDesc = objDesc;
 	g_xge.iWidth = objDesc.iWidth;
 	g_xge.iHeight = objDesc.iHeight;
@@ -103,6 +119,14 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.bRenderRequested = 1;
     __xgeGraphicsInitialized(&g_xgeGraphicsLifetime);
 	return XGE_OK;
+rollback:
+	{
+		xerror* first=xrtTakeError();xrtFree(title);
+		/* Keep initialization admission closed while arbitrary Drop runs. */
+		if(held)__xgeCallbackOutcome(__xgeCallbackOwnerDrop(code),&status,&first);
+		__xgeGraphicsInitAbort(&g_xgeGraphicsLifetime);xrtSetErrorTake(first);
+		return status;
+	}
 }
 
 void xgeUnit(void)
@@ -205,7 +229,12 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeLogFlush(),&result,&first);
 	__xgeCallbackOutcome(XGE_OK,&result,&first);
 finish:
+    xrtFree(g_xgeTitle);g_xgeTitle=NULL;g_xge.objDesc.sTitle=NULL;
     __xgeGraphicsCloseFinish(&g_xgeGraphicsLifetime,g_xge.bSokolRunning!=0);
+	xge_callback_owner_t code=g_xgeEngineCode;g_xgeEngineCode=(xge_callback_owner_t){0};
+	/* The owner's resident Drop hook protects the complete native return tail.
+	 * Clear the global first and keep callback/init admission closed until done. */
+	__xgeCallbackOutcome(__xgeCallbackOwnerDrop(code),&result,&first);
 	xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
 	if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
 	else xrtSetErrorTake(previous);
@@ -1085,9 +1114,30 @@ void xgeSleep(uint32_t iMilliseconds)
 
 void xgeSetTitle(const char* sTitle)
 {
-	if ( sTitle != NULL ) {
-		sapp_set_window_title(sTitle);
-	}
+	int status=xgeSetTitleChecked(sTitle);
+	if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+}
+
+int xgeSetTitleChecked(const char* title)
+{
+	int status=__xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if(status!=XGE_OK)return status;
+	if(!title)return XGE_ERROR_INVALID_ARGUMENT;
+	size_t bytes=strlen(title)+1;char* next=xrtMalloc(bytes);
+	if(!next)return XGE_ERROR_OUT_OF_MEMORY;
+	memcpy(next,title,bytes);char* old=g_xgeTitle;
+	g_xgeTitle=next;g_xge.objDesc.sTitle=next;
+	if(g_xge.bSokolRunning)sapp_set_window_title(next);
+	xrtFree(old);return XGE_OK;
+}
+
+const char* xgeGetTitle(void)
+{
+	(void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+	bool readable=!g_xgeGraphicsLifetime.initializing && !g_xgeGraphicsLifetime.closing &&
+		g_xgeGraphicsLifetime.creatorThread==xrtThreadCurrentId();
+	(void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+	return readable ? g_xgeTitle:NULL;
 }
 
 int xgeBegin(void)

@@ -1,0 +1,68 @@
+{
+  "scope": "Native initialized-engine code retention and title ownership; not a shipping language delivery",
+  "nativeBaseRevision": "c19da6fb",
+  "compiledSource": {
+    "include/xge.h": "ce1ac00e116594190ba9f068bea98a073991091e67b7a690dfe8bf70d8e0e010",
+    "src/xge/core/xge_core.c": "0b1c9854f96ccbd351384c804aee42090de068b7772bd26450d2333c486420f7",
+    "src/xge/core/xge_graphics_lifetime.h": "85f25ce3342ddd31c33bf0fff76cd8bde095a0c3f2f3e0dc77a7285916be8de5"
+  },
+  "tests": {
+    "tests/xge/xge_init_lifetime_test.c": "cb917fdb9c9f51f2b03e44dc15456cb87d0c2003253fe389dbbfd5a3b6bb1ab3",
+    "tools/test/check_init_lifetime.py": "cf65baf5ff8203c92ab845f7cba6d2dc7302dee481d0f4d7aca0d03e32eaad58"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r24.json",
+    "sha256": "0420599a833e74fcc32d6c3cbcc1ebb5d3f52e47906c6818ce3cc67fdb473031"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r24\\build-report.json",
+      "sha256": "a8794ce9f567f1c9d15e9b90cac50e9533b29274ae5c276f681993555c15b227"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r24\\build-report.json",
+      "sha256": "a6d7efdb347c8c37cb248290877b636ed1509d363a71f1289b2e3195b5e54067"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r24\\build-report.json",
+      "sha256": "778ef0f6a3e8879b051055d52fe21e162c3226dc8493e5645aba293869fc4277"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r24\\build-report.json",
+      "sha256": "259c43ab43047aab4ab6116d5a6527e9603e7c56ec054f6523bce041ad9811e9"
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-init-win-r2\\results.json",
+      "sha256": "cf7ab196634f5154178e7a08dff90950e193a8caed73cdb4a143312de6b6c250",
+      "checks": 20
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-init-linux-r2\\results.json",
+      "sha256": "c558187daea2001a4b786393bf524acda0ce0c8da0eac104dcfd5192ebb832d0",
+      "checks": 20
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-init-graphics-win-r1\\results.json",
+      "sha256": "c953c4b8179d3f2c9db30585d388e10476efb5c74acd2ae9a9ec02698e09bba0",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-init-graphics-linux-r1\\results.json",
+      "sha256": "daa405a696ee775aba83f87123781fb5528ddd12b9537821a2ac5b3416024676",
+      "checks": 44
+    }
+  ],
+  "buildRunChecks": 128,
+  "baseline": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\init-title-red-win-r1\\results.json",
+    "sha256": "36c356f0d3606aba29ae29e054e0dd1c72b61ec7e1357c36559b56f79ea77a3f"
+  },
+  "networkTests": false,
+  "fullCurrentNativeTree": false,
+  "excludedConcurrentNativeRevisions": [
+    "cc3da5be",
+    "fb17797d"
+  ]
+}
