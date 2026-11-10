@@ -66,9 +66,14 @@ def main():
     parser.add_argument("--host-xrt", action="store_true", help="omit XRT implementation and bind the host's pinned runtime before use")
     parser.add_argument("--relink-from", type=Path, help="reuse only exact qualified objects from this build, with no compilation fallback")
     parser.add_argument("--relink-source", type=Path, help="explicit immutable source root of --relink-from")
+    parser.add_argument("--recompile-source",action="append",default=[],help="explicit TU to rebuild while reusing the other qualified relink objects")
     args = parser.parse_args()
     if bool(args.relink_from) != bool(args.relink_source) or (args.relink_from and not args.host_xrt):
         parser.error("--relink-from and --relink-source are required together, with --host-xrt")
+    if args.recompile_source and not args.relink_from:
+        parser.error("--recompile-source requires an explicit qualified relink parent")
+    if len(set(args.recompile_source))!=len(args.recompile_source):
+        parser.error("Duplicate --recompile-source")
     os.chdir(ROOT)
     manifest = json.loads((ROOT / "config/modules.json").read_text(encoding="utf-8"))
     if args.source_group:
@@ -175,9 +180,12 @@ def main():
     link_objects = []
     relink = QualifiedRelink(ROOT, out, args.relink_from, args.relink_source, identity, flags,
                             args.profile, args.define, api_major, features, args.debug, digest, stamp) if args.relink_from else None
+    recompile=set(args.recompile_source)
+    if relink and not recompile.issubset(relink.expected):
+        raise RuntimeError("Explicit recompile source is not part of the qualified parent")
 
     def compile_object(source, compiler, options, shared=False):
-        if relink:
+        if relink and source not in recompile:
             link_objects.append(relink.object(source, compiler, options, shared))
             reused.append(source)
             return
@@ -203,6 +211,7 @@ def main():
             run(command)
             record.write_text(json.dumps({"key": key, "deps": {p: stamp(p) for p in dependencies(dep)}}))
             compiled.append(source)
+        if relink:relink.recompiled(source,compiler,options,obj,dep,record)
         link_objects.append(obj)
 
     for source in sources:

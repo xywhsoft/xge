@@ -1,0 +1,53 @@
+{
+  "scope": "Strict qualified object reuse with explicit TU rebuilds; O2 unchanged",
+  "checks": 6,
+  "negativeAcceptance": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\explicit-recompile-win-r1\\results.json",
+    "sha256": "7483044e40163750716af3e16213672aff2ab9b67d3e15516538ba5297d1368b"
+  },
+  "positiveBuilds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r30-win.json",
+      "sha256": "3d0dcfaa8a814e08e64adbde15926e7e1cc34c2123824cba2daa98ccf2dac2f1",
+      "runs": [
+        {
+          "name": "native-host-win-r30",
+          "seconds": 55.784013986587524,
+          "exitCode": 0
+        },
+        {
+          "name": "native-static-win-r30",
+          "seconds": 10.048208236694336,
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r30-linux.json",
+      "sha256": "fa12c0bcb85a81febe266fdbb6ec26dd627e11b76ad15a255601837b25fe5dd1",
+      "runs": [
+        {
+          "name": "native-host-linux-r30",
+          "seconds": 59.15670347213745,
+          "exitCode": 0
+        },
+        {
+          "name": "native-static-linux-r30",
+          "seconds": 43.22709941864014,
+          "exitCode": 0
+        },
+        {
+          "name": "native-egl-host-linux-r30",
+          "seconds": 60.29936385154724,
+          "exitCode": 0
+        },
+        {
+          "name": "native-egl-static-linux-r30",
+          "seconds": 40.619107246398926,
+          "exitCode": 0
+        }
+      ]
+    }
+  ],
+  "shippingDelivery": false
+}

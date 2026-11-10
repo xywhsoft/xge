@@ -35,6 +35,28 @@ the original objects directly, including the exact shared HarfBuzz object
 and Windows resource. There is no compile fallback. The original source,
 objects, cache records and reports are never written.
 
+For a change contained in named translation units, add one or more explicit
+`--recompile-source single/xge.c` arguments. Only those translation units may
+compile normally; the other objects still require the strict comparison above.
+The feature configuration and public ABI must remain identical to the parent.
+Use the original full build as the parent, never a derived relink. Duplicate or
+unknown source names, missing parent inputs and undeclared dependency changes
+are errors. A changed shared header can therefore require several explicitly
+named translation units or a fresh full build.
+
+The proof adds a `recompiled` inventory with each resulting object, command/cache,
+dependency file and dependency content hash. Rebuilt inputs and reused inputs
+are both rechecked after linking. This changes development build work only;
+production compiler flags remain `-O2` and no runtime dispatch is added.
+
+The 2026-11-10 owning-context candidate rebuilt 1 of 146 translation units.
+Windows host linking took 55.8 s versus 199.2 s for the previous full build;
+Linux default/EGL took 59.2/60.3 s versus 301.9/285.5 s. These are individual
+local runs with different private aggregate contents, not a controlled compiler
+benchmark or a claim about program speed. Static archive reuse took
+10.0/43.2/40.6 s respectively. Proofs and CLI rejection cases are indexed in
+`docs/validation/explicit-recompile-20261110.json`.
+
 The report's `qualified_object_build` records the original report hash,
 each object's and dependency file's hash, all dependency content hashes,
 and final input-stability checks. The new normal link derives host imports

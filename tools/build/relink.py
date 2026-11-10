@@ -1,4 +1,4 @@
-"""Strict reuse of one explicitly qualified build; never compiles or edits it."""
+"""Strict qualified reuse; optional explicit TU rebuilds never edit the parent."""
 import hashlib
 import json
 from pathlib import Path
@@ -36,6 +36,8 @@ class QualifiedRelink:
         report = self.base / ("build-report-debug.json" if debug else "build-report.json")
         self.report_path, self.report_sha = report, sha(report)
         previous = json.loads(report.read_text())
+        if previous.get('qualified_object_build'):
+            raise RuntimeError('Use the original full build as relink parent, not a derived relink')
         self.report_data = previous
         expected = {"api_major": api_major, "public_abi_schema": 2, "profile": profile,
                     "defines": defines, "compiler": identity, "xrt_mode": "host",
@@ -52,6 +54,7 @@ class QualifiedRelink:
             raise RuntimeError("Qualified relink ABI/configuration differs")
         self.expected = set(previous["compiled"]) | set(previous["reused"])
         self.seen, self.objects, self.inputs = set(), [], {}
+        self.rebuilt=[]
         self.debug = debug
 
     def old_flags(self, flags):
@@ -114,6 +117,27 @@ class QualifiedRelink:
                              "cache_record": str(obj.with_suffix(".json")), "cache_sha256": sha(obj.with_suffix(".json"))})
         return obj
 
+    def recompiled(self,source,compiler,options,obj,dep,record):
+        if source not in self.expected or source in self.seen:
+            raise RuntimeError(f"Unexpected/duplicate explicit rebuild: {source}")
+        cache=json.loads(record.read_text())
+        command=[compiler,*options,"-MD","-MF",str(dep),"-MT",str(obj),"-c",source,"-o",str(obj)]
+        if cache['key']!=self.digest([self.identity,compiler,self.stamp(compiler),command]):
+            raise RuntimeError(f"Explicit rebuild compiler/command differs: {source}")
+        text=re.split(r":\s",dep.read_text().replace("\\\n"," "),maxsplit=1)[1]
+        declared={re.sub(r"\\(.)",r"\1",name) for name in re.findall(r"(?:\\.|[^\s])+",text)}
+        if declared!=set(cache['deps']) or source not in declared:
+            raise RuntimeError(f"Explicit rebuild dependency inventory differs: {source}")
+        inputs={}
+        for name,stamp in cache['deps'].items():
+            path=Path(name);path=path if path.is_absolute() else self.root/path
+            if self.stamp(path)!=stamp:raise RuntimeError(f"Explicit rebuild input changed: {path}")
+            inputs[str(path)]=sha(path)
+        self.rebuilt.append({"source":source,"object":str(obj),"sha256":sha(obj),
+            "dependency_file":str(dep),"dependency_sha256":sha(dep),
+            "cache_record":str(record),"cache_sha256":sha(record),"dependencies":inputs})
+        self.seen.add(source)
+
     def finish(self):
         if self.seen != self.expected:
             raise RuntimeError("Qualified relink source inventory differs")
@@ -122,13 +146,15 @@ class QualifiedRelink:
         for row in self.inputs.values():
             if sha(row["qualified"]) != row["sha256"] or sha(row["current"]) != row["sha256"]:
                 raise RuntimeError("Qualified relink dependency changed during link")
-        for row in self.objects:
+        for row in self.objects+self.rebuilt:
             if sha(row["object"]) != row["sha256"]:
                 raise RuntimeError("Qualified object changed during link")
             for name in ("dependency", "cache"):
                 if name + "_sha256" in row and sha(row[name + ("_file" if name == "dependency" else "_record")]) != row[name + "_sha256"]:
                     raise RuntimeError("Qualified dependency/cache record changed during link")
+            if any(sha(path)!=digest for path,digest in row.get('dependencies',{}).items()):
+                raise RuntimeError("Explicit rebuild dependency changed during link")
         return {"report": str(self.report_path), "report_sha256": self.report_sha,
                 "source_root": str(self.source), "objects": self.objects,
-                "dependencies": list(self.inputs.values()), "inputs_unchanged": True,
-                "scope": "Exact qualified objects and dependencies; no fallback compilation or modification of the original build."}
+                "dependencies": list(self.inputs.values()), "recompiled":self.rebuilt,"inputs_unchanged": True,
+                "scope": "Exact qualified objects/dependencies plus explicitly selected TU rebuilds; no implicit fallback or modification of the parent."}
