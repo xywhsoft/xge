@@ -1,0 +1,107 @@
+{
+  "schema": "xge-async-font-owned-1",
+  "passed": true,
+  "shippingDelivery": false,
+  "scope": "Owned caller-thread Font load requests; stable private storage, exact callbacks, checked teardown, shared Image/Texture regressions",
+  "sourceRoot": "D:\\GIT\\xge",
+  "sourceParentRevision": "88a61edcebb2c7c1005cd1c3ed1f486c1e26b4ae",
+  "sourceFiles": {
+    "include/xge.h": "9892a161c37bd1a0cd17f7b56e2a00498e9c60a42c5ed7f390a06b5b133d22d7",
+    "src/xge/resource/xge_async_owned.c": "b08c2b64b8a072f7538d5bfa2c23d1a77259cc8779e93cc3feadea534da188a0",
+    "tests/xge/xge_async_font_owned_test.c": "3eee63df4aeb0822d3e86725a2c7cb6c5b02a3994cd3773ed75a40442a7c6989",
+    "tools/test/check_async_font_owned.py": "7ee93691a9d6e3384ad5c1f4104fde5fdad067477c34caf542cc38cdf9ecc65c"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r44.json",
+    "sha256": "3a8a1859cabf736e153e102bc345e0905c7df9a5cde2186762931c424bfe7d8d"
+  },
+  "frozenParent": "native-source-r43; prior frozen cohort excludes concurrent XUI changes; full mainline integration remains pending",
+  "buildMode": "Full host/static rebuild on each OS after complete public header changed; no object reuse",
+  "canonicalXrtSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "platforms": [
+    "Windows x64 GCC",
+    "Linux x64 GCC"
+  ],
+  "checks": 232,
+  "reports": {
+    "native-build-r44-win.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r44-win.json",
+      "sha256": "20829f4584a7a92141b8c47b72e8d17fd9ba6ae1f659269f77cbd5d16ea30142",
+      "passed": true,
+      "checks": 2
+    },
+    "native-build-r44-linux.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-build-r44-linux.json",
+      "sha256": "1aeac8b0ebb9288d58fe1f681b538a98fd8b46fb8262d565bf48739eab14f041",
+      "passed": true,
+      "checks": 2
+    },
+    "native-font-load-win-r1/results.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-font-load-win-r1\\results.json",
+      "sha256": "14e8b856fbfe2022e360e74ada57cac3e0fbd32a589b942d9ebce0289271ad29",
+      "passed": true,
+      "checks": 68
+    },
+    "native-font-load-linux-r1/results.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-font-load-linux-r1\\results.json",
+      "sha256": "ed9345713f6c4f5f2fbda74eb7830a2077b10e140faaeab8d718e649061a5ad9",
+      "passed": true,
+      "checks": 68
+    },
+    "native-font-load-async-regression-win-r1/results.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-font-load-async-regression-win-r1\\results.json",
+      "sha256": "39be3dd7bb2d0683202b6052e14fe7f3630f411767541e20fe6f486527e995ac",
+      "passed": true,
+      "checks": 48
+    },
+    "native-font-load-async-regression-linux-r1/results.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-font-load-async-regression-linux-r1\\results.json",
+      "sha256": "81269383c4ccea12b85dad90d824daec3345b48e1e499e2946923087b705d750",
+      "passed": true,
+      "checks": 48
+    },
+    "native-host-win-r44\\build-report.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r44\\build-report.json",
+      "sha256": "99e597625c89a11231be1b50de2a7af46185308d17933dd5a6cd6d92f3853a6e",
+      "passed": true
+    },
+    "native-static-win-r44\\build-report.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r44\\build-report.json",
+      "sha256": "63bc170db0e78f95eb2229721d2e34cc0a2615c35c97b9637e061f81c1e3de57",
+      "passed": true
+    },
+    "native-host-linux-r44\\build-report.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r44\\build-report.json",
+      "sha256": "86ad38b60092ef7765f5c293ccc84c55b3acfd69f055c46a62f3ab4a375e054b",
+      "passed": true
+    },
+    "native-static-linux-r44\\build-report.json": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r44\\build-report.json",
+      "sha256": "ad3be4d87937869ab7f5e0ecf095a29c9e5cb8e924bcfba5438a75eb4ebb57e0",
+      "passed": true
+    }
+  },
+  "results": {
+    "emptyRequestAllocations": 1,
+    "emptyRequestRequestedBytes": 248,
+    "existingImageTextureRequestBytesUnchanged": true,
+    "fontRecordBytesAllocatedOnStart": 96,
+    "nativeTakeAllocations": 0,
+    "fontRecordMoved": false,
+    "allocationBudgets": 64,
+    "checkedFailures": 6,
+    "successes": 58
+  },
+  "constraints": {
+    "callerThreadCompletion": true,
+    "fontThreadingFalseEvenWhenThreadingEnabled": true,
+    "graphicsDeviceTests": false,
+    "audioDeviceTests": false,
+    "networkTests": false
+  },
+  "remaining": [
+    "Sound owning load requests",
+    "Language qualification and matched SDK delivery are separate",
+    "Automatic module-global resource/code lifetime shutdown remains pending"
+  ]
+}

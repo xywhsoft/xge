@@ -12,7 +12,11 @@ struct xge_async_owned_t {
     bool destroyed,busy,taking,notified,hasResult,graphics;
     int kind;
     xge_async_request_t raw;
-    union {xge_image_t image;xge_texture_t texture;} target;
+    union {xge_image_t image;xge_texture_t texture;
+#if XGE_ENABLE_TEXT
+        xge_font font;
+#endif
+    } target;
     xerror* error;
     xge_scene_proc callback;
     void* user;
@@ -65,6 +69,13 @@ static int __xgeLoadWorkerReady(xge_async_owned request)
 static int __xgeLoadDiscard(xge_async_owned request)
 {
     if(request->kind==XGE_ASYNC_IMAGE)xgeImageFree(&request->target.image);
+#if XGE_ENABLE_TEXT
+    else if(request->kind==XGE_ASYNC_FONT){
+        /* This record remains private caller storage until Take adopts it. */
+        xgeFontFree(request->target.font);xrtFree(request->target.font);
+        request->target.font=NULL;request->raw.pTarget=NULL;
+    }
+#endif
     else xgeTextureFree(&request->target.texture);
     request->hasResult=false;
     if(!request->graphics)return XGE_OK;
@@ -116,6 +127,10 @@ int xgeAsyncImageCreateOwned(xge_async_owned* output,const xge_callback_owner_t*
 {return __xgeLoadCreate(output,XGE_ASYNC_IMAGE,owner);}
 int xgeAsyncTextureCreateOwned(xge_async_owned* output,const xge_callback_owner_t* owner)
 {return __xgeLoadCreate(output,XGE_ASYNC_TEXTURE,owner);}
+#if XGE_ENABLE_TEXT
+int xgeAsyncFontCreateOwned(xge_async_owned* output,const xge_callback_owner_t* owner)
+{return __xgeLoadCreate(output,XGE_ASYNC_FONT,owner);}
+#endif
 int xgeAsyncLoadShareOwned(xge_async_owned request,xge_async_owned* output)
 {
     if(!output)return XGE_ERROR_INVALID_ARGUMENT;
@@ -192,33 +207,55 @@ static int __xgeLoadSettle(xge_async_owned request,int status,xerror* workerErro
     }
     return __xgeLoadNotify(request);
 }
-static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint32_t flags)
+static int __xgeLoadStartRollback(xge_async_owned request,int status)
+{
+    xge_data_outcome_t result={0};__xgeOwnedLoadOutcomeBegin(&result,status);
+    __xgeOwnedLoadOutcomeAdd(&result,__xgeLoadDiscard(request));
+    xrtSetErrorTake(result.pError);return result.iStatus;
+}
+static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint32_t flags,float size)
 {
     xerror* ambient=NULL;int status=__xgeLoadOperationBegin(request,&ambient);
     if(status!=XGE_OK)return __xgeLoadAdmissionEnd(status,ambient);
     if(!path || request->kind!=kind || request->raw.iStatus!=XGE_ASYNC_PENDING)status=XGE_ERROR_INVALID_ARGUMENT;
-    if(status==XGE_OK && kind==XGE_ASYNC_TEXTURE){status=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);request->graphics=status==XGE_OK;}
+    if(status==XGE_OK && (kind==XGE_ASYNC_TEXTURE || kind==XGE_ASYNC_FONT)){
+        status=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);request->graphics=status==XGE_OK;
+    }
     if(status==XGE_OK){
         void* target=kind==XGE_ASYNC_IMAGE ? (void*)&request->target.image:(void*)&request->target.texture;
+#if XGE_ENABLE_TEXT
+        if(kind==XGE_ASYNC_FONT){
+            request->target.font=xrtCalloc(1,sizeof(*request->target.font));
+            if(!request->target.font)return __xgeLoadOperationEnd(request,
+                __xgeLoadStartRollback(request,XGE_ERROR_OUT_OF_MEMORY),ambient);
+            target=request->target.font;
+        }
+#endif
         status=__xgeAsyncBegin(&request->raw,kind,target,path,NULL,NULL);
-        request->raw.iFlags=flags;
+        request->raw.iFlags=flags;request->raw.fSize=size;
         if(status==XGE_OK){
             int threadStatus=g_xge.bAsyncThreadingEnabled ? __xgeAsyncStartThread(&request->raw):XGE_ERROR_UNSUPPORTED;
             if(threadStatus==XGE_OK)return __xgeLoadOperationEnd(request,XGE_OK,ambient);
             if(threadStatus==XGE_ERROR_UNSUPPORTED){
-                status=kind==XGE_ASYNC_IMAGE ? xgeImageLoadEx(&request->target.image,path,flags):xgeTextureLoadEx(&request->target.texture,path,flags);
+                if(kind==XGE_ASYNC_IMAGE)status=xgeImageLoadEx(&request->target.image,path,flags);
+#if XGE_ENABLE_TEXT
+                else if(kind==XGE_ASYNC_FONT)status=xgeFontLoad(request->target.font,path,size);
+#endif
+                else status=xgeTextureLoadEx(&request->target.texture,path,flags);
             }else status=threadStatus; /* Resource failure never falls back to blocking decode. */
             status=__xgeLoadSettle(request,status,NULL);
-        }else if(request->graphics){
-            request->graphics=false;(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
-        }
+        }else status=__xgeLoadStartRollback(request,status);
     }
     return __xgeLoadOperationEnd(request,status,ambient);
 }
 int xgeAsyncImageStartOwned(xge_async_owned request,const char* path,uint32_t flags)
-{return __xgeLoadStart(request,XGE_ASYNC_IMAGE,path,flags);}
+{return __xgeLoadStart(request,XGE_ASYNC_IMAGE,path,flags,0);}
 int xgeAsyncTextureStartOwned(xge_async_owned request,const char* path,uint32_t flags)
-{return __xgeLoadStart(request,XGE_ASYNC_TEXTURE,path,flags);}
+{return __xgeLoadStart(request,XGE_ASYNC_TEXTURE,path,flags,0);}
+#if XGE_ENABLE_TEXT
+int xgeAsyncFontStartOwned(xge_async_owned request,const char* path,float size)
+{return __xgeLoadStart(request,XGE_ASYNC_FONT,path,0,size);}
+#endif
 int xgeAsyncLoadPollOwned(xge_async_owned request,int* output)
 {
     if(!output)return XGE_ERROR_INVALID_ARGUMENT;
@@ -312,3 +349,23 @@ int xgeAsyncTextureTakeOwned(xge_async_owned request,xge_texture* output)
     __xgeOwnedLoadOutcomeAdd(&result,__xgeOwnedLoadActivityEnd(__xgeOwnedLoadRoot(request)));
     return __xgeOwnedLoadOutcomeEnd(&result,ambient);
 }
+#if XGE_ENABLE_TEXT
+int xgeAsyncFontTakeOwned(xge_async_owned request,xge_font* output)
+{
+    if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+    *output=NULL;int status=__xgeOwnedLoadAcquire(__xgeOwnedLoadRoot(request),true,true);
+    if(status!=XGE_OK)return status;
+    xerror* ambient=xrtTakeError();
+    if(request->taking || request->kind!=XGE_ASYNC_FONT || !request->hasResult)status=XGE_ERROR_INVALID_STATE;
+    bool taking=status==XGE_OK;if(taking)request->taking=true;
+    if(status==XGE_OK)status=xgeFontAdoptStorage(request->target.font);
+    if(status==XGE_OK){
+        *output=request->target.font;request->target.font=NULL;request->raw.pTarget=NULL;request->hasResult=false;
+        if(request->graphics){request->graphics=false;status=__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
+    }
+    if(taking)request->taking=false;
+    xge_data_outcome_t result={0};__xgeOwnedLoadOutcomeBegin(&result,status);
+    __xgeOwnedLoadOutcomeAdd(&result,__xgeOwnedLoadActivityEnd(__xgeOwnedLoadRoot(request)));
+    return __xgeOwnedLoadOutcomeEnd(&result,ambient);
+}
+#endif

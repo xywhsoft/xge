@@ -2335,6 +2335,9 @@ XGE_API int xgeAsyncPoll(xge_async_request pRequest);
  * NULL is reserved for C hosts which independently guarantee code residency. */
 XGE_API int xgeAsyncImageCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
 XGE_API int xgeAsyncTextureCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
+#if XGE_ENABLE_TEXT
+XGE_API int xgeAsyncFontCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
+#endif
 XGE_API int xgeAsyncLoadShareOwned(xge_async_owned request,xge_async_owned* out);
 XGE_API int xgeAsyncLoadReleaseOwnerChecked(xge_async_owned request,bool* consumed);
 XGE_API int xgeAsyncLoadReleaseChecked(xge_async_owned request);
@@ -2344,6 +2347,11 @@ XGE_API int xgeAsyncLoadInfoGet(xge_async_owned request,xge_async_load_info_t* o
  * Callback failures are delivered by the initiating Start/Poll boundary. */
 XGE_API int xgeAsyncImageStartOwned(xge_async_owned request,const char* path,uint32_t flags);
 XGE_API int xgeAsyncTextureStartOwned(xge_async_owned request,const char* path,uint32_t flags);
+#if XGE_ENABLE_TEXT
+/* Matches the native FONT request contract: caller-thread load/completion,
+ * including registered providers. ThreadingSet does not make font IO async. */
+XGE_API int xgeAsyncFontStartOwned(xge_async_owned request,const char* path,float pixelSize);
+#endif
 XGE_API int xgeAsyncLoadPollOwned(xge_async_owned request,int* status);
 XGE_API int xgeAsyncLoadCancelOwned(xge_async_owned request);
 /* Reset is explicit and nonblocking: active decoding/callbacks return BUSY.
@@ -2355,6 +2363,11 @@ XGE_API int xgeAsyncLoadCallbackSetOwned(xge_async_owned request,xge_scene_proc 
  * must be empty caller storage. Texture output is an independent owned ref. */
 XGE_API int xgeAsyncImageTakeOwned(xge_async_owned request,xge_image output);
 XGE_API int xgeAsyncTextureTakeOwned(xge_async_owned request,xge_texture* output);
+#if XGE_ENABLE_TEXT
+/* Transfers the private stable Font record without copying or allocating.
+ * A failed adoption leaves the unclaimed result in the request. */
+XGE_API int xgeAsyncFontTakeOwned(xge_async_owned request,xge_font* output);
+#endif
 XGE_API xrtownershipref xgeAsyncLoadOwnership(xge_async_owned request);
 XGE_API const xrtownershipadapterv1* xgeAsyncLoadOwnershipAdapterV1(xrtownershipref ref);
 XGE_API const xrtownershippreparationv1* xgeAsyncLoadOwnershipPreparationV1(xrtownershipref ref);
