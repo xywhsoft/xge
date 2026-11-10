@@ -2355,6 +2355,7 @@ static void __xgeWin32ClipboardOwnerRelease(void);
 #endif
 #if XGE_ENABLE_TEXT
 #include "xge_text_run.c"
+#include "xge_text_resources.c"
 #endif
 #if XGE_ENABLE_TEXT && XGE_ENABLE_SHAPE_EX
 #include "xge_text_vector.c"

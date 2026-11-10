@@ -1,0 +1,147 @@
+{
+  "scope": "Independent native immutable GlyphRun and GlyphBitmap resources; raw newline Font lifetime and checked failure contracts",
+  "nativeBaseRevision": "d93838cc6d563a3b0e6d1ceb82620cb0670c324c",
+  "excludedConcurrentNativeRevisions": [
+    "cc3da5be",
+    "fb17797d"
+  ],
+  "compiledSource": {
+    "include/xge.h": "817bcc737e063d9e441b415217e4ed33ac53fae35ffdc3a107ec5646b02f8d9e",
+    "src/xge/core/xge_impl.c": "a2caad8916b063bb90c9618eee71a2d1d018f1e9c75e8436f229a37f36ba08e0",
+    "src/xge/text/xge_text_run.c": "d89407ad6625d8e5e7e86c0d631929cd4654c2242f25cf2274e429a8ce7ce3b4",
+    "src/xge/text/xge_text_resources.c": "4d67091dcf70825d9bda34e1b57e26c7f9baf4de5c5c3933c9ac0296615dd140"
+  },
+  "testSource": {
+    "tests/xge/xge_text_resources_test.c": "ee6edaad918b254f408065d2cd04ae16dd14b125594b8ab0ffd3e2f4b4b208f9",
+    "tools/test/check_text_resources.py": "00b61fc12618a85583035ca0bd303d183a84bf861c354483054626804bf27b96"
+  },
+  "freeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r41.json",
+    "sha256": "2f0e0f0f62081a31dbf146cd80f74e266dfe0017b729ee5b60dd6fbbc6080db5"
+  },
+  "checks": 376,
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-native-win-r3\\results.json",
+      "sha256": "e301b3c098b0a30fa53e1e1233112cc958052b384b391f1d8ef474b7b0e7a14f",
+      "checks": 32
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-native-linux-r2\\results.json",
+      "sha256": "d9f2ae7cc1defc00687c2ffc116efb1b08ae44482c027851339cf78970421bf5",
+      "checks": 32
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-native-egl-linux-r2\\results.json",
+      "sha256": "90a61428f3a2d600875d21dedd5442935b5e1afcb814af06315308875a5e90fe",
+      "checks": 32
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-font-regression-win-r1\\results.json",
+      "sha256": "045b0f75c1399df1d05ff9756cd9524920dc03b9680152e6b6a0fa84a538656f",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-font-regression-linux-r1\\results.json",
+      "sha256": "dec855a91c3b322598e78068f7576411d0feaf3a473e646ce0d80aaef2691a2b",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-font-regression-egl-linux-r1\\results.json",
+      "sha256": "9c9dd765e61e28936cfc09342a41f5543a421041b67cb171d873bf0ec8d1eb29",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-context-regression-egl-linux-r1\\results.json",
+      "sha256": "4be6dd3fd1b8b09ab05fa3dedd4f9459cd5f4cd6b2f5f4409992da718e7eec50",
+      "checks": 60
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-owned-regression-win-r1\\results.json",
+      "sha256": "a5ee5aa77dbe0407209c390ca60ef4636366e7b2c4eca1577364d5ed93dec060",
+      "checks": 44
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\text-owned-regression-linux-r1\\results.json",
+      "sha256": "53e1b40151f4eeda34bc7c2a585014552abf52c1ceac301ab5ea646e1c499ea7",
+      "checks": 44
+    }
+  ],
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r41\\build-report.json",
+      "sha256": "a8344e2205a52d53be30a18fd41a23ce468867bd77662cfc2df8811a5cf2d8d4",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r41\\xge3_host.dll",
+      "artifactSha256": "4596235f37bba1b9a6f8985ab0586da0f6660ba6abb778b6341254c6ae1a00d3",
+      "bytes": 9216949
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r41\\build-report.json",
+      "sha256": "26fad1b6314d3c6a78663c9181d604c59d66a6b479dc93a7734b6f0998d385a8",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r41\\libxge3_static.a",
+      "artifactSha256": "cc24b94bc7afa4babdde5a9ee917f27c1ecb6fe9fc38112152a61894edf6016c",
+      "bytes": 18898214
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r41\\build-report.json",
+      "sha256": "52f91181b77783338df4d9db0d491df9dbf646b60e83ed6835df54e15c6c72ad",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r41\\libxge3_host.so",
+      "artifactSha256": "a3159b7a8c4609db830e3b59fbd71ad8aed96cd04d6d53a19b0dfe1c671c6dfb",
+      "bytes": 10030384
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r41\\build-report.json",
+      "sha256": "51ec827544da2907f0ffb05edaa25f66bd71240f23f63291cedda3ec7c51a378",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r41\\libxge3_static.a",
+      "artifactSha256": "39f5bded95d5e0f1ae57d683e0d66da9a6f098c46867b92ea41676bc20a33aec",
+      "bytes": 17133958
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r41\\build-report.json",
+      "sha256": "0985a2eb5329a2ad5e15a622e22b481c64db7aa981edac5d3e2a0d07b4cb890b",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r41\\libxge3_host.so",
+      "artifactSha256": "fd60a6d8b442a91233bd64a3dfea5c600ca8930e5f345fcd52b6b04d2524e78e",
+      "bytes": 10038736
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r41\\build-report.json",
+      "sha256": "fcc2a135e5844f9a3625348a13a2aae1801fb0f151bb08166fe7cd3b4aeaf278",
+      "artifact": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r41\\libxge3_static.a",
+      "artifactSha256": "830ee4caf78e7571e39a5624ea976e24a0e51f1e1f7793fd0e0e12e777be1bf0",
+      "bytes": 17148590
+    }
+  ],
+  "priorFailure": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\text-baseline-win-r1\\results.json",
+    "sha256": "85b0b2dd95cdadb42683928d86bbafb1b6472f71d15066d117353079f3449d38",
+    "scope": "Old matched SDK fails raw newline Font retention"
+  },
+  "actualQueuedDraw": {
+    "paintedPixels": 696,
+    "backend": "Software EGL/GLES 3",
+    "ownersClosedBeforeSubmit": [
+      "Run",
+      "Font"
+    ],
+    "heapAndResourceBalance": true
+  },
+  "storageCostsX64": {
+    "privateRunBackendExtraBytes": 8,
+    "ownedRunOuterBytes": 72,
+    "ownedBitmapOuterBytes": 48,
+    "sharedFontBytesIncluded": false,
+    "hardwarePerformance": false
+  },
+  "networkTests": false,
+  "audioTests": false,
+  "malformedFontFuzzing": false,
+  "shippingDelivery": false,
+  "releaseOrIdeInstalled": false,
+  "languageIntegrationReady": false,
+  "remaining": [
+    "Generic projected native-record value/stride and const ownership-helper compiler qualification",
+    "Complete managed Font async and audio integration",
+    "Module-global code-residency gate",
+    "Remaining XGE/XUI/Document and matched all-mainline delivery"
+  ]
+}

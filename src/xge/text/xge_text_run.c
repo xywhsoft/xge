@@ -1,6 +1,7 @@
 #ifndef XGE_NO_TEXT
 #include "xge_text_context.h"
 typedef struct xge_glyph_run_backend_t {
+	int iOwnedReferences; /* Zero for caller storage; positive for immutable owned runs. */
 	int iFontCount;
 	int iFontCapacity;
 	xge_font* ppFonts;
@@ -29,7 +30,9 @@ static int __xgeGlyphRunKeepFont(xge_glyph_run_backend_t* pBackend, xge_font pFo
 		if ( pBackend->ppFonts[i] == pFont ) return XGE_OK;
 	}
 	if ( pBackend->iFontCount >= pBackend->iFontCapacity ) {
+		if(pBackend->iFontCapacity>INT_MAX/2)return XGE_ERROR_OUT_OF_MEMORY;
 		iCapacity = (pBackend->iFontCapacity > 0) ? pBackend->iFontCapacity * 2 : 4;
+		if((size_t)iCapacity>SIZE_MAX/sizeof(*ppFonts))return XGE_ERROR_OUT_OF_MEMORY;
 		ppFonts = (xge_font*)xrtRealloc(pBackend->ppFonts, sizeof(*ppFonts) * (size_t)iCapacity);
 		if ( ppFonts == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 		pBackend->ppFonts = ppFonts;
@@ -213,6 +216,8 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 		pPosition->iClusterEnd = (uint32_t)(sScan - pDesc->sText);
 		pPosition->iItemKind = XGE_TEXT_ITEM_GLYPH;
 		if ( iCodepoint == '\n' ) {
+			iRet=__xgeGlyphRunKeepFont(pBackend,pDesc->pFont);
+			if(iRet!=XGE_OK){xgeGlyphRunFree(pRun);return iRet;}
 			pPosition->iGlyph = -1;
 			pPosition->iFlags = XGE_GLYPH_POSITION_LINE_BREAK;
 			pPosition->pFont = pDesc->pFont;
@@ -296,7 +301,7 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 		pGlyphFont = __xgeFontResolveCodepoint(pDesc->pFont, iCodepoint, &iGlyph);
 		if ( pGlyphFont == NULL ) continue;
 		iRet = xgeFontGlyphGetByIndex(pGlyphFont, iGlyph, &tMetrics);
-		if ( iRet != XGE_OK ) continue;
+		if ( iRet != XGE_OK ) {xgeGlyphRunFree(pRun);return iRet;}
 		if ( __xgeGlyphRunKeepFont(pBackend, pGlyphFont) != XGE_OK ) {
 			xgeGlyphRunFree(pRun);
 			return XGE_ERROR_OUT_OF_MEMORY;
@@ -349,6 +354,8 @@ void xgeGlyphRunFree(xge_glyph_run_t* pRun)
 
 	if ( pRun == NULL ) return;
 	pBackend = (xge_glyph_run_backend_t*)pRun->pBackend;
+	bool owned=pBackend && pBackend->iOwnedReferences>0;
+	if(owned && pBackend->iOwnedReferences>1){--pBackend->iOwnedReferences;return;}
 	if ( pBackend != NULL ) {
 		for ( i = 0; i < pBackend->iFontCount; i++ ) xgeFontFree(pBackend->ppFonts[i]);
 #if XGE_ENABLE_EMOJI
@@ -365,6 +372,7 @@ void xgeGlyphRunFree(xge_glyph_run_t* pRun)
 	xrtFree(pRun->pGlyphs);
 	xrtFree(pRun->pCarets);
 	memset(pRun, 0, sizeof(*pRun));
+	if(owned)xrtFree(pRun);
 }
 
 size_t xgeGlyphRunRetainedBytes(const xge_glyph_run_t* run)
@@ -375,6 +383,7 @@ size_t xgeGlyphRunRetainedBytes(const xge_glyph_run_t* run)
 	backend=(xge_glyph_run_backend_t*)run->pBackend;
 	if(!backend)return 0;
 	bytes=sizeof(*backend)+(size_t)backend->iFontCapacity*sizeof(*backend->ppFonts);
+	if(backend->iOwnedReferences>0)bytes+=sizeof(*run);
 #if XGE_ENABLE_HARFBUZZ
 	if(run->pGlyphs)bytes+=(size_t)backend->iGlyphCapacity*sizeof(*run->pGlyphs);
 	if(run->pCarets)bytes+=(size_t)backend->iCaretCapacity*sizeof(*run->pCarets);

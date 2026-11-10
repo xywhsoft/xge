@@ -1449,6 +1449,15 @@ typedef struct xge_glyph_bitmap_t {
 	void* pPixels;
 } xge_glyph_bitmap_t;
 
+/* Immutable, independently retained raster output. Raw bitmap records above
+ * keep their existing caller-owned storage contract. */
+typedef struct xge_glyph_bitmap_resource_t* xge_glyph_bitmap_resource;
+typedef struct xge_glyph_bitmap_info_t {
+ uint32_t iSize,iCodepoint;
+ int iWidth,iHeight,iStride,iOffsetX,iOffsetY,iFormat;
+ size_t iBytes;
+} xge_glyph_bitmap_info_t;
+
 typedef struct xge_glyph_t {
 	uint32_t iCodepoint;
 	int iGlyph;
@@ -2597,6 +2606,21 @@ XGE_API void xgeEmojiPackClearDefault(void);
 /* 整形 UTF-8 文本为字形 run（kerning/emoji 识别由 desc 开关）。 */
 #if XGE_ENABLE_TEXT
 XGE_API int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun);
+/* Immutable heap run; retained fonts must themselves own their records.
+ * The descriptor/text/context are consumed synchronously, not retained. */
+XGE_API int xgeTextShapeOwned(xge_glyph_run_t** out,const xge_text_shape_desc_t* desc);
+/* Positive native reference count; only runs created by TextShapeOwned. */
+XGE_API int xgeGlyphRunAddRef(const xge_glyph_run_t* run);
+XGE_API int xgeGlyphRunGetGlyphs(const xge_glyph_run_t* run,const xge_glyph_position_t** data,size_t* count);
+XGE_API int xgeGlyphRunGetCarets(const xge_glyph_run_t* run,const xge_glyph_caret_t** data,size_t* count);
+/* New reference, or NULL for an item without a font; never a borrowed pointer. */
+XGE_API int xgeGlyphRunGetFont(const xge_glyph_run_t* run,size_t index,xge_font* out);
+XGE_API int xgeFontGlyphRasterizeOwned(xge_glyph_bitmap_resource* out,xge_font font,uint32_t codepoint);
+XGE_API int xgeFontGlyphRasterizeByIndexOwned(xge_glyph_bitmap_resource* out,xge_font font,int index);
+XGE_API int xgeGlyphBitmapResourceAddRef(xge_glyph_bitmap_resource bitmap);
+XGE_API void xgeGlyphBitmapResourceFree(xge_glyph_bitmap_resource bitmap);
+XGE_API int xgeGlyphBitmapResourceGetInfo(xge_glyph_bitmap_resource bitmap,xge_glyph_bitmap_info_t* info);
+XGE_API int xgeGlyphBitmapResourceGetPixels(xge_glyph_bitmap_resource bitmap,const unsigned char** data,size_t* count);
 /* 释放整形输出的字形 run。 */
 XGE_API void xgeGlyphRunFree(xge_glyph_run_t* pRun);
 /* Return owned run storage in bytes; shared fonts and atlas resources are excluded. */
