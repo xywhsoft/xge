@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--allocator-baseline',action='store_true')
     parser.add_argument('--resident-oom',action='store_true',help='Keep the same audio engine alive across allocation prefixes')
     parser.add_argument('--resident-oom-baseline',action='store_true')
+    parser.add_argument('--sound-load',action='store_true',help='Qualify owning Sound requests in a real no-device mixer')
     args=parser.parse_args()
     assert sum((args.baseline,args.graphics_coupling_baseline,args.allocator_baseline,args.resident_oom_baseline))<=1
     control=args.baseline or args.graphics_coupling_baseline or args.allocator_baseline or args.resident_oom_baseline
@@ -84,6 +85,9 @@ def main():
         flags+=['-DXGE_TEST_GRAPHICS_COUPLING_BASELINE=1']
     if args.allocator_baseline:
         flags+=['-DXGE_TEST_ALLOCATOR_BASELINE=1']
+    if args.sound_load:
+        assert not control
+        flags+=['-DXGE_TEST_OWNED_SOUND_LOAD=1']
     systems=['-l'+name for name in archive['system_libraries']]
     if os.name!='nt':
         systems+=['-pthread','-ldl','-lm','-Wl,-rpath,'+str(runtime.parent)]
@@ -97,7 +101,7 @@ def main():
         # The fixture provides exactly one production aggregate. Do not pull
         # another copy from the archive, which could obscure the private state.
         assert '('+member+')' not in linkmap.read_text(errors='replace')
-        modes=(13,) if args.resident_oom_baseline else range(13,16) if args.resident_oom else range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(16)
+        modes=range(16,32) if args.sound_load else (13,) if args.resident_oom_baseline else range(13,16) if args.resident_oom else range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(16)
         for mode in modes:
             text=run(optimization+'-'+str(mode),[binary,str(mode)],out,control)
             if control:

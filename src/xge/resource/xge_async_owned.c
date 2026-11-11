@@ -16,6 +16,9 @@ struct xge_async_owned_t {
 #if XGE_ENABLE_TEXT
         xge_font font;
 #endif
+#if XGE_ENABLE_AUDIO
+        xge_sound sound;
+#endif
     } target;
     xerror* error;
     xge_scene_proc callback;
@@ -76,6 +79,13 @@ static int __xgeLoadDiscard(xge_async_owned request)
         request->target.font=NULL;request->raw.pTarget=NULL;
     }
 #endif
+#if XGE_ENABLE_AUDIO
+    else if(request->kind==XGE_ASYNC_SOUND){
+        int status=xgeSoundFreeChecked(request->target.sound);
+        if(status!=XGE_OK)return status;
+        request->target.sound=NULL;request->raw.pTarget=NULL;
+    }
+#endif
     else xgeTextureFree(&request->target.texture);
     request->hasResult=false;
     if(!request->graphics)return XGE_OK;
@@ -130,6 +140,10 @@ int xgeAsyncTextureCreateOwned(xge_async_owned* output,const xge_callback_owner_
 #if XGE_ENABLE_TEXT
 int xgeAsyncFontCreateOwned(xge_async_owned* output,const xge_callback_owner_t* owner)
 {return __xgeLoadCreate(output,XGE_ASYNC_FONT,owner);}
+#endif
+#if XGE_ENABLE_AUDIO
+int xgeAsyncSoundCreateOwned(xge_async_owned* output,const xge_callback_owner_t* owner)
+{return __xgeLoadCreate(output,XGE_ASYNC_SOUND,owner);}
 #endif
 int xgeAsyncLoadShareOwned(xge_async_owned request,xge_async_owned* output)
 {
@@ -231,6 +245,11 @@ static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint
             target=request->target.font;
         }
 #endif
+#if XGE_ENABLE_AUDIO
+        /* SOUND is never submitted to the image worker. Begin stores a
+         * private output slot until the stable owning factory fills it. */
+        if(kind==XGE_ASYNC_SOUND)target=&request->target.sound;
+#endif
         status=__xgeAsyncBegin(&request->raw,kind,target,path,NULL,NULL);
         request->raw.iFlags=flags;request->raw.fSize=size;
         if(status==XGE_OK){
@@ -240,6 +259,12 @@ static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint
                 if(kind==XGE_ASYNC_IMAGE)status=xgeImageLoadEx(&request->target.image,path,flags);
 #if XGE_ENABLE_TEXT
                 else if(kind==XGE_ASYNC_FONT)status=xgeFontLoad(request->target.font,path,size);
+#endif
+#if XGE_ENABLE_AUDIO
+                else if(kind==XGE_ASYNC_SOUND){
+                    status=xgeSoundCreateOwned(&request->target.sound,path,NULL);
+                    request->raw.pTarget=request->target.sound;
+                }
 #endif
                 else status=xgeTextureLoadEx(&request->target.texture,path,flags);
             }else status=threadStatus; /* Resource failure never falls back to blocking decode. */
@@ -255,6 +280,10 @@ int xgeAsyncTextureStartOwned(xge_async_owned request,const char* path,uint32_t 
 #if XGE_ENABLE_TEXT
 int xgeAsyncFontStartOwned(xge_async_owned request,const char* path,float size)
 {return __xgeLoadStart(request,XGE_ASYNC_FONT,path,0,size);}
+#endif
+#if XGE_ENABLE_AUDIO
+int xgeAsyncSoundStartOwned(xge_async_owned request,const char* path)
+{return __xgeLoadStart(request,XGE_ASYNC_SOUND,path,0,0);}
 #endif
 int xgeAsyncLoadPollOwned(xge_async_owned request,int* output)
 {
@@ -364,6 +393,23 @@ int xgeAsyncFontTakeOwned(xge_async_owned request,xge_font* output)
         if(request->graphics){request->graphics=false;status=__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
     }
     if(taking)request->taking=false;
+    xge_data_outcome_t result={0};__xgeOwnedLoadOutcomeBegin(&result,status);
+    __xgeOwnedLoadOutcomeAdd(&result,__xgeOwnedLoadActivityEnd(__xgeOwnedLoadRoot(request)));
+    return __xgeOwnedLoadOutcomeEnd(&result,ambient);
+}
+#endif
+#if XGE_ENABLE_AUDIO
+int xgeAsyncSoundTakeOwned(xge_async_owned request,xge_sound* output)
+{
+    if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+    *output=NULL;int status=__xgeOwnedLoadAcquire(__xgeOwnedLoadRoot(request),true,true);
+    if(status!=XGE_OK)return status;
+    xerror* ambient=xrtTakeError();
+    if(request->taking || request->kind!=XGE_ASYNC_SOUND || !request->hasResult)status=XGE_ERROR_INVALID_STATE;
+    if(status==XGE_OK){
+        *output=request->target.sound;request->target.sound=NULL;
+        request->raw.pTarget=NULL;request->hasResult=false;
+    }
     xge_data_outcome_t result={0};__xgeOwnedLoadOutcomeBegin(&result,status);
     __xgeOwnedLoadOutcomeAdd(&result,__xgeOwnedLoadActivityEnd(__xgeOwnedLoadRoot(request)));
     return __xgeOwnedLoadOutcomeEnd(&result,ambient);

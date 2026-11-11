@@ -89,3 +89,36 @@ remain 1 retained allocation / 248 requested bytes on the tested x64 ABIs.
 This is warmed XRT requested storage, not total heap capacity or hardware timing.
 Exact frozen source/full rebuild/report pins are in
 `docs/validation/async-font-owned-20261111.json`.
+
+## Sound requests
+
+`xgeAsyncSoundCreateOwned`, `xgeAsyncSoundStartOwned` and
+`xgeAsyncSoundTakeOwned` reuse the same request graph, callback/code owners and
+checked finalization protocol. SOUND retains the raw loader's synchronous
+control-thread contract, even with ThreadingSet enabled. Only image/texture
+decoding is submitted to the existing worker path.
+
+Start copies its URI through the shared request machinery, then calls the stable
+owned Sound factory. The target union stores only that pointer; it does not grow
+every request by embedding a Sound record. A ready unclaimed Sound is a real
+audio parent owner, so AudioUnitChecked and global Unit are Busy until Take,
+reset or release. Take transfers the existing owned record exactly once, with
+no allocation, record copy, PCM copy or native AddRef. Reset/final release closes
+an unclaimed result; an independently taken Sound outlives its request.
+
+Load failures are stored in Info/ThrowIfFailed; callback failures are delivered
+at the initiating checked Start/Poll boundary. Completion may clear itself,
+release its last public request reference or take the result. Reset/start during
+completion remain Busy. Other threads cannot start/take/finalize an affine
+request. No language-specific forwarding method or extra request layout is added.
+
+The matching full host/static O2 rebuilds and native O0/O2 tests pass 368 rows on
+Windows/Linux, including 16 Sound modes, existing resident audio checks, FontLoad
+and Image/Texture regressions. Sound modes independently check 80 allocation
+budgets while the audio engine stays alive, zero-allocation Take, real no-device
+PCM after request release, callback failure/reentry and native ownership edges.
+The native test setup selects a real CPU mixer in the production aggregate;
+there is no audio device, window or network test. Shipping DLL/static language
+qualification and automatic module-global retirement remain separate gates.
+Exact source/freeze/build/report pins are in
+`docs/validation/async-sound-owned-20261111.json`.

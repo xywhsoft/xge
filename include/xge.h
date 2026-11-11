@@ -2338,6 +2338,9 @@ XGE_API int xgeAsyncTextureCreateOwned(xge_async_owned* out,const xge_callback_o
 #if XGE_ENABLE_TEXT
 XGE_API int xgeAsyncFontCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
 #endif
+#if XGE_ENABLE_AUDIO
+XGE_API int xgeAsyncSoundCreateOwned(xge_async_owned* out,const xge_callback_owner_t* codeOwner);
+#endif
 XGE_API int xgeAsyncLoadShareOwned(xge_async_owned request,xge_async_owned* out);
 XGE_API int xgeAsyncLoadReleaseOwnerChecked(xge_async_owned request,bool* consumed);
 XGE_API int xgeAsyncLoadReleaseChecked(xge_async_owned request);
@@ -2351,6 +2354,11 @@ XGE_API int xgeAsyncTextureStartOwned(xge_async_owned request,const char* path,u
 /* Matches the native FONT request contract: caller-thread load/completion,
  * including registered providers. ThreadingSet does not make font IO async. */
 XGE_API int xgeAsyncFontStartOwned(xge_async_owned request,const char* path,float pixelSize);
+#endif
+#if XGE_ENABLE_AUDIO
+/* SOUND, like the raw loader, completes on the caller/control thread.
+ * The unclaimed stable Sound keeps the audio engine alive until Take/reset. */
+XGE_API int xgeAsyncSoundStartOwned(xge_async_owned request,const char* path);
 #endif
 XGE_API int xgeAsyncLoadPollOwned(xge_async_owned request,int* status);
 XGE_API int xgeAsyncLoadCancelOwned(xge_async_owned request);
@@ -2367,6 +2375,11 @@ XGE_API int xgeAsyncTextureTakeOwned(xge_async_owned request,xge_texture* output
 /* Transfers the private stable Font record without copying or allocating.
  * A failed adoption leaves the unclaimed result in the request. */
 XGE_API int xgeAsyncFontTakeOwned(xge_async_owned request,xge_font* output);
+#endif
+#if XGE_ENABLE_AUDIO
+/* Transfers the existing owned Sound without allocation or record/PCM copy.
+ * Taking twice is invalid; a failed language adoption must leave it unclaimed. */
+XGE_API int xgeAsyncSoundTakeOwned(xge_async_owned request,xge_sound* output);
 #endif
 XGE_API xrtownershipref xgeAsyncLoadOwnership(xge_async_owned request);
 XGE_API const xrtownershipadapterv1* xgeAsyncLoadOwnershipAdapterV1(xrtownershipref ref);

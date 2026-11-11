@@ -87,9 +87,153 @@ static void* wrongThread(void* raw)
     return 0;
 }
 #endif
+#if defined(XGE_TEST_OWNED_SOUND_LOAD)
+typedef struct LoadOwner {
+    unsigned refs,calls,action,failHold;
+    uint64_t creator;
+    xge_async_owned request;
+    xge_sound taken;
+} LoadOwner;
+static bool loadCount(const void* data,size_t* out){*out=((const LoadOwner*)data)->refs;return true;}
+static bool loadTrace(const void* data,xrtownershipvisitor visit,void* user)
+{(void)data;(void)visit;(void)user;return true;}
+static const xrtownershipops loadOps={loadCount,loadTrace};
+static bool loadHold(const void* data)
+{LoadOwner* owner=(LoadOwner*)data;if(owner->failHold){--owner->failHold;return false;}++owner->refs;return true;}
+static bool loadDrop(const void* data)
+{LoadOwner* owner=(LoadOwner*)data;assert(owner->refs>1);--owner->refs;return true;}
+static xge_callback_owner_t loadDescriptor(LoadOwner* owner)
+{return (xge_callback_owner_t){{owner,&loadOps},loadHold,loadDrop};}
+static xge_async_load_info_t loadInfo(xge_async_owned request)
+{xge_async_load_info_t result={0};result.size=sizeof(result);assert(xgeAsyncLoadInfoGet(request,&result)==XGE_OK);return result;}
+static int loadCallback(void* data)
+{
+    LoadOwner* owner=(LoadOwner*)data;++owner->calls;
+    assert(xrtThreadCurrentId()==owner->creator);
+    assert(loadInfo(owner->request).status==XGE_ASYNC_READY && !loadInfo(owner->request).threaded);
+    if(owner->action==1)assert(xgeAsyncLoadCallbackSetOwned(owner->request,NULL,NULL,NULL)==XGE_OK);
+    if(owner->action==2){
+        bool consumed=false;assert(xgeAsyncLoadReleaseOwnerChecked(owner->request,&consumed)==XGE_OK && consumed);
+        assert(loadInfo(owner->request).hasResult);owner->request=NULL;
+    }
+    if(owner->action==3){
+        assert(xgeAsyncLoadResetOwned(owner->request)==XGE_ERROR_BUSY);
+        assert(xgeAsyncSoundStartOwned(owner->request,"audio-load.wav")==XGE_ERROR_BUSY);
+        assert(xgeAsyncSoundTakeOwned(owner->request,&owner->taken)==XGE_OK && owner->taken);
+    }
+    if(owner->action==4){xrtSetErrorKind(XERR_IO);return XGE_ERROR_CALLBACK_FAILED;}
+    return XGE_OK;
+}
+static int32 loadWrongThread(ptr data)
+{
+    xge_async_owned request=(xge_async_owned)data;xge_sound sound=(void*)1;
+    assert(xgeAsyncSoundStartOwned(request,"audio-load.wav")==XGE_ERROR_BUSY);
+    assert(xgeAsyncSoundTakeOwned(request,&sound)==XGE_ERROR_BUSY && !sound);
+    bool consumed=true;assert(xgeAsyncLoadReleaseOwnerChecked(request,&consumed)==XGE_ERROR_BUSY && !consumed);
+    return 0;
+}
+static unsigned loadVisits;
+static bool loadVisit(xrtownershipref ref,void* expected)
+{assert(ref.Data==expected && ref.Ops==&loadOps);++loadVisits;return true;}
+static void loadHeapEqual(const xmemdebugsnapshot* before,const xmemdebugsnapshot* after)
+{
+    assert(before->LiveCount==after->LiveCount && before->LiveBytes==after->LiveBytes);
+    assert(before->InvalidFreeCount==after->InvalidFreeCount && before->DoubleFreeCount==after->DoubleFreeCount);
+}
+static void soundLoadMode(int mode)
+{
+    FILE* file=fopen("audio-load.wav","wb");assert(file);
+    assert(fwrite(wave,1,sizeof(wave),file)==sizeof(wave));assert(!fclose(file));
+    LoadOwner owner={0};owner.refs=1;owner.creator=xrtThreadCurrentId();
+    xge_callback_owner_t code=loadDescriptor(&owner);
+    /* Warm the owned domain and native decoder before resident snapshots. */
+    assert(xgeAsyncSoundCreateOwned(&owner.request,&code)==XGE_OK);
+    assert(xgeAsyncSoundStartOwned(owner.request,"audio-load.wav")==XGE_OK);
+    xge_sound warm=NULL;assert(xgeAsyncSoundTakeOwned(owner.request,&warm)==XGE_OK);
+    assert(xgeSoundFreeChecked(warm)==XGE_OK);
+    assert(xgeAsyncLoadReleaseChecked(owner.request)==XGE_OK && owner.refs==1);owner.request=NULL;
+    xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
+    assert(xgeAsyncSoundCreateOwned(&owner.request,&code)==XGE_OK);xge_async_owned request=owner.request;
+    assert(loadInfo(request).kind==XGE_ASYNC_SOUND && loadInfo(request).status==XGE_ASYNC_PENDING);
+    if(mode==25){
+        assert(xgeAsyncLoadReleaseChecked(request)==XGE_OK);request=owner.request=NULL;
+        unsigned failed=0,passed=0;
+        for(unsigned budget=0;budget<80;++budget){
+            xmemdebugsnapshot a,b;xrtMemDebugSnapshot(&a);assert(xrtMemDebugFailAfter(budget));
+            int status=xgeAsyncSoundCreateOwned(&request,&code);owner.request=request;
+            if(status==XGE_OK)status=xgeAsyncSoundStartOwned(request,"audio-load.wav");
+            if(status==XGE_OK)status=xgeAsyncLoadThrowIfFailed(request);
+            xge_sound sound=NULL;if(status==XGE_OK)status=xgeAsyncSoundTakeOwned(request,&sound);
+            if(status==XGE_OK)++passed;else ++failed;
+            xrtMemDebugFailClear();xrtClearError();assert(xgeSoundFreeChecked(sound)==XGE_OK);
+            if(request)assert(xgeAsyncLoadReleaseChecked(request)==XGE_OK);
+            request=owner.request=NULL;xrtClearError();xrtMemDebugSnapshot(&b);loadHeapEqual(&a,&b);
+            assert(owner.refs==1 && !g_xge.iAudioCount && !__xgeAudioOwnerCount(&g_xgeGraphicsLifetime));
+        }
+        assert(failed && passed);printf("SoundLoad budgets: %u failures, %u successes\n",failed,passed);
+    }else if(mode==23){
+        xthread* thread=xrtThreadCreate(loadWrongThread,request,0);assert(thread && xrtThreadWait(thread)==XWAIT_OK);xrtThreadDestroy(thread);
+    }else if(mode==24){
+        xge_async_owned shared=NULL;assert(xgeAsyncLoadShareOwned(request,&shared)==XGE_OK && shared==request);
+        assert(xgeAsyncLoadReleaseChecked(shared)==XGE_OK);
+        owner.failHold=1;xge_async_owned rejected=(void*)1;
+        assert(xgeAsyncSoundCreateOwned(&rejected,&code)!=XGE_OK && !rejected);
+    }else if(mode==26){
+        assert(xgeAsyncSoundStartOwned(request,"missing-owned-sound.wav")==XGE_OK);
+        assert(loadInfo(request).status==XGE_ASYNC_FAILED && !loadInfo(request).hasResult);
+        assert(xgeAsyncLoadThrowIfFailed(request)!=XGE_OK);xrtClearError();
+        assert(xgeAsyncLoadResetOwned(request)==XGE_OK);
+        assert(xgeAsyncSoundStartOwned(request,"audio-load.wav")==XGE_OK && loadInfo(request).hasResult);
+    }else if(mode==27){
+        assert(xgeAsyncLoadCallbackSetOwned(request,loadCallback,&owner,&code)==XGE_OK);
+        assert(xgeAsyncLoadCancelOwned(request)==XGE_OK && loadInfo(request).status==XGE_ASYNC_CANCELLED);
+        assert(xgeAsyncLoadThrowIfFailed(request)!=XGE_OK && xrtErrorKind(xrtGetError())==XERR_CANCELLED);xrtClearError();
+        assert(xgeAsyncLoadResetOwned(request)==XGE_OK && !owner.calls);
+        assert(xgeAsyncSoundStartOwned(request,"audio-load.wav")==XGE_OK && owner.calls==1);
+    }else if(mode==29){
+        xrtownershipref ref=xgeAsyncLoadOwnership(request);assert(ref.Data && ref.Ops);
+        loadVisits=0;assert(ref.Ops->Trace(ref.Data,loadVisit,&owner) && loadVisits==1);
+        xmemdebugsnapshot a,b;xrtMemDebugSnapshot(&a);
+        for(unsigned i=0;i<1000;++i){int status=-1;assert(xgeAsyncLoadPollOwned(request,&status)==XGE_OK && status==XGE_ASYNC_PENDING);assert(loadInfo(request).kind==XGE_ASYNC_SOUND);}
+        xrtMemDebugSnapshot(&b);assert(a.AllocCount==b.AllocCount);
+    }else if(mode==31){
+        assert(xgeAsyncSoundStartOwned(request,"audio-load.wav")==XGE_OK);
+        assert(xrtMemDebugFailAfter(0));
+        xge_sound sound=NULL;assert(xgeAsyncSoundTakeOwned(request,&sound)==XGE_OK && sound);
+        assert(!xrtMemDebugFailTriggered());xrtMemDebugFailClear();
+        assert(xgeAsyncLoadReleaseChecked(request)==XGE_OK);request=owner.request=NULL;
+        xgeSoundSetLoop(sound,1);assert(xgeSoundPlay(sound)==XGE_OK);mix();assert(xgeSoundFreeChecked(sound)==XGE_OK);
+    }else{
+        if(mode>=17 && mode<=21){
+            owner.action=mode==18 ? 1:mode==19 ? 2:mode==20 ? 3:mode==21 ? 4:0;
+            assert(xgeAsyncLoadCallbackSetOwned(request,loadCallback,&owner,&code)==XGE_OK);
+        }
+        if(mode==28){owner.action=3;assert(xgeAsyncLoadCallbackSetOwned(request,loadCallback,&owner,&code)==XGE_OK);}
+        assert(xgeAsyncThreadingSet(mode&1)==XGE_OK);
+        int started=xgeAsyncSoundStartOwned(request,"audio-load.wav");
+        if(mode==21){assert(started==XGE_ERROR_CALLBACK_FAILED && xrtErrorKind(xrtGetError())==XERR_IO);xrtClearError();}
+        else assert(started==XGE_OK);
+        if(mode==19){request=NULL;assert(owner.request==NULL && owner.refs==1);}
+        else{
+            assert(!loadInfo(request).threaded && loadInfo(request).status==XGE_ASYNC_READY);
+            if(mode==22){xge_font wrong=(void*)1;assert(xgeAsyncFontTakeOwned(request,&wrong)==XGE_ERROR_INVALID_STATE && !wrong);assert(loadInfo(request).hasResult);}
+            if(mode==30){assert(xgeAudioUnitChecked()==XGE_ERROR_BUSY && xgeUnitChecked()==XGE_ERROR_BUSY);assert(xgeAsyncLoadResetOwned(request)==XGE_OK);assert(!g_xge.iAudioCount && xgeAudioIsReady());}
+        }
+    }
+    if(owner.taken){assert(xgeSoundPlay(owner.taken)==XGE_OK);mix();assert(xgeSoundFreeChecked(owner.taken)==XGE_OK);owner.taken=NULL;}
+    if(request)assert(xgeAsyncLoadReleaseChecked(request)==XGE_OK);
+    if((mode>=17 && mode<=21) || mode==27 || mode==28)assert(owner.calls==1);
+    assert(owner.refs==1 && !g_xge.iAudioCount && !__xgeAudioOwnerCount(&g_xgeGraphicsLifetime));
+    xrtClearError();xrtMemDebugSnapshot(&after);loadHeapEqual(&before,&after);
+    assert(!remove("audio-load.wav"));
+}
+#endif
 int main(int argc,char** argv)
 {
-    assert(argc==2);int mode=atoi(argv[1]);assert(mode>=0 && mode<=15);begin();
+    assert(argc==2);int mode=atoi(argv[1]);assert(mode>=0 && mode<=31);begin();
+#if defined(XGE_TEST_OWNED_SOUND_LOAD)
+    if(mode>=16)soundLoadMode(mode);
+#endif
     if(mode==0){
         xge_audio_group_t group={0};assert(xgeAudioGroupInit(&group)==XGE_OK);
         xgeAudioUnit();assert(xgeAudioIsReady());xrtClearError();
@@ -196,7 +340,7 @@ int main(int argc,char** argv)
         assert(failed && passed);assert(!remove("audio-lifetime.wav"));
         printf("Audio file ownership budgets: %d rejected, %d successful (mode %d)\n",failed,passed,mode);
     }
-    if(mode>=13){
+    if(mode>=13 && mode<=15){
         FILE* file=fopen("audio-resident.wav","wb");assert(file);
         assert(fwrite(wave,1,sizeof(wave),file)==sizeof(wave));assert(!fclose(file));
         xge_audio_group_t group={0};assert(xgeAudioGroupInit(&group)==XGE_OK);

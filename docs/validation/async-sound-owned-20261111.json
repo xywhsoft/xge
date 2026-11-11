@@ -1,0 +1,133 @@
+{
+  "schema": "xge-native-owned-sound-request-1",
+  "scope": "Native Sound requests, stable move, checked parent lifetime, shared graph/callback protocol; not final language/SDK delivery",
+  "passed": true,
+  "shippingDelivery": false,
+  "audioDevice": false,
+  "realMiniaudio": true,
+  "window": false,
+  "networkTests": false,
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r55.json",
+    "sha256": "0fdf4de6e15823eccd7f27f64e06b396d4d4c16fab60049f690eacce6cc2f51b"
+  },
+  "compiledSource": {
+    "include/xge.h": "29b85ac1c6e94cbedf44219705d919b3d7745b82ec7acd548cf35c8ff023f312",
+    "src/xge/resource/xge_async_owned.c": "b2d8b5171a99caad21b325a96903970ca0cc17add2a594fdb3f5586d4a5c3ae8"
+  },
+  "testSource": {
+    "tests/xge/xge_audio_lifetime_test.c": "0a4c3d967fe6568814a0c9eab44a32f54d95b2bf4d378587534a602a88af1ee8",
+    "tools/test/check_audio_lifetimes.py": "7db3f17f24bc929a353d632a68169c079849021605277f8fc5e8d2698f70bdba"
+  },
+  "historicalFixture": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\audio-sound-pre-matrix-cleanup-r1.c",
+    "sha256": "ed43ed89657471d91d3fe65471157c352fab8fb4edeeb57906fb4fdec1080c4f"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r55\\build-report.json",
+      "sha256": "f5d72a05e925b1b3cbde20f602e65575660efa4d6d38d3b81542ce2c21ec72e4",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r55\\xge3_host.dll",
+        "sha256": "a71981333e8f7b71f7fd06e13d346388f291749b4dfba1db96123ef4a938ba45"
+      },
+      "fullRebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r55\\build-report.json",
+      "sha256": "03975fad20af122a9619a16502dc47b48e5a9169391417475c9f34ddaead54bd",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r55\\libxge3_static.a",
+        "sha256": "d439b49c4fa0f8ccf5ede04d6fd71857bb7dd0574ada851c53df55a152b74db4"
+      },
+      "fullRebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r55\\build-report.json",
+      "sha256": "50c3bce6107acf78864e4532a78ea7ab806d86b3f6b77f8794f524877d427c4f",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r55\\libxge3_host.so",
+        "sha256": "61a1e9e6303a55f215c94c3cfc31f51eb1ccfae85835db56fe969626fd430d33"
+      },
+      "fullRebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r55\\build-report.json",
+      "sha256": "87fe446147d082f1c7c42142b64c6d1077be3fd4847952836f951ec74ee8c490",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r55\\libxge3_static.a",
+        "sha256": "cacde703b6397336d09ff2655277719b63a7d78e813b66acb82e6000e26fe285"
+      },
+      "fullRebuild": true
+    }
+  ],
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-requests-win-r2\\results.json",
+      "sha256": "a7c2e4e7b1ab479df5842249c2ed8d0dcd181184bfc0fc7625b06375359835b9",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-audio-win-r1\\results.json",
+      "sha256": "372ae02594bb0d8ca1de302797d8e2d78f83983afd7705599366c7d798c28ac7",
+      "checks": 34,
+      "fixtureSnapshot": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\audio-sound-pre-matrix-cleanup-r1.c",
+        "sha256": "ed43ed89657471d91d3fe65471157c352fab8fb4edeeb57906fb4fdec1080c4f"
+      }
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-font-win-r1\\results.json",
+      "sha256": "1f383fd25f87f9c0afa20f2699a7b5865d41a555c39def496d4c18d721bcebbe",
+      "checks": 68
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-async-win-r1\\results.json",
+      "sha256": "bdcb968c5100433eb10d0a56095a4ca0402dabcf2b86f7467fb047838980c86e",
+      "checks": 48
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-requests-linux-r2\\results.json",
+      "sha256": "c40dba542403c608cb09c96945e86fbbdac19f0810cefe88cee10e3a2d98c4fe",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-audio-linux-r1\\results.json",
+      "sha256": "5534d58761bb310112bcebc8aee634e04dc2314fee74fcb38d41486d31ae5b34",
+      "checks": 34,
+      "fixtureSnapshot": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\audio-sound-pre-matrix-cleanup-r1.c",
+        "sha256": "ed43ed89657471d91d3fe65471157c352fab8fb4edeeb57906fb4fdec1080c4f"
+      }
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-font-linux-r1\\results.json",
+      "sha256": "19dce49a8fbf6e9200ac08ac0de31aa1ad547ff2ba7e3d902b2d231e4eccaa52",
+      "checks": 68
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\sound-final-async-linux-r1\\results.json",
+      "sha256": "9f75d6b4479794ac8a6fe06c679d32759fcd5baf2df6ae31f4221f1dda4a37f2",
+      "checks": 48
+    }
+  ],
+  "allocationResults": {
+    "win": {
+      "failures": 15,
+      "successes": 65,
+      "budgets": 80
+    },
+    "linux": {
+      "failures": 13,
+      "successes": 67,
+      "budgets": 80
+    }
+  },
+  "limitations": [
+    "Positive no-device mixer tests include authoritative aggregate plus matched remaining archive objects; they are not shipping images.",
+    "Caller-thread allocation prefixes only; no worker-thread global OOM injection.",
+    "SOUND IO/completion remain synchronous; no promise of nonblocking sound IO.",
+    "Automatic module-global code/resource retirement remains an independent language gate."
+  ],
+  "checks": 368
+}
