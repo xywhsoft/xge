@@ -11,12 +11,37 @@ typedef enum xge_graphics_phase {
 typedef struct xge_graphics_lifetime {
     xspinlock lock;
     uint64_t owners;
+    /* Audio-engine children which do not depend on a graphics context.
+     * They block Unit, but must not delay an independent renderer's close. */
+    uint64_t audioOwners;
     uint64_t creatorThread;
     xge_graphics_phase phase;
     bool closing;
     bool initializing;
 } xge_graphics_lifetime;
-#define XGE_GRAPHICS_LIFETIME_INIT {XRT_SPIN_INIT,0,0,XGE_GRAPHICS_COLD,false,false}
+#define XGE_GRAPHICS_LIFETIME_INIT {XRT_SPIN_INIT,0,0,0,XGE_GRAPHICS_COLD,false,false}
+
+static int __xgeAudioOwnerAcquire(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);int result=XGE_OK;
+    if(state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
+    else if(state->closing || state->initializing)result=XGE_ERROR_BUSY;
+    else if(state->phase==XGE_GRAPHICS_COLD || state->phase==XGE_GRAPHICS_CLOSED)result=XGE_ERROR_NOT_INITIALIZED;
+    else if(state->audioOwners==UINT64_MAX)result=XGE_ERROR_OUT_OF_MEMORY;
+    else ++state->audioOwners;
+    (void)xrtSpinUnlock(&state->lock);return result;
+}
+static uint64_t __xgeAudioOwnerCount(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);uint64_t result=state->audioOwners;
+    (void)xrtSpinUnlock(&state->lock);return result;
+}
+static int __xgeAudioOwnerRelease(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);
+    int result=state->audioOwners ? (--state->audioOwners,XGE_OK):XGE_ERROR_INVALID_STATE;
+    (void)xrtSpinUnlock(&state->lock);return result;
+}
 
 static int __xgeGraphicsOwnerAcquire(xge_graphics_lifetime* state)
 {
@@ -32,7 +57,7 @@ static int __xgeGraphicsOwnerRelease(xge_graphics_lifetime* state)
 {
     (void)xrtSpinLock(&state->lock);
     int result=state->owners ? (--state->owners,XGE_OK):XGE_ERROR_INVALID_STATE;
-    if(!state->owners && state->phase==XGE_GRAPHICS_COLD && !state->initializing)state->creatorThread=0;
+    if(!state->owners && !state->audioOwners && state->phase==XGE_GRAPHICS_COLD && !state->initializing)state->creatorThread=0;
     (void)xrtSpinUnlock(&state->lock);return result;
 }
 static uint64_t __xgeGraphicsOwnerCount(xge_graphics_lifetime* state)
@@ -43,7 +68,7 @@ static uint64_t __xgeGraphicsOwnerCount(xge_graphics_lifetime* state)
 static int __xgeGraphicsCloseBegin(xge_graphics_lifetime* state)
 {
     (void)xrtSpinLock(&state->lock);
-    int result=state->closing || state->initializing || state->owners ? XGE_ERROR_BUSY:XGE_OK;
+    int result=state->closing || state->initializing || state->owners || state->audioOwners ? XGE_ERROR_BUSY:XGE_OK;
     if(state->phase!=XGE_GRAPHICS_COLD && state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
     if(result==XGE_OK)state->closing=true;
     (void)xrtSpinUnlock(&state->lock);return result;
@@ -56,6 +81,7 @@ static void __xgeGraphicsCloseAbort(xge_graphics_lifetime* state)
 static void __xgeGraphicsCloseFinish(xge_graphics_lifetime* state,bool backendRunning)
 {
     (void)xrtSpinLock(&state->lock);
+    assert(!state->owners && !state->audioOwners);
     state->phase=backendRunning ? XGE_GRAPHICS_CLOSED:XGE_GRAPHICS_COLD;state->closing=false;
     if(!backendRunning)state->creatorThread=0;
     (void)xrtSpinUnlock(&state->lock);

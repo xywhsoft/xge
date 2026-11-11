@@ -200,7 +200,7 @@ int xgeUnitChecked(void)
 	XGE_UNIT_STEP(xgeSoundFallbackClear());
 #endif
 #if XGE_ENABLE_AUDIO
-	XGE_UNIT_STEP(xgeAudioUnit());
+	XGE_UNIT_STEP(__xgeAudioUnit());
 #endif
 	#if defined(_WIN32) || defined(_WIN64)
 		XGE_UNIT_STEP(__xgeWin32ClipboardOwnerRelease());

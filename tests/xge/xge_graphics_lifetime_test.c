@@ -26,6 +26,7 @@ static void exercise(void)
 }
 static void guarded(void)
 {
+    assert(__xgeAudioOwnerAcquire(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_ERROR_INVALID_STATE);
     assert(__xgeGraphicsInitCheck(&state)==XGE_ERROR_INVALID_STATE);
@@ -40,6 +41,24 @@ static void* worker(void* ignored){(void)ignored;if(guardOnly)guarded();else exe
 #endif
 int main(void)
 {
+    assert(__xgeAudioOwnerAcquire(&state)==XGE_ERROR_NOT_INITIALIZED);
+    assert(__xgeAudioOwnerRelease(&state)==XGE_ERROR_INVALID_STATE);
+    __xgeGraphicsInitialized(&state);
+    assert(__xgeAudioOwnerAcquire(&state)==XGE_OK && state.audioOwners==1);
+    assert(__xgeGraphicsOwnerCount(&state)==0);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
+    assert(__xgeGraphicsContextBegin(&state)==XGE_OK);
+    __xgeGraphicsContextCommit(&state);__xgeGraphicsContextFinish(&state,false);
+    assert(!state.owners && state.audioOwners==1 && state.phase==XGE_GRAPHICS_READY);
+    state.audioOwners=UINT64_MAX;
+    assert(__xgeAudioOwnerAcquire(&state)==XGE_ERROR_OUT_OF_MEMORY && state.audioOwners==UINT64_MAX);
+    state.audioOwners=1;
+    assert(__xgeGraphicsBackendStart(&state)==XGE_OK);
+    __xgeGraphicsBackendEnding(&state);__xgeGraphicsBackendEnded(&state,true);
+    assert(__xgeAudioOwnerAcquire(&state)==XGE_OK && state.audioOwners==2);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
+    assert(__xgeAudioOwnerRelease(&state)==XGE_OK && __xgeAudioOwnerRelease(&state)==XGE_OK);
+    assert(__xgeGraphicsCloseBegin(&state)==XGE_OK);__xgeGraphicsCloseFinish(&state,false);
     assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_NOT_INITIALIZED);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);
     assert(__xgeGraphicsOwnerAcquire(&state)==XGE_OK);

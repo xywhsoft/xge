@@ -447,16 +447,35 @@ static void __xgeRenderRequestInternal(void)
 }
 
 #ifndef XGE_NO_AUDIO
+/* miniaudio consumes NULL allocation results and may recover internally. Its
+ * C allocator callbacks must not publish an OOM which the library recovered
+ * from. Keep an existing caller diagnostic alive; other fresh errors remain
+ * visible. The normal successful/empty-error path performs one error lookup. */
+static void* __xgeMaAllocationResult(void* memory,xerror* ambient)
+{
+    if(memory){if(ambient)xrtErrorFree(ambient);return memory;}
+    xerror* error=xrtTakeError();
+    if(error && error!=ambient && xrtErrorKind(error)!=XERR_MEMORY){
+        xrtErrorFree(ambient);xrtSetErrorTake(error);
+    }else{
+        xrtErrorFree(error);if(ambient)xrtSetErrorTake(ambient);
+    }
+    return NULL;
+}
 static void* __xgeMaMalloc(size_t iSize, void* pUser)
 {
 	(void)pUser;
-	return xrtMalloc(iSize);
+	const xerror* previous=xrtGetError();
+	xerror* ambient=previous ? xrtErrorRef(previous):NULL;
+	return __xgeMaAllocationResult(xrtMalloc(iSize),ambient);
 }
 
 static void* __xgeMaRealloc(void* pData, size_t iSize, void* pUser)
 {
 	(void)pUser;
-	return xrtRealloc(pData, iSize);
+	const xerror* previous=xrtGetError();
+	xerror* ambient=previous ? xrtErrorRef(previous):NULL;
+	return __xgeMaAllocationResult(xrtRealloc(pData, iSize),ambient);
 }
 
 static void __xgeMaFree(void* pData, void* pUser)
@@ -483,28 +502,29 @@ static char* __xgeStrDup(const char* sText)
 	return sCopy;
 }
 
-static char* __xgePathResolve(const char* sPath)
+/* A relative application-directory probe may recover from a non-memory
+ * failure, but must never hide OOM or leave a recovered diagnostic on success.
+ * Path APIs have no user callbacks; preserve the caller's ambient error. */
+static int __xgePathResolve(const char* sPath,char** output)
 {
-	if ( sPath == NULL ) {
-		return NULL;
-	}
-	if ( __xgeUriSchemeLen(sPath) > 0 ) {
-		if ( __xgeSchemeEqual(sPath, __xgeUriSchemeLen(sPath), "res") || __xgeSchemeEqual(sPath, __xgeUriSchemeLen(sPath), "file") ) {
-			sPath += __xgeUriSchemeLen(sPath) + 3;
-		} else {
-			return NULL;
-		}
-	}
-	if ( xrtPathIsAbs(sPath) ) {
-		return __xgeStrDup(sPath);
-	}
-	{
-		str sAppPath = xrtPathAppDir();
-		str sResult = sAppPath != NULL ? xrtPathJoin(sAppPath, sPath) : NULL;
-		xrtFree(sAppPath);
-		if ( sResult != NULL ) return sResult;
-	}
-	return __xgeStrDup(sPath);
+    if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+    *output=NULL;if(!sPath)return XGE_ERROR_INVALID_ARGUMENT;
+    int scheme=__xgeUriSchemeLen(sPath);
+    if(scheme){
+        if(!__xgeSchemeEqual(sPath,scheme,"res") && !__xgeSchemeEqual(sPath,scheme,"file"))return XGE_ERROR_UNSUPPORTED;
+        sPath+=scheme+3;
+    }
+    if(xrtPathIsAbs(sPath)){
+        *output=__xgeStrDup(sPath);return *output ? XGE_OK:XGE_ERROR_OUT_OF_MEMORY;
+    }
+    xerror* ambient=xrtTakeError();
+    str app=xrtPathAppDir();
+    if(!app && xrtErrorKind(xrtGetError())==XERR_MEMORY){xrtErrorFree(ambient);return XGE_ERROR_OUT_OF_MEMORY;}
+    str result=app ? xrtPathJoin(app,sPath):NULL;xrtFree(app);
+    if(!result && xrtErrorKind(xrtGetError())==XERR_MEMORY){xrtErrorFree(ambient);return XGE_ERROR_OUT_OF_MEMORY;}
+    xrtClearError();xrtSetErrorTake(ambient);
+    if(!result)result=__xgeStrDup(sPath);
+    *output=result;return result ? XGE_OK:XGE_ERROR_OUT_OF_MEMORY;
 }
 
 // 使用 xrt 读取完整文件，优先基于 AppPath 处理相对路径
@@ -2318,6 +2338,9 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 static void __xgeEmojiGlobalClear(void);
 static int __xgeDragDropUnit(void);
+#if XGE_ENABLE_AUDIO
+static void __xgeAudioUnit(void);
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 static void __xgeWin32ClipboardOwnerRelease(void);
 #endif

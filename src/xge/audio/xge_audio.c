@@ -1,5 +1,61 @@
 #ifndef XGE_NO_AUDIO
 #include <limits.h>
+/* Music/Stream keep their public nominal struct tags. Project their identical
+ * scalar members at proved offsets, rather than dereference an incompatible
+ * Sound struct lvalue. Each access is the actual member's C scalar type. */
+#define XGE_AUDIO_RECORD_LAYOUT(Type) \
+    _Static_assert(sizeof(Type)==sizeof(xge_sound_t) && \
+        offsetof(Type,iRefCount)==offsetof(xge_sound_t,iRefCount) && \
+        offsetof(Type,iType)==offsetof(xge_sound_t,iType) && \
+        offsetof(Type,iFlags)==offsetof(xge_sound_t,iFlags) && \
+        offsetof(Type,pBackend)==offsetof(xge_sound_t,pBackend) && \
+        _Generic(&((Type*)0)->iRefCount,int*:1,default:0) && \
+        _Generic(&((Type*)0)->iType,int*:1,default:0) && \
+        _Generic(&((Type*)0)->iFlags,uint32_t*:1,default:0) && \
+        _Generic(&((Type*)0)->pBackend,void**:1,default:0),"audio record scalar ABI")
+XGE_AUDIO_RECORD_LAYOUT(xge_sound_t);
+XGE_AUDIO_RECORD_LAYOUT(xge_music_t);
+XGE_AUDIO_RECORD_LAYOUT(xge_stream_t);
+#define XGE_AUDIO_REFS(p) (*(int*)((unsigned char*)(p)+offsetof(xge_sound_t,iRefCount)))
+#define XGE_AUDIO_TYPE(p) (*(int*)((unsigned char*)(p)+offsetof(xge_sound_t,iType)))
+#define XGE_AUDIO_FLAGS(p) (*(uint32_t*)((unsigned char*)(p)+offsetof(xge_sound_t,iFlags)))
+#define XGE_AUDIO_BACKEND(p) (*(void**)((unsigned char*)(p)+offsetof(xge_sound_t,pBackend)))
+/* Public records remain small. Their private backends own the parent links;
+ * a group handle may disappear while voices still retain its mixer node. */
+typedef struct __xge_audio_group {
+    ma_sound_group group;
+    uint32_t references;
+} __xge_audio_group;
+typedef struct __xge_audio_sound {
+    ma_sound sound; /* Existing control calls keep their first-member ABI. */
+    __xge_audio_group* group;
+} __xge_audio_sound;
+static bool g_xgeAudioTransition;
+#define XGE_SOUND_OWNED_RECORD 0x20000000u
+
+static int __xgeAudioControlAccess(void)
+{
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    int result=XGE_OK;
+    if(g_xgeGraphicsLifetime.creatorThread && g_xgeGraphicsLifetime.creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
+    else if(g_xgeGraphicsLifetime.closing || g_xgeGraphicsLifetime.initializing || g_xgeAudioTransition)result=XGE_ERROR_BUSY;
+    else if(!g_xge.bInitialized)result=XGE_ERROR_NOT_INITIALIZED;
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);return result;
+}
+static void __xgeAudioReport(int result)
+{if(result!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);}
+static int __xgeAudioGroupRetain(__xge_audio_group* group)
+{
+    if(!group)return XGE_OK;
+    if(!group->references || group->references==UINT32_MAX)return XGE_ERROR_INVALID_STATE;
+    ++group->references;return XGE_OK;
+}
+static void __xgeAudioGroupRelease(__xge_audio_group* group)
+{
+    if(!group || --group->references)return;
+    ma_sound_group_uninit(&group->group);xrtFree(group);
+    (void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
+}
 #include "xge_audio_clip.inc"
 static xge_sound __xgeAudioAsSound(void* pObject)
 {
@@ -10,6 +66,7 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 {
 	xge_sound pSound;
 	ma_sound* pMaSound;
+	__xge_audio_sound* backend;
 	ma_sound_group* pMaGroup;
 	char* sFullPath;
 	ma_uint32 iMaFlags;
@@ -18,25 +75,34 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 	if ( (pObject == NULL) || (sPath == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( xgeAudioIsReady() == 0 ) {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+	if ( !g_xge.bAudioInitialized ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	pSound = __xgeAudioAsSound(pObject);
-	memset(pSound, 0, sizeof(*pSound));
-	pMaSound = (ma_sound*)xrtMalloc(sizeof(*pMaSound));
-	if ( pMaSound == NULL ) {
+	if(XGE_AUDIO_BACKEND(pSound) || XGE_AUDIO_REFS(pSound))return XGE_ERROR_INVALID_STATE;
+	if(g_xge.iAudioCount==INT_MAX)return XGE_ERROR_OUT_OF_MEMORY;
+	if(pGroup && !pGroup->pBackend)return XGE_ERROR_INVALID_ARGUMENT;
+	access=__xgeAudioOwnerAcquire(&g_xgeGraphicsLifetime);if(access!=XGE_OK)return access;
+	/* miniaudio initializes its complete sound; only the appended owner field
+	 * is written here after successful initialization. Avoid a second clear. */
+	backend=xrtMalloc(sizeof(*backend));pMaSound=backend ? &backend->sound:NULL;
+	if ( backend == NULL ) {
+		(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	sFullPath = __xgePathResolve(sPath);
-	if ( sFullPath == NULL ) {
-		xrtFree(pMaSound);
+	access = __xgePathResolve(sPath,&sFullPath);
+	if ( access != XGE_OK ) {
+		xrtFree(backend);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 		__xgeLogFormat(XGE_LOG_WARN, "audio", "audio path resolve failed: %s", sPath);
-		return XGE_ERROR_UNSUPPORTED;
+		return access;
 	}
 	iMaFlags = iFlags;
 	pMaGroup = NULL;
 	if ( pGroup != NULL ) {
 		pMaGroup = (ma_sound_group*)pGroup->pBackend;
+		access=__xgeAudioGroupRetain((__xge_audio_group*)pMaGroup);
+		if(access!=XGE_OK){xrtFree(sFullPath);xrtFree(backend);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);return access;}
 	}
 	#if defined(_WIN32) || defined(_WIN64)
 	{
@@ -61,14 +127,16 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 	if ( iMaResult != MA_SUCCESS ) {
 		__xgeLogFormat(XGE_LOG_WARN, "audio", "audio load failed: %s", sFullPath);
 		xrtFree(sFullPath);
-		xrtFree(pMaSound);
-		return XGE_ERROR_AUDIO_FAILED;
+		__xgeAudioGroupRelease((__xge_audio_group*)pMaGroup);
+		xrtFree(backend);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
+		return iMaResult==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:XGE_ERROR_AUDIO_FAILED;
 	}
 	xrtFree(sFullPath);
-	pSound->iRefCount = 1;
-	pSound->iType = iType;
-	pSound->iFlags = iFlags;
-	pSound->pBackend = pMaSound;
+	backend->group=(__xge_audio_group*)pMaGroup;
+	XGE_AUDIO_REFS(pSound) = 1;
+	XGE_AUDIO_TYPE(pSound) = iType;
+	XGE_AUDIO_FLAGS(pSound) = iFlags;
+	XGE_AUDIO_BACKEND(pSound) = pMaSound;
 	g_xge.iAudioCount++;
 	return XGE_OK;
 }
@@ -86,7 +154,7 @@ static int __xgeAudioLoadFallback(void* pObject, int iType, uint32_t iFlags, xge
 		return iOriginalError;
 	}
 	pSound = __xgeAudioAsSound(pObject);
-	pSound->iFlags |= XGE_SOUND_FALLBACK;
+	XGE_AUDIO_FLAGS(pSound) |= XGE_SOUND_FALLBACK;
 	return XGE_OK;
 }
 
@@ -95,10 +163,10 @@ static int __xgeAudioLoad(void* pObject, const char* sPath, int iType, uint32_t 
 	int iRet;
 
 	iRet = __xgeAudioLoadPath(pObject, sPath, iType, iFlags, pGroup);
-	if ( iRet != XGE_OK ) {
+	if ( iRet == XGE_ERROR_AUDIO_FAILED || iRet == XGE_ERROR_RESOURCE_FAILED || iRet == XGE_ERROR_UNSUPPORTED ) {
 		return __xgeAudioLoadFallback(pObject, iType, iFlags, pGroup, iRet);
 	}
-	return XGE_OK;
+	return iRet;
 }
 
 int xgeAudioInit(void)
@@ -107,6 +175,7 @@ int xgeAudioInit(void)
 	ma_engine_config tConfig;
 	ma_engine* pEngine;
 
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
 	if ( g_xge.bAudioInitialized ) {
 		return XGE_OK;
 	}
@@ -123,35 +192,55 @@ int xgeAudioInit(void)
 	tAlloc.onFree = __xgeMaFree;
 	tConfig = ma_engine_config_init();
 	tConfig.allocationCallbacks = tAlloc;
-	if ( ma_engine_init(&tConfig, pEngine) != MA_SUCCESS ) {
+	g_xgeAudioTransition=true;
+	ma_result initialized=ma_engine_init(&tConfig, pEngine);
+	if ( initialized != MA_SUCCESS ) {
+		g_xgeAudioTransition=false;
 		xrtFree(pEngine);
 		__xgeLogError("audio", "audio engine init failed.");
-		return XGE_ERROR_AUDIO_FAILED;
+		return initialized==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:XGE_ERROR_AUDIO_FAILED;
 	}
 	g_xge.pAudioEngine = pEngine;
 	g_xge.bAudioInitialized = 1;
+	g_xgeAudioTransition=false;
 	xgeAudioListenerSet(&g_xge.tAudioListener);
 	return XGE_OK;
 }
 
-void xgeAudioUnit(void)
+/* Core Unit already holds global admission closed; do not reopen it here. */
+static void __xgeAudioUnit(void)
 {
 	if ( g_xge.bAudioInitialized == 0 ) {
 		return;
 	}
+	g_xgeAudioTransition=true;
 	ma_engine_uninit((ma_engine*)g_xge.pAudioEngine);
 	xrtFree(g_xge.pAudioEngine);
 	g_xge.pAudioEngine = NULL;
 	g_xge.bAudioInitialized = 0;
+	g_xgeAudioTransition=false;
 }
+
+int xgeAudioUnitChecked(void)
+{
+    int access=__xgeAudioControlAccess();
+    if(access==XGE_ERROR_NOT_INITIALIZED)return XGE_OK;
+    if(access!=XGE_OK)return access;
+    if(__xgeAudioOwnerCount(&g_xgeGraphicsLifetime))return XGE_ERROR_BUSY;
+    __xgeAudioUnit();return XGE_OK;
+}
+void xgeAudioUnit(void){__xgeAudioReport(xgeAudioUnitChecked());}
 
 int xgeAudioIsReady(void)
 {
+	int access=__xgeAudioControlAccess();
+	if(access!=XGE_OK){if(access!=XGE_ERROR_NOT_INITIALIZED)__xgeAudioReport(access);return 0;}
 	return g_xge.bAudioInitialized;
 }
 
 void xgeAudioSetVolume(float fVolume)
 {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
 	if ( g_xge.bAudioInitialized ) {
 		ma_engine_set_volume((ma_engine*)g_xge.pAudioEngine, fVolume);
 	}
@@ -159,6 +248,7 @@ void xgeAudioSetVolume(float fVolume)
 
 float xgeAudioGetVolume(void)
 {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return 0;}
 	if ( g_xge.bAudioInitialized == 0 ) {
 		return 0.0f;
 	}
@@ -170,6 +260,7 @@ void xgeAudioListenerSet(const xge_audio_listener_t* pListener)
 	if ( pListener == NULL ) {
 		return;
 	}
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
 	g_xge.tAudioListener = *pListener;
 	if ( g_xge.bAudioInitialized ) {
 		ma_engine_listener_set_position((ma_engine*)g_xge.pAudioEngine, 0, pListener->tPosition.fX, pListener->tPosition.fY, pListener->tPosition.fZ);
@@ -180,50 +271,61 @@ void xgeAudioListenerSet(const xge_audio_listener_t* pListener)
 
 xge_audio_listener_t xgeAudioListenerGet(void)
 {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return (xge_audio_listener_t){0};}
 	return g_xge.tAudioListener;
 }
 
 int xgeAudioGroupInit(xge_audio_group pGroup)
 {
 	ma_sound_group* pMaGroup;
+	__xge_audio_group* backend;
 
 	if ( pGroup == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( xgeAudioIsReady() == 0 ) {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+	if ( !g_xge.bAudioInitialized ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	memset(pGroup, 0, sizeof(*pGroup));
-	pMaGroup = (ma_sound_group*)xrtMalloc(sizeof(*pMaGroup));
-	if ( pMaGroup == NULL ) {
+	if(pGroup->pBackend)return XGE_ERROR_INVALID_STATE;
+	access=__xgeAudioOwnerAcquire(&g_xgeGraphicsLifetime);if(access!=XGE_OK)return access;
+	/* The native group initializer clears its own sound node. */
+	backend=xrtMalloc(sizeof(*backend));pMaGroup=backend ? &backend->group:NULL;
+	if ( backend == NULL ) {
+		(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( ma_sound_group_init((ma_engine*)g_xge.pAudioEngine, MA_SOUND_FLAG_NO_SPATIALIZATION, NULL, pMaGroup) != MA_SUCCESS ) {
-		xrtFree(pMaGroup);
-		return XGE_ERROR_AUDIO_FAILED;
+	ma_result initialized=ma_sound_group_init((ma_engine*)g_xge.pAudioEngine, MA_SOUND_FLAG_NO_SPATIALIZATION, NULL, pMaGroup);
+	if ( initialized != MA_SUCCESS ) {
+		xrtFree(backend);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
+		return initialized==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:XGE_ERROR_AUDIO_FAILED;
 	}
 	pGroup->fVolume = 1.0f;
 	pGroup->pBackend = pMaGroup;
+	backend->references=1;
 	return XGE_OK;
 }
 
-void xgeAudioGroupFree(xge_audio_group pGroup)
+int xgeAudioGroupFreeChecked(xge_audio_group pGroup)
 {
 	if ( pGroup == NULL ) {
-		return;
+		return XGE_OK;
 	}
 	if ( pGroup->pBackend != NULL ) {
-		ma_sound_group_uninit((ma_sound_group*)pGroup->pBackend);
-		xrtFree(pGroup->pBackend);
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+		__xgeAudioGroupRelease((__xge_audio_group*)pGroup->pBackend);
 	}
 	memset(pGroup, 0, sizeof(*pGroup));
+	return XGE_OK;
 }
+void xgeAudioGroupFree(xge_audio_group group){__xgeAudioReport(xgeAudioGroupFreeChecked(group));}
 
 void xgeAudioGroupSetVolume(xge_audio_group pGroup, float fVolume)
 {
 	if ( pGroup == NULL ) {
 		return;
 	}
+	if(pGroup->pBackend){int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}}
 	pGroup->fVolume = fVolume;
 	if ( pGroup->pBackend != NULL ) {
 		ma_sound_group_set_volume((ma_sound_group*)pGroup->pBackend, fVolume);
@@ -236,6 +338,7 @@ float xgeAudioGroupGetVolume(xge_audio_group pGroup)
 		return 0.0f;
 	}
 	if ( pGroup->pBackend != NULL ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return 0;}
 		pGroup->fVolume = ma_sound_group_get_volume((ma_sound_group*)pGroup->pBackend);
 	}
 	return pGroup->fVolume;
@@ -244,6 +347,7 @@ float xgeAudioGroupGetVolume(xge_audio_group pGroup)
 void xgeAudioGroupFade(xge_audio_group pGroup, float fFrom, float fTo, int iMilliseconds)
 {
 	if ( (pGroup != NULL) && (pGroup->pBackend != NULL) ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
 		pGroup->fVolume = fTo;
 		ma_sound_group_set_fade_in_milliseconds((ma_sound_group*)pGroup->pBackend, fFrom, fTo, (ma_uint64)iMilliseconds);
 	}
@@ -289,7 +393,7 @@ int xgeSoundFallbackGet(xge_sound pSound)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	pSound->iFlags |= XGE_SOUND_FALLBACK;
+	XGE_AUDIO_FLAGS(pSound) |= XGE_SOUND_FALLBACK;
 	return XGE_OK;
 }
 
@@ -303,30 +407,33 @@ void xgeSoundFallbackClear(void)
 
 int xgeSoundPlay(xge_sound pSound)
 {
-	if ( (pSound == NULL) || (pSound->pBackend == NULL) ) {
+	if ( (pSound == NULL) || (XGE_AUDIO_BACKEND(pSound) == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return ma_sound_start((ma_sound*)pSound->pBackend) == MA_SUCCESS ? XGE_OK : XGE_ERROR_AUDIO_FAILED;
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+	return ma_sound_start((ma_sound*)XGE_AUDIO_BACKEND(pSound)) == MA_SUCCESS ? XGE_OK : XGE_ERROR_AUDIO_FAILED;
 }
 
 int xgeSoundStop(xge_sound pSound)
 {
-	if ( (pSound == NULL) || (pSound->pBackend == NULL) ) {
+	if ( (pSound == NULL) || (XGE_AUDIO_BACKEND(pSound) == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( ma_sound_stop((ma_sound*)pSound->pBackend) != MA_SUCCESS ) {
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+	if ( ma_sound_stop((ma_sound*)XGE_AUDIO_BACKEND(pSound)) != MA_SUCCESS ) {
 		return XGE_ERROR_AUDIO_FAILED;
 	}
-	ma_sound_seek_to_pcm_frame((ma_sound*)pSound->pBackend, 0);
+	ma_sound_seek_to_pcm_frame((ma_sound*)XGE_AUDIO_BACKEND(pSound), 0);
 	return XGE_OK;
 }
 
 int xgeSoundPause(xge_sound pSound)
 {
-	if ( (pSound == NULL) || (pSound->pBackend == NULL) ) {
+	if ( (pSound == NULL) || (XGE_AUDIO_BACKEND(pSound) == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return ma_sound_stop((ma_sound*)pSound->pBackend) == MA_SUCCESS ? XGE_OK : XGE_ERROR_AUDIO_FAILED;
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+	return ma_sound_stop((ma_sound*)XGE_AUDIO_BACKEND(pSound)) == MA_SUCCESS ? XGE_OK : XGE_ERROR_AUDIO_FAILED;
 }
 
 int xgeSoundResume(xge_sound pSound)
@@ -336,74 +443,124 @@ int xgeSoundResume(xge_sound pSound)
 
 int xgeSoundAddRef(xge_sound pSound)
 {
+	if(!pSound)return 0;
+	/* A held record's backend is stable. Reject another control thread before
+	 * reading its mutable, creator-thread reference count. */
+	if(XGE_AUDIO_BACKEND(pSound) && __xgeAudioControlAccess()!=XGE_OK)return 0;
 	/* Empty/dead records cannot be resurrected; overflow must not report a
 	 * retained reference which was never acquired. Match Font's contract. */
-	if ( pSound == NULL || pSound->iRefCount <= 0 || pSound->iRefCount == INT_MAX ) {
+	if ( XGE_AUDIO_REFS(pSound) <= 0 || XGE_AUDIO_REFS(pSound) == INT_MAX ) {
 		return 0;
 	}
-	pSound->iRefCount++;
-	return pSound->iRefCount;
+	XGE_AUDIO_REFS(pSound)++;
+	return XGE_AUDIO_REFS(pSound);
 }
 
-void xgeSoundFree(xge_sound pSound)
+int xgeSoundFreeChecked(xge_sound pSound)
 {
 	if ( pSound == NULL ) {
-		return;
+		return XGE_OK;
 	}
-	if ( pSound->iRefCount > 1 ) {
-		pSound->iRefCount--;
-		return;
+	if(XGE_AUDIO_BACKEND(pSound)){int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;}
+	if ( XGE_AUDIO_REFS(pSound) > 1 ) {
+		XGE_AUDIO_REFS(pSound)--;
+		return XGE_OK;
 	}
-	if ( pSound->iRefCount > 0 && g_xge.iAudioCount > 0 ) {
-		g_xge.iAudioCount--;
-	}
-	if ( pSound->pBackend != NULL ) {
-		ma_sound_uninit((ma_sound*)pSound->pBackend);
-		if ( pSound->iFlags & XGE_SOUND_CLIP ) {
-			__xge_clip_sound* pClipSound = (__xge_clip_sound*)pSound->pBackend;
+	bool owned=(XGE_AUDIO_FLAGS(pSound)&XGE_SOUND_OWNED_RECORD)!=0;
+	if ( XGE_AUDIO_BACKEND(pSound) != NULL ) {
+		__xge_audio_sound* backend=(__xge_audio_sound*)XGE_AUDIO_BACKEND(pSound);
+		ma_sound_uninit((ma_sound*)XGE_AUDIO_BACKEND(pSound));
+		if ( XGE_AUDIO_FLAGS(pSound) & XGE_SOUND_CLIP ) {
+			__xge_clip_sound* pClipSound = (__xge_clip_sound*)XGE_AUDIO_BACKEND(pSound);
 			ma_audio_buffer_ref_uninit(&pClipSound->buffer);
 			xgeAudioClipFree(pClipSound->clip);
 		}
-		xrtFree(pSound->pBackend);
+		__xgeAudioGroupRelease(backend->group);
+		xrtFree(XGE_AUDIO_BACKEND(pSound));
+		--g_xge.iAudioCount;(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 	}
-	memset(pSound, 0, sizeof(*pSound));
+	if(owned)xrtFree(pSound);else memset(pSound, 0, sizeof(*pSound));
+	return XGE_OK;
+}
+void xgeSoundFree(xge_sound sound){__xgeAudioReport(xgeSoundFreeChecked(sound));}
+
+int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;if(!path)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_sound sound=xrtCalloc(1,sizeof(*sound));if(!sound)return XGE_ERROR_OUT_OF_MEMORY;
+    int result=xgeSoundLoadGroup(sound,path,group);
+    if(result!=XGE_OK){xrtFree(sound);return result;}
+    sound->iFlags|=XGE_SOUND_OWNED_RECORD;*out=sound;return XGE_OK;
+}
+int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;if(!desc)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_sound sound=xrtCalloc(1,sizeof(*sound));if(!sound)return XGE_ERROR_OUT_OF_MEMORY;
+    int result=xgeSoundFromClip(sound,desc);
+    if(result!=XGE_OK){xrtFree(sound);return result;}
+    sound->iFlags|=XGE_SOUND_OWNED_RECORD;*out=sound;return XGE_OK;
+}
+int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;if(!path)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_music music=xrtCalloc(1,sizeof(*music));if(!music)return XGE_ERROR_OUT_OF_MEMORY;
+    int result=xgeMusicLoadGroup(music,path,group);
+    if(result!=XGE_OK){xrtFree(music);return result;}
+    music->iFlags|=XGE_SOUND_OWNED_RECORD;*out=music;return XGE_OK;
+}
+int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;if(!path)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_stream stream=xrtCalloc(1,sizeof(*stream));if(!stream)return XGE_ERROR_OUT_OF_MEMORY;
+    int result=xgeStreamOpenGroup(stream,path,group);
+    if(result!=XGE_OK){xrtFree(stream);return result;}
+    stream->iFlags|=XGE_SOUND_OWNED_RECORD;*out=stream;return XGE_OK;
 }
 
 void xgeSoundSetLoop(xge_sound pSound, int bLoop)
 {
-	if ( (pSound != NULL) && (pSound->pBackend != NULL) ) {
-		ma_sound_set_looping((ma_sound*)pSound->pBackend, bLoop ? MA_TRUE : MA_FALSE);
+	if ( (pSound != NULL) && (XGE_AUDIO_BACKEND(pSound) != NULL) ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
+		ma_sound_set_looping((ma_sound*)XGE_AUDIO_BACKEND(pSound), bLoop ? MA_TRUE : MA_FALSE);
 	}
 }
 
 void xgeSoundSetVolume(xge_sound pSound, float fVolume)
 {
-	if ( (pSound != NULL) && (pSound->pBackend != NULL) ) {
-		ma_sound_set_volume((ma_sound*)pSound->pBackend, fVolume);
+	if ( (pSound != NULL) && (XGE_AUDIO_BACKEND(pSound) != NULL) ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
+		ma_sound_set_volume((ma_sound*)XGE_AUDIO_BACKEND(pSound), fVolume);
 	}
 }
 
 void xgeSoundSetPosition(xge_sound pSound, float fX, float fY, float fZ)
 {
-	if ( (pSound != NULL) && (pSound->pBackend != NULL) ) {
-		ma_sound_set_positioning((ma_sound*)pSound->pBackend, ma_positioning_absolute);
-		ma_sound_set_position((ma_sound*)pSound->pBackend, fX, fY, fZ);
+	if ( (pSound != NULL) && (XGE_AUDIO_BACKEND(pSound) != NULL) ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
+		ma_sound_set_positioning((ma_sound*)XGE_AUDIO_BACKEND(pSound), ma_positioning_absolute);
+		ma_sound_set_position((ma_sound*)XGE_AUDIO_BACKEND(pSound), fX, fY, fZ);
 	}
 }
 
 void xgeSoundFade(xge_sound pSound, float fFrom, float fTo, int iMilliseconds)
 {
-	if ( (pSound != NULL) && (pSound->pBackend != NULL) ) {
-		ma_sound_set_fade_in_milliseconds((ma_sound*)pSound->pBackend, fFrom, fTo, (ma_uint64)iMilliseconds);
+	if ( (pSound != NULL) && (XGE_AUDIO_BACKEND(pSound) != NULL) ) {
+		int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return;}
+		ma_sound_set_fade_in_milliseconds((ma_sound*)XGE_AUDIO_BACKEND(pSound), fFrom, fTo, (ma_uint64)iMilliseconds);
 	}
 }
 
 int xgeSoundIsPlaying(xge_sound pSound)
 {
-	if ( (pSound == NULL) || (pSound->pBackend == NULL) ) {
+	if ( (pSound == NULL) || (XGE_AUDIO_BACKEND(pSound) == NULL) ) {
 		return 0;
 	}
-	return ma_sound_is_playing((ma_sound*)pSound->pBackend) ? 1 : 0;
+	int access=__xgeAudioControlAccess();if(access!=XGE_OK){__xgeAudioReport(access);return 0;}
+	return ma_sound_is_playing((ma_sound*)XGE_AUDIO_BACKEND(pSound)) ? 1 : 0;
 }
 
 int xgeMusicLoad(xge_music pMusic, const char* sPath)
@@ -520,6 +677,12 @@ int xgeStreamIsPlaying(xge_stream pStream)
 {
 	return xgeSoundIsPlaying((xge_sound)pStream);
 }
+#undef XGE_AUDIO_RECORD_LAYOUT
+#undef XGE_AUDIO_REFS
+#undef XGE_AUDIO_TYPE
+#undef XGE_AUDIO_FLAGS
+#undef XGE_AUDIO_BACKEND
+#undef XGE_SOUND_OWNED_RECORD
 #else
 int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t* d,xge_audio_clip** out) { (void)d;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED; }
 xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip* c) { (void)c;return (xge_audio_clip_info_t){0}; }
@@ -528,7 +691,19 @@ int xgeAudioClipAddRef(xge_audio_clip* c) { (void)c;return XGE_ERROR_UNSUPPORTED
 void xgeAudioClipFree(xge_audio_clip* c) { (void)c; }
 int xgeSoundFromClip(xge_sound s,const xge_sound_clip_desc_t* d) { (void)s;(void)d;return XGE_ERROR_UNSUPPORTED; }
 int xgeAudioInit(void) { return XGE_ERROR_UNSUPPORTED; }
+static void __xgeAudioUnit(void) {}
 void xgeAudioUnit(void) {}
+int xgeAudioUnitChecked(void) {return XGE_ERROR_UNSUPPORTED;}
+int xgeSoundFreeChecked(xge_sound sound) {(void)sound;return XGE_ERROR_UNSUPPORTED;}
+int xgeAudioGroupFreeChecked(xge_audio_group group) {(void)group;return XGE_ERROR_UNSUPPORTED;}
+int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group)
+{(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc)
+{(void)desc;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group)
+{(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group)
+{(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 int xgeAudioIsReady(void) { return 0; }
 void xgeAudioSetVolume(float fVolume) { (void)fVolume; }
 float xgeAudioGetVolume(void) { return 0.0f; }

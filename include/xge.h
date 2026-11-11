@@ -1311,7 +1311,7 @@ typedef struct xge_sound_clip_desc_t {
     xge_audio_clip *clip;
     uint64_t first_frame, frame_count; /* 0 count: remainder of clip. */
     int spatial; /* 0 disables engine spatialization. */
-    xge_audio_group group; /* Borrowed; must outlive the sound. */
+    xge_audio_group group; /* Its backend is retained by each created sound. */
 } xge_sound_clip_desc_t;
 
 typedef struct xge_audio_listener_t {
@@ -2388,8 +2388,11 @@ XGE_API int xgeAsyncFontLoad(xge_async_request pRequest, xge_font pFont, const c
 XGE_API int xgeAsyncSoundLoad(xge_async_request pRequest, xge_sound pSound, const char* sPath, xge_async_proc onComplete, void* pUser);
 /* 初始化音频引擎（惰性设计：使用任何音频 API 前需手动调用一次）。 */
 XGE_API int xgeAudioInit(void);
-/* 关闭音频引擎并释放全部声音资源。 */
+/* Close on the audio control/engine creator thread. Live voices or group
+ * backends return BUSY without side effects; release resources and retry.
+ * Legacy void entry preserves the engine and reports the checked error. */
 XGE_API void xgeAudioUnit(void);
+XGE_API int xgeAudioUnitChecked(void);
 /* 音频引擎是否已初始化。 */
 XGE_API int xgeAudioIsReady(void);
 /* Immutable interleaved float PCM. Decode/info/samples/ref/free need no window,
@@ -2423,6 +2426,7 @@ XGE_API xge_audio_listener_t xgeAudioListenerGet(void);
 XGE_API int xgeAudioGroupInit(xge_audio_group pGroup);
 /* 释放音频组。 */
 XGE_API void xgeAudioGroupFree(xge_audio_group pGroup);
+XGE_API int xgeAudioGroupFreeChecked(xge_audio_group pGroup);
 /* 设置音频组音量。 */
 XGE_API void xgeAudioGroupSetVolume(xge_audio_group pGroup, float fVolume);
 /* 读取音频组音量。 */
@@ -2451,6 +2455,17 @@ XGE_API int xgeSoundResume(xge_sound pSound);
 XGE_API int xgeSoundAddRef(xge_sound pSound);
 /* 音效引用计数减一，归零时释放。 */
 XGE_API void xgeSoundFree(xge_sound pSound);
+/* Checked release preserves a live record on wrong-thread/closed admission. */
+XGE_API int xgeSoundFreeChecked(xge_sound pSound);
+/* Stable owning records; *out=NULL on failure. Free with the ordinary matching
+ * Sound/Music/Stream release, which also frees the final owned outer record.
+ * These and all playback/group controls use the engine creator thread.
+ * Existing in-place records must be zero initialized and cannot be overwritten
+ * while live. Public record layouts remain unchanged. */
+XGE_API int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group);
+XGE_API int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc);
+XGE_API int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group);
+XGE_API int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group);
 /* 设置循环播放。 */
 XGE_API void xgeSoundSetLoop(xge_sound pSound, int bLoop);
 /* 设置音效音量。 */

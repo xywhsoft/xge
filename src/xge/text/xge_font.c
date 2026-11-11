@@ -1520,10 +1520,10 @@ int xgeFontSaveXRF(xge_font pFont, const char* sPath, uint32_t iFirstCodepoint, 
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	sFullPath = __xgePathResolve(sPath);
-	if ( sFullPath == NULL ) {
+	iRet = __xgePathResolve(sPath,&sFullPath);
+	if ( iRet != XGE_OK ) {
 		xrtFree(pData);
-		return XGE_ERROR_RESOURCE_FAILED;
+		return iRet;
 	}
 	pFile = fopen(sFullPath, "wb");
 	xrtFree(sFullPath);

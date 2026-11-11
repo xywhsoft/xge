@@ -5,7 +5,7 @@ struct xge_audio_clip {
     float *samples;
 };
 typedef struct __xge_clip_sound {
-    ma_sound sound; /* First: existing sound control APIs keep their ABI. */
+    __xge_audio_sound base;
     ma_audio_buffer_ref buffer;
     xge_audio_clip *clip;
 } __xge_clip_sound;
@@ -90,24 +90,33 @@ void xgeAudioClipFree(xge_audio_clip *clip)
 {if(clip&&xrtAtomic32FetchSub(&clip->references,1,XMEMORY_ACQ_REL)==1){xrtFree(clip->samples);xrtFree(clip);}}
 int xgeSoundFromClip(xge_sound sound,const xge_sound_clip_desc_t *desc)
 {
-    if(!sound||!desc||!desc->clip||(desc->spatial!=0&&desc->spatial!=1)||
-       (desc->group&&!desc->group->pBackend))return XGE_ERROR_INVALID_ARGUMENT;
-    if(sound->pBackend)return XGE_ERROR_INVALID_STATE;
-    if(!xgeAudioIsReady())return XGE_ERROR_NOT_INITIALIZED;
+    if(!sound||!desc||!desc->clip||(desc->spatial!=0&&desc->spatial!=1))return XGE_ERROR_INVALID_ARGUMENT;
+    int access=__xgeAudioControlAccess();if(access!=XGE_OK)return access;
+    if(sound->pBackend || sound->iRefCount)return XGE_ERROR_INVALID_STATE;
+    if(desc->group&&!desc->group->pBackend)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!g_xge.bAudioInitialized)return XGE_ERROR_NOT_INITIALIZED;
+    if(g_xge.iAudioCount==INT_MAX)return XGE_ERROR_OUT_OF_MEMORY;
     xge_audio_clip *clip=desc->clip;uint64_t first=desc->first_frame;
     if(first>=clip->info.frames)return XGE_ERROR_INVALID_ARGUMENT;
     uint64_t frames=desc->frame_count?desc->frame_count:clip->info.frames-first;
     if(frames>clip->info.frames-first)return XGE_ERROR_INVALID_ARGUMENT;
-    __xge_clip_sound *voice=xrtMalloc(sizeof(*voice));if(!voice)return XGE_ERROR_OUT_OF_MEMORY;
-    memset(voice,0,sizeof(*voice));int result=xgeAudioClipAddRef(clip);if(result){xrtFree(voice);return result;}
+    access=__xgeAudioOwnerAcquire(&g_xgeGraphicsLifetime);if(access!=XGE_OK)return access;
+    __xge_clip_sound *voice=xrtCalloc(1,sizeof(*voice));
+    if(!voice){(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);return XGE_ERROR_OUT_OF_MEMORY;}
+    int result=xgeAudioClipAddRef(clip);if(result)goto failed;
+    __xge_audio_group* group=desc->group ? (__xge_audio_group*)desc->group->pBackend:NULL;
+    result=__xgeAudioGroupRetain(group);if(result){xgeAudioClipFree(clip);goto failed;}
     ma_result r=ma_audio_buffer_ref_init(ma_format_f32,clip->info.channels,
         clip->samples+(size_t)first*clip->info.channels,frames,&voice->buffer);
     if(r==MA_SUCCESS){voice->buffer.sampleRate=clip->info.sample_rate;
         r=ma_sound_init_from_data_source((ma_engine*)g_xge.pAudioEngine,&voice->buffer,
             desc->spatial?0:MA_SOUND_FLAG_NO_SPATIALIZATION,
-            desc->group?(ma_sound_group*)desc->group->pBackend:NULL,&voice->sound);
+            group ? &group->group:NULL,&voice->base.sound);
         if(r!=MA_SUCCESS)ma_audio_buffer_ref_uninit(&voice->buffer);
     }
-    if(r!=MA_SUCCESS){xgeAudioClipFree(clip);xrtFree(voice);return XGE_ERROR_AUDIO_FAILED;}
-    voice->clip=clip;*sound=(xge_sound_t){1,XGE_AUDIO_SOUND,XGE_SOUND_CLIP,voice};++g_xge.iAudioCount;return XGE_OK;
+    if(r!=MA_SUCCESS){xgeAudioClipFree(clip);__xgeAudioGroupRelease(group);result=r==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:XGE_ERROR_AUDIO_FAILED;goto failed;}
+    voice->clip=clip;voice->base.group=group;
+    *sound=(xge_sound_t){1,XGE_AUDIO_SOUND,XGE_SOUND_CLIP,voice};++g_xge.iAudioCount;return XGE_OK;
+failed:
+    xrtFree(voice);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);return result;
 }
