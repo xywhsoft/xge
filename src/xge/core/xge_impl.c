@@ -203,7 +203,6 @@ typedef struct xge_context_t {
 	uint32_t iCurrentFramebufferId;
 	int iTextureCount;
 	uint64_t iTextureMemoryBytes;
-	int iFontCount;
 	int iAudioCount;
 	int iLastGLError;
 	float fDelta;
@@ -333,6 +332,9 @@ typedef struct xge_texture_renderer_t {
 } xge_texture_renderer_t;
 
 static xge_context_t g_xge;
+/* CPU fonts may outlive engine initialization and belong to independent
+ * creator-thread caches. Initialization must not erase their shared count. */
+static xatomic64 g_xgeFontCount=XRT_ATOMIC64_INIT(0);
 #include "xge_graphics_lifetime.h"
 #include "xge_graphics_internal.h"
 static xge_graphics_lifetime g_xgeGraphicsLifetime=XGE_GRAPHICS_LIFETIME_INIT;

@@ -180,7 +180,7 @@ typedef struct xge_svg_image_item_t {
 typedef struct xge_svg_raster_image_t {
 	int iRefCount;
 	xge_image_t tImage;
-	xge_texture_t tTexture;
+	xge_texture pTexture;
 } xge_svg_raster_image_t;
 
 typedef struct xge_svg_raster_item_t {
@@ -474,7 +474,7 @@ typedef struct xge_svg_pending_shape_resource_t {
 typedef struct xge_svg_font_cache_t {
 	float fSize;
 	char sFamily[XGE_SVG_FONT_FAMILY_MAX];
-	xge_font_t tFont;
+	xge_font pFont;
 } xge_svg_font_cache_t;
 
 typedef struct xge_svg_font_face_t {
@@ -783,7 +783,7 @@ static void __xgeSvgRasterImageDestroy(xge_svg_raster_image_t* pImage)
 		pImage->iRefCount--;
 		return;
 	}
-	xgeTextureFree(&pImage->tTexture);
+	xgeTextureFree(pImage->pTexture);
 	xgeImageFree(&pImage->tImage);
 	memset(pImage, 0, sizeof(*pImage));
 	xrtFree(pImage);
@@ -794,10 +794,10 @@ static int __xgeSvgRasterImageEnsureTexture(xge_svg_raster_image_t* pImage)
 	if ( (pImage == NULL) || (pImage->tImage.pPixels == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pImage->tTexture.iRefCount > 0 ) {
+	if ( pImage->pTexture != NULL ) {
 		return XGE_OK;
 	}
-	return xgeTextureCreateFromImage(&pImage->tTexture, &pImage->tImage);
+	return xgeTextureCreateFromImageOwned(&pImage->pTexture, &pImage->tImage, 0);
 }
 
 static void __xgeSvgDrawItemReset(xge_svg_draw_item_t* pItem)
@@ -1286,17 +1286,23 @@ static int __xgeSvgFontFaceAdd(xge_svg pSvg, char* sFamily, unsigned char* pData
 	return XGE_OK;
 }
 
-static xge_font_face __xgeSvgFontFaceEnsure(xge_svg_font_face_t* pFace)
+static int __xgeSvgFontFaceEnsure(xge_svg_font_face_t* pFace,xge_font_face* ppFace)
 {
-	if ( (pFace == NULL) || pFace->bLoadAttempted ) return pFace != NULL ? pFace->pFace : NULL;
-	pFace->bLoadAttempted = 1;
+    *ppFace=NULL;
+    if(pFace==NULL)return XGE_ERROR_RESOURCE_FAILED;
+    if(pFace->bLoadAttempted){*ppFace=pFace->pFace;return *ppFace ? XGE_OK:XGE_ERROR_RESOURCE_FAILED;}
+    xge_font_face loaded=NULL;int status=XGE_ERROR_RESOURCE_FAILED;
 	if ( (pFace->pData != NULL) && (pFace->iSize > 0) ) {
-		(void)xgeFontFaceLoadMemory(&pFace->pFace, pFace->pData, pFace->iSize, NULL);
+		status=xgeFontFaceLoadMemory(&loaded, pFace->pData, pFace->iSize, NULL);
 	}
+    /* OOM is retryable. Do not poison this embedded face or silently select a
+     * different fallback font when the original bytes are still valid. */
+    if(status==XGE_ERROR_OUT_OF_MEMORY)return status;
+    pFace->bLoadAttempted=1;pFace->pFace=loaded;
 	xrtFree(pFace->pData);
 	pFace->pData = NULL;
 	pFace->iSize = 0;
-	return pFace->pFace;
+    *ppFace=loaded;return loaded ? XGE_OK:XGE_ERROR_RESOURCE_FAILED;
 }
 
 static void __xgeSvgFontCacheClear(xge_svg pSvg)
@@ -1307,7 +1313,7 @@ static void __xgeSvgFontCacheClear(xge_svg pSvg)
 		return;
 	}
 	for ( i = 0; i < pSvg->iFontCacheCount; i++ ) {
-		xgeFontFree(&pSvg->pFontCaches[i].tFont);
+		xgeFontFree(pSvg->pFontCaches[i].pFont);
 	}
 	xrtFree(pSvg->pFontCaches);
 	pSvg->pFontCaches = NULL;
@@ -1348,7 +1354,7 @@ static int __xgeSvgFontCacheGet(xge_svg pSvg, const char* sFamily, float fSize, 
 	int iRet;
 	int i;
 
-	if ( !__xgeSvgValid(pSvg) || (ppFont == NULL) || (fSize <= 0.0f) ) {
+	if ( !__xgeSvgValid(pSvg) || (ppFont == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	*ppFont = NULL;
@@ -1359,12 +1365,14 @@ static int __xgeSvgFontCacheGet(xge_svg pSvg, const char* sFamily, float fSize, 
 	for ( i = 0; i < pSvg->iFontCacheCount; i++ ) {
 		if ( (fabsf(pSvg->pFontCaches[i].fSize - fKey) <= 0.001f) &&
 		     (strcmp(pSvg->pFontCaches[i].sFamily, sFamily) == 0) ) {
-			*ppFont = &pSvg->pFontCaches[i].tFont;
+			*ppFont = pSvg->pFontCaches[i].pFont;
 			return XGE_OK;
 		}
 	}
 	if ( pSvg->iFontCacheCount >= pSvg->iFontCacheCapacity ) {
+        if(pSvg->iFontCacheCapacity>INT_MAX/2)return XGE_ERROR_OUT_OF_MEMORY;
 		iCapacity = pSvg->iFontCacheCapacity > 0 ? pSvg->iFontCacheCapacity * 2 : 4;
+        if((size_t)iCapacity>SIZE_MAX/sizeof(*pCaches))return XGE_ERROR_OUT_OF_MEMORY;
 		pCaches = (xge_svg_font_cache_t*)xrtRealloc(pSvg->pFontCaches, (size_t)iCapacity * sizeof(*pCaches));
 		if ( pCaches == NULL ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
@@ -1374,18 +1382,22 @@ static int __xgeSvgFontCacheGet(xge_svg pSvg, const char* sFamily, float fSize, 
 	}
 	pCache = &pSvg->pFontCaches[pSvg->iFontCacheCount];
 	memset(pCache, 0, sizeof(*pCache));
+    pCache->pFont=xrtCalloc(1,sizeof(*pCache->pFont));
+    if(!pCache->pFont)return XGE_ERROR_OUT_OF_MEMORY;
 	pFace = __xgeSvgFontFaceFind(pSvg, sFamily);
-	pFontFace = __xgeSvgFontFaceEnsure(pFace);
-	if ( pFontFace != NULL ) {
-		iRet = __xgeSvgFontCreateFaceEm(&pCache->tFont, pFontFace, fKey);
-	} else {
-		iRet = XGE_ERROR_RESOURCE_FAILED;
+    iRet=__xgeSvgFontFaceEnsure(pFace,&pFontFace);
+	if ( iRet==XGE_OK ) {
+		iRet = __xgeSvgFontCreateFaceEm(pCache->pFont, pFontFace, fKey);
 	}
-	if ( iRet != XGE_OK ) {
-		memset(&pCache->tFont, 0, sizeof(pCache->tFont));
-		iRet = xgeFontFallbackGetEx(&pCache->tFont, fKey, XGE_FONT_SIZE_EM);
+	if ( iRet != XGE_OK && iRet != XGE_ERROR_OUT_OF_MEMORY ) {
+        xgeFontFree(pCache->pFont);
+		iRet = xgeFontFallbackGetEx(pCache->pFont, fKey, XGE_FONT_SIZE_EM);
 	}
+#if XGE_ENABLE_TEXT
+    if(iRet==XGE_OK)iRet=__xgeFontAdoptCpuStorage(pCache->pFont);
+#endif
 	if ( iRet != XGE_OK ) {
+        xgeFontFree(pCache->pFont);xrtFree(pCache->pFont);
 		memset(pCache, 0, sizeof(*pCache));
 		return iRet;
 	}
@@ -1397,7 +1409,7 @@ static int __xgeSvgFontCacheGet(xge_svg pSvg, const char* sFamily, float fSize, 
 		pCache->sFamily[iFamilyLength] = '\0';
 	}
 	pSvg->iFontCacheCount++;
-	*ppFont = &pCache->tFont;
+	*ppFont = pCache->pFont;
 	return XGE_OK;
 }
 
@@ -12377,7 +12389,9 @@ static char* __xgeSvgTextDecode(const char* pTextStart, const char* pTextEnd, in
 	return __xgeSvgTextNormalize(sText, iTextSpace);
 }
 
-static float __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const xge_svg_style_t* pStyle, int bUseRunBearingAdvance)
+static int __xgeSvgFontUnavailable(int status)
+{return status==XGE_ERROR_RESOURCE_FAILED || status==XGE_ERROR_UNSUPPORTED;}
+static int __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const xge_svg_style_t* pStyle, int bUseRunBearingAdvance,float* pAdvance)
 {
 	xge_font pFont;
 	const char* pExact;
@@ -12391,16 +12405,20 @@ static float __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const 
 	float fRightBearings;
 	float fFontSize;
 	int bHasGlyphBounds;
+    int status=XGE_ERROR_RESOURCE_FAILED;
 
+	*pAdvance=0.0f;
 	if ( (sText == NULL) || (pStyle == NULL) ) {
-		return 0.0f;
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	fFontSize = pStyle->fFontSize;
 	if ( fFontSize <= 0.0f ) {
-		return 0.0f;
+		return XGE_OK;
 	}
 	pFont = NULL;
-	if ( __xgeSvgValid(pSvg) && (__xgeSvgFontCacheGet(pSvg, pStyle->sFontFamily, fFontSize, &pFont) == XGE_OK) && (pFont != NULL) ) {
+    if(__xgeSvgValid(pSvg))status=__xgeSvgFontCacheGet(pSvg,pStyle->sFontFamily,fFontSize,&pFont);
+    if(status!=XGE_OK && !__xgeSvgFontUnavailable(status))return status;
+	if ( status==XGE_OK && pFont != NULL ) {
 		pExact = sText;
 		fAdvance = 0.0f;
 		fBoundsMin = 0.0f;
@@ -12415,7 +12433,9 @@ static float __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const 
 			if ( xgeTextUTF8Next(&pExact, &iCodepoint) != XGE_OK || iCodepoint == '\n' ) {
 				break;
 			}
-			if ( xgeFontGlyphGet(pFont, iCodepoint, &tMetrics) == XGE_OK ) {
+            status=xgeFontGlyphGet(pFont,iCodepoint,&tMetrics);
+            if(status!=XGE_OK && !__xgeSvgFontUnavailable(status))return status;
+			if ( status==XGE_OK ) {
 				float fGlyphMin = fPen + tMetrics.fX0;
 				float fGlyphMax = fPen + tMetrics.fX1;
 
@@ -12434,9 +12454,9 @@ static float __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const 
 			}
 		}
 		if ( bUseRunBearingAdvance && bHasGlyphBounds ) {
-			return (fBoundsMax - fBoundsMin) + fFirstMin + fRightBearings;
+			*pAdvance=(fBoundsMax-fBoundsMin)+fFirstMin+fRightBearings;return XGE_OK;
 		}
-		return fAdvance;
+		*pAdvance=fAdvance;return XGE_OK;
 	}
 	p = (const unsigned char*)sText;
 	fAdvance = 0.0f;
@@ -12452,7 +12472,7 @@ static float __xgeSvgTextApproxAdvanceEx(xge_svg pSvg, const char* sText, const 
 			else p++;
 		}
 	}
-	return fAdvance;
+	*pAdvance=fAdvance;return XGE_OK;
 }
 
 static int __xgeSvgAddDecodedTextRun(xge_svg pSvg, const xge_svg_style_t* pStyle, const char* pTextStart, const char* pTextEnd, float fX, float fY, float fAnchorAdvance, int iTargetDef, int iMainIdDefIndex, int iExtraMainIdDefIndex, int bUseRunBearingAdvance, int bEmit, float* pAdvance)
@@ -12471,9 +12491,8 @@ static int __xgeSvgAddDecodedTextRun(xge_svg pSvg, const xge_svg_style_t* pStyle
 	if ( sText == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	fAdvance = __xgeSvgTextApproxAdvanceEx(pSvg, sText, pStyle, bUseRunBearingAdvance);
-	iRet = XGE_OK;
-	if ( bEmit ) {
+	iRet=__xgeSvgTextApproxAdvanceEx(pSvg,sText,pStyle,bUseRunBearingAdvance,&fAdvance);
+	if ( iRet==XGE_OK && bEmit ) {
 		iRet = __xgeSvgAddTextObject(pSvg, pStyle, sText, fX, fY, fAnchorAdvance, iTargetDef);
 		if ( (iRet == XGE_OK) && (iTargetDef < 0) && (iMainIdDefIndex >= 0) ) {
 			iRet = __xgeSvgAddTextObject(pSvg, pStyle, sText, fX, fY, fAnchorAdvance, iMainIdDefIndex);
@@ -19236,15 +19255,16 @@ static xge_vec2_t __xgeSvgMatrixVector(xge_shape_ex_matrix_t tMatrix, xge_vec2_t
 	return tOut;
 }
 
-static float __xgeSvgTextActualAdvance(xge_font pFont, const char* sText, const xge_svg_style_t* pStyle, float fScale)
+static int __xgeSvgTextActualAdvance(xge_font pFont, const char* sText, const xge_svg_style_t* pStyle, float fScale,float* pAdvance)
 {
 	xge_text_shape_desc_t tDesc;
 	xge_glyph_run_t tRun;
 	float fAdvance;
 	int i;
 
+	*pAdvance=0.0f;
 	if ( (pFont == NULL) || (sText == NULL) || (pStyle == NULL) ) {
-		return 0.0f;
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pStyle;
 	(void)fScale;
@@ -19255,14 +19275,15 @@ static float __xgeSvgTextActualAdvance(xge_font pFont, const char* sText, const 
 	tDesc.sText = sText;
 	tDesc.iTextSize = -1;
 	tDesc.iFlags = XGE_TEXT_SHAPE_KERNING;
-	if ( xgeTextShape(&tDesc, &tRun) != XGE_OK ) return 0.0f;
+    int status=xgeTextShape(&tDesc,&tRun);
+    if(status!=XGE_OK){xgeGlyphRunFree(&tRun);return status;}
 	fAdvance = 0.0f;
 	for ( i = 0; i < tRun.iGlyphCount; i++ ) {
 		if ( (tRun.pGlyphs[i].iFlags & XGE_GLYPH_POSITION_LINE_BREAK) != 0 ) break;
 		fAdvance += tRun.pGlyphs[i].fAdvanceX;
 	}
 	xgeGlyphRunFree(&tRun);
-	return fAdvance;
+	*pAdvance=fAdvance;return XGE_OK;
 }
 
 static int __xgeSvgDrawTextItem(xge_svg pSvg, const xge_svg_text_item_t* pText, xge_shape_ex_matrix_t tParent, float fTolerance, int bScreenSpace)
@@ -19292,7 +19313,7 @@ static int __xgeSvgDrawTextItem(xge_svg pSvg, const xge_svg_text_item_t* pText, 
 	pFont = NULL;
 	iRet = __xgeSvgFontCacheGet(pSvg, pText->tStyle.sFontFamily, fFontSize, &pFont);
 	if ( iRet != XGE_OK ) {
-		return XGE_OK;
+		return __xgeSvgFontUnavailable(iRet) ? XGE_OK:iRet;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	memset(&tRun, 0, sizeof(tRun));
@@ -19391,7 +19412,7 @@ static int __xgeSvgDrawRasterImageItem(xge_svg_raster_item_t* pImage, xge_shape_
 		iAlpha = 255;
 	}
 	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = &pImage->pRaster->tTexture;
+	tDraw.pTexture = pImage->pRaster->pTexture;
 	tDraw.tDst = tDst;
 	tDraw.iColor = XGE_COLOR_RGBA(XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), iAlpha);
 	tDraw.iFlags = bScreenSpace ? XGE_DRAW_SCREEN_SPACE : 0;
@@ -19885,6 +19906,7 @@ static int __xgeSvgTextLineBounds(xge_svg pSvg, const xge_svg_text_item_t* pText
 	float fAscent;
 	float fDescent;
 	int bHasBounds;
+    int status;
 
 	if ( !__xgeSvgValid(pSvg) || (pText == NULL) || (pBounds == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -19895,16 +19917,16 @@ static int __xgeSvgTextLineBounds(xge_svg pSvg, const xge_svg_text_item_t* pText
 		return XGE_OK;
 	}
 	pFont = NULL;
-	if ( __xgeSvgFontCacheGet(pSvg, pText->tStyle.sFontFamily, fFontSize, &pFont) != XGE_OK || pFont == NULL ) {
+    status=__xgeSvgFontCacheGet(pSvg,pText->tStyle.sFontFamily,fFontSize,&pFont);
+    if(status!=XGE_OK && !__xgeSvgFontUnavailable(status))return status;
+	if ( status!=XGE_OK || pFont == NULL ) {
 		*pBounds = __xgeSvgTextMaskBounds(pText);
 		return XGE_OK;
 	}
 	memset(&tFontMetrics, 0, sizeof(tFontMetrics));
-	if ( xgeFontGetMetrics(pFont, &tFontMetrics) != XGE_OK ) {
-		*pBounds = __xgeSvgTextMaskBounds(pText);
-		return XGE_OK;
-	}
-	fTextAdvance = __xgeSvgTextActualAdvance(pFont, pText->sText, &pText->tStyle, 1.0f);
+    status=xgeFontGetMetrics(pFont,&tFontMetrics);if(status!=XGE_OK)return status;
+    status=__xgeSvgTextActualAdvance(pFont,pText->sText,&pText->tStyle,1.0f,&fTextAdvance);
+    if(status!=XGE_OK)return status;
 	fAnchorWidth = (pText->fAnchorAdvance > 0.0f) ? pText->fAnchorAdvance : fTextAdvance;
 	fPenX = pText->fX;
 	fBaselineY = pText->fY - pText->tStyle.fFontSize + tFontMetrics.fAscent;
@@ -19927,7 +19949,9 @@ static int __xgeSvgTextLineBounds(xge_svg pSvg, const xge_svg_text_item_t* pText
 		if ( iCodepoint == '\n' ) {
 			break;
 		}
-		if ( xgeFontGlyphGet(pFont, iCodepoint, &tMetrics) == XGE_OK ) {
+        status=xgeFontGlyphGet(pFont,iCodepoint,&tMetrics);
+        if(status!=XGE_OK && !__xgeSvgFontUnavailable(status))return status;
+		if ( status==XGE_OK ) {
 			tGlyphBounds.fX = fPenX + tMetrics.fX0;
 			tGlyphBounds.fY = fBaselineY + tMetrics.fY0;
 			tGlyphBounds.fW = tMetrics.fX1 - tMetrics.fX0;

@@ -197,7 +197,7 @@ int main(int argc,char** argv)
         assert(failures && successes);printf("SVG load allocation prefixes: %u failed, %u passed\n",failures,successes);
         xgeSvgDestroy(svg);
     }else if(mode==14){
-        xge_svg svg=create();xge_font_face face=__xgeSvgFontFaceEnsure(&svg->pFontFaces[0]);
+        xge_svg svg=create();xge_font_face face=NULL;assert(__xgeSvgFontFaceEnsure(&svg->pFontFaces[0],&face)==XGE_OK);
         assert(face && !svg->pFontFaces[0].pData && !svg->pFontFaces[0].iSize);
         assert(xgeFontFaceAddRef(face)==2);xgeSvgDestroy(svg);
         xge_font_face_info_t info={0};info.iSize=sizeof(info);

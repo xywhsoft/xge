@@ -55,9 +55,17 @@ struct xge_font_face_t {
 	xge_tt_source_t tContourSource; /* Immutable spans into retained SFNT bytes. */
 };
 
+/* Stable CPU records do not reserve a graphics engine. Their lazily created
+ * atlas textures own their GPU obligations independently, so cached metrics
+ * and layout remain usable before engine initialization and across engines. */
+typedef enum xge_font_storage {
+    XGE_FONT_STORAGE_CALLER=0,
+    XGE_FONT_STORAGE_GRAPHICS_OWNED,
+    XGE_FONT_STORAGE_CPU_OWNED
+} xge_font_storage;
 typedef struct xge_font_instance_backend_t {
 	xge_font_face pFace;
-	int bOwnsRecord; /* Cold native storage ownership; never copied as a value. */
+	xge_font_storage storage; /* Never copied as a value. */
 	uint64_t iSourceHash;
 	int iFaceIndex;
 	int iWeight;
@@ -676,12 +684,26 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 	pPages = (xge_glyph_atlas_page_t*)pFont->tAtlas.pPages;
 	pPage = &pPages[iPage];
 	if ( pPage->pTexture == NULL ) {
-		xge_texture texture=xrtCalloc(1,sizeof(*texture));
-		if(!texture)return XGE_ERROR_OUT_OF_MEMORY;
-		int status=xgeTextureCreateRGBA(texture,pFont->tAtlas.iPageWidth,pFont->tAtlas.iPageHeight,pPage->pPixels);
-		if(status==XGE_OK && !texture->iBackendId)status=XGE_ERROR_GPU_FAILED;
-		if(status==XGE_OK)status=__xgeTextureAdoptInternalStorage(texture);
-		if(status!=XGE_OK){xgeTextureFree(texture);xrtFree(texture);return status;}
+		xge_texture texture=NULL;
+        xge_font_instance_backend_t* backend=pFont->pBackend;
+        bool cpuOwned=backend && backend->storage==XGE_FONT_STORAGE_CPU_OWNED;
+        int status;
+        if(cpuOwned){
+            if(pFont->tAtlas.iPageWidth<=0 || pFont->tAtlas.iPageHeight<=0 ||
+                (size_t)pFont->tAtlas.iPageWidth>SIZE_MAX/(size_t)pFont->tAtlas.iPageHeight ||
+                (size_t)pFont->tAtlas.iPageWidth*(size_t)pFont->tAtlas.iPageHeight>SIZE_MAX/4u)return XGE_ERROR_INVALID_ARGUMENT;
+            size_t bytes=(size_t)pFont->tAtlas.iPageWidth*(size_t)pFont->tAtlas.iPageHeight*4u;
+            status=xgeTextureCreateRGBAOwned(&texture,pFont->tAtlas.iPageWidth,pFont->tAtlas.iPageHeight,pPage->pPixels,bytes);
+            if(status==XGE_OK && !texture->iBackendId){xgeTextureFree(texture);return XGE_ERROR_GPU_FAILED;}
+            if(status!=XGE_OK)return status;
+        }else{
+            texture=xrtCalloc(1,sizeof(*texture));
+            if(!texture)return XGE_ERROR_OUT_OF_MEMORY;
+            status=xgeTextureCreateRGBA(texture,pFont->tAtlas.iPageWidth,pFont->tAtlas.iPageHeight,pPage->pPixels);
+            if(status==XGE_OK && !texture->iBackendId)status=XGE_ERROR_GPU_FAILED;
+            if(status==XGE_OK)status=__xgeTextureAdoptInternalStorage(texture);
+            if(status!=XGE_OK){xgeTextureFree(texture);xrtFree(texture);return status;}
+        }
 		pPage->pTexture=texture;
 		tSampler = xgeSamplerDefault();
 		tSampler.iMinFilter = XGE_FILTER_NEAREST;
@@ -1096,7 +1118,7 @@ int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_d
 	pBackend->pFace = pFace;
 	stbtt_GetFontVMetrics(&pFace->tInfo, &iAscent, &iDescent, &iLineGap);
 	pFont->iRefCount = 1;
-	g_xge.iFontCount++;
+	(void)xrtAtomic64FetchAdd(&g_xgeFontCount,1,XMEMORY_RELAXED);
 	pFont->fSize = fSize;
 	pFont->fScale = ((pDesc->iFlags & XGE_FONT_SIZE_EM) != 0)
 		? stbtt_ScaleForMappingEmToPixels(&pFace->tInfo, fSize)
@@ -1338,7 +1360,7 @@ int xgeFontLoadXRFMemory(xge_font pFont, const void* pData, int iSize)
 		pBackend->fStrikeThickness = pHeaderV2->fStrikeThickness;
 	}
 	pFont->pBackend = pBackend;
-	g_xge.iFontCount++;
+	(void)xrtAtomic64FetchAdd(&g_xgeFontCount,1,XMEMORY_RELAXED);
 	return XGE_OK;
 }
 
@@ -1610,19 +1632,29 @@ int xgeFontAdoptStorage(xge_font pFont)
 {
     if(!pFont || pFont->iRefCount!=1 || !pFont->pBackend)return XGE_ERROR_INVALID_STATE;
     xge_font_instance_backend_t* backend=(xge_font_instance_backend_t*)pFont->pBackend;
-    if(backend->bOwnsRecord)return XGE_ERROR_INVALID_STATE;
+    if(backend->storage!=XGE_FONT_STORAGE_CALLER)return XGE_ERROR_INVALID_STATE;
     int result=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
     if(result!=XGE_OK)return result;
-    backend->bOwnsRecord=1;
+    backend->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED;
     return XGE_OK;
 }
+/* Private ownership for cache instances whose addresses must survive cache
+ * growth, Clear and outstanding GlyphRun references. The native allocator is
+ * the same one used by the final Font release; no graphics admission occurs. */
+static int __xgeFontAdoptCpuStorage(xge_font font)
+{
+    if(!font || font->iRefCount!=1 || !font->pBackend)return XGE_ERROR_INVALID_STATE;
+    xge_font_instance_backend_t* backend=font->pBackend;
+    if(backend->storage!=XGE_FONT_STORAGE_CALLER)return XGE_ERROR_INVALID_STATE;
+    backend->storage=XGE_FONT_STORAGE_CPU_OWNED;return XGE_OK;
+}
 bool xgeFontIsOwned(const xge_font_t* font)
-{return font && font->pBackend && ((const xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord;}
+{return font && font->pBackend && ((const xge_font_instance_backend_t*)font->pBackend)->storage!=XGE_FONT_STORAGE_CALLER;}
 
 void xgeFontFree(xge_font pFont)
 {
 	xge_font_instance_backend_t* pBackend;
-    int bOwnsRecord;
+    xge_font_storage storage;
 
 	if ( pFont == NULL ) {
 		return;
@@ -1631,15 +1663,15 @@ void xgeFontFree(xge_font pFont)
 		pFont->iRefCount--;
 		return;
 	}
-	if ( pFont->iRefCount > 0 && g_xge.iFontCount > 0 ) {
-		g_xge.iFontCount--;
+	if ( pFont->iRefCount > 0 ) {
+		(void)xrtAtomic64FetchSub(&g_xgeFontCount,1,XMEMORY_RELAXED);
 	}
 	if ( pFont->pFallback != NULL && pFont->pFallback != pFont ) {
 		xgeFontFree(pFont->pFallback);
 		pFont->pFallback = NULL;
 	}
 	pBackend = (xge_font_instance_backend_t*)pFont->pBackend;
-    bOwnsRecord=pBackend && pBackend->bOwnsRecord;
+    storage=pBackend ? pBackend->storage:XGE_FONT_STORAGE_CALLER;
 	if ( pBackend != NULL ) {
 #if XGE_ENABLE_HARFBUZZ
 		hb_font_destroy(pBackend->pShapeFont);
@@ -1649,7 +1681,8 @@ void xgeFontFree(xge_font pFont)
 	}
 	__xgeFontAtlasFree(pFont);
 	memset(pFont, 0, sizeof(*pFont));
-    if(bOwnsRecord){xrtFree(pFont);(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
+    if(storage!=XGE_FONT_STORAGE_CALLER)xrtFree(pFont);
+    if(storage==XGE_FONT_STORAGE_GRAPHICS_OWNED)(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
 }
 
 int xgeFontSetFallbackChecked(xge_font pFont,xge_font pFallback)

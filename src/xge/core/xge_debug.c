@@ -9,7 +9,8 @@ static xge_debug_stats_t __xgeDebugStatsGetValue(void)
 	tStats.tFrame = xgeFrameStatsGet();
 	tStats.iTextureCount = g_xge.iTextureCount;
 	tStats.iTextureMemoryBytes = g_xge.iTextureMemoryBytes;
-	tStats.iFontCount = g_xge.iFontCount;
+    uint64_t fonts=xrtAtomic64Load(&g_xgeFontCount,XMEMORY_RELAXED);
+	tStats.iFontCount = fonts>(uint64_t)INT_MAX ? INT_MAX:(int)fonts;
 	tStats.iAudioCount = g_xge.iAudioCount;
 	if ( (g_xge.bGraphicsRunning != 0) && (xge_glGetError != NULL) ) {
 		g_xge.iLastGLError = (int)xge_glGetError();

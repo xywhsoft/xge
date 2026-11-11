@@ -131,7 +131,7 @@ int xgeFontLoadOwned(xge_font* out,const char* path,float size)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoad(font,path,size);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size)
 {
@@ -139,7 +139,7 @@ int xgeFontLoadMemoryOwned(xge_font* out,const void* data,int bytes,float size)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadMemory(font,data,bytes,size);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontLoadSystemOwned(xge_font* out,const xge_system_font_desc_t* desc)
 {
@@ -148,7 +148,7 @@ int xgeFontLoadSystemOwned(xge_font* out,const xge_system_font_desc_t* desc)
     int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadSystem(font,desc);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size)
 {
@@ -156,7 +156,7 @@ int xgeFontCreateSizedOwned(xge_font* out,xge_font source,float size)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontCreateSized(font,source,size);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontCreateOwned(xge_font* out,xge_font_face face,const xge_font_instance_desc_t* desc)
 {
@@ -164,7 +164,7 @@ int xgeFontCreateOwned(xge_font* out,xge_font_face face,const xge_font_instance_
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontCreate(font,face,desc);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontLoadXRFOwned(xge_font* out,const char* path)
 {
@@ -172,7 +172,7 @@ int xgeFontLoadXRFOwned(xge_font* out,const char* path)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadXRF(font,path);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontLoadXRFMemoryOwned(xge_font* out,const void* data,int bytes)
 {
@@ -180,7 +180,7 @@ int xgeFontLoadXRFMemoryOwned(xge_font* out,const void* data,int bytes)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadXRFMemory(font,data,bytes);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontLoadCachedOwned(xge_font* out,const char* ttf,const char* xrf,float size,uint32_t first,uint32_t count)
 {
@@ -188,7 +188,7 @@ int xgeFontLoadCachedOwned(xge_font* out,const char* ttf,const char* xrf,float s
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontLoadCached(font,ttf,xrf,size,first,count);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 int xgeFontFallbackGetOwned(xge_font* out,float size,uint32_t flags)
 {
@@ -196,7 +196,7 @@ int xgeFontFallbackGetOwned(xge_font* out,float size,uint32_t flags)
     *out=NULL;int result;xge_font font=__xgeOwnedGraphicsAllocate(sizeof(*font),&result);
     if(!font)return result;
     result=xgeFontFallbackGetEx(font,size,flags);
-    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->bOwnsRecord=1);
+    XGE_OWNED_GRAPHICS_FINISH(out,font,result,xgeFontFree,((xge_font_instance_backend_t*)font->pBackend)->storage=XGE_FONT_STORAGE_GRAPHICS_OWNED);
 }
 #endif
 #undef XGE_OWNED_GRAPHICS_FINISH
