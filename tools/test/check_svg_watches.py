@@ -4,11 +4,11 @@ This is an aggregate-only development check, not a production SDK qualification.
 No graphics, audio device, window, resource provider, network or security tests.
 """
 from pathlib import Path
-import argparse,hashlib,json,os,shutil,subprocess
+import argparse,hashlib,json,os,shutil,subprocess,sys
 
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
+def main(family='watch',modes=8,scope=__doc__):
+    parser=argparse.ArgumentParser(description=scope)
     for name in ('root','static','runtime','out'):
         parser.add_argument('--'+name,type=Path,required=True)
     args=parser.parse_args();root,static,runtime,out=[p.resolve()for p in
@@ -17,8 +17,8 @@ def main():
     metadata=json.loads((static/'build-report.json').read_text())
     assert metadata['complete']and metadata['passed']and metadata['sourceUnchanged']
     previous=Path(metadata['source_root']);archive=static/metadata['archive']
-    compiler=Path(shutil.which('gcc')).resolve();fixture=root/'tests/xge/xge_svg_watch_test.c'
-    inputs={str(p):sha(p)for p in (Path(__file__).resolve(),compiler,fixture,archive,runtime,
+    compiler=Path(shutil.which('gcc')).resolve();fixture=root/('tests/xge/xge_svg_'+family+'_test.c')
+    inputs={str(p):sha(p)for p in (Path(__file__).resolve(),Path(sys.argv[0]).resolve(),compiler,fixture,archive,runtime,
         static/'build-report.json',static/'xge_build_config.h')}
     for p,h in metadata['inputs'].items():
         path=Path(p)
@@ -26,7 +26,7 @@ def main():
             current=root/path.relative_to(previous)
             if current.is_file():inputs[str(current)]=sha(current)
     out.mkdir(parents=True,exist_ok=False)
-    report=dict(passed=False,fullNativeRebuild=False,shippingDelivery=False,scope=__doc__,inputs=inputs,rows=[])
+    report=dict(passed=False,fullNativeRebuild=False,shippingDelivery=False,scope=scope,inputs=inputs,rows=[])
     env=dict(os.environ)
     if os.name=='nt':shutil.copy2(runtime,out/runtime.name)
     else:env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+env.get('LD_LIBRARY_PATH','')
@@ -49,7 +49,7 @@ def main():
         run(level+'-build',[compiler,*flags,'-'+level,fixture,archive,runtime,*systems,
             '-Wl,--gc-sections','-Wl,-Map,'+str(linkmap),'-o',binary])
         assert '('+member+')'not in linkmap.read_text(errors='replace')
-        for mode in range(8):run(level+'-'+str(mode),[binary,mode])
+        for mode in range(modes):run(level+'-'+str(mode),[binary,mode])
     report.update(passed=True,inputsUnchanged=all(sha(p)==h for p,h in inputs.items()))
     assert report['inputsUnchanged'];save()
 

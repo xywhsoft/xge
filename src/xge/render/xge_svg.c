@@ -1,4 +1,5 @@
 #define XGE_SVG_MAGIC 0x58475356u
+#define XGE_SVG_CACHE_MAGIC 0x58475343u
 #define XGE_SVG_ATTR_MAX 4096
 #define XGE_SVG_STACK_MAX 128
 #define XGE_SVG_EMBED_DEPTH_MAX 8
@@ -147,6 +148,12 @@ typedef struct xge_svg_cache_entry_t {
 	xge_svg pSvg;
 	struct xge_svg_cache_entry_t* pNext;
 } xge_svg_cache_entry_t;
+struct xge_svg_cache_t {
+	uint32_t iMagic;
+	int iRefCount;
+	bool bActive;
+	xge_svg_cache_entry_t* pEntries;
+};
 
 typedef struct xge_svg_text_item_t {
 	char* sText;
@@ -17361,7 +17368,7 @@ int xgeSvgLoad(xge_svg pSvg, const char* sURI)
 	return iRet;
 }
 
-int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
+static int __xgeSvgCacheLoad(xge_svg_cache_entry_t** ppHead,const char* sURI,xge_svg* ppSvg)
 {
 	xge_svg_cache_entry_t* pEntry;
 	xge_svg pSvg;
@@ -17370,7 +17377,7 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 	if ( (sURI == NULL) || (ppSvg == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	for ( pEntry = g_xgeSvgCacheHead; pEntry != NULL; pEntry = pEntry->pNext ) {
+	for ( pEntry = *ppHead; pEntry != NULL; pEntry = pEntry->pNext ) {
 		if ( strcmp(pEntry->sURI, sURI) == 0 ) {
 			iRet = xgeSvgAddRef(pEntry->pSvg);
 			if ( iRet != XGE_OK ) return iRet;
@@ -17406,20 +17413,20 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 		return iRet;
 	}
 	pEntry->pSvg = pSvg;
-	pEntry->pNext = g_xgeSvgCacheHead;
-	g_xgeSvgCacheHead = pEntry;
+	pEntry->pNext = *ppHead;
+	*ppHead = pEntry;
 	*ppSvg = pSvg;
 	return XGE_OK;
 }
 
-int xgeSvgCacheInvalidate(const char* sURI)
+static int __xgeSvgCacheRemove(xge_svg_cache_entry_t** ppHead,const char* sURI)
 {
 	xge_svg_cache_entry_t** ppEntry;
 
 	if ( sURI == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	ppEntry = &g_xgeSvgCacheHead;
+	ppEntry = ppHead;
 	while ( *ppEntry != NULL ) {
 		xge_svg_cache_entry_t* pEntry = *ppEntry;
 		if ( strcmp(pEntry->sURI, sURI) == 0 ) {
@@ -17434,9 +17441,12 @@ int xgeSvgCacheInvalidate(const char* sURI)
 	return XGE_ERROR_NOT_FOUND;
 }
 
-void xgeSvgCacheClear(void)
+static void __xgeSvgCacheReset(xge_svg_cache_entry_t** ppHead)
 {
-	xge_svg_cache_entry_t* pEntry = g_xgeSvgCacheHead;
+	xge_svg_cache_entry_t* pEntry = *ppHead;
+	/* Detach the whole generation before callbacks. Reentrant legacy cache
+	 * operations can only see newly published entries, never this dying list. */
+	*ppHead = NULL;
 
 	while ( pEntry != NULL ) {
 		xge_svg_cache_entry_t* pNext = pEntry->pNext;
@@ -17445,7 +17455,60 @@ void xgeSvgCacheClear(void)
 		xrtFree(pEntry);
 		pEntry = pNext;
 	}
-	g_xgeSvgCacheHead = NULL;
+}
+
+int xgeSvgLoadCached(const char* uri,xge_svg* out)
+{return __xgeSvgCacheLoad(&g_xgeSvgCacheHead,uri,out);}
+int xgeSvgCacheInvalidate(const char* uri)
+{return __xgeSvgCacheRemove(&g_xgeSvgCacheHead,uri);}
+void xgeSvgCacheClear(void)
+{__xgeSvgCacheReset(&g_xgeSvgCacheHead);}
+
+static int __xgeSvgCacheValid(xge_svg_cache cache)
+{return cache != NULL && cache->iMagic == XGE_SVG_CACHE_MAGIC && cache->iRefCount>0;}
+int xgeSvgCacheCreate(xge_svg_cache* out)
+{
+	if ( out == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_svg_cache cache=xrtCalloc(1,sizeof(*cache));
+	if ( cache == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	cache->iMagic=XGE_SVG_CACHE_MAGIC;cache->iRefCount=1;*out=cache;
+	return XGE_OK;
+}
+void xgeSvgCacheDestroy(xge_svg_cache cache)
+{
+	if ( !__xgeSvgCacheValid(cache) ) return;
+	if ( --cache->iRefCount ) return;
+	cache->iMagic=0; /* Invalidation callbacks cannot revive a retiring cache. */
+	__xgeSvgCacheReset(&cache->pEntries);xrtFree(cache);
+}
+static int __xgeSvgCacheBegin(xge_svg_cache cache)
+{
+	if ( !__xgeSvgCacheValid(cache) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( cache->bActive ) return XGE_ERROR_BUSY;
+	if ( cache->iRefCount == INT_MAX ) return XGE_ERROR_OUT_OF_MEMORY;
+	++cache->iRefCount;cache->bActive=true;return XGE_OK;
+}
+static void __xgeSvgCacheEnd(xge_svg_cache cache)
+{cache->bActive=false;xgeSvgCacheDestroy(cache);}
+int xgeSvgCacheLoad(xge_svg_cache cache,const char* uri,xge_svg* out)
+{
+	if ( uri == NULL || out == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeSvgCacheBegin(cache);if ( status != XGE_OK ) return status;
+	status=__xgeSvgCacheLoad(&cache->pEntries,uri,out);
+	__xgeSvgCacheEnd(cache);return status;
+}
+int xgeSvgCacheRemove(xge_svg_cache cache,const char* uri)
+{
+	if ( uri == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeSvgCacheBegin(cache);if ( status != XGE_OK ) return status;
+	status=__xgeSvgCacheRemove(&cache->pEntries,uri);
+	__xgeSvgCacheEnd(cache);return status;
+}
+int xgeSvgCacheReset(xge_svg_cache cache)
+{
+	int status=__xgeSvgCacheBegin(cache);if ( status != XGE_OK ) return status;
+	__xgeSvgCacheReset(&cache->pEntries);
+	__xgeSvgCacheEnd(cache);return XGE_OK;
 }
 
 static xge_svg_group_item_t* __xgeSvgPaintCompositeWrapper(

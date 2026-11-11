@@ -876,6 +876,7 @@ typedef struct xge_shape_ex_scene_t xge_shape_ex_scene_t;
 typedef xge_shape_ex_scene_t* xge_shape_ex_scene;
 typedef struct xge_svg_t xge_svg_t;
 typedef xge_svg_t* xge_svg;
+typedef struct xge_svg_cache_t* xge_svg_cache;
 typedef struct xge_emoji_pack_t xge_emoji_pack_t;
 typedef xge_emoji_pack_t* xge_emoji_pack;
 /* Borrowed SVG paint handles remain valid until the owning SVG is cleared, reloaded, or destroyed. */
@@ -3514,6 +3515,17 @@ XGE_API int xgeSvgRefCountGet(xge_svg pSvg, int* pRefCount);
 XGE_API int xgeSvgCacheInvalidate(const char* sURI);
 /* 清空全部 SVG 文档缓存。 */
 XGE_API void xgeSvgCacheClear(void);
+/* Explicit caller-serialized cache. Entries share mutable documents within
+ * this cache only; independent caches do not share document identity.
+ * Load transfers one independent document reference to the caller. Remove,
+ * Reset and Destroy drop cache references; existing document owners survive.
+ * Resource/invalidation callbacks may release the external cache owner. Active
+ * operations pin it through return and reject recursive Load/Remove/Reset. */
+XGE_API int xgeSvgCacheCreate(xge_svg_cache* ppCache);
+XGE_API void xgeSvgCacheDestroy(xge_svg_cache pCache);
+XGE_API int xgeSvgCacheLoad(xge_svg_cache pCache, const char* sURI, xge_svg* ppSvg);
+XGE_API int xgeSvgCacheRemove(xge_svg_cache pCache, const char* sURI);
+XGE_API int xgeSvgCacheReset(xge_svg_cache pCache);
 /* 覆盖文档渲染尺寸（用户单位）。 */
 XGE_API int xgeSvgSetSize(xge_svg pSvg, float fWidth, float fHeight);
 /* 读取文档渲染尺寸；尚未设置时返回 XGE_ERROR_INVALID_STATE。 */

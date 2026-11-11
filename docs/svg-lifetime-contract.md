@@ -100,3 +100,54 @@ declarations and exact status/output borrowed-pointer admission still need
 their own compiler and SDK gates. The xlang fixed-array output gate was closed
 separately in `26701e7f4`. Complete rendering and matched final delivery remain
 open; this native batch does not install release/IDE binaries.
+
+## Explicit document caches
+
+`xgeSvgCacheCreate`/`Destroy` manage an explicit cache. `Load` returns one
+independent document reference; repeated loads of the same URI in one cache
+share the mutable document. Separate caches have independent document identity.
+`Remove` drops one entry, returning NotFound when absent; `Reset` drops all cache
+references. Existing external document references survive Remove/Reset/Destroy.
+The new cache is caller-serialized, including ownership operations; independent
+caches may run concurrently. The safe xlang design binds cache/document views
+to their creator thread, with independent caches across threads.
+
+Load/Remove/Reset pin the cache through provider and invalidation return tails.
+Callbacks may drop its external owner. Recursive operations on the same active
+cache return Busy before allocation or provider invocation. Failures do not
+publish an entry or transfer an output reference. Cache creation leaves the
+output untouched on failure. The cache adds no callback slot; provider and
+invalidation callbacks retain their existing native contracts. Full language
+resource/ownership policies remain a separate gate.
+
+The old global entry points and the explicit cache share the same internal
+lookup/load/remove/reset algorithms. Legacy global Reset now detaches its old
+list before destruction callbacks. A reentrant Clear sees none of the dying
+entries, and new entries published during notification remain in the new list.
+This fixes reentrant destruction; it does not make the legacy global API
+thread-safe or qualify cross-thread language views of that global cache.
+
+A cache requests 24 bytes on tested x64 ABIs and one creation allocation.
+Hits allocate nothing; misses retain the existing document/parser, entry and URI
+allocations/copies. Lookup remains O(entries), including URI comparison; active
+operations add reference/state checks without a mutex or per-call heap adapter.
+Language-view allocation, creator-thread, error and code-residency costs have
+not been measured for a complete language API. No total-zero-overhead or timing
+claim is made.
+
+`docs/validation/svg-cache-20261111.json` indexes 198 passing command rows across
+full Windows/Linux O2 host/static products, aggregate O0/O2 tests, actual
+C11/C++11/C++17 clients, independent cache threads and Linux aggregate
+ASan/UBSan. The remaining native archive and host XRT are uninstrumented. Each
+96-prefix allocation sweep has 26 failed and 70 successful prefixes and returns
+exactly to a live-cache heap baseline. Old O0/O2 global-reset controls stop at an
+assertion before unsafe reentry. No GPU, device, window, network or security test
+ran. The whole-tree pre-build inventory mistakenly included two generated
+HarfBuzz dependency/cache metadata files: original failed inventory reports and
+freezes are preserved, and separate proofs classify only those exact generated
+outputs while verifying every other byte unchanged. Both builds had succeeded;
+no native rebuild or source mutation was needed for that inventory correction.
+
+The native SVG family now has 75 public functions. Complete safe language
+declarations, borrowed status/output admission, GPU/renderer lifetime and final
+matched delivery remain open; this native cache batch installs no release/IDE.

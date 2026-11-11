@@ -29,6 +29,8 @@ static xge_host_xrt_proc resolve(void* raw,const char* name)
 static char document[65536];
 static int documentBytes;
 static void paintInvalidated(void* user){++*(unsigned*)user;}
+static int supplyCache(const xstrview* path,xge_resource_output_t* output,void* user)
+{assert(path && path->Data);(void)user;return xgeResourceOutputSet(output,document,(size_t)documentBytes);}
 typedef struct State {xge_svg svg;unsigned visits,reads,frees;} State;
 static int count(xge_svg_paint paint,void* raw)
 {int type=0;assert(xgeSvgPaintTypeGet(paint,&type)==XGE_OK && type);++*(int*)raw;return 1;}
@@ -107,6 +109,20 @@ int main(int argc,char** argv)
     xge_resource_provider_t provider={"svg-public",readLegacy,freeLegacy,&release};
     assert(xgeResourceProviderAdd(&provider)==XGE_OK);
     assert(xgeSvgLoad(svg,"svg-public://source")==XGE_OK && release.reads==1 && release.frees==1);
+    assert(xgeResourceProviderClearChecked()==XGE_OK);xrtClearError();
+    assert(xgeResourceProviderAddOwned("svg-cache-public",supplyCache,NULL,NULL)==XGE_OK);
+    xge_svg_cache cache=NULL;assert(xgeSvgCacheCreate(&cache)==XGE_OK);
+    xge_svg first=NULL,alias=NULL,replaced=NULL;
+    assert(xgeSvgCacheLoad(cache,"svg-cache-public://same",&first)==XGE_OK);
+    assert(xgeSvgCacheLoad(cache,"svg-cache-public://same",&alias)==XGE_OK && first==alias);
+    assert(xgeSvgCacheReset(cache)==XGE_OK);
+    assert(xgeSvgCacheLoad(cache,"svg-cache-public://same",&replaced)==XGE_OK && replaced!=first);
+    assert(xgeSvgCacheRemove(cache,"svg-cache-public://same")==XGE_OK);
+    assert(xgeSvgCacheRemove(cache,"svg-cache-public://same")==XGE_ERROR_NOT_FOUND);
+    xgeSvgCacheDestroy(cache);int firstRefs=0,replacedRefs=0;
+    assert(xgeSvgRefCountGet(first,&firstRefs)==XGE_OK && firstRefs==2);
+    assert(xgeSvgRefCountGet(replaced,&replacedRefs)==XGE_OK && replacedRefs==1);
+    xgeSvgDestroy(first);xgeSvgDestroy(alias);xgeSvgDestroy(replaced);
     assert(xgeResourceProviderClearChecked()==XGE_OK);xrtClearError();xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     assert(before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);

@@ -1,0 +1,145 @@
+{
+  "schema": "xge-svg-cache-1",
+  "passed": true,
+  "shippingDelivery": false,
+  "xlangSvgIntegrationComplete": false,
+  "scope": "Explicit caller-serialized SVG caches and reentrant legacy reset; no language cache/paint API installed",
+  "sourceSha256": {
+    "include/xge.h": "ade27150d27fd01621442b01cbb97b2541de5cb31011d45c6053f053a50fca03",
+    "src/xge/render/xge_svg.c": "5a53050c69283bed47f9f7e9c93727f641f2c6a976da925a3cd97cdb857c7593",
+    "tests/xge/xge_svg_cache_test.c": "68f2d8f1e1107cc1e091a914f2a01eeb527661ff738df9c30836cef82ae8cc81",
+    "tests/xge/xge_svg_cache_reset_control.c": "7e7e7834488c62350fd3ce9925b7183292597b9ea021f093f8a3b9877709da8e",
+    "tests/xge/xge_svg_public_test.c": "f814e2c59f7021fb23b0e544751546d7839c41f4caea238461324e0c3ebe310d",
+    "tools/test/check_svg_watches.py": "349762eb8a50b83ae440ed16dcc1b89c1803f69d5e4003037ebd3e9f0924415e",
+    "tools/test/check_svg_caches.py": "cea3c791cab68172076674224be3bda4b0f268a8fe5fc9891a5f16f49da28121",
+    "tools/test/check_svg_cache_reset.py": "69f6631e87b20eb5f68e800f99139f4131af8e86f469cebf5e9f75f8eda77c7f",
+    "docs/svg-lifetime-contract.md": "baa8c20af405a73902020357c6e8f2791c33f9f349d79387a0f5c11416611a95"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-native-r61-win-qualified.json",
+      "sha256": "ad96d7479c496d78b529f74236054cae0fb23b9213867d9ea7f3b780f4f74bf8"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-native-r61-linux-qualified.json",
+      "sha256": "edc3616aa461fc1b8b72d3f89aedfb23f5db5fd1d2f980866bf81df53afd2803"
+    }
+  ],
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-lifetime-win-r1\\results.json",
+      "sha256": "044e2a47f925e8fcc04ab7789085d8261f53edc9357dcfe21593965af64a9c1b",
+      "checks": 36
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-watch-win-r1\\results.json",
+      "sha256": "db9554f95187eee574ffd22ce51ec1a19590159d3f8b65d438bdf5f4c1373a13",
+      "checks": 18
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-aggregate-win-r1\\results.json",
+      "sha256": "24e5d60bc20b0179750f37470797af18bfe72d6de9aa22591982ac7cb92cd2dd",
+      "checks": 20
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-reset-win-r1\\results.json",
+      "sha256": "5f8188c14428b86d03e28f7bde1910f5458ff583d56854bcb8183ce5cfb0581b",
+      "checks": 4
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-public-win-r1\\results.json",
+      "sha256": "ed3bfea607ee273cc0631446c0c9465d7a57b7b0c510824dc38b402f72c76340",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-lifetime-linux-r1\\results.json",
+      "sha256": "3d17f2bf62338e418ec3ef79eee9fe9e3648f00b0966aad5376a46250ec771e0",
+      "checks": 36
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-watch-linux-r1\\results.json",
+      "sha256": "ce7043f81eb3151debd410901553690557be98c07ed4999a2fb1ef1907135e08",
+      "checks": 18
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-aggregate-linux-r1\\results.json",
+      "sha256": "e117033b3be511d96c09c1b73376998cbca455d15f089762ee5ee512319db4c6",
+      "checks": 20
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-reset-linux-r1\\results.json",
+      "sha256": "dc6ebd77730aa4c3c475447d6532022e50980784383351c45bfe33b124db0ad9",
+      "checks": 4
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-public-linux-r1\\results.json",
+      "sha256": "f5a2918e8a60f20cca39a9e8c004a6344f1020bcfb4508ef4c21fb9e00a40f90",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-sanitizer-linux-r1\\results.json",
+      "sha256": "40a929f53210d0470d438a210dcb8a90ec82acc71a743c89d7b29f0073089b9e",
+      "checks": 10,
+      "instrumentedAggregateOnly": true
+    }
+  ],
+  "checks": 198,
+  "allocationPrefixes": {
+    "win-O0": {
+      "failed": 26,
+      "passed": 70,
+      "total": 96
+    },
+    "win-O2": {
+      "failed": 26,
+      "passed": 70,
+      "total": 96
+    },
+    "linux-O0": {
+      "failed": 26,
+      "passed": 70,
+      "total": 96
+    },
+    "linux-O2": {
+      "failed": 26,
+      "passed": 70,
+      "total": 96
+    }
+  },
+  "oldControls": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-cache-reset-old-control-win-r1\\results.json",
+    "sha256": "016c422ba0031e2544805ff852e7a2ff3f359b06dc5c535dbee568458ba62834",
+    "expectedAssertionFailures": 2,
+    "commandRows": 4,
+    "stopBeforeUnsafeReentry": true
+  },
+  "publicFunctions": 75,
+  "costs": {
+    "privateCacheBytes": 24,
+    "createAllocations": 1,
+    "hitAllocations": 0,
+    "lookup": "O(entries) and URI comparison",
+    "operations": "native reference/state checks, no mutex or per-call heap adapter",
+    "misses": "original document/parser/entry/URI allocations and copies",
+    "languageCostsMeasured": false,
+    "timingComparison": false,
+    "totalZeroOverheadClaim": false
+  },
+  "inventoryCorrection": "Two copied generated HarfBuzz .d/.json outputs changed during successful builds. Original failures/freezes preserved; exact generated paths reclassified in separate proofs, every other inventoried byte unchanged. Future freezes must exclude the root build/ output tree.",
+  "remaining": [
+    "creator-thread safe language cache policy/declarations",
+    "borrowed owner pointer-output compiler contract",
+    "full SVG and GPU/renderer lifetime",
+    "automatic module-global resource/code lifetime and final current-mainline SDK/compiler/IDE delivery"
+  ],
+  "sanitizer": {
+    "instrumentedAggregateOnly": true,
+    "remainingArchiveInstrumented": false,
+    "hostXrtInstrumented": false
+  },
+  "window": false,
+  "gpu": false,
+  "audioDevice": false,
+  "networkTests": false,
+  "securityTests": false
+}
