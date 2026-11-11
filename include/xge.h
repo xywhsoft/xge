@@ -3646,6 +3646,10 @@ XGE_API int xgeSvgTextureLoadEx(xge_texture pTexture, const char* sURI, int iWid
 XGE_API int xgeSvgTextureLoadMemory(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight);
 /* Rasterize SVG memory with XGE_TEXTURE_COMPRESS_* creation flags. */
 XGE_API int xgeSvgTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight, uint32_t iFlags);
+/* Owned initialization counterparts. Output is NULL on failure; the native
+ * record retains its engine obligation through final Texture release. */
+XGE_API int xgeSvgTextureLoadExOwned(xge_texture* ppTexture, const char* sURI, int iWidth, int iHeight, uint32_t iFlags);
+XGE_API int xgeSvgTextureLoadMemoryExOwned(xge_texture* ppTexture, const void* pData, int iSize, int iWidth, int iHeight, uint32_t iFlags);
 #endif
 /* 创建形状批容器并预分配三角形容量。 */
 #if XGE_ENABLE_2D

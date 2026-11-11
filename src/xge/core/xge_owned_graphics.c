@@ -15,6 +15,31 @@ static void* __xgeOwnedGraphicsAllocate(size_t bytes,int* result)
     Mark;*(Output)=(Record);return XGE_OK; \
 } while(0)
 
+#if XGE_ENABLE_SVG
+int xgeSvgTextureLoadExOwned(xge_texture* out,const char* uri,int width,int height,uint32_t flags)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!uri || width<=0 || height<=0 || (flags&XGE_TEXTURE_COMPRESS_MASK)==XGE_TEXTURE_COMPRESS_MASK)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
+    if(!texture)return result;
+    result=xgeSvgTextureLoadEx(texture,uri,width,height,flags);
+    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+}
+int xgeSvgTextureLoadMemoryExOwned(xge_texture* out,const void* data,int size,int width,int height,uint32_t flags)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!data || size<=0 || width<=0 || height<=0 || (flags&XGE_TEXTURE_COMPRESS_MASK)==XGE_TEXTURE_COMPRESS_MASK)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    int result;xge_texture texture=__xgeOwnedGraphicsAllocate(sizeof(*texture),&result);
+    if(!texture)return result;
+    result=xgeSvgTextureLoadMemoryEx(texture,data,size,width,height,flags);
+    XGE_OWNED_GRAPHICS_FINISH(out,texture,result,xgeTextureFree,*__xgeTextureRecordOwner(texture)=1);
+}
+#endif
+
 int xgeTextureCreateRGBAOwned(xge_texture* out,int width,int height,const void* pixels,size_t bytes)
 {
     return xgeTextureCreateRGBAExOwned(out,width,height,pixels,bytes,XGE_TEXTURE_COMPRESS_LOSSLESS);

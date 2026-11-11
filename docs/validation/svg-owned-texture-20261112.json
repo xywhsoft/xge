@@ -1,0 +1,185 @@
+{
+  "schema": "xge-svg-owned-texture-1",
+  "passed": true,
+  "shippingDelivery": false,
+  "releaseIdeInstalled": false,
+  "nativeParentRevision": "952eb0f9356216682e86f2e82ddfa2ff281ea062",
+  "scope": "Two native owned SVG Texture factories. Preserve existing raster/load algorithms, reserve the genuine engine graphics obligation before callbacks/allocation, return NULL on failure and roll back partial native state.",
+  "sources": {
+    "include/xge.h": "655607c5d277d956358c22a208a2cd6456aabd2bb119ac39cc82e4054963c848",
+    "src/xge/core/xge_owned_graphics.c": "c28bac939647067b2ee5735ca3214721a7b0b050b186c1ce29d5c5e3ef0109f5",
+    "tests/xge/xge_svg_gpu_cache_test.c": "cc5ce8c60ec131c2eb348b3e97fbccd0ef185ed50f7398bcbe32b448774ca053",
+    "tests/xge/xge_svg_public_test.c": "30313cbaa94b14e64e8e8e534c920ba2f9051248766154f93d5ee2f7544b9816",
+    "tools/test/check_svg_gpu_caches.py": "3a6c10fb9e356dc6876bddb5d1c57c9084529c587753edb8f6abb999938839fa",
+    "tools/test/check_svg_public.py": "df402b9e50bd7812b5ae3a292efb145eab3ce92e5400f8a1159c8e4c452c0ded"
+  },
+  "sourceTextSha256": {
+    "include/xge.h": "5f76c810f93d17b8ad3a1830668eb21803f48175fab36b9c1b2d6cd2353136b6",
+    "src/xge/core/xge_owned_graphics.c": "729ebb5133eb6a758cb185672decaf12104c207c5d33fc4780c5cd5e07e2e53c",
+    "tests/xge/xge_svg_gpu_cache_test.c": "cc5ce8c60ec131c2eb348b3e97fbccd0ef185ed50f7398bcbe32b448774ca053",
+    "tests/xge/xge_svg_public_test.c": "30313cbaa94b14e64e8e8e534c920ba2f9051248766154f93d5ee2f7544b9816",
+    "tools/test/check_svg_gpu_caches.py": "ceb6b1ca845a6f3a14411ca9b65ac955a29b10b98c003687810033edf9a4e341",
+    "tools/test/check_svg_public.py": "df402b9e50bd7812b5ae3a292efb145eab3ce92e5400f8a1159c8e4c452c0ded"
+  },
+  "canonicalXrtHeaderSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "builds": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-r64-win.json",
+      "sha256": "6e7b27a5f3530dece448d11672071f7cf0752ad2e400cbd58fcbc4502a49ad21",
+      "freeze": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r64-win.json",
+      "freezeSha256": "ebd9b59da21f00e3e65444dded660f41ad6a6f719238204db726362dcebdae9f"
+    },
+    {
+      "platform": "linux",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-r64-linux.json",
+      "sha256": "addeab496c7ce59d154c3d5ccc437c6d5a42259ece3f79a8f4420b03e2f328dc",
+      "freeze": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r64-linux.json",
+      "freezeSha256": "fc3bef3665c2112ea4dbdb7e6e55b1d25d83c5d915f867121795f77af44d2616"
+    }
+  ],
+  "products": [
+    {
+      "platform": "win",
+      "profile": "default",
+      "kind": "host",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r64\\xge3_host.dll",
+      "sha256": "b966eea520e48eb3ae99aa93a113f7201286c5183d463caaeedb189db744e73c",
+      "bytes": 9229749,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r64\\build-report.json",
+      "metadataSha256": "093d2b7e505e3fa9cb2fe97060e97e0e9aacc5088144828f3ccd29aa3e824fa2",
+      "nativeTranslationUnits": 146,
+      "recompiled": 146,
+      "reused": []
+    },
+    {
+      "platform": "win",
+      "profile": "default",
+      "kind": "static",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r64\\libxge3_static.a",
+      "sha256": "7174ba5eeb665b47832e78187467c4ec09ee0ed9a511736514af9b629a981101",
+      "bytes": 18920876,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r64\\build-report.json",
+      "metadataSha256": "5dc8365cc795da12f74ae73b6accc4a9984ba262b461a2ef27ce5a643c69899e",
+      "nativeTranslationUnits": 146,
+      "recompiled": 146,
+      "reused": []
+    },
+    {
+      "platform": "linux",
+      "profile": "default",
+      "kind": "host",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r64\\libxge3_host.so",
+      "sha256": "65767d50bb1b6b478d965bdc831c77949cf020be07dcc7f2d953dafca980b4e0",
+      "bytes": 10046864,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r64\\build-report.json",
+      "metadataSha256": "d6ff8baf7311af3e5c27b1308d61d38c2473ca8b925dbac0de89c49222404151",
+      "nativeTranslationUnits": 146,
+      "recompiled": 146,
+      "reused": []
+    },
+    {
+      "platform": "linux",
+      "profile": "default",
+      "kind": "static",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r64\\libxge3_static.a",
+      "sha256": "aa9dbd5ae7a3ccb4f30cb787a4036c714cd957d4c9e402ec5fdb814349b47e94",
+      "bytes": 17149740,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r64\\build-report.json",
+      "metadataSha256": "21ef56c6d041e1e5adb2bcfa98c8b82302d3fa39186ff69c45342b5d1048df51",
+      "nativeTranslationUnits": 146,
+      "recompiled": 146,
+      "reused": []
+    },
+    {
+      "platform": "linux",
+      "profile": "egl-",
+      "kind": "host",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r64\\libxge3_host.so",
+      "sha256": "41a5baebcabbe19f892f80f5e517a3e332036943ff97cc32942729b2a6360800",
+      "bytes": 10055184,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-egl-host-linux-r64\\build-report.json",
+      "metadataSha256": "d9e6c4d2365e32880031f896ae3b9b946c99fcf72ce368aafa903917e0c3c204",
+      "nativeTranslationUnits": 146,
+      "recompiled": 145,
+      "reused": [
+        "extlibs/harfbuzz/src/harfbuzz.cc"
+      ]
+    },
+    {
+      "platform": "linux",
+      "profile": "egl-",
+      "kind": "static",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r64\\libxge3_static.a",
+      "sha256": "843421bf220369590cf16754737b2d8e50cb0d0bda534dbe7ecd603c72225055",
+      "bytes": 17164388,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-egl-static-linux-r64\\build-report.json",
+      "metadataSha256": "272da0df83a134ac7cf9f85a0c7f1cc7866c8e7e9911117a3057a4246cf0e6d1",
+      "nativeTranslationUnits": 146,
+      "recompiled": 146,
+      "reused": []
+    }
+  ],
+  "nativeTranslationUnitOccurrences": 876,
+  "recompiledTranslationUnitOccurrences": 875,
+  "reports": [
+    {
+      "platform": "win",
+      "family": "gpu",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-gpu-native-win-r1\\results.json",
+      "sha256": "777684558a0be00263cf1c7b673de2c11ce2fc81d49d4da717e0f9764c7497ed",
+      "inputsVerified": 899,
+      "commands": 12,
+      "verifiedInputs": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-inputs-win-r1.json",
+      "verifiedInputsSha256": "f1fd23eaeb5bfc660b1ed90cc5bd3c9e52865f194d3d21d36ad2503e700ac3f3"
+    },
+    {
+      "platform": "win",
+      "family": "public",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-public-native-win-r1\\results.json",
+      "sha256": "6b574da794ce1794074aaf34beb57d8bfd94c054ed8a56c294407b55eea6ce3b",
+      "inputsVerified": 21,
+      "commands": 16,
+      "verifiedInputs": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-inputs-win-r1.json",
+      "verifiedInputsSha256": "f1fd23eaeb5bfc660b1ed90cc5bd3c9e52865f194d3d21d36ad2503e700ac3f3"
+    },
+    {
+      "platform": "linux",
+      "family": "gpu",
+      "path": "/mnt/f/xlang-validation/xge-full-20261110/svg-owned-gpu-native-linux-r1/results.json",
+      "sha256": "822e08e05393be6338ed2b8cc0ef2e75a6660f41af7a7555dd576448d0b6889c",
+      "inputsVerified": 864,
+      "commands": 12,
+      "verifiedInputs": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-inputs-linux-r1.json",
+      "verifiedInputsSha256": "75484e7004fa8b738e77b6c8b6189f06c526019f32200903750b8ba3a1930e85"
+    },
+    {
+      "platform": "linux",
+      "family": "public",
+      "path": "/mnt/f/xlang-validation/xge-full-20261110/svg-owned-public-native-linux-r1/results.json",
+      "sha256": "f0265bd6ff28e2be50db0755c7c39c912ca9de6d117889098e28e2c0162b1abe",
+      "inputsVerified": 20,
+      "commands": 16,
+      "verifiedInputs": "F:\\xlang-validation\\xge-full-20261110\\svg-owned-native-inputs-linux-r1.json",
+      "verifiedInputsSha256": "75484e7004fa8b738e77b6c8b6189f06c526019f32200903750b8ba3a1930e85"
+    }
+  ],
+  "commandChecks": 56,
+  "behavior": [
+    "Host, static and aggregate O0/O2 tests pass on Windows OpenGL and headless Linux software EGL.",
+    "96 native allocation budgets per graphics variant: 28 rejected/68 succeeded, exact warmed live heap and invalid/double-free counters and native owner count restored.",
+    "RGBA readback: four green factory pixels, plus existing 64 red and 33 white SVG Font/raster pixels.",
+    "A retained factory Texture alone keeps Unit busy after the frame/document cleanup; Linux context owner release defers until the last texture owner drops.",
+    "Real C11 O0/O2 and C++11/C++17 host/static clients exercise old SVG lifetimes and new invalid-factory output contracts."
+  ],
+  "costs": "Cold owned factory allocates its native record, reserves/checks the engine owner, invokes the existing SVG parse/raster/texture algorithm and rolls back on failure. No language per-method forwarding layer is introduced. No timing, RSS or whole-binding zero-cost claim.",
+  "qualificationNotes": [
+    "Public and GPU fixture sources are pinned independently from the immutable build freeze; the exact two compiled native overrides match the current sources.",
+    "Native public-client tests reuse the previously qualified immutable embedded-font input, not an old engine product.",
+    "All raw logs, executables and complete source freezes remain external."
+  ],
+  "remaining": [
+    "Language Svg/SvgCache/raster/factory acceptance and final matched SDK/compiler/IDE delivery.",
+    "Root-owned non-destructible SVG node-view runtime proposal and remaining whole-goal modules."
+  ]
+}

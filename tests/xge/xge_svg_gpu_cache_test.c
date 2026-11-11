@@ -28,7 +28,37 @@ static xge_host_xrt_proc resolve(void* user,const char* name)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-typedef struct State {xge_svg svg,clone;xge_glyph_run_t* run;int calls;const char* document;} State;
+typedef struct State {xge_svg svg,clone;xge_glyph_run_t* run;xge_texture heldFactory;int calls;const char* document;const char* source;} State;
+static void ownedFactories(State* state)
+{
+    const char svg[]="<svg width='2' height='2'><rect width='2' height='2' fill='#00ff00'/></svg>";
+    uint64_t before=xgeGraphicsOwnedResourceCount();xge_texture texture=(xge_texture)(uintptr_t)1;
+    assert(xgeSvgTextureLoadMemoryExOwned(&texture,svg,0,2,2,0)==XGE_ERROR_INVALID_ARGUMENT && !texture);
+    assert(xgeGraphicsOwnedResourceCount()==before);
+    assert(xgeSvgTextureLoadMemoryExOwned(&texture,svg,sizeof(svg)-1,2,2,0)==XGE_OK && texture && xgeTextureIsOwned(texture));
+    assert(xgeGraphicsOwnedResourceCount()==before+1);
+    unsigned char pixels[16]={0};assert(xgeTextureReadPixelsSized(texture,pixels,sizeof(pixels),8)==XGE_OK);
+    for(unsigned i=0;i<4;++i)assert(pixels[4*i]<20 && pixels[4*i+1]>200 && pixels[4*i+2]<20 && pixels[4*i+3]>200);
+    state->heldFactory=texture;
+    assert(xgeTextureAddRef(texture)==2);xgeTextureFree(texture);
+    assert(xgeGraphicsOwnedResourceCount()==before+1);
+    texture=NULL;assert(xgeSvgTextureLoadExOwned(&texture,state->source,4,4,0)==XGE_OK && texture && xgeTextureIsOwned(texture));
+    assert(xgeGraphicsOwnedResourceCount()==before+2);xgeTextureFree(texture);
+    assert(xgeGraphicsOwnedResourceCount()==before+1);
+    unsigned failed=0,passed=0;
+    for(int budget=0;budget<96;++budget){
+        xmemdebugsnapshot snapshot,after;xrtMemDebugSnapshot(&snapshot);
+        assert(xrtMemDebugFailAfter(budget));texture=(xge_texture)(uintptr_t)1;
+        int status=xgeSvgTextureLoadMemoryExOwned(&texture,svg,sizeof(svg)-1,2,2,0);
+        xrtMemDebugFailClear();xrtClearError();
+        if(status==XGE_OK){assert(texture && xgeTextureIsOwned(texture));++passed;xgeTextureFree(texture);}
+        else {assert(!texture);++failed;}
+        assert(xgeGraphicsOwnedResourceCount()==before+1);xrtMemDebugSnapshot(&after);
+        assert(after.LiveCount==snapshot.LiveCount && after.LiveBytes==snapshot.LiveBytes &&
+            after.InvalidFreeCount==snapshot.InvalidFreeCount && after.DoubleFreeCount==snapshot.DoubleFreeCount);
+    }
+    assert(failed && passed);printf("Owned SVG texture prefixes: %u failed, %u passed; green pixels 4\n",failed,passed);
+}
 #if defined(XGE_SVG_TEST_AGGREGATE)
 static int cachedRaster(xge_svg_paint paint,void* raw)
 {
@@ -67,6 +97,7 @@ static void queuedRaster(State* state)
 }
 static void exercise(State* state,uint64_t base)
 {
+    ownedFactories(state);++base;
     xge_render_target target=NULL;xge_pass pass=NULL;
     assert(xgeRenderTargetCreateOwned(&target,16,16)==XGE_OK);
     assert(xgePassCreateOwned(&pass,target,XGE_PASS_CLEAR_COLOR,XGE_COLOR_RGBA(0,0,0,255))==XGE_OK);
@@ -112,6 +143,7 @@ static void exercise(State* state,uint64_t base)
 }
 static void drop(State* state,uint64_t base)
 {
+    assert(state->heldFactory);++base;
     xgeSvgDestroy(state->svg);state->svg=NULL;
     /* Clone shares the native raster image; releasing one document cannot
      * delete its texture while another document still holds it. */
@@ -139,7 +171,7 @@ int main(int argc,char** argv)
     assert(xrtMemDebugEnable(true));
     FILE* input=fopen(argv[1],"rb");assert(input);char document[65536];
     size_t bytes=fread(document,1,sizeof(document),input);assert(bytes && bytes<sizeof(document) && !ferror(input));assert(!fclose(input));
-    State state={0};state.document=document;document[bytes]=0;assert(xgeSvgCreate(&state.svg)==XGE_OK);
+    State state={0};state.document=document;state.source=argv[1];document[bytes]=0;assert(xgeSvgCreate(&state.svg)==XGE_OK);
     assert(xgeSvgLoadMemory(state.svg,document,(int)bytes)==XGE_OK);
     assert(!xgeGraphicsOwnedResourceCount());
     xge_desc_t desc={0};desc.iWidth=desc.iHeight=16;desc.sTitle="XGE SVG bounded cache test";
@@ -149,6 +181,8 @@ int main(int argc,char** argv)
     exercise(&state,1);
     bool consumed=true;assert(xgeGraphicsContextReleaseOwnerChecked(context,&consumed)==XGE_STATUS_DEFERRED && !consumed);
     drop(&state,1);
+    consumed=true;assert(xgeGraphicsContextReleaseOwnerChecked(context,&consumed)==XGE_STATUS_DEFERRED && !consumed);
+    xgeTextureFree(state.heldFactory);state.heldFactory=NULL;
     assert(xgeGraphicsContextReleaseOwnerChecked(context,&consumed)==XGE_OK && consumed);
 #else
     assert(xgeInit(&desc)==XGE_OK && xgeRun(frame,&state)==XGE_OK && state.calls==1);
@@ -156,6 +190,8 @@ int main(int argc,char** argv)
      * not by the callback/frame scope. Ended backend cleanup must not use GL. */
     assert(xgeUnitChecked()==XGE_ERROR_BUSY);
     drop(&state,0);
+    assert(xgeGraphicsOwnedResourceCount()==1 && xgeUnitChecked()==XGE_ERROR_BUSY);
+    xgeTextureFree(state.heldFactory);state.heldFactory=NULL;
 #endif
     assert(!xgeGraphicsOwnedResourceCount() && xgeUnitChecked()==XGE_OK && !xrtGetError());
     puts("SVG cached raster/Font GPU ownership, shared clone lifetime and checked close: PASS");return 0;

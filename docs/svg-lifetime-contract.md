@@ -253,3 +253,34 @@ fallback-acquisition prefix fail cleanly and retain/retry correctly. Previous
 font, SVG lifetime/watch/cache/reset and actual C/C++ public clients also pass.
 Linux post-validation verifies 12,915 input-file occurrences. Generated SDK,
 raw reports/logs and binaries remain external; no release/IDE files are installed.
+
+## Owned SVG Texture factories
+
+`xgeSvgTextureLoadExOwned` and `xgeSvgTextureLoadMemoryExOwned` allocate a new
+Texture record and retain a real engine graphics obligation before invoking
+resource providers or allocating raster state. They reuse the existing SVG
+parse/raster/texture algorithms. Failure leaves the output NULL and releases
+the partial Texture and obligation. The returned Texture follows the existing
+owned AddRef/Free contract. Its last reference must disappear before checked
+Unit can succeed; an owning EGL context likewise defers physical release.
+
+The legacy `xgeSvgTextureLoad*` functions initialize an empty caller-provided
+record. They are not mutation methods for a live, independently owned Texture.
+Language factories map directly to the new native owning APIs instead of
+publishing that unsafe interpretation or adding language forwarding bodies.
+Flags and default lossless compression retain the native semantics.
+
+`docs/validation/svg-owned-texture-20261112.json` pins six complete O2 products:
+Windows/Linux default host/static and Linux EGL host/static, 146 translation
+units each. There are 875 fresh compilations and one dependency-checked reuse
+of the feature-independent HarfBuzz aggregate in the EGL host build. The 56
+passing command checks include actual C11/C++11/C++17 clients and host/static/
+aggregate O0/O2 GPU execution. Each GPU variant rejects 28 of 96 allocation
+budgets and succeeds at 68, with exact warmed heap/owner baselines. Retaining
+only the new Texture keeps Unit busy; readback contains four green pixels,
+and prior cached-image/font drawing still produces 64 red and 33 white pixels.
+
+The cold factory's native allocation, graphics-owner reservation, parsing and
+rasterization are real costs. No hardware performance, network or zero-total-
+cost claim is made. This is a native prerequisite; language shared-library
+bootstrap, node-view semantics and final matched delivery remain separate.

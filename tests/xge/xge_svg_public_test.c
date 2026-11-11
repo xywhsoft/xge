@@ -83,6 +83,11 @@ int main(int argc,char** argv)
     size_t bytes=fread(document,1,sizeof(document)-1,file);assert(bytes && bytes<sizeof(document)-1 && !ferror(file));
     assert(!fclose(file));documentBytes=(int)bytes;document[bytes]=0;
     assert(xrtMemDebugEnable(true));xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
+    xge_texture invalid=(xge_texture)(uintptr_t)1;
+    assert(xgeSvgTextureLoadExOwned(&invalid,"unused",0,1,0)==XGE_ERROR_INVALID_ARGUMENT && !invalid);
+    invalid=(xge_texture)(uintptr_t)1;
+    assert(xgeSvgTextureLoadMemoryExOwned(&invalid,document,0,1,1,0)==XGE_ERROR_INVALID_ARGUMENT && !invalid);
+    assert(!xgeGraphicsOwnedResourceCount());
     xge_svg svg=NULL;assert(xgeSvgCreate(&svg)==XGE_OK);
     assert(xgeSvgLoadMemory(svg,document,documentBytes)==XGE_OK);
     xge_svg_paint picture=NULL,child=NULL,parent=NULL;int children=0;
