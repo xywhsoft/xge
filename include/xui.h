@@ -7720,7 +7720,7 @@ XUI_API int xuiCodeDocumentCanRedo(xui_code_document pDocument);
  * Document destruction invalidates prepared rows without retaining the owner.
  * No disk transaction, caret mapping, global undo or IDE revision policy is
  * implied. Normal Document observer/callback and owner lifetime rules apply. */
-#define XUI_CODE_DOCUMENT_BATCH 1
+#define XUI_CODE_DOCUMENT_BATCH 2
 typedef struct xui_code_document_batch_t* xui_code_document_batch;
 typedef struct xui_code_document_batch_item_t {
     xui_code_document pDocument;
@@ -7731,6 +7731,67 @@ XUI_API int xuiCodeDocumentBatchPrepare(const xui_code_document_batch_item_t* pI
     size_t iCount,size_t iBudget,xui_code_document_batch* ppBatch);
 XUI_API int xuiCodeDocumentBatchCommit(xui_code_document_batch pBatch,bool* pCommitted);
 XUI_API int xuiCodeDocumentBatchDestroy(xui_code_document_batch pBatch);
+
+/* Split preparation. Capture/Describe run on the owner and copy metadata only;
+ * Capture ignores the legacy item's Before/After fields. Describe outputs a
+ * detached, copyable layout/source description with no GUI pointer or lease.
+ * Stage may run on any thread from immutable views held for that call only.
+ * It owns every body/index/history allocation, no live Document/Context links.
+ * Pass one payload owner between threads with external synchronization.
+ * Accept is owner-only: recheck capture identity, versions/states and exact
+ * before bytes (at most two memcmp spans/document), then move allocations.
+ * Accept allocates/copies no body or index; it DOES scan before bytes. Undo
+ * prefix metadata is copied in Commit. ALWAYS inspect *taken: true consumes
+ * the payload even if a later call-scope cleanup returns an error. Failed
+ * acceptance leaves it caller-owned. A capture cannot commit until accepted.
+ * Retire unaccepted payloads with PayloadDestroy on any thread, sequentially.
+ * Never concurrently stage from mutable inputs, accept/destroy one payload,
+ * or call owner APIs from the worker. Cancelled Stage returns INVALID_STATE
+ * and NULL output; local polls are not an end-to-end cancellation bound.
+ * Existing Prepare remains a synchronous convenience over this same pipeline.
+ * The known staging quota includes Capture storage and transient payload rows;
+ * raw body/index arrays are fully written without redundant zero-filling. */
+typedef struct xui_code_document_batch_layout_t {
+    uint32_t iSize;
+    uint64_t iCapture;
+    size_t iDocuments,iCaptureBytes;
+} xui_code_document_batch_layout_t;
+typedef struct xui_code_document_batch_source_t {
+    uint32_t iSize;
+    int iLength,iUndoCount;
+} xui_code_document_batch_source_t;
+typedef struct xui_code_document_batch_text_t {
+    uint32_t iSize;
+    xstrview Before,After;
+} xui_code_document_batch_text_t;
+typedef struct xui_code_document_batch_payload_t* xui_code_document_batch_payload;
+XUI_API int xuiCodeDocumentBatchCapture(const xui_code_document_batch_item_t* pTargets,
+    size_t iCount,size_t iBudget,xui_code_document_batch* ppBatch);
+XUI_API int xuiCodeDocumentBatchDescribe(xui_code_document_batch pBatch,
+    xui_code_document_batch_layout_t* pLayout,xui_code_document_batch_source_t* pSources,size_t iCapacity);
+XUI_API int xuiCodeDocumentBatchStage(const xui_code_document_batch_layout_t* pLayout,
+    const xui_code_document_batch_source_t* pSources,const xui_code_document_batch_text_t* pTexts,
+    size_t iBudget,int (*cancelled)(void*),void* pUser,xui_code_document_batch_payload* ppPayload);
+XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch pBatch,
+    xui_code_document_batch_payload pPayload,bool* pTaken);
+XUI_API void xuiCodeDocumentBatchPayloadDestroy(xui_code_document_batch_payload pPayload);
+
+/* Optional synchronous host gates; callbacks/user are borrowed for Commit only.
+ * beforePublish runs after toolkit preflight, may refuse without publication,
+ * and is followed by another whole-group toolkit fence. published runs after
+ * all payloads and *committed=true, before any toolkit edit/change observer.
+ * published must be an infallible, preallocated model publication: do not
+ * allocate, dispatch callbacks or close owners there. It is not rollback.
+ * This permits the IDE's identity/config fences and dirty/store metadata to
+ * surround publication, without interleaving per-document change notices. */
+typedef struct xui_code_document_batch_callbacks_t {
+    uint32_t iSize;
+    int (*beforePublish)(void*);
+    void (*published)(void*);
+    void* pUser;
+} xui_code_document_batch_callbacks_t;
+XUI_API int xuiCodeDocumentBatchCommitChecked(xui_code_document_batch pBatch,
+    const xui_code_document_batch_callbacks_t* pCallbacks,bool* pCommitted);
 
 /* 读取文档版本号（任意修改自增）。 */
 XUI_API uint32_t xuiCodeDocumentGetVersion(xui_code_document pDocument);
