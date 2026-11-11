@@ -207,3 +207,49 @@ This qualifies native prerequisites, not complete safe SVG language bindings.
 Clamped byte-prefix inputs, creator-thread admission, fallback/thread policy,
 complete Svg/SvgPaint/SvgCache declarations and final matched delivery remain
 open. No release/IDE files are installed by this batch.
+
+## Shared Face and fallback publication
+
+Independent SVG documents can select the same global fallback Face. The SFNT
+bytes and font metadata stay shared and immutable; Font records and their
+mutable instance/atlas caches remain caller-serialized. Face references are
+atomic. The outline bucket array is published once, and each atomic bucket
+head publishes an immutable list. A concurrent cold duplicate is discarded;
+entries are reclaimed only with the last Face reference, so readers need no
+per-lookup reference, lock or early-retirement mechanism.
+
+Fallback Set/Get/Clear serialize the global slot only. Get retains the selected
+Face while holding the slot lock, builds its Font after unlocking, then drops
+the temporary Face reference. Set/Clear free the replaced Font after unlocking.
+No allocation, font parsing, outline construction or user callback executes
+under the publication lock. Init retains its previous reset behavior, protects
+the global zeroing and releases the old fallback Font rather than leaking it.
+Existing independent document Fonts keep their Face alive across this reset.
+
+The extra native work is explicit: a hot outline hit loads two atomic pointers;
+Face creation/destruction use atomic reference operations; fallback acquisition
+uses a short slot lock and a temporary Face reference. A competing cold lookup
+can allocate an extra bucket array or outline, then discard it. Font source
+bytes are not copied per document. The Linux x64 Face record shrinks from 280
+to 272 requested bytes; its bucket capacity remains 256 pointer-sized entries.
+These are layout/counter observations, not RSS or end-to-end speed claims.
+
+The new shared-Face test uses a nonempty project-owned glyph, independent
+documents, concurrent fallback replacement/clear, retained source/outline
+identity, exact warm heap baselines, Init cleanup and OOM retry/rollback. Its
+ThreadSanitizer cohort also instruments canonical XRT allocator/locks/atomics;
+an uninstrumented host allocator is not treated as complete TSan acceptance.
+Full native build/regression qualification and the matching language delivery
+are recorded separately; this section does not change the language node-view
+proposal or claim full Svg/SvgPaint/SvgCache completion.
+
+`docs/validation/shared-font-faces-20261112.json` indexes complete Windows and
+Linux r63 O2 host/static products (146 translation units each) and 255 passing
+command checks: 126 Windows, 129 Linux including instrumented XRT/aggregate
+TSan. The old r62 implementation reports a real shared-Face reference race in
+the same fully instrumented XRT environment. Final tests use nonempty outlines:
+four outline allocation prefixes, three fallback-replacement prefixes and one
+fallback-acquisition prefix fail cleanly and retain/retry correctly. Previous
+font, SVG lifetime/watch/cache/reset and actual C/C++ public clients also pass.
+Linux post-validation verifies 12,915 input-file occurrences. Generated SDK,
+raw reports/logs and binaries remain external; no release/IDE files are installed.

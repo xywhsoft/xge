@@ -35,7 +35,7 @@ typedef struct xge_glyph_outline_cache_t {
 } xge_glyph_outline_cache_t;
 
 struct xge_font_face_t {
-	int iRefCount;
+	xatomic32 refs;
 	unsigned char* pData;
 	int iDataSize;
 	int iFaceIndex;
@@ -49,8 +49,7 @@ struct xge_font_face_t {
 	int iUnderlineThickness;
 	int iStrikePosition;
 	int iStrikeThickness;
-	uint32_t iOutlineBucketCount;
-	xge_glyph_outline_cache_t** ppOutlineBuckets;
+	xatomicptr outlineBuckets; /* Published once; each bucket is an atomic immutable-list head. */
 	stbtt_fontinfo tInfo;
 	xge_tt_source_t tContourSource; /* Immutable spans into retained SFNT bytes. */
 };
@@ -206,18 +205,18 @@ static int __xgeFontGlyphOutlineGet(xge_font pFont, int iGlyph, const stbtt_vert
 	*pVertexCount = 0;
 	pFace = __xgeFontFace(pFont);
 	if ( pFace == NULL ) return XGE_ERROR_NOT_INITIALIZED;
-	if ( pFace->iOutlineBucketCount == 0 ) {
-		pFace->iOutlineBucketCount = XGE_FONT_CACHE_INITIAL_BUCKETS;
-		pFace->ppOutlineBuckets = (xge_glyph_outline_cache_t**)xrtCalloc(
-			pFace->iOutlineBucketCount, sizeof(*pFace->ppOutlineBuckets)
-		);
-		if ( pFace->ppOutlineBuckets == NULL ) {
-			pFace->iOutlineBucketCount = 0;
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
+	xatomicptr* buckets=xrtAtomicPtrLoad(&pFace->outlineBuckets,XMEMORY_ACQUIRE);
+	if(!buckets){
+		xatomicptr* candidate=xrtCalloc(XGE_FONT_CACHE_INITIAL_BUCKETS,sizeof(*candidate));
+		if(!candidate)return XGE_ERROR_OUT_OF_MEMORY;
+		/* Zero initialization occurs before publication, as for XRT's static
+		 * atomic initializers; no concurrent access exists to the candidate. */
+		void* expected=NULL;
+		if(xrtAtomicPtrCompareExchange(&pFace->outlineBuckets,&expected,candidate,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE))buckets=candidate;
+		else {xrtFree(candidate);buckets=expected;}
 	}
-	iBucket = __xgeFontHashU32((uint32_t)iGlyph) & (pFace->iOutlineBucketCount - 1u);
-	pEntry = pFace->ppOutlineBuckets[iBucket];
+	iBucket = __xgeFontHashU32((uint32_t)iGlyph) & (XGE_FONT_CACHE_INITIAL_BUCKETS - 1u);
+	pEntry = xrtAtomicPtrLoad(&buckets[iBucket],XMEMORY_ACQUIRE);
 	while ( pEntry != NULL ) {
 		if ( pEntry->iGlyph == iGlyph ) {
 			*ppVertices = pEntry->pVertices;
@@ -238,8 +237,20 @@ static int __xgeFontGlyphOutlineGet(xge_font pFont, int iGlyph, const stbtt_vert
 		xrtFree(pEntry);
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	pEntry->pNext = pFace->ppOutlineBuckets[iBucket];
-	pFace->ppOutlineBuckets[iBucket] = pEntry;
+	/* Outline bytes and links never change after publication. Competing cold
+	 * requests may build the same glyph; only one entry is retained. Every
+	 * reader owns a Face reference, so no published node needs early retirement. */
+	void* expected=xrtAtomicPtrLoad(&buckets[iBucket],XMEMORY_ACQUIRE);
+	for(;;){
+		for(xge_glyph_outline_cache_t* existing=expected;existing;existing=existing->pNext){
+			if(existing->iGlyph==iGlyph){
+				if(pEntry->pVertices)stbtt_FreeShape(&pFace->tInfo,pEntry->pVertices);
+				xrtFree(pEntry);*ppVertices=existing->pVertices;*pVertexCount=existing->iVertexCount;return XGE_OK;
+			}
+		}
+		pEntry->pNext=expected;
+		if(xrtAtomicPtrCompareExchange(&buckets[iBucket],&expected,pEntry,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE))break;
+	}
 	*ppVertices = pEntry->pVertices;
 	*pVertexCount = pEntry->iVertexCount;
 	return XGE_OK;
@@ -442,12 +453,13 @@ static int __xgeFontProbeResult(int status,xerror* ambient)
 }
 static int __xgeFontFallbackUse(xge_font pFont, float fSize, int iOriginalError)
 {
-	if ( (pFont == NULL) || (g_xge.tFallbackFont.iRefCount <= 0) ) {
+	if ( pFont == NULL ) {
 		return iOriginalError;
 	}
 	int terminal=__xgeFontOptionalFailure(iOriginalError);
 	if(terminal!=XGE_OK)return terminal;
-	return xgeFontFallbackGet(pFont,fSize);
+	int status=xgeFontFallbackGet(pFont,fSize);
+	return status==XGE_ERROR_RESOURCE_FAILED ? iOriginalError:status;
 }
 
 static void __xgeFontAtlasFree(xge_font pFont)
@@ -933,7 +945,8 @@ int xgeFontFaceLoadMemory(xge_font_face* ppFace, const void* pData, int iSize, c
 		xrtFree(pFace);
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
-	pFace->iRefCount = 1;
+	xrtAtomic32Init(&pFace->refs,1);
+	xrtAtomicPtrInit(&pFace->outlineBuckets,NULL);
 	pFace->iDataSize = iSize;
 	pFace->iFaceIndex = iFaceIndex;
 	pFace->iFontOffset = iOffset;
@@ -966,8 +979,10 @@ int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_fac
 int xgeFontFaceAddRef(xge_font_face pFace)
 {
 	if ( pFace == NULL ) return 0;
-    if(pFace->iRefCount<=0 || pFace->iRefCount==INT32_MAX)return 0;
-    return ++pFace->iRefCount;
+    uint32_t refs=xrtAtomic32Load(&pFace->refs,XMEMORY_RELAXED);
+    do {if(!refs || refs>=INT32_MAX)return 0;}
+    while(!xrtAtomic32CompareExchange(&pFace->refs,&refs,refs+1,XMEMORY_RELAXED,XMEMORY_RELAXED));
+    return (int)(refs+1);
 }
 
 void xgeFontFaceFree(xge_font_face pFace)
@@ -977,12 +992,10 @@ void xgeFontFaceFree(xge_font_face pFace)
 	uint32_t i;
 
 	if ( pFace == NULL ) return;
-	if ( pFace->iRefCount > 1 ) {
-		pFace->iRefCount--;
-		return;
-	}
-	for ( i = 0; i < pFace->iOutlineBucketCount; i++ ) {
-		pOutline = pFace->ppOutlineBuckets[i];
+	if(xrtAtomic32FetchSub(&pFace->refs,1,XMEMORY_ACQ_REL)!=1)return;
+	xatomicptr* buckets=xrtAtomicPtrLoad(&pFace->outlineBuckets,XMEMORY_RELAXED);
+	for ( i = 0; buckets && i < XGE_FONT_CACHE_INITIAL_BUCKETS; i++ ) {
+		pOutline = xrtAtomicPtrLoad(&buckets[i],XMEMORY_RELAXED);
 		while ( pOutline != NULL ) {
 			pNextOutline = pOutline->pNext;
 			if ( pOutline->pVertices != NULL ) stbtt_FreeShape(&pFace->tInfo, pOutline->pVertices);
@@ -990,7 +1003,7 @@ void xgeFontFaceFree(xge_font_face pFace)
 			pOutline = pNextOutline;
 		}
 	}
-	xrtFree(pFace->ppOutlineBuckets);
+	xrtFree(buckets);
 	xrtFree(pFace->pData);
 	memset(pFace, 0, sizeof(*pFace));
 	xrtFree(pFace);
@@ -1734,8 +1747,11 @@ int xgeFontFallbackSetMemory(const void* pData, int iSize, float fSize)
 		return iRet;
 	}
 	replacement.iFlags |= XGE_FONT_FALLBACK;
-	xgeFontFallbackClear();
+	xrtSpinLock(&g_xgeFontFallbackSpin);
+	xge_font_t previous=g_xge.tFallbackFont;
 	g_xge.tFallbackFont = replacement;
+	xrtSpinUnlock(&g_xgeFontFallbackSpin);
+	xgeFontFree(&previous);
 	return XGE_OK;
 }
 
@@ -1748,16 +1764,18 @@ int xgeFontFallbackGetEx(xge_font pFont, float fSize, uint32_t iFlags)
 	if ( (pFont == NULL) || !isfinite(fSize) || (fSize <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.tFallbackFont.iRefCount <= 0 ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
+	xrtSpinLock(&g_xgeFontFallbackSpin);
 	pFace = __xgeFontFace(&g_xge.tFallbackFont);
+	int retained=pFace ? xgeFontFaceAddRef(pFace):0;
+	xrtSpinUnlock(&g_xgeFontFallbackSpin);
 	if ( pFace == NULL ) return XGE_ERROR_RESOURCE_FAILED;
+	if(!retained)return XGE_ERROR_INVALID_STATE;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.fPixelSize = fSize;
 	tDesc.iFlags = iFlags;
 	iRet = xgeFontCreate(pFont, pFace, &tDesc);
+	xgeFontFaceFree(pFace);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
@@ -1772,10 +1790,11 @@ int xgeFontFallbackGet(xge_font pFont, float fSize)
 
 void xgeFontFallbackClear(void)
 {
-	if ( g_xge.tFallbackFont.iRefCount > 0 ) {
-		xgeFontFree(&g_xge.tFallbackFont);
-	}
+	xrtSpinLock(&g_xgeFontFallbackSpin);
+	xge_font_t previous=g_xge.tFallbackFont;
 	memset(&g_xge.tFallbackFont, 0, sizeof(g_xge.tFallbackFont));
+	xrtSpinUnlock(&g_xgeFontFallbackSpin);
+	xgeFontFree(&previous);
 }
 
 int xgeFontGetMetrics(xge_font pFont, xge_font_metrics_t* pMetrics)

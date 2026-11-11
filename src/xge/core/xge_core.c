@@ -44,9 +44,19 @@ int xgeInitWithCode(const xge_desc_t* pDesc,const xge_callback_owner_t* codeOwne
 	xge_texture_upload_node_t* uploads=g_xge.pTextureUploadHead;
 	xge_texture_upload_node_t* uploadTail=g_xge.pTextureUploadTail;
 	int textureCount=g_xge.iTextureCount;uint64_t textureBytes=g_xge.iTextureMemoryBytes;
+#if XGE_ENABLE_TEXT
+	/* Preserve Init's reset semantics without racing fallback snapshots or
+	 * leaking a CPU fallback configured before engine initialization. */
+	xrtSpinLock(&g_xgeFontFallbackSpin);
+	xge_font_t previousFallback=g_xge.tFallbackFont;
+#endif
 	memset(&g_xge, 0, sizeof(g_xge));
 	g_xge.pTextureUploadHead=uploads;g_xge.pTextureUploadTail=uploadTail;
 	g_xge.iTextureCount=textureCount;g_xge.iTextureMemoryBytes=textureBytes;
+#if XGE_ENABLE_TEXT
+	xrtSpinUnlock(&g_xgeFontFallbackSpin);
+	xgeFontFree(&previousFallback);
+#endif
 	memset(&objDesc, 0, sizeof(objDesc));
 
 	if ( pDesc != NULL ) {

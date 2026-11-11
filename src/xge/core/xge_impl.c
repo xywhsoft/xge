@@ -335,6 +335,10 @@ static xge_context_t g_xge;
 /* CPU fonts may outlive engine initialization and belong to independent
  * creator-thread caches. Initialization must not erase their shared count. */
 static xatomic64 g_xgeFontCount=XRT_ATOMIC64_INIT(0);
+#if XGE_ENABLE_TEXT
+/* Serializes publication/retention of the global fallback, not font work. */
+static xspinlock g_xgeFontFallbackSpin=XRT_SPIN_INIT;
+#endif
 #include "xge_graphics_lifetime.h"
 #include "xge_graphics_internal.h"
 static xge_graphics_lifetime g_xgeGraphicsLifetime=XGE_GRAPHICS_LIFETIME_INIT;

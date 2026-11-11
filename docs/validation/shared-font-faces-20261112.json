@@ -1,0 +1,277 @@
+{
+  "schema": "xge-shared-font-faces-1",
+  "passed": true,
+  "shippingDelivery": false,
+  "releaseIdeInstalled": false,
+  "nativeParentRevision": "beefc241",
+  "scope": "Native-only shared Face lifetime/outline and fallback publication fix. Independent documents retain separate mutable Fonts while sharing immutable SFNT bytes. Font/Family/whole-engine objects retain their existing caller/thread contracts.",
+  "sources": {
+    "src/xge/text/xge_font.c": "7beb5e00cd860b1c93c02248aec281d18d5490a2b706fcbcd7b3a0b03654c2e7",
+    "src/xge/core/xge_core.c": "f586e481194496c8786631d22c2638a3e9e10b3eee6a32d6ec2b19817253f32e",
+    "src/xge/core/xge_impl.c": "a8719fb0eb476764224341d2078cf884130b48e49318469b8796df54333e875e",
+    "tests/xge/xge_shared_font_face_test.c": "ef62c0781811c7d93ac0e32847e71d11cacb0f69103d1d81db284f3b23ad6382",
+    "tools/test/check_shared_font_faces.py": "6170908e3d1a5fa83b8c7d390983684a07c92ec8d063be5301eac279213f13ea"
+  },
+  "sourceTextSha256": {
+    "src/xge/text/xge_font.c": "bed2578b746e6102b96fa185fd61975bbc23ef730fcc24af58d9c60d2e97336c",
+    "src/xge/core/xge_core.c": "5de74c2455f35b4bd252da196cd649daff4edbc8ca92631d89238e03e4b00b5c",
+    "src/xge/core/xge_impl.c": "38442c7f5d46ae848e84183a8fb51e9b9f9ba6b32a187a2079bd0b3e46848c9c",
+    "tests/xge/xge_shared_font_face_test.c": "ef62c0781811c7d93ac0e32847e71d11cacb0f69103d1d81db284f3b23ad6382",
+    "tools/test/check_shared_font_faces.py": "6170908e3d1a5fa83b8c7d390983684a07c92ec8d063be5301eac279213f13ea"
+  },
+  "canonicalXrtHeaderSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "builds": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-native-r63-win.json",
+      "sha256": "37f938830fd5bad5fa8f65f19d3e8d8475727c0869a081e20faeec256f4385b7",
+      "freeze": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r63-win.json",
+      "freezeSha256": "7a031eee0ecbb70b2f78260b15044a542e6f585a8bab38c5b97f7e0bec1ed56d",
+      "nativeTranslationUnitsPerProduct": 146,
+      "stages": [
+        {
+          "name": "host",
+          "command": [
+            "C:\\Program Files\\Python312\\python.exe",
+            "-B",
+            "F:\\xlang-validation\\xge-full-20261110\\native-source-r63\\tools\\build\\build.py",
+            "default",
+            "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r63",
+            "--host-xrt"
+          ],
+          "exitCode": 0,
+          "seconds": 204.9529999999795,
+          "logSha256": "249c00f160febf4b13b70424955d50e7c6e95befab111636a5a6a421e0397024"
+        },
+        {
+          "name": "static",
+          "command": [
+            "C:\\Program Files\\Python312\\python.exe",
+            "-B",
+            "F:\\xlang-validation\\xge-full-20261110\\native-source-r63\\tools\\build\\static.py",
+            "--root",
+            "F:\\xlang-validation\\xge-full-20261110\\native-source-r63",
+            "--out",
+            "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r63"
+          ],
+          "exitCode": 0,
+          "seconds": 202.7970000000205,
+          "logSha256": "81da6a42b7cc26bd77e55ae95f3f1425aae8241f133c50bf5df1a2c3bdacdfc8"
+        }
+      ]
+    },
+    {
+      "platform": "linux",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-native-r63-linux.json",
+      "sha256": "2a4707ebb482bab9c8bedfb6eb982f1e2ec3a2e8ab08f95b65c4dbce3f750970",
+      "freeze": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r63-linux.json",
+      "freezeSha256": "46fd6aac363d2e5abd629744d7cd20f07aeff9fa45fcf61ecb5bccbadb4c87c6",
+      "nativeTranslationUnitsPerProduct": 146,
+      "stages": [
+        {
+          "name": "host",
+          "command": [
+            "/usr/bin/python3",
+            "-B",
+            "/mnt/f/xlang-validation/xge-full-20261110/native-source-r63-linux/tools/build/build.py",
+            "default",
+            "/mnt/f/xlang-validation/xge-full-20261110/native-host-linux-r63",
+            "--host-xrt"
+          ],
+          "exitCode": 0,
+          "seconds": 299.40641513,
+          "logSha256": "c4a44d8ce92abde820827d41275802657616bc4828626846b5db64b1e5bc0311"
+        },
+        {
+          "name": "static",
+          "command": [
+            "/usr/bin/python3",
+            "-B",
+            "/mnt/f/xlang-validation/xge-full-20261110/native-source-r63-linux/tools/build/static.py",
+            "--root",
+            "/mnt/f/xlang-validation/xge-full-20261110/native-source-r63-linux",
+            "--out",
+            "/mnt/f/xlang-validation/xge-full-20261110/native-static-linux-r63"
+          ],
+          "exitCode": 0,
+          "seconds": 303.459064409,
+          "logSha256": "9dc3c805bec8382dc5bf6e793e2755efbeae97b2215f4ed88f49135c49a8a3dc"
+        }
+      ]
+    }
+  ],
+  "products": [
+    {
+      "platform": "win",
+      "kind": "host",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r63\\xge3_host.dll",
+      "sha256": "1174ae5ed8fec441eb4a96d797d99d011aa0b9eed32be0843602748b72a8b3a4",
+      "bytes": 9228725,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r63\\build-report.json",
+      "metadataSha256": "b54e69d81427d05eaf71e9b481c2c69638a7de39f17561801ed8a1542128801b"
+    },
+    {
+      "platform": "win",
+      "kind": "static",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r63\\libxge3_static.a",
+      "sha256": "0c30f61ec2c6644850028aefad2683ff38b59829e736be4f3f08ece327f8e52c",
+      "bytes": 18917622,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r63\\build-report.json",
+      "metadataSha256": "9456c7260e2156ed9ca682ce2256da4d2d57334953b5c78f551a24e02c795f1e"
+    },
+    {
+      "platform": "linux",
+      "kind": "host",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r63\\libxge3_host.so",
+      "sha256": "07656d27a3ccfa063d48e3f2bead08d0464c15024b0a84d0bfeefb2864fc41ab",
+      "bytes": 10042768,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r63\\build-report.json",
+      "metadataSha256": "deaeea4d4f22f16287065918ff0cc2ae7b7e4f545af73aa5dfcfca078bfd7b1d"
+    },
+    {
+      "platform": "linux",
+      "kind": "static",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r63\\libxge3_static.a",
+      "sha256": "34c54a485490eaf540d8ed2de500661a4aabd7469d932279bf2a2537fe8c1d25",
+      "bytes": 17147516,
+      "metadata": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r63\\build-report.json",
+      "metadataSha256": "fa8c40ac90e6088e9bb5ecf810ede333e36d29b1f01bf64d777c07b43cdecdbf"
+    }
+  ],
+  "reports": [
+    {
+      "platform": "win",
+      "family": "full",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-full-win-r2\\results.json",
+      "sha256": "16cc0e274f7b6a0f4f44fe39d09c6fd5d3243050aba0aaa3330b4b5307e4f0f7",
+      "commands": 4
+    },
+    {
+      "platform": "win",
+      "family": "font-regression",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-font-regression-win-r2\\results.json",
+      "sha256": "f618749d5fe54e9404f9d8926cb2730fd7a331f706943baf76860f6321800cf6",
+      "commands": 28
+    },
+    {
+      "platform": "win",
+      "family": "lifetime",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-lifetime-win-r2\\results.json",
+      "sha256": "a2340ff7ceb4cfa3459e205029a15e061afbc9d3cf81f00bfbb8e4ce92f78172",
+      "commands": 36
+    },
+    {
+      "platform": "win",
+      "family": "watch",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-watch-win-r2\\results.json",
+      "sha256": "44f591554c2021efe1628d0e508ffb702aea61eb1b8ebb2428d54626b5cfffde",
+      "commands": 18
+    },
+    {
+      "platform": "win",
+      "family": "cache",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-cache-win-r2\\results.json",
+      "sha256": "238764ccb3e81f2985288cfbfb2ba9904a9c04f2b4d89b7f92ac6f56f507f7ff",
+      "commands": 20
+    },
+    {
+      "platform": "win",
+      "family": "reset",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-reset-win-r2\\results.json",
+      "sha256": "27b632041e90686e5290dc3f2639d572a95dfe039aa39582dda74b089847a967",
+      "commands": 4
+    },
+    {
+      "platform": "win",
+      "family": "public",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-public-win-r2\\results.json",
+      "sha256": "0990f55ea7b577ac4a1b51c34183f08597627c60922e12538380853bc9c49580",
+      "commands": 16
+    },
+    {
+      "platform": "linux",
+      "family": "full",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-full-linux-r2\\results.json",
+      "sha256": "faa0afee3959b9d4cd157c392067f66ebe10a75cdb9acd9b2ed5867daa3aec98",
+      "commands": 7
+    },
+    {
+      "platform": "linux",
+      "family": "font-regression",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-font-regression-linux-r2\\results.json",
+      "sha256": "2e1a7b5eed02248e0fb620611509796b2f95948af4de61d7cfcfc4bfe818b13d",
+      "commands": 28
+    },
+    {
+      "platform": "linux",
+      "family": "lifetime",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-lifetime-linux-r2\\results.json",
+      "sha256": "af49fb2c4b6476ff953ef6969baef9b45e61810761930d696762a90ee89d9904",
+      "commands": 36
+    },
+    {
+      "platform": "linux",
+      "family": "watch",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-watch-linux-r2\\results.json",
+      "sha256": "a56366bcf0ac2ded59ad248ba29e7c7451915a6a317046697af05905f11315e7",
+      "commands": 18
+    },
+    {
+      "platform": "linux",
+      "family": "cache",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-cache-linux-r2\\results.json",
+      "sha256": "d940ea31d1dd23514800a6329d8711cd3f8c04fda02218bf7bf7989d3e802eee",
+      "commands": 20
+    },
+    {
+      "platform": "linux",
+      "family": "reset",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-reset-linux-r2\\results.json",
+      "sha256": "77a54514a229f05c25f015efbb0c853602c1fbc3eb0d659a13d6cc1f7a2df582",
+      "commands": 4
+    },
+    {
+      "platform": "linux",
+      "family": "public",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-public-linux-r2\\results.json",
+      "sha256": "6695310f8dcb6abea25f83578c549f78bd3285943c74fef41d012b4bc558e510",
+      "commands": 16
+    }
+  ],
+  "commandChecks": 255,
+  "linuxInputVerification": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\shared-face-linux-inputs-20261112.json",
+    "sha256": "73e6ce19186109b274dc60bdf89c8a01211572148b50d4e50db6d758cfca030f",
+    "inputOccurrences": 12915
+  },
+  "oldRaceControl": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-shared-fallback-tsan-instrumented-r1\\results.json",
+    "sha256": "e9e944c2d79cba6671bbe28a51c41c7f422fb3b3297f048515d01410d8aa5670",
+    "exitCode": 66,
+    "location": "xgeFontFaceAddRef"
+  },
+  "behavior": [
+    "Independent document Fonts share the original Face and identical nonempty outline pointers; source bytes are not copied per document.",
+    "Parallel document/Font creation/destruction and fallback replacement/clear pass. Init preserves its reset behavior, releases the old fallback and keeps document-owned Faces usable.",
+    "Nonempty outline OOM prefixes: 4 failed/20 passed; fallback replacement 3/21 and acquisition 1/15. Failures preserve owned state and retry; warmed full cleanup returns exact LiveCount/LiveBytes and error counters."
+  ],
+  "costs": {
+    "linuxX64FaceBytesBefore": 280,
+    "linuxX64FaceBytesAfter": 272,
+    "bucketSlots": 256,
+    "hotOutlineAtomicPointerLoads": 2,
+    "hotIterations": 1000,
+    "hotXrtAllocFreeReallocDelta": 0,
+    "globalPublicationSpinBytes": 8,
+    "notes": "Atomic Face reference operations, fallback spin plus temporary Face ref at cold acquisition, and possible duplicate cold bucket/outline allocation under contention are real native costs. No timing, RSS or end-to-end zero-overhead claim."
+  },
+  "qualificationNotes": [
+    "Final nonempty test fixture and permanent gate are pinned separately from the immutable native freezes unused earlier test copy; the three compiled native source overrides match exactly.",
+    "Linux TSan instruments the canonical XRT implementation including allocator/locks/atomics and the aggregate. Remaining archive objects are uninstrumented. GCC reports its atomic_thread_fence instrumentation limitation.",
+    "Historical uninstrumented-host TSan diagnostics are preserved, not substituted for full-XRT TSan acceptance. Aggregate debug line tables can name miniaudio.h misleadingly; symbols and exact source/dependency inventories identify the code."
+  ],
+  "remaining": [
+    "Full safe SVG/SvgPaint/SvgCache language declarations, confirmed node-view runtime contract and matching compiler/SDK/IDE delivery.",
+    "Other remaining XGE/XUI/Document families and whole-goal acceptance."
+  ]
+}
