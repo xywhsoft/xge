@@ -29,7 +29,7 @@ typedef struct xge_emoji_trie_node_t {
 } xge_emoji_trie_node_t;
 
 struct xge_emoji_pack_t {
-	volatile int iRefCount;
+	xatomic32 iRefCount;
 	xge_emoji_entry_t* pEntries;
 	int iEntryCount;
 	int iEntryCapacity;
@@ -144,9 +144,14 @@ static int __xgeEmojiEnsureEntries(xge_emoji_pack pPack, int iRequired)
 	xge_emoji_entry_t* pEntries;
 	int iCapacity;
 
+	if ( iRequired < 0 ) return XGE_ERROR_OUT_OF_MEMORY;
 	if ( iRequired <= pPack->iEntryCapacity ) return XGE_OK;
-	iCapacity = (pPack->iEntryCapacity > 0) ? pPack->iEntryCapacity * 2 : 16;
-	while ( iCapacity < iRequired ) iCapacity *= 2;
+	iCapacity = (pPack->iEntryCapacity > 0) ? pPack->iEntryCapacity : 16;
+	while ( iCapacity < iRequired ) {
+		if ( iCapacity > INT32_MAX / 2 ) { iCapacity = iRequired; break; }
+		iCapacity *= 2;
+	}
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pEntries) ) return XGE_ERROR_OUT_OF_MEMORY;
 	pEntries = (xge_emoji_entry_t*)xrtRealloc(pPack->pEntries, sizeof(*pEntries) * (size_t)iCapacity);
 	if ( pEntries == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	memset(pEntries + pPack->iEntryCapacity, 0, sizeof(*pEntries) * (size_t)(iCapacity - pPack->iEntryCapacity));
@@ -160,9 +165,14 @@ static int __xgeEmojiEnsureNodes(xge_emoji_pack pPack, int iRequired)
 	xge_emoji_trie_node_t* pNodes;
 	int iCapacity;
 
+	if ( iRequired < 0 ) return XGE_ERROR_OUT_OF_MEMORY;
 	if ( iRequired <= pPack->iNodeCapacity ) return XGE_OK;
-	iCapacity = (pPack->iNodeCapacity > 0) ? pPack->iNodeCapacity * 2 : 32;
-	while ( iCapacity < iRequired ) iCapacity *= 2;
+	iCapacity = (pPack->iNodeCapacity > 0) ? pPack->iNodeCapacity : 32;
+	while ( iCapacity < iRequired ) {
+		if ( iCapacity > INT32_MAX / 2 ) { iCapacity = iRequired; break; }
+		iCapacity *= 2;
+	}
+	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNodes) ) return XGE_ERROR_OUT_OF_MEMORY;
 	pNodes = (xge_emoji_trie_node_t*)xrtRealloc(pPack->pNodes, sizeof(*pNodes) * (size_t)iCapacity);
 	if ( pNodes == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
 	memset(pNodes + pPack->iNodeCapacity, 0, sizeof(*pNodes) * (size_t)(iCapacity - pPack->iNodeCapacity));
@@ -183,33 +193,33 @@ static int __xgeEmojiFindChild(xge_emoji_pack pPack, int iParent, uint32_t iCode
 	return -1;
 }
 
-static int __xgeEmojiTrieRegister(xge_emoji_pack pPack, const char* sSequence, int iSequenceSize,
+static int __xgeEmojiSequenceCount(const char* sSequence, int iSequenceSize, int* pCount)
+{
+	if ( (sSequence == NULL) || (iSequenceSize <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	const char* sScan = sSequence;
+	const char* sEnd = sSequence + iSequenceSize;
+	int count = 0;
+	while ( sScan < sEnd ) {
+		uint32_t iCodepoint;
+		if ( __xgeEmojiUTF8Decode(&sScan, sEnd, &iCodepoint) != XGE_OK ) return XGE_ERROR_RESOURCE_FAILED;
+		++count;
+	}
+	*pCount = count;
+	return XGE_OK;
+}
+
+/* Preparation validates the immutable input and reserves every possible new
+ * node. Publication below cannot allocate, fail or invoke external code. */
+static void __xgeEmojiTriePublish(xge_emoji_pack pPack, const char* sSequence, int iSequenceSize,
 	int iEntry, uint32_t iFlags, int bReplace)
 {
-	const char* sScan;
-	const char* sEnd;
-	uint32_t iCodepoint;
-	int iCodepointCount;
-	int iParent;
-	int iNode;
-	int iRet;
-
-	if ( (sSequence == NULL) || (iSequenceSize <= 0) ||
-	     (iEntry < 0) || (iEntry >= pPack->iEntryCount) ) return XGE_ERROR_INVALID_ARGUMENT;
-	sScan = sSequence;
-	sEnd = sSequence + iSequenceSize;
-	iCodepointCount = 0;
+	const char* sScan = sSequence;
+	const char* sEnd = sSequence + iSequenceSize;
+	int iParent = 0;
 	while ( sScan < sEnd ) {
-		if ( __xgeEmojiUTF8Decode(&sScan, sEnd, &iCodepoint) != XGE_OK ) return XGE_ERROR_RESOURCE_FAILED;
-		iCodepointCount++;
-	}
-	iRet = __xgeEmojiEnsureNodes(pPack, pPack->iNodeCount + iCodepointCount);
-	if ( iRet != XGE_OK ) return iRet;
-	iParent = 0;
-	sScan = sSequence;
-	while ( sScan < sEnd ) {
+		uint32_t iCodepoint;
 		(void)__xgeEmojiUTF8Decode(&sScan, sEnd, &iCodepoint);
-		iNode = __xgeEmojiFindChild(pPack, iParent, iCodepoint);
+		int iNode = __xgeEmojiFindChild(pPack, iParent, iCodepoint);
 		if ( iNode < 0 ) {
 			iNode = pPack->iNodeCount++;
 			pPack->pNodes[iNode].iCodepoint = iCodepoint;
@@ -224,6 +234,19 @@ static int __xgeEmojiTrieRegister(xge_emoji_pack pPack, const char* sSequence, i
 		pPack->pNodes[iParent].iEntry = iEntry;
 		pPack->pNodes[iParent].iFlags = iFlags;
 	}
+}
+
+static int __xgeEmojiTrieRegister(xge_emoji_pack pPack, const char* sSequence, int iSequenceSize,
+	int iEntry, uint32_t iFlags, int bReplace)
+{
+	if ( (iEntry < 0) || (iEntry >= pPack->iEntryCount) ) return XGE_ERROR_INVALID_ARGUMENT;
+	int count = 0;
+	int status = __xgeEmojiSequenceCount(sSequence, iSequenceSize, &count);
+	if ( status != XGE_OK ) return status;
+	if ( count > INT32_MAX - pPack->iNodeCount ) return XGE_ERROR_OUT_OF_MEMORY;
+	status = __xgeEmojiEnsureNodes(pPack, pPack->iNodeCount + count);
+	if ( status != XGE_OK ) return status;
+	__xgeEmojiTriePublish(pPack, sSequence, iSequenceSize, iEntry, iFlags, bReplace);
 	return XGE_OK;
 }
 
@@ -299,7 +322,7 @@ int xgeEmojiPackCreate(xge_emoji_pack* ppPack)
 		xrtFree(pPack);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pPack->iRefCount = 1;
+	xrtAtomic32Store(&pPack->iRefCount, 1, XMEMORY_RELAXED);
 	pPack->iNodeCount = 1;
 	pPack->pNodes[0].iChild = -1;
 	pPack->pNodes[0].iSibling = -1;
@@ -310,16 +333,19 @@ int xgeEmojiPackCreate(xge_emoji_pack* ppPack)
 
 int xgeEmojiPackAddRef(xge_emoji_pack pPack)
 {
-	if ( (pPack == NULL) || (pPack->iRefCount <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
-	return (int)xrtRefRetain((volatile int32*)&pPack->iRefCount);
+	if ( pPack == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	uint32_t refs = xrtAtomic32Load(&pPack->iRefCount, XMEMORY_RELAXED);
+	do { if ( !refs || refs >= INT32_MAX ) return XGE_ERROR_INVALID_ARGUMENT; }
+	while ( !xrtAtomic32CompareExchange(&pPack->iRefCount, &refs, refs + 1, XMEMORY_RELAXED, XMEMORY_RELAXED) );
+	return (int)(refs + 1);
 }
 
 void xgeEmojiPackFree(xge_emoji_pack pPack)
 {
 	int i;
 
-	if ( (pPack == NULL) || (pPack->iRefCount <= 0) ) return;
-	if ( xrtRefRelease((volatile int32*)&pPack->iRefCount) > 0 ) return;
+	if ( pPack == NULL ) return;
+	if ( xrtAtomic32FetchSub(&pPack->iRefCount, 1, XMEMORY_ACQ_REL) != 1 ) return;
 	xrtMutexLock(pPack->pCacheMutex);
 	for ( i = 0; i < pPack->iEntryCount; i++ ) {
 		if ( pPack->pEntries[i].bOwnSequence ) xrtFree(pPack->pEntries[i].sSequence);
@@ -348,6 +374,12 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 
 	if ( (pPack == NULL) || pPack->bBuiltin || (sSequence == NULL) || (*sSequence == 0) ||
 	     (pSvgData == NULL) || (iSvgSize <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	size_t sequenceSize = strlen(sSequence);
+	if ( sequenceSize > INT32_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
+	int codepoints = 0;
+	iRet = __xgeEmojiSequenceCount(sSequence, (int)sequenceSize, &codepoints);
+	if ( iRet != XGE_OK ) return iRet;
+	if ( codepoints > INT32_MAX - pPack->iNodeCount ) return XGE_ERROR_OUT_OF_MEMORY;
 	tMetrics = __xgeEmojiMetricsDefault();
 	if ( pMetrics != NULL ) {
 		if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -359,58 +391,54 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 		if ( !(tMetrics.fBaselineRatio > 0.0f) || !(tMetrics.fBaselineRatio < 1.0f) ) tMetrics.fBaselineRatio = 0.82f;
 	}
 	pSvgCopy = (unsigned char*)xrtMalloc((size_t)iSvgSize);
-	sSequenceCopy = (char*)xrtMalloc(strlen(sSequence) + 1u);
+	sSequenceCopy = (char*)xrtMalloc(sequenceSize + 1u);
 	if ( (pSvgCopy == NULL) || (sSequenceCopy == NULL) ) {
 		xrtFree(pSvgCopy);
 		xrtFree(sSequenceCopy);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	memcpy(pSvgCopy, pSvgData, (size_t)iSvgSize);
-	memcpy(sSequenceCopy, sSequence, strlen(sSequence) + 1u);
+	memcpy(sSequenceCopy, sSequence, sequenceSize + 1u);
 
 	iExistingNode = 0;
 	{
-		const char* sScan = sSequence;
-		const char* sEnd = sSequence + strlen(sSequence);
+		const char* sScan = sSequenceCopy;
+		const char* sEnd = sSequenceCopy + sequenceSize;
 		uint32_t iCodepoint;
 		while ( (sScan < sEnd) && (iExistingNode >= 0) ) {
-			if ( __xgeEmojiUTF8Decode(&sScan, sEnd, &iCodepoint) != XGE_OK ) {
-				xrtFree(pSvgCopy);
-				xrtFree(sSequenceCopy);
-				return XGE_ERROR_RESOURCE_FAILED;
-			}
+			(void)__xgeEmojiUTF8Decode(&sScan, sEnd, &iCodepoint);
 			iExistingNode = __xgeEmojiFindChild(pPack, iExistingNode, iCodepoint);
 		}
 	}
 	iEntry = (iExistingNode >= 0) ? pPack->pNodes[iExistingNode].iEntry : -1;
 	if ( iEntry < 0 ) {
+		if ( pPack->iEntryCount == INT32_MAX ) { xrtFree(pSvgCopy); xrtFree(sSequenceCopy); return XGE_ERROR_OUT_OF_MEMORY; }
 		iRet = __xgeEmojiEnsureEntries(pPack, pPack->iEntryCount + 1);
 		if ( iRet != XGE_OK ) {
 			xrtFree(pSvgCopy);
 			xrtFree(sSequenceCopy);
 			return iRet;
 		}
-		iEntry = pPack->iEntryCount++;
-	} else {
-		pEntry = &pPack->pEntries[iEntry];
-		if ( pEntry->bOwnSequence ) xrtFree(pEntry->sSequence);
-		if ( pEntry->bOwnSvgData ) xrtFree(pEntry->pSvgData);
-		xgeSvgDestroy(pEntry->pSvg);
-		memset(pEntry, 0, sizeof(*pEntry));
 	}
+	iRet = __xgeEmojiEnsureNodes(pPack, pPack->iNodeCount + codepoints);
+	if ( iRet != XGE_OK ) { xrtFree(pSvgCopy); xrtFree(sSequenceCopy); return iRet; }
+	xge_emoji_entry_t previous = {0};
+	if ( iEntry < 0 ) iEntry = pPack->iEntryCount++;
+	else previous = pPack->pEntries[iEntry];
 	pEntry = &pPack->pEntries[iEntry];
+	memset(pEntry, 0, sizeof(*pEntry));
 	pEntry->sSequence = sSequenceCopy;
-	pEntry->iSequenceSize = (int)strlen(sSequence);
+	pEntry->iSequenceSize = (int)sequenceSize;
 	pEntry->pSvgData = pSvgCopy;
 	pEntry->iSvgSize = iSvgSize;
 	pEntry->tMetrics = tMetrics;
 	pEntry->bOwnSequence = 1;
 	pEntry->bOwnSvgData = 1;
-	iRet = __xgeEmojiTrieRegister(
-		pPack, sSequence, (int)strlen(sSequence), iEntry, tMetrics.iFlags, 1
-	);
-	if ( iRet != XGE_OK ) return iRet;
+	__xgeEmojiTriePublish(pPack, sSequenceCopy, (int)sequenceSize, iEntry, tMetrics.iFlags, 1);
 	if ( pEmojiId != NULL ) *pEmojiId = (uint32_t)iEntry + 1u;
+	if ( previous.bOwnSequence ) xrtFree(previous.sSequence);
+	if ( previous.bOwnSvgData ) xrtFree(previous.pSvgData);
+	xgeSvgDestroy(previous.pSvg);
 	return XGE_OK;
 }
 
@@ -627,27 +655,37 @@ static int __xgeEmojiBuiltinLoad(xge_emoji_pack* ppPack)
 
 int xgeEmojiPackLoadBuiltin(xge_emoji_pack* ppPack)
 {
-	int iRet;
-
 	if ( ppPack == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	*ppPack = NULL;
 	__xgeEmojiGlobalLock();
-	if ( g_xgeBuiltinEmojiPack == NULL ) {
-		iRet = __xgeEmojiBuiltinLoad(&g_xgeBuiltinEmojiPack);
-		if ( iRet != XGE_OK ) {
-			__xgeReportErrorInternal(iRet, 1, "emoji", "load built-in package",
-				"package validation or initialization failed");
-			__xgeEmojiGlobalUnlock();
-			return iRet;
-		}
-	}
-	iRet = xgeEmojiPackAddRef(g_xgeBuiltinEmojiPack);
-	if ( iRet <= 0 ) {
-		__xgeEmojiGlobalUnlock();
-		return iRet;
-	}
-	*ppPack = g_xgeBuiltinEmojiPack;
+	xge_emoji_pack pack = g_xgeBuiltinEmojiPack;
+	int retained = pack ? xgeEmojiPackAddRef(pack) : 0;
 	__xgeEmojiGlobalUnlock();
+	if ( pack != NULL ) {
+		if ( retained <= 0 ) return retained;
+		*ppPack = pack;
+		return XGE_OK;
+	}
+	/* Parsing/allocation and error callbacks run outside the global slot lock.
+	 * Competing cold builders publish one winner and discard their own loser. */
+	xge_emoji_pack candidate = NULL;
+	int status = __xgeEmojiBuiltinLoad(&candidate);
+	if ( status != XGE_OK ) {
+		__xgeReportErrorInternal(status, 1, "emoji", "load built-in package",
+			"package validation or initialization failed");
+		return status;
+	}
+	__xgeEmojiGlobalLock();
+	if ( g_xgeBuiltinEmojiPack == NULL ) {
+		g_xgeBuiltinEmojiPack = candidate;
+		candidate = NULL;
+	}
+	pack = g_xgeBuiltinEmojiPack;
+	retained = xgeEmojiPackAddRef(pack);
+	__xgeEmojiGlobalUnlock();
+	xgeEmojiPackFree(candidate);
+	if ( retained <= 0 ) return retained;
+	*ppPack = pack;
 	return XGE_OK;
 }
 
@@ -878,7 +916,9 @@ static int __xgeEmojiEntryLoadLocked(xge_emoji_pack pPack, int iEntry)
 	if ( pEntry->pCompressedData != NULL ) xrtFree(pSvgData);
 	if ( iRet != XGE_OK ) {
 		xgeSvgDestroy(pSvg);
-		pEntry->bLoadFailed = 1;
+		/* Allocation pressure is transient. Keep the immutable source and let
+		 * a later draw retry instead of permanently poisoning this entry. */
+		if ( iRet != XGE_ERROR_OUT_OF_MEMORY ) pEntry->bLoadFailed = 1;
 		__xgeReportErrorInternal(iRet, 1, "emoji", "parse SVG",
 			"built-in Emoji SVG could not be parsed");
 		return iRet;
