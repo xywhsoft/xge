@@ -173,6 +173,11 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(__xgeDragDropUnit(),&result,&first);
 	__xgeCallbackOutcome(xgeResourceProviderClearChecked(),&result,&first);
+#if XGE_ENABLE_AUDIO
+	/* Configuration may precede Init. Clear it even on a cold Unit; immutable
+	 * snapshots held by in-flight readers release their own references later. */
+	XGE_UNIT_STEP(xgeSoundFallbackClear());
+#endif
 	if(!initialized)goto finish;
 	g_xge.bRunning = 0;
 #if XGE_ENABLE_2D
@@ -195,9 +200,6 @@ int xgeUnitChecked(void)
 	XGE_UNIT_STEP(xgeTextureFallbackClear());
 #if XGE_ENABLE_TEXT
 	XGE_UNIT_STEP(xgeFontFallbackClear());
-#endif
-#if XGE_ENABLE_AUDIO
-	XGE_UNIT_STEP(xgeSoundFallbackClear());
 #endif
 #if XGE_ENABLE_AUDIO
 	XGE_UNIT_STEP(__xgeAudioUnit());

@@ -33,6 +33,39 @@ typedef struct __xge_audio_sound {
 static bool g_xgeAudioTransition;
 #define XGE_SOUND_OWNED_RECORD 0x20000000u
 
+/* CPU configuration survives Init's context reset. The engine admission lock
+ * also linearizes publication/snapshot references. Never allocate, free or
+ * invoke a callback while holding it. Clear is always safe; new publication
+ * is refused while initialization/shutdown owns admission. */
+typedef struct __xge_audio_fallback_path {
+    size_t refs;
+    char text[];
+} __xge_audio_fallback_path;
+static __xge_audio_fallback_path* g_xgeAudioFallbackPath;
+static bool __xgeSoundFallbackAdmission(void)
+{
+    return !g_xgeGraphicsLifetime.closing && !g_xgeGraphicsLifetime.initializing &&
+        g_xgeGraphicsLifetime.phase!=XGE_GRAPHICS_CLOSED;
+}
+static void __xgeSoundFallbackDrop(__xge_audio_fallback_path* path)
+{
+    if(!path)return;
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    assert(path->refs>0);bool last=--path->refs==0;
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+    if(last)xrtFree(path);
+}
+static int __xgeSoundFallbackAcquire(__xge_audio_fallback_path** output)
+{
+    *output=NULL;int status=XGE_OK;
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    if(!__xgeSoundFallbackAdmission())status=XGE_ERROR_BUSY;
+    else if(!g_xgeAudioFallbackPath)status=XGE_ERROR_RESOURCE_FAILED;
+    else if(g_xgeAudioFallbackPath->refs==SIZE_MAX)status=XGE_ERROR_OUT_OF_MEMORY;
+    else{++g_xgeAudioFallbackPath->refs;*output=g_xgeAudioFallbackPath;}
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);return status;
+}
+
 static int __xgeAudioControlAccess(void)
 {
     (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
@@ -146,12 +179,18 @@ static int __xgeAudioLoadFallback(void* pObject, int iType, uint32_t iFlags, xge
 	xge_sound pSound;
 	int iRet;
 
-	if ( (iType != XGE_AUDIO_SOUND) || (g_xge.sFallbackSoundPath == NULL) ) {
+	if ( iType != XGE_AUDIO_SOUND ) {
 		return iOriginalError;
 	}
-	iRet = __xgeAudioLoadPath(pObject, g_xge.sFallbackSoundPath, iType, iFlags, pGroup);
+	__xge_audio_fallback_path* path=NULL;iRet=__xgeSoundFallbackAcquire(&path);
+	if(iRet!=XGE_OK)return iRet==XGE_ERROR_RESOURCE_FAILED ? iOriginalError:iRet;
+	iRet = __xgeAudioLoadPath(pObject, path->text, iType, iFlags, pGroup);
+	__xgeSoundFallbackDrop(path);
 	if ( iRet != XGE_OK ) {
-		return iOriginalError;
+		/* Preserve the original ordinary file failure, but never conceal an
+		 * allocation, admission or argument failure in the fallback attempt. */
+		return iRet==XGE_ERROR_AUDIO_FAILED || iRet==XGE_ERROR_RESOURCE_FAILED ||
+			iRet==XGE_ERROR_UNSUPPORTED ? iOriginalError:iRet;
 	}
 	pSound = __xgeAudioAsSound(pObject);
 	XGE_AUDIO_FLAGS(pSound) |= XGE_SOUND_FALLBACK;
@@ -365,18 +404,22 @@ int xgeSoundLoadGroup(xge_sound pSound, const char* sPath, xge_audio_group pGrou
 
 int xgeSoundFallbackSet(const char* sPath)
 {
-	char* sCopy;
-
-	if ( sPath == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sCopy = __xgeStrDup(sPath);
-	if ( sCopy == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	xgeSoundFallbackClear();
-	g_xge.sFallbackSoundPath = sCopy;
-	return XGE_OK;
+    if(!sPath)return XGE_ERROR_INVALID_ARGUMENT;
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    bool admitted=__xgeSoundFallbackAdmission();
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+    if(!admitted)return XGE_ERROR_BUSY;
+    size_t bytes=strlen(sPath);
+    if(bytes>SIZE_MAX-sizeof(__xge_audio_fallback_path)-1)return XGE_ERROR_OUT_OF_MEMORY;
+    __xge_audio_fallback_path* next=xrtMalloc(sizeof(*next)+bytes+1);
+    if(!next)return XGE_ERROR_OUT_OF_MEMORY;
+    next->refs=1;memcpy(next->text,sPath,bytes+1);
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    admitted=__xgeSoundFallbackAdmission();__xge_audio_fallback_path* old=NULL;
+    if(admitted){old=g_xgeAudioFallbackPath;g_xgeAudioFallbackPath=next;}
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+    if(!admitted){xrtFree(next);return XGE_ERROR_BUSY;}
+    __xgeSoundFallbackDrop(old);return XGE_OK;
 }
 
 int xgeSoundFallbackGet(xge_sound pSound)
@@ -386,10 +429,10 @@ int xgeSoundFallbackGet(xge_sound pSound)
 	if ( pSound == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.sFallbackSoundPath == NULL ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	iRet = __xgeAudioLoadPath(pSound, g_xge.sFallbackSoundPath, XGE_AUDIO_SOUND, 0, NULL);
+	__xge_audio_fallback_path* path=NULL;iRet=__xgeSoundFallbackAcquire(&path);
+	if(iRet!=XGE_OK)return iRet;
+	iRet = __xgeAudioLoadPath(pSound, path->text, XGE_AUDIO_SOUND, 0, NULL);
+	__xgeSoundFallbackDrop(path);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
@@ -399,10 +442,10 @@ int xgeSoundFallbackGet(xge_sound pSound)
 
 void xgeSoundFallbackClear(void)
 {
-	if ( g_xge.sFallbackSoundPath != NULL ) {
-		xrtFree(g_xge.sFallbackSoundPath);
-		g_xge.sFallbackSoundPath = NULL;
-	}
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    __xge_audio_fallback_path* old=g_xgeAudioFallbackPath;g_xgeAudioFallbackPath=NULL;
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+    __xgeSoundFallbackDrop(old);
 }
 
 int xgeSoundPlay(xge_sound pSound)
@@ -492,6 +535,17 @@ int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group)
     int result=xgeSoundLoadGroup(sound,path,group);
     if(result!=XGE_OK){xrtFree(sound);return result;}
     sound->iFlags|=XGE_SOUND_OWNED_RECORD;*out=sound;return XGE_OK;
+}
+int xgeSoundFallbackCreateOwned(xge_sound* out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;__xge_audio_fallback_path* path=NULL;int status=__xgeSoundFallbackAcquire(&path);
+    if(status!=XGE_OK)return status;
+    xge_sound sound=xrtCalloc(1,sizeof(*sound));
+    if(!sound){__xgeSoundFallbackDrop(path);return XGE_ERROR_OUT_OF_MEMORY;}
+    status=__xgeAudioLoadPath(sound,path->text,XGE_AUDIO_SOUND,0,NULL);__xgeSoundFallbackDrop(path);
+    if(status!=XGE_OK){xrtFree(sound);return status;}
+    sound->iFlags|=XGE_SOUND_OWNED_RECORD|XGE_SOUND_FALLBACK;*out=sound;return XGE_OK;
 }
 int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc)
 {
@@ -698,6 +752,8 @@ int xgeSoundFreeChecked(xge_sound sound) {(void)sound;return XGE_ERROR_UNSUPPORT
 int xgeAudioGroupFreeChecked(xge_audio_group group) {(void)group;return XGE_ERROR_UNSUPPORTED;}
 int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group)
 {(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeSoundFallbackCreateOwned(xge_sound* out)
+{if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc)
 {(void)desc;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group)

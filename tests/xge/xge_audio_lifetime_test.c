@@ -20,6 +20,8 @@
 #define testAudioGroups (testAudioOwners-(uint64_t)g_xge.iAudioCount)
 #endif
 static unsigned char wave[76];
+static ma_result testAudioReady(ma_job* job)
+{ma_atomic_store_32((ma_uint32*)job->data.custom.data0,1);return MA_SUCCESS;}
 static void begin(void)
 {
     assert(xrtMemDebugEnable(true));
@@ -31,6 +33,14 @@ static void begin(void)
     config.allocationCallbacks.onRealloc=__xgeMaRealloc;
     config.allocationCallbacks.onFree=__xgeMaFree;
     assert(ma_engine_init(&config,engine)==MA_SUCCESS);
+    /* Observe actual worker entry before allocation snapshots. The worker
+     * frees its transient thread-proxy allocation before processing jobs. */
+    assert(engine->pResourceManager->config.jobThreadCount==1);
+    ma_uint32 ready=0;ma_job job=ma_job_init(MA_JOB_TYPE_CUSTOM);
+    job.data.custom.proc=testAudioReady;job.data.custom.data0=(ma_uintptr)&ready;
+    assert(ma_resource_manager_post_job(engine->pResourceManager,&job)==MA_SUCCESS);
+    unsigned attempt=0;while(!ma_atomic_load_32(&ready) && attempt++<1000)ma_sleep(1);
+    assert(ma_atomic_load_32(&ready));
     g_xge.pAudioEngine=engine;g_xge.bAudioInitialized=1;
     memcpy(wave,"RIFF",4);wave[4]=68;memcpy(wave+8,"WAVEfmt ",8);
     wave[16]=16;wave[20]=1;wave[22]=2;wave[24]=0x40;wave[25]=0x1f;

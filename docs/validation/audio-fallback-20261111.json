@@ -1,0 +1,154 @@
+{
+  "schema": "xge-audio-fallback-1",
+  "scope": "Immutable fallback path publication/snapshots, pre-init/cold Unit, owning factory, terminal error precedence and regressions",
+  "passed": true,
+  "shippingDelivery": false,
+  "audioDevice": false,
+  "realMiniaudio": true,
+  "window": false,
+  "networkTests": false,
+  "publicAbiFingerprintChanged": true,
+  "publicSoundRecordLayoutChanged": false,
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r56.json",
+    "sha256": "f6ff9b1e59f1afa1634f345770a99426f4df9d6bc665a81dcd2020a1375db4c4"
+  },
+  "compiledSource": {
+    "include/xge.h": "5a2c98717f9e2fa874934b0ec8055a9b04834e95efb08b72358a2e4efd18ac27",
+    "src/xge/audio/xge_audio.c": "63fcaa8f87156d9629bcff860e444a8a645e18c7ae67fbee14f479ca1fb12006",
+    "src/xge/core/xge_core.c": "111a77acf5cfa9424409a77da532a844cb5331f0642c980a33243d9df4ed69d4",
+    "src/xge/core/xge_impl.c": "063d0e28ccbbfd48f31100f03a9f7a1b6abc95ffe2a8f6f091d61e024d2032f5"
+  },
+  "testSource": {
+    "tests/xge/xge_audio_fallback_test.c": "ba8ec3e9d2c89568e4f93347701b7c43aadb17ef07138baad91ada303dc148f3",
+    "tests/xge/xge_audio_lifetime_test.c": "08f6de6d28c423b712e788afe12763ca5e3a0455f2e8c9677b6c9a8cc233600d",
+    "tools/test/check_audio_fallback.py": "ffb2549c479ec7bca476bcb2299ca211a2287d1109cdf52841b826e7f99d1331"
+  },
+  "priorLifetimeFixture": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\audio-lifetimes-before-startup-barrier-r1.c",
+    "sha256": "0a4c3d967fe6568814a0c9eab44a32f54d95b2bf4d378587534a602a88af1ee8"
+  },
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r56\\build-report.json",
+      "sha256": "804d26ce6775529f2e142cf7908e021e1eaa5759cacf8e18a86adf5c74c879dd",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r56\\xge3_host.dll",
+        "sha256": "64ba5f1a836ddcaee20c13ae8493d6006ebaa291df766b2c91bb52c97276f971"
+      },
+      "fullO2Rebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r56\\build-report.json",
+      "sha256": "54ed7cc886077ba8506eb17720b93fe095aca22050e8637fa1dca15bd2e7c53c",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r56\\libxge3_static.a",
+        "sha256": "85acb3f3854607bca3f369b9284e1273141aa23c622b1931ea8fd64e85d0432b"
+      },
+      "fullO2Rebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r56\\build-report.json",
+      "sha256": "50d18943c0cca24c8157d8dc4494362757693e7cc0620d812de328c66e5ce97e",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r56\\libxge3_host.so",
+        "sha256": "a2bb9069ea4971c44ca60969dbd2a332bc6739c64684444ef9b6106706657484"
+      },
+      "fullO2Rebuild": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r56\\build-report.json",
+      "sha256": "b7a838e973628cdcdc2c2154e14455a5349e25758e97dde2ba6a51a778ba9397",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r56\\libxge3_static.a",
+        "sha256": "160d60042e36743c226f228bc0832b4fcd59ead3faea92700bc1d316d19250f8"
+      },
+      "fullO2Rebuild": true
+    }
+  ],
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-paths-win-r3\\results.json",
+      "sha256": "9bed84bf883508cc09ca0cd2fa7366a6529d8abe531f42acd2d132abb8b72733",
+      "checks": 22
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-requests-win-r1\\results.json",
+      "sha256": "aa258ddf52bb2ffbf71deacc97945b5dbdd1e670aef5d5748e14049bd75c2086",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-audio-win-r1\\results.json",
+      "sha256": "b4454afefaf52e9ae43809e9537b3dc3dee6fdf0bf6870fff5e16f986ecc28eb",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-font-win-r1\\results.json",
+      "sha256": "dfb0d0aa17588b7d1cea570a26227df1ad305c5316632c85acd86253a1b07044",
+      "checks": 68
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-async-win-r1\\results.json",
+      "sha256": "da0dc03d6483a31724c0e36674ad577d7ef4f77dc93b92beab7db047a9dab631",
+      "checks": 48
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-paths-linux-r3\\results.json",
+      "sha256": "bf7c434306e6220f94a3e7ae5aa6a2b75b6767e116a9d1cbf0d0da0dc772c155",
+      "checks": 22
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-requests-linux-r1\\results.json",
+      "sha256": "8feda0d517eeb5615b78a984c63930d3d45ec15ed02f3232cf32905989932c6d",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-audio-linux-r1\\results.json",
+      "sha256": "1374f9a6f87e9a1f012cb5a2624f5a9e6c041707941914ecf5e679aee3ba28bd",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-font-linux-r1\\results.json",
+      "sha256": "026885696847dab0dc6b22a442a1fb91bfcc09c175bf59a994a2621e0739a6b6",
+      "checks": 68
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-final-async-linux-r1\\results.json",
+      "sha256": "d225d9cb568847e3b2940fad28c401e3d094826e7021114a038efc62de91c1fb",
+      "checks": 48
+    }
+  ],
+  "controls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-baseline-win-r3\\results.json",
+      "sha256": "0cd35278c6a1140293eb7fc45d3713f790d57f2e2c2ec9a32c675327cbceb6ac",
+      "checks": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\fallback-baseline-linux-r3\\results.json",
+      "sha256": "542100a2badb1ddaa245f09edaac60bb826520c27db24a71a545e06ba5d7d335",
+      "checks": 8
+    }
+  ],
+  "allocationResults": {
+    "win": {
+      "failures": 13,
+      "successes": 51,
+      "budgets": 64
+    },
+    "linux": {
+      "failures": 11,
+      "successes": 53,
+      "budgets": 64
+    }
+  },
+  "limitations": [
+    "Positive audio tests use an authoritative aggregate with private no-device setup plus matched remaining archive objects, not a shipping test hook.",
+    "The private setup observes actual default worker entry through a queued readiness job; it does not change production startup.",
+    "Caller-thread allocation injection only; no physical output-device or network tests.",
+    "Configuration publishers must be stopped before final cleanup; overlapping Set can linearize after an earlier Unit returns.",
+    "Language integration and automatic module-global lifecycle are separate gates."
+  ],
+  "checks": 412,
+  "controlChecks": 16
+}

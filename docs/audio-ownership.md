@@ -125,3 +125,8 @@ platforms at both optimization levels. Together with existing lifetime/reference
 PCM regressions, this follow-up has 148 passing rows and 8 expected control rows,
 indexed by `docs/validation/audio-resident-20261111.json`. Worker-thread failure
 injection and physical audio-device behavior are outside this check.
+
+The fallback path is now an independently retained immutable configuration
+snapshot. Pre-init settings survive Init, cold Unit clears them, and concurrent
+Set/Clear cannot invalidate a reader or voice. See `audio-fallback-contract.md`
+for publication/shutdown, owning-factory, error-priority and measured-cost rules.

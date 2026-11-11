@@ -2450,11 +2450,14 @@ XGE_API void xgeAudioGroupFade(xge_audio_group pGroup, float fFrom, float fTo, i
 XGE_API int xgeSoundLoad(xge_sound pSound, const char* sPath);
 /* 加载音效并挂到指定音频组。 */
 XGE_API int xgeSoundLoadGroup(xge_sound pSound, const char* sPath, xge_audio_group pGroup);
-/* 设置全局兜底音效（加载失败时替代）。 */
+/* Thread-safe global fallback configuration, including before Init. The path
+ * is copied once; Set refuses publication during Init/Unit admission. Reads
+ * hold immutable snapshots, so replacing/clearing cannot invalidate them. */
 XGE_API int xgeSoundFallbackSet(const char* sPath);
 /* 获取全局兜底音效。 */
 XGE_API int xgeSoundFallbackGet(xge_sound pSound);
-/* 清除全局兜底音效。 */
+/* Thread-safe, idempotent clear, also allowed during shutdown cleanup. Cold
+ * Unit clears pre-init configuration. Existing voices remain independent. */
 XGE_API void xgeSoundFallbackClear(void);
 /* 触发音效播放（可重叠）。 */
 XGE_API int xgeSoundPlay(xge_sound pSound);
@@ -2476,6 +2479,8 @@ XGE_API int xgeSoundFreeChecked(xge_sound pSound);
  * Existing in-place records must be zero initialized and cannot be overwritten
  * while live. Public record layouts remain unchanged. */
 XGE_API int xgeSoundCreateOwned(xge_sound* out,const char* path,xge_audio_group group);
+/* Independent stable Sound from one retained fallback-path snapshot. */
+XGE_API int xgeSoundFallbackCreateOwned(xge_sound* out);
 XGE_API int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc);
 XGE_API int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group);
 XGE_API int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group);

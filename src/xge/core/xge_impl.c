@@ -238,7 +238,6 @@ typedef struct xge_context_t {
 	float fSceneAccumulator;
 	xge_texture_t tFallbackTexture;
 	xge_font_t tFallbackFont;
-	char* sFallbackSoundPath;
 	xge_texture_upload_node_t* pTextureUploadHead;
 	xge_texture_upload_node_t* pTextureUploadTail;
 	void* pShapeAutoVertices;
