@@ -22,9 +22,11 @@ def main():
     parser.add_argument('--baseline',action='store_true')
     parser.add_argument('--graphics-coupling-baseline',action='store_true')
     parser.add_argument('--allocator-baseline',action='store_true')
+    parser.add_argument('--resident-oom',action='store_true',help='Keep the same audio engine alive across allocation prefixes')
+    parser.add_argument('--resident-oom-baseline',action='store_true')
     args=parser.parse_args()
-    assert sum((args.baseline,args.graphics_coupling_baseline,args.allocator_baseline))<=1
-    control=args.baseline or args.graphics_coupling_baseline or args.allocator_baseline
+    assert sum((args.baseline,args.graphics_coupling_baseline,args.allocator_baseline,args.resident_oom_baseline))<=1
+    control=args.baseline or args.graphics_coupling_baseline or args.allocator_baseline or args.resident_oom_baseline
     root,tests,static,runtime,header,out=[value.resolve() for value in
         (args.root,args.test_root,args.static,args.runtime,args.host_header,args.out)]
     sha=lambda path:hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -54,7 +56,7 @@ def main():
     else:
         env['LD_LIBRARY_PATH']=str(runtime.parent)+':'+env.get('LD_LIBRARY_PATH','')
     report=dict(passed=False,scope=__doc__,baseline=control,
-        baselineKind='unsafe-shutdown' if args.baseline else 'recovered-allocation-diagnostic' if args.allocator_baseline else 'intermediate-graphics-coupling' if control else None,
+        baselineKind='resident-file-allocation' if args.resident_oom_baseline else 'unsafe-shutdown' if args.baseline else 'recovered-allocation-diagnostic' if args.allocator_baseline else 'intermediate-graphics-coupling' if control else None,
         shippingDelivery=False,audioDevice=False,window=False,networkTests=False,
         inputs=inputs,rows=[])
 
@@ -95,11 +97,11 @@ def main():
         # The fixture provides exactly one production aggregate. Do not pull
         # another copy from the archive, which could obscure the private state.
         assert '('+member+')' not in linkmap.read_text(errors='replace')
-        modes=range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(13)
+        modes=(13,) if args.resident_oom_baseline else range(13,16) if args.resident_oom else range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(16)
         for mode in modes:
             text=run(optimization+'-'+str(mode),[binary,str(mode)],out,control)
             if control:
-                expected=b'!xrtGetError()' if args.allocator_baseline else b'xgeGraphicsOwnedResourceCount()==0' if args.graphics_coupling_baseline else b'xgeAudioIsReady()' if mode<2 else b'before.LiveCount==after.LiveCount'
+                expected=b'before.LiveCount==after.LiveCount' if args.resident_oom_baseline else b'!xrtGetError()' if args.allocator_baseline else b'xgeGraphicsOwnedResourceCount()==0' if args.graphics_coupling_baseline else b'xgeAudioIsReady()' if mode<2 else b'before.LiveCount==after.LiveCount'
                 assert expected in text
             elif mode==4:
                 assert b'Audio ownership budgets:' in text

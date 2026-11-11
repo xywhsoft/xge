@@ -1,0 +1,101 @@
+{
+  "schema": "xge-audio-resident-1",
+  "scope": "miniaudio synchronous connector failure cleanup before engine shutdown",
+  "passed": true,
+  "shippingDelivery": false,
+  "audioDevice": false,
+  "window": false,
+  "networkTests": false,
+  "compiledSource": {
+    "extlibs/miniaudio/miniaudio.h": "884b16bb398a5104753692bdd543f5c91062d4604636ed110a5d3adc4ff3c004"
+  },
+  "unpatchedSourceSha256": "ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89",
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r54.json",
+    "sha256": "f933b23689a3cb76bde7518c5834fc897b33606da958e21b591ad8bd5f015cbb"
+  },
+  "testSource": {
+    "tests/xge/xge_audio_lifetime_test.c": "8b69610c6653d8491176fae086083225c06008e8257bc5b287210c2aa2a145e6",
+    "tools/test/check_audio_lifetimes.py": "22e0d00d360c13217f98e5ef1275a44f90a183e0b9195565b177c67ed388ce75"
+  },
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-lifetimes-win-r1\\results.json",
+      "sha256": "3fd3547f447613540a7c2d37e8af8b16bd36770bbaf2cd435246b342c67e755e",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-references-win-r1\\results.json",
+      "sha256": "31433233b3a80d6be50cd54c3a060563aef5f690595bc6449b5935db30c0f3d3",
+      "checks": 24
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-clip-win-r1\\results.json",
+      "sha256": "ee500936c150468a2f1936b5df5ff0c9002566d196ea65ac6f60c073020dcb15",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-lifetimes-linux-r1\\results.json",
+      "sha256": "64862a35d166323beba503e66aef0a7ed84621ca940948efccdcdb76c5695c39",
+      "checks": 34
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-references-linux-r1\\results.json",
+      "sha256": "8e316ae27c5396a9a07869dc935e5b744d4696aaa9f8cfc6e1961f794053d813",
+      "checks": 24
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-final-clip-linux-r1\\results.json",
+      "sha256": "b7953139a4c663b3486854b896a41631fa42293d293a99f806a953990f5f189f",
+      "checks": 16
+    }
+  ],
+  "controls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-resident-baseline-win-r2\\results.json",
+      "sha256": "b7c0ea2c8faf675072ec0944143d5c474bd72b3512a38e6d872bed1b5cded75f",
+      "checks": 4
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\audio-resident-baseline-linux-r2\\results.json",
+      "sha256": "0f2f1898e0cb52bdc2bbb7c6bbcf41d540f935caa236e75094e3134b27e9c845",
+      "checks": 4
+    }
+  ],
+  "builds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r54\\build-report.json",
+      "sha256": "49abe03c574661295f546e9134bd251b5bed944e31aaedf1575b13067e7e7b60",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r54\\xge3_host.dll",
+        "sha256": "4858b07a42c8fdcc4055dbee87d5b3ddd90b5035496a2b38df3a954887351439"
+      }
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r54\\build-report.json",
+      "sha256": "bf8e8d1bc17d5607845a81363a26163b1e4af650cb3a6593dce069d17a94a1bb",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r54\\libxge3_static.a",
+        "sha256": "0c43bd15ef9fdcdbdc5cb1fbae9a0627767a274c88f75fb66b705e47a2fabcee"
+      }
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r54\\build-report.json",
+      "sha256": "ae5cfc76629be6aeb94af889136fbe0ebd45903aca4509ae9a0e7516a9c3b816",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r54\\libxge3_host.so",
+        "sha256": "6e682495a7851544c5e078971efe7cd001bfc6745b0b925190ffb5ea8cf290cf"
+      }
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r54\\build-report.json",
+      "sha256": "88fed8001d98d1fcdd6d4938840b8145fda05d9941aa51bc69c2648f53d2fab3",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r54\\libxge3_static.a",
+        "sha256": "ff197a76d39e80f9cc28164d0d03cc3ddc056389fad04115a6dca254fa375d56"
+      }
+    }
+  ],
+  "checks": 148,
+  "controlChecks": 8
+}

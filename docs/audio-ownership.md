@@ -107,3 +107,21 @@ Raw evidence and matched build/source hashes are indexed in
 `docs/validation/audio-ownership-20261111.json`. The no-device tests do not prove
 physical device playback, complete xlang audio bindings, language module-global
 code residency or a final SDK/IDE distribution.
+
+## Resident-engine allocation failures
+
+The follow-up test keeps one audio engine alive across every file-construction
+failure, rather than relying only on a final engine shutdown. It exposed a
+miniaudio v0.11.25 synchronous connector failure that retained a 112-byte cache
+node until engine destruction. The local vendor fix returns the acquired node
+and uninitializes the base before returning the failure; successful playback
+and public ABI are unchanged. See `extlibs/miniaudio/XGE_PATCHES.md` for pinned
+header hashes and the exact patch boundary.
+
+Modes 13-15 check 64 caller-thread allocation prefixes each for Sound, Music and
+Stream, with exact live-heap/parent balance after every iteration. Both platforms
+pass at O0/O2. The unpatched Sound controls fail before engine shutdown on both
+platforms at both optimization levels. Together with existing lifetime/reference/
+PCM regressions, this follow-up has 148 passing rows and 8 expected control rows,
+indexed by `docs/validation/audio-resident-20261111.json`. Worker-thread failure
+injection and physical audio-device behavior are outside this check.

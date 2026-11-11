@@ -89,7 +89,7 @@ static void* wrongThread(void* raw)
 #endif
 int main(int argc,char** argv)
 {
-    assert(argc==2);int mode=atoi(argv[1]);assert(mode>=0 && mode<=12);begin();
+    assert(argc==2);int mode=atoi(argv[1]);assert(mode>=0 && mode<=15);begin();
     if(mode==0){
         xge_audio_group_t group={0};assert(xgeAudioGroupInit(&group)==XGE_OK);
         xgeAudioUnit();assert(xgeAudioIsReady());xrtClearError();
@@ -195,6 +195,28 @@ int main(int argc,char** argv)
         }
         assert(failed && passed);assert(!remove("audio-lifetime.wav"));
         printf("Audio file ownership budgets: %d rejected, %d successful (mode %d)\n",failed,passed,mode);
+    }
+    if(mode>=13){
+        FILE* file=fopen("audio-resident.wav","wb");assert(file);
+        assert(fwrite(wave,1,sizeof(wave),file)==sizeof(wave));assert(!fclose(file));
+        xge_audio_group_t group={0};assert(xgeAudioGroupInit(&group)==XGE_OK);
+        int failed=0,passed=0;
+        for(unsigned budget=0;budget<64;++budget){
+            xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
+            assert(xrtMemDebugFailAfter(budget));xge_sound sound=NULL;int result;
+            if(mode==14){xge_music music=NULL;result=xgeMusicCreateOwned(&music,"audio-resident.wav",&group);sound=(xge_sound)music;}
+            else if(mode==15){xge_stream stream=NULL;result=xgeStreamCreateOwned(&stream,"audio-resident.wav",&group);sound=(xge_sound)stream;}
+            else result=xgeSoundCreateOwned(&sound,"audio-resident.wav",&group);
+            xrtMemDebugFailClear();
+            if(result==XGE_OK){++passed;assert(sound && !xrtGetError());assert(xgeSoundFreeChecked(sound)==XGE_OK);}
+            else{++failed;assert(!sound);xrtClearError();}
+            assert(!g_xge.iAudioCount && testAudioGroups==1);
+            xrtMemDebugSnapshot(&after);
+            assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
+            assert(before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
+        }
+        assert(failed && passed);xgeAudioGroupFree(&group);assert(!remove("audio-resident.wav"));
+        printf("Audio resident budgets: %d rejected, %d successful (mode %d)\n",failed,passed,mode);
     }
     if(mode==8){
         xge_audio_group_t group={0};assert(xgeAudioGroupInit(&group)==XGE_OK);

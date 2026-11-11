@@ -71177,6 +71177,14 @@ static ma_result ma_resource_manager_data_buffer_init_ex_internal(ma_resource_ma
             ma_atomic_exchange_i32(&pDataBuffer->result, result);
 
             ma_resource_manager_pipeline_notifications_signal_all_notifications(&notifications);
+            /* XGE local fix: a failed connector still owns the acquired node
+             * and initialized base. The caller frees the outer buffer on
+             * failure, so return both here while the resource manager lives. */
+            if (result != MA_SUCCESS) {
+                ma_resource_manager_data_buffer_node_unacquire(pResourceManager, pDataBufferNode, NULL, NULL);
+                ma_data_source_uninit(&pDataBuffer->ds);
+                pDataBuffer->pNode = NULL;
+            }
             goto done;
         } else {
             /* The node's data supply isn't initialized yet. The caller has requested that we load asynchronously so we need to post a job to do this. */
