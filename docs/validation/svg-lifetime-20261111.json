@@ -1,0 +1,223 @@
+{
+  "schema": "xge-svg-lifetime-1",
+  "scope": "Native SVG reentry, reference/content cleanup, root tree and unsigned Base64 prerequisites; not complete language SVG integration",
+  "passed": true,
+  "shippingDelivery": false,
+  "xlangSvgIntegrationComplete": false,
+  "publicHeadersChanged": false,
+  "window": false,
+  "networkTests": false,
+  "audioDevice": false,
+  "compiledSource": {
+    "src/xge/render/xge_svg.c": "7c32486b8967058be6e4ce841fd3aade4aff2ce2850751c502f5e8cfd133ef69"
+  },
+  "testSource": {
+    "tests/xge/xge_svg_lifetime_test.c": "600c20842af7294cb0b0150bc806f5b6bea16ab16601d0d627664df023e1efeb",
+    "tests/xge/xge_svg_public_test.c": "7d36d82055aa2c12ad3bcf738098ffe6c5ce9d95c5f47354d13ba5298323a347",
+    "tools/test/check_svg_lifetimes.py": "3e915d00760b422704895ce957654cb5d3f5227eaf8720e4269e481f42b38b52",
+    "tools/test/check_svg_public.py": "df402b9e50bd7812b5ae3a292efb145eab3ce92e5400f8a1159c8e4c452c0ded"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r59.json",
+    "sha256": "d0cb8dfa0ff9b3cbbe8c76317d570af0352be1923738bea3dc60e2f9cc0ec140"
+  },
+  "originalFullBuilds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r56\\build-report.json",
+      "sha256": "804d26ce6775529f2e142cf7908e021e1eaa5759cacf8e18a86adf5c74c879dd",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r56\\xge3_host.dll",
+        "sha256": "64ba5f1a836ddcaee20c13ae8493d6006ebaa291df766b2c91bb52c97276f971"
+      },
+      "originalFullParent": true,
+      "compiledObjects": 146,
+      "reusedObjects": 0
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r56\\build-report.json",
+      "sha256": "54ed7cc886077ba8506eb17720b93fe095aca22050e8637fa1dca15bd2e7c53c",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r56\\libxge3_static.a",
+        "sha256": "85acb3f3854607bca3f369b9284e1273141aa23c622b1931ea8fd64e85d0432b"
+      },
+      "originalFullParent": true
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r56\\build-report.json",
+      "sha256": "50d18943c0cca24c8157d8dc4494362757693e7cc0620d812de328c66e5ce97e",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r56\\libxge3_host.so",
+        "sha256": "a2bb9069ea4971c44ca60969dbd2a332bc6739c64684444ef9b6106706657484"
+      },
+      "originalFullParent": true,
+      "compiledObjects": 146,
+      "reusedObjects": 0
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r56\\build-report.json",
+      "sha256": "b7a838e973628cdcdc2c2154e14455a5349e25758e97dde2ba6a51a778ba9397",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r56\\libxge3_static.a",
+        "sha256": "160d60042e36743c226f228bc0832b4fcd59ead3faea92700bc1d316d19250f8"
+      },
+      "originalFullParent": true
+    }
+  ],
+  "matchedBuilds": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r59\\build-report.json",
+      "sha256": "0067e02d505b9de807379dbfdbb740a3286b6638ea7221f8a7e45305bb47fd68",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r59\\xge3_host.dll",
+        "sha256": "4af6df4a4e689dba0fba141e40461a5dcf16946e9e3e09b37fb45585515ed76e"
+      },
+      "originalFullParent": false,
+      "compiledObjects": 1,
+      "reusedObjects": 145
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r59\\build-report.json",
+      "sha256": "1581629a47379481a3c72f5a8bc0e523b4b8e546c59b88100f2f2c7a205b74c1",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r59\\libxge3_static.a",
+        "sha256": "53e67abd1a047136e1e6ddd04654cef7348713a765c9605e437e04baa1c8771f"
+      },
+      "originalFullParent": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r59\\build-report.json",
+      "sha256": "b76a2ca4b191171e4ec9a17f4a02a1d114033a6eba256f6f57c7c1fd224458f1",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r59\\libxge3_host.so",
+        "sha256": "d9f9412e43e085b3293b7e2ad8cf7faf1e607abaf6baa7be0b6e7214e11841a7"
+      },
+      "originalFullParent": false,
+      "compiledObjects": 1,
+      "reusedObjects": 145
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r59\\build-report.json",
+      "sha256": "2e9b532edb937b5a27c443d72adb3a72273ac17fd0fb854bb47392833dc6bb47",
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r59\\libxge3_static.a",
+        "sha256": "3c49d786137c8a666a79c742bfda1720159c8cab4ea925ada1ef0752c27f7934"
+      },
+      "originalFullParent": false
+    }
+  ],
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-final-win-r4\\results.json",
+      "sha256": "1ef3040afccff7dd34561edbf18d56ddc109a8a293668c320392f2c60e24041a",
+      "checks": 36
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-public-win-r4\\results.json",
+      "sha256": "b84e9723be5a19c265cb8245bd9c5d0dc53cb6a57fd3512b84666785ac7a48de",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-final-linux-r4\\results.json",
+      "sha256": "5627cb438bffef422619b27ff7db66a957eacb337ed005e4c2b72f33e7aab823",
+      "checks": 36
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-public-linux-r4\\results.json",
+      "sha256": "21c7cfd5cb396fce6586452fa89f25c0bf99700869311128c1ef003989ff6b8b",
+      "checks": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-sanitizer-linux-r2\\results.json",
+      "sha256": "b7359497efc4eec5dfa73cf848a35c2fa01973d9c162d60592d33d457194c7da",
+      "checks": 18
+    }
+  ],
+  "checks": 122,
+  "controls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-baseline-win-r3\\results.json",
+      "sha256": "94b55da333b33abf998865700a6732a7607a160220e7bee29a937225da930b37",
+      "checks": 18
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-baseline-linux-r3\\results.json",
+      "sha256": "f5cd9c076d7a3ff8612d5fb7ca053138ad7f2447c28d0d4193e367388eef1cea",
+      "checks": 18
+    }
+  ],
+  "controlChecks": 36,
+  "controlFixtureSnapshot": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-fixture-before-font-retain-r2.c",
+    "sha256": "0ef7b90782de160f93d7e9fd64b552b6d88abe4eaa94c22ccdd219a15ddfe571"
+  },
+  "controlRunnerSnapshot": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-lifetime-runner-r58-final.py",
+    "sha256": "1afab0a8a7e0ac40b064fcf094b2484d9266a69d52ae3f9481420f52abd3c083"
+  },
+  "ubsanOldCodeReproduction": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-sanitizer-linux-r1\\results.json",
+    "sha256": "91ed1d0dada2668776fbd83d8e2bd1007f639227e5e23bbf906188a368043b0c"
+  },
+  "ubsanDiagnosticCorpus": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\svg-sanitizer-diagnostics-linux-r1\\results.json",
+    "sha256": "e77174096ccb00c6754752a0e9a2bd2d02df6317d7e6f7f3e8eeda7e478b492f"
+  },
+  "oldBase64FunctionSha256": "00da58ed9e8176115eb237020209e6704a491d43302f96eead14c67398c092b5",
+  "privateDocumentBytesBefore": 9408,
+  "privateDocumentBytesAfter": {
+    "win": {
+      "O0": 9416,
+      "O2": 9416
+    },
+    "linux": {
+      "O0": 9416,
+      "O2": 9416
+    }
+  },
+  "privateDocumentRequestedByteDelta": 8,
+  "allocationPrefixes": {
+    "win": {
+      "O0-8": {
+        "failures": 24,
+        "successes": 72
+      },
+      "O0-13": {
+        "failures": 42,
+        "successes": 86
+      },
+      "O2-8": {
+        "failures": 24,
+        "successes": 72
+      },
+      "O2-13": {
+        "failures": 42,
+        "successes": 86
+      }
+    },
+    "linux": {
+      "O0-8": {
+        "failures": 24,
+        "successes": 72
+      },
+      "O0-13": {
+        "failures": 42,
+        "successes": 86
+      },
+      "O2-8": {
+        "failures": 24,
+        "successes": 72
+      },
+      "O2-13": {
+        "failures": 42,
+        "successes": 86
+      }
+    }
+  },
+  "canonicalXrtSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "limitations": [
+    "CPU-only valid project-owned embedded fonts and bounded local functional inputs; no renderer/window/audio device/network or timing benchmark.",
+    "ASan/UBSan instrument the authoritative aggregate; remaining original matched full r56 archive objects and host XRT are uninstrumented.",
+    "Caller-serialized native SVG documents/cache remain externally synchronized; borrowed paints still expire on content replacement.",
+    "Safe language paint observation, complete declarations, fixed output extents and final current-mainline SDK/compiler/IDE/help delivery remain separate gates."
+  ]
+}

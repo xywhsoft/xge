@@ -545,6 +545,10 @@ struct xge_svg_t {
 	int arrLastChildByDepth[XGE_SVG_STACK_MAX];
 	xge_svg_element_stack_item_t arrElementStack[XGE_SVG_STACK_MAX];
 	int iElementStackTop;
+	/* Caller-serialized CPU documents. Active operations retain the document;
+	 * callbacks cannot replace its content while traversal/loading uses it. */
+	uint32_t iActiveTraversals;
+	bool bLoading;
 };
 
 static xge_svg_cache_entry_t* g_xgeSvgCacheHead;
@@ -2010,8 +2014,9 @@ static int __xgeSvgDefAddImage(xge_svg_def_t* pDef, const xge_svg_image_item_t* 
 		pDef->pImages = pImages;
 		pDef->iImageCapacity = iCapacity;
 	}
+	iRet = xgeSvgAddRef(pImage->pSvg);
+	if ( iRet != XGE_OK ) return iRet;
 	pDef->pImages[pDef->iImageCount] = *pImage;
-	xgeSvgAddRef(pImage->pSvg);
 	if ( pImage->pMaskScene != NULL ) {
 		iRet = xgeShapeExSceneAddRef(pImage->pMaskScene);
 		if ( iRet != XGE_OK ) {
@@ -11047,19 +11052,18 @@ static int __xgeSvgAddImageItemCopy(xge_svg pSvg, const xge_svg_image_item_t* pI
 	}
 	pItem = &pSvg->pItems[pSvg->iItemCount];
 	memset(pItem, 0, sizeof(*pItem));
+	iRet = xgeSvgAddRef(pImage->pSvg);
+	if ( iRet != XGE_OK ) return iRet;
 	pItem->iType = XGE_SVG_DRAW_ITEM_SVG_IMAGE;
 	pItem->u.tImage = *pImage;
-	iRet = xgeSvgAddRef(pItem->u.tImage.pSvg);
-	if ( iRet != XGE_OK ) {
-		__xgeSvgDrawItemReset(pItem);
-		return iRet;
-	}
-	if ( pItem->u.tImage.pMaskScene != NULL ) {
-		iRet = xgeShapeExSceneAddRef(pItem->u.tImage.pMaskScene);
+	pItem->u.tImage.pMaskScene = NULL;
+	if ( pImage->pMaskScene != NULL ) {
+		iRet = xgeShapeExSceneAddRef(pImage->pMaskScene);
 		if ( iRet != XGE_OK ) {
 			__xgeSvgDrawItemReset(pItem);
 			return iRet;
 		}
+		pItem->u.tImage.pMaskScene = pImage->pMaskScene;
 	}
 	pSvg->iItemCount++;
 	return XGE_OK;
@@ -12753,7 +12757,7 @@ static int __xgeSvgDecodeBase64(const char* sText, unsigned char** ppData, int* 
 	unsigned char* pData;
 	size_t iLen;
 	size_t iCapacity;
-	int iValue;
+	uint32_t iValue;
 	int iBits;
 	int iCount;
 
@@ -12763,7 +12767,9 @@ static int __xgeSvgDecodeBase64(const char* sText, unsigned char** ppData, int* 
 	*ppData = NULL;
 	*pSize = 0;
 	iLen = strlen(sText);
-	iCapacity = (iLen * 3u) / 4u + 4u;
+	/* Preserve the allocation bound without overflowing the multiplication.
+	 * Only low pending bits matter; discarded high bits wrap unsigned. */
+	iCapacity = (iLen / 4u) * 3u + ((iLen % 4u) * 3u) / 4u + 4u;
 	pData = (unsigned char*)xrtMalloc(iCapacity);
 	if ( pData == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
@@ -12786,7 +12792,7 @@ static int __xgeSvgDecodeBase64(const char* sText, unsigned char** ppData, int* 
 			xrtFree(pData);
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
-		iValue = (iValue << 6) | iDigit;
+		iValue = (iValue << 6) | (uint32_t)iDigit;
 		iBits += 6;
 		if ( iBits >= 8 ) {
 			iBits -= 8;
@@ -13032,8 +13038,9 @@ static int __xgeSvgAddImageItem(xge_svg pSvg, const xge_svg_style_t* pStyle, xge
 	}
 	pItem = &pSvg->pItems[pSvg->iItemCount];
 	memset(pItem, 0, sizeof(*pItem));
+	iRet = xgeSvgAddRef(pChildSvg);
+	if ( iRet != XGE_OK ) return iRet;
 	pItem->iType = XGE_SVG_DRAW_ITEM_SVG_IMAGE;
-	xgeSvgAddRef(pChildSvg);
 	pItem->u.tImage.pSvg = pChildSvg;
 	pItem->u.tImage.tStyle = *pStyle;
 	pItem->u.tImage.tRect = tRect;
@@ -16029,6 +16036,8 @@ static int __xgeSvgCloneFontFaces(xge_svg pSource, xge_svg pClone)
 	return XGE_OK;
 }
 
+static int __xgeSvgContentClear(xge_svg pSvg);
+
 int xgeSvgCreate(xge_svg* ppSvg)
 {
 	xge_svg pSvg;
@@ -16071,6 +16080,7 @@ int xgeSvgClone(xge_svg pSvg, xge_svg* ppClone)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	*ppClone = NULL;
+	if ( pSvg->bLoading ) return XGE_ERROR_BUSY;
 	iRet = xgeSvgCreate(&pClone);
 	if ( iRet != XGE_OK ) return iRet;
 
@@ -16128,32 +16138,15 @@ fail:
 
 void xgeSvgDestroy(xge_svg pSvg)
 {
-	if ( !__xgeSvgValid(pSvg) ) {
+	if ( !__xgeSvgValid(pSvg) || (pSvg->iRefCount <= 0) ) {
 		return;
 	}
 	pSvg->iRefCount--;
 	if ( pSvg->iRefCount > 0 ) {
 		return;
 	}
-	__xgeSvgSyntheticPaintReset(&pSvg->tPicturePaint);
-	__xgeSvgSyntheticPaintReset(&pSvg->tRootPaint);
-	__xgeSvgSyntheticPaintReset(&pSvg->tContentPaint);
-	__xgeSvgSyntheticPaintReset(&pSvg->tDocumentPaint);
-	__xgeSvgDefsClear(pSvg);
-	__xgeSvgPatternsClear(pSvg);
-	__xgeSvgClipPathsClear(pSvg);
-	__xgeSvgMasksClear(pSvg);
-	__xgeSvgFiltersClear(pSvg);
-	__xgeSvgLinearGradientsClear(pSvg);
-	__xgeSvgRadialGradientsClear(pSvg);
-	__xgeSvgStyleRulesClear(pSvg);
-	__xgeSvgPendingUsesClear(pSvg);
-	__xgeSvgPendingShapeResourcesClear(pSvg);
-	__xgeSvgDrawItemsClear(pSvg);
-	__xgeSvgFontCacheClear(pSvg);
-	__xgeSvgElementNodesClear(pSvg);
-	xrtFree(pSvg->sBaseDir);
-	pSvg->sBaseDir = NULL;
+	/* One cleanup path also releases unused embedded @font-face entries. */
+	(void)__xgeSvgContentClear(pSvg);
 	pSvg->iMagic = 0;
 	xrtFree(pSvg);
 }
@@ -16163,6 +16156,8 @@ int xgeSvgAddRef(xge_svg pSvg)
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pSvg->iRefCount <= 0 ) return XGE_ERROR_INVALID_STATE;
+	if ( pSvg->iRefCount == INT_MAX ) return XGE_ERROR_OUT_OF_MEMORY;
 	pSvg->iRefCount++;
 	return XGE_OK;
 }
@@ -16176,7 +16171,7 @@ int xgeSvgRefCountGet(xge_svg pSvg, int* pRefCount)
 	return XGE_OK;
 }
 
-int xgeSvgClear(xge_svg pSvg)
+static int __xgeSvgContentClear(xge_svg pSvg)
 {
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -16220,6 +16215,27 @@ int xgeSvgClear(xge_svg pSvg)
 	pSvg->iCurrentElementNode = -1;
 	memset(pSvg->arrLastChildByDepth, 0xff, sizeof(pSvg->arrLastChildByDepth));
 	return XGE_OK;
+}
+
+int xgeSvgClear(xge_svg pSvg)
+{
+	if ( !__xgeSvgValid(pSvg) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pSvg->iActiveTraversals || pSvg->bLoading ) return XGE_ERROR_BUSY;
+	return __xgeSvgContentClear(pSvg);
+}
+
+static int __xgeSvgLoadBegin(xge_svg pSvg)
+{
+	if ( pSvg->iActiveTraversals || pSvg->bLoading ) return XGE_ERROR_BUSY;
+	int status=xgeSvgAddRef(pSvg);
+	if ( status==XGE_OK ) pSvg->bLoading=true;
+	return status;
+}
+
+static void __xgeSvgLoadEnd(xge_svg pSvg)
+{
+	pSvg->bLoading=false;
+	xgeSvgDestroy(pSvg);
 }
 
 static int __xgeSvgFiltersPreScan(xge_svg pSvg, const char* sText, int iSize)
@@ -16292,7 +16308,7 @@ static int __xgeSvgFiltersPreScan(xge_svg pSvg, const char* sText, int iSize)
 	return XGE_OK;
 }
 
-static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, const char* sBaseDir)
+static int __xgeSvgLoadMemoryBody(xge_svg pSvg, const void* pData, int iSize, const char* sBaseDir)
 {
 	char* sText;
 	const char* p;
@@ -16344,7 +16360,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 	if ( !__xgeSvgValid(pSvg) || (pData == NULL) || (iSize <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xgeSvgClear(pSvg);
+	iRet = __xgeSvgContentClear(pSvg);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
@@ -17285,6 +17301,16 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 	return XGE_OK;
 }
 
+static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, const char* sBaseDir)
+{
+	if ( !__xgeSvgValid(pSvg) || (pData == NULL) || (iSize <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status=__xgeSvgLoadBegin(pSvg);
+	if ( status!=XGE_OK ) return status;
+	status=__xgeSvgLoadMemoryBody(pSvg,pData,iSize,sBaseDir);
+	__xgeSvgLoadEnd(pSvg);
+	return status;
+}
+
 int xgeSvgLoadMemory(xge_svg pSvg, const void* pData, int iSize)
 {
 	return __xgeSvgLoadMemoryEx(pSvg, pData, iSize, NULL);
@@ -17299,18 +17325,23 @@ int xgeSvgLoad(xge_svg pSvg, const char* sURI)
 	if ( !__xgeSvgValid(pSvg) || (sURI == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xgeSvgLoadBegin(pSvg);
+	if ( iRet != XGE_OK ) return iRet;
 	sBaseDir = __xgeSvgUriBaseDir(sURI);
 	if ( sBaseDir == NULL ) {
+		__xgeSvgLoadEnd(pSvg);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	iRet = xgeResourceLoad(sURI, &tResource);
 	if ( iRet != XGE_OK ) {
 		xrtFree(sBaseDir);
+		__xgeSvgLoadEnd(pSvg);
 		return iRet;
 	}
-	iRet = __xgeSvgLoadMemoryEx(pSvg, tResource.pData, tResource.iSize, sBaseDir);
+	iRet = __xgeSvgLoadMemoryBody(pSvg, tResource.pData, tResource.iSize, sBaseDir);
 	xgeResourceFree(&tResource);
 	xrtFree(sBaseDir);
+	__xgeSvgLoadEnd(pSvg);
 	return iRet;
 }
 
@@ -17325,7 +17356,8 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 	}
 	for ( pEntry = g_xgeSvgCacheHead; pEntry != NULL; pEntry = pEntry->pNext ) {
 		if ( strcmp(pEntry->sURI, sURI) == 0 ) {
-			xgeSvgAddRef(pEntry->pSvg);
+			iRet = xgeSvgAddRef(pEntry->pSvg);
+			if ( iRet != XGE_OK ) return iRet;
 			*ppSvg = pEntry->pSvg;
 			return XGE_OK;
 		}
@@ -17350,7 +17382,13 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 		xgeSvgDestroy(pSvg);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	xgeSvgAddRef(pSvg);
+	iRet = xgeSvgAddRef(pSvg);
+	if ( iRet != XGE_OK ) {
+		xrtFree(pEntry->sURI);
+		xrtFree(pEntry);
+		xgeSvgDestroy(pSvg);
+		return iRet;
+	}
 	pEntry->pSvg = pSvg;
 	pEntry->pNext = g_xgeSvgCacheHead;
 	g_xgeSvgCacheHead = pEntry;
@@ -18152,6 +18190,7 @@ int xgeSvgPaintMaskShapeSet(xge_svg_paint pPaint, xge_shape_ex pTarget, int iMet
 	     (iMethod < XGE_SHAPE_EX_MASK_ALPHA) || (iMethod > XGE_SHAPE_EX_MASK_DARKEN) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pPaint->pOwner->iActiveTraversals || pPaint->pOwner->bLoading ) return XGE_ERROR_BUSY;
 	iRet = __xgeSvgPaintMaskOwnerShapeCreate(pTarget, &pOwner);
 	if ( iRet != XGE_OK ) return iRet;
 	iRet = __xgeSvgPaintBaseMaskClear(pPaint);
@@ -18179,6 +18218,7 @@ int xgeSvgPaintMaskSceneSet(xge_svg_paint pPaint, xge_shape_ex_scene pTarget, in
 	     (iMethod < XGE_SHAPE_EX_MASK_ALPHA) || (iMethod > XGE_SHAPE_EX_MASK_DARKEN) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pPaint->pOwner->iActiveTraversals || pPaint->pOwner->bLoading ) return XGE_ERROR_BUSY;
 	iRet = __xgeSvgPaintMaskOwnerSceneCreate(pTarget, &pOwner);
 	if ( iRet != XGE_OK ) return iRet;
 	iRet = __xgeSvgPaintBaseMaskClear(pPaint);
@@ -18204,6 +18244,7 @@ int xgeSvgPaintMaskClear(xge_svg_paint pPaint)
 	if ( (pPaint == NULL) || !__xgeSvgValid(pPaint->pOwner) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pPaint->pOwner->iActiveTraversals || pPaint->pOwner->bLoading ) return XGE_ERROR_BUSY;
 	iRet = __xgeSvgPaintBaseMaskClear(pPaint);
 	if ( iRet != XGE_OK ) return iRet;
 	xgeShapeExSceneDestroy(pPaint->pRuntimeMaskOwnerScene);
@@ -18463,6 +18504,7 @@ int xgeSvgPaintClipShapeSet(xge_svg_paint pPaint, xge_shape_ex pClipShape)
 	if ( (pPaint == NULL) || !__xgeSvgValid(pPaint->pOwner) || (pClipShape == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pPaint->pOwner->iActiveTraversals || pPaint->pOwner->bLoading ) return XGE_ERROR_BUSY;
 	iRet = __xgeSvgPaintMaskOwnerShapeCreate(pClipShape, &pOwner);
 	if ( iRet != XGE_OK ) return iRet;
 	iRet = __xgeSvgPaintBaseClipClear(pPaint);
@@ -18485,6 +18527,7 @@ int xgeSvgPaintClipClear(xge_svg_paint pPaint)
 	if ( (pPaint == NULL) || !__xgeSvgValid(pPaint->pOwner) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pPaint->pOwner->iActiveTraversals || pPaint->pOwner->bLoading ) return XGE_ERROR_BUSY;
 	iRet = __xgeSvgPaintBaseClipClear(pPaint);
 	if ( iRet != XGE_OK ) return iRet;
 	xgeShapeExSceneDestroy(pPaint->pRuntimeClipOwnerScene);
@@ -18607,7 +18650,10 @@ static void __xgeSvgPaintChildren(
 {
 	*ppItems = NULL;
 	*pCount = 0;
-	if ( pPaint == &pPaint->pOwner->tRootPaint ) {
+	if ( pPaint == &pPaint->pOwner->tPicturePaint ) {
+		*ppItems = &pPaint->pOwner->tRootPaint;
+		*pCount = 1;
+	} else if ( pPaint == &pPaint->pOwner->tRootPaint ) {
 		*ppItems = &pPaint->pOwner->tContentPaint;
 		*pCount = 1;
 	} else if ( pPaint == &pPaint->pOwner->tContentPaint ) {
@@ -18687,7 +18733,15 @@ int xgeSvgPaintTraverse(xge_svg_paint pPaint, xge_svg_paint_visit_proc onPaint, 
 	if ( (pPaint == NULL) || (onPaint == NULL) || !__xgeSvgValid(pPaint->pOwner) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	xge_svg owner=pPaint->pOwner;
+	if ( owner->bLoading ) return XGE_ERROR_BUSY;
+	if ( owner->iActiveTraversals==UINT32_MAX ) return XGE_ERROR_OUT_OF_MEMORY;
+	iRet = xgeSvgAddRef(owner);
+	if ( iRet != XGE_OK ) return iRet;
+	++owner->iActiveTraversals;
 	iRet = __xgeSvgPaintTraverse(pPaint, onPaint, pUser, 0);
+	--owner->iActiveTraversals;
+	xgeSvgDestroy(owner);
 	return iRet == 1 ? XGE_OK : iRet;
 }
 
