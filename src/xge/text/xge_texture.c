@@ -594,52 +594,69 @@ void xgeImagePremultiply(xge_image pImage)
 	pImage->iFlags |= XGE_IMAGE_PREMULTIPLIED;
 }
 
+typedef struct __xgeImageWriteContext {
+	FILE* pFile;
+	int bFailed;
+} __xgeImageWriteContext;
+
 static void __xgeImageWriteCallback(void* pContext, void* pData, int iSize)
 {
-	FILE* pFile;
+	__xgeImageWriteContext* pWrite = (__xgeImageWriteContext*)pContext;
 
-	pFile = (FILE*)pContext;
-	if ( (pFile != NULL) && (pData != NULL) && (iSize > 0) ) {
-		(void)fwrite(pData, 1, (size_t)iSize, pFile);
+	if ( pWrite && pWrite->pFile && !pWrite->bFailed && pData && iSize > 0 ) {
+		if ( fwrite(pData, 1, (size_t)iSize, pWrite->pFile) != (size_t)iSize ) {
+			pWrite->bFailed = 1;
+		}
 	}
+}
+
+/* stb's filtered and compressed buffers use signed int arithmetic. Keep the
+ * same bounded input contract for file and memory output, before opening a
+ * file, allocating conversion storage or touching the caller's pixel rows. */
+static int __xgeImagePngInputValid(int iWidth, int iHeight, const void* pPixels,
+	int iStride, uint32_t iFlags)
+{
+	if ( pPixels == NULL || iWidth <= 0 || iHeight <= 0 ||
+	     iWidth > (INT_MAX - 1) / 4 ||
+	     iWidth > INT_MAX / (4 * 128) ||
+	     iHeight > INT_MAX / (iWidth * 4 + 1) ||
+	     (uint64_t)(iWidth * 4 + 1) * (uint64_t)iHeight > UINT64_C(256) * 1024 * 1024 ||
+	     (iFlags & ~(XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) != 0u ||
+	     (iFlags & (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ==
+	       (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA) ) return 0;
+	if ( iStride <= 0 ) iStride = iWidth * 4;
+	return iStride >= iWidth * 4 && (size_t)iStride <= SIZE_MAX / (size_t)iHeight;
 }
 
 int xgeImageSavePNGEx(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags)
 {
 	FILE* pFile;
+	__xgeImageWriteContext tWrite;
 	const void* pSavePixels;
 	unsigned char* pStraightPixels;
+	int iSaveStride;
 	int iRet;
 	int x;
 	int y;
 
-	if ( (sPath == NULL) || (iWidth <= 0) || (iHeight <= 0) || (pPixels == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iWidth > INT_MAX / 4 ) {
+	if ( sPath == NULL || !__xgeImagePngInputValid(iWidth, iHeight, pPixels, iStride, iFlags) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( iStride <= 0 ) {
 		iStride = iWidth * 4;
 	}
-	if ( (iStride < iWidth * 4) ||
-		 ((iFlags & ~(XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) != 0u) ||
-		 ((iFlags & (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ==
-		  (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
+	iSaveStride = iStride;
 	pSavePixels = pPixels;
 	pStraightPixels = NULL;
 	if ( (iFlags & XGE_IMAGE_PREMULTIPLIED) != 0u ) {
-		size_t iBytes = (size_t)iStride * (size_t)iHeight;
-		if ( (size_t)iStride != 0u && (iBytes / (size_t)iStride) != (size_t)iHeight ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
+		size_t iBytes = (size_t)iWidth * 4u * (size_t)iHeight;
 		pStraightPixels = (unsigned char*)xrtMalloc(iBytes);
 		if ( pStraightPixels == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-		memcpy(pStraightPixels, pPixels, iBytes);
+		iSaveStride = iWidth * 4;
 		for ( y = 0; y < iHeight; y++ ) {
-			unsigned char* pRow = pStraightPixels + (size_t)y * (size_t)iStride;
+			unsigned char* pRow = pStraightPixels + (size_t)y * (size_t)iSaveStride;
+			memcpy(pRow, (const unsigned char*)pPixels + (size_t)y * (size_t)iStride,
+				(size_t)iSaveStride);
 			for ( x = 0; x < iWidth; x++ ) {
 				unsigned char* pPixel = pRow + x * 4;
 				unsigned int iAlpha = pPixel[3];
@@ -673,8 +690,11 @@ int xgeImageSavePNGEx(const char* sPath, int iWidth, int iHeight, const void* pP
 		if ( pStraightPixels != NULL ) xrtFree(pStraightPixels);
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
-	iRet = stbi_write_png_to_func(__xgeImageWriteCallback, pFile, iWidth, iHeight, 4, pSavePixels, iStride) ? XGE_OK : XGE_ERROR;
-	fclose(pFile);
+	tWrite.pFile = pFile;
+	tWrite.bFailed = 0;
+	iRet = stbi_write_png_to_func(__xgeImageWriteCallback, &tWrite, iWidth, iHeight, 4,
+		pSavePixels, iSaveStride) && !tWrite.bFailed ? XGE_OK : XGE_ERROR;
+	if ( fclose(pFile) != 0 ) iRet = XGE_ERROR;
 	if ( pStraightPixels != NULL ) xrtFree(pStraightPixels);
 	return iRet;
 }
@@ -690,18 +710,9 @@ int xgeImageEncodePNGEx(int iWidth, int iHeight, const void* pPixels,
 	int x, y;
 	if ( ppData == NULL || pSize == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	*ppData = NULL; *pSize = 0u;
-	/* stb_image_write uses signed int arithmetic for its filtered buffer. */
-	if ( pPixels == NULL || iWidth <= 0 || iHeight <= 0 ||
-	     iWidth > (INT_MAX - 1) / 4 ||
-	     iHeight > INT_MAX / (iWidth * 4 + 1) ||
-	     (uint64_t)(iWidth * 4 + 1) * (uint64_t)iHeight > UINT64_C(256) * 1024 * 1024 ||
-	     (iFlags & ~(XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) != 0u ||
-	     (iFlags & (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ==
-	       (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA) )
+	if ( !__xgeImagePngInputValid(iWidth, iHeight, pPixels, iStride, iFlags) )
 		return XGE_ERROR_INVALID_ARGUMENT;
 	if ( iStride <= 0 ) iStride = iWidth * 4;
-	if ( iStride < iWidth * 4 || (size_t)iStride > SIZE_MAX / (size_t)iHeight )
-		return XGE_ERROR_INVALID_ARGUMENT;
 	iSaveStride = iStride;
 	if ( (iFlags & XGE_IMAGE_PREMULTIPLIED) != 0u ) {
 		size_t iBytes = (size_t)iWidth * 4u * (size_t)iHeight;

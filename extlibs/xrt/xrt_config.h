@@ -20,6 +20,9 @@
 #define XRT_MODULE_BUFFER
 #define XRT_MODULE_CODEC_BASE64
 #define XRT_MODULE_COND
+/* PNG writing uses stb's documented compression hook and this shared codec;
+ * its unchecked private stretchy-buffer compressor is not compiled. */
+#define XRT_MODULE_DEFLATE
 #define XRT_MODULE_ERROR_FORMAT
 #define XRT_MODULE_FILE_WHOLE
 #define XRT_MODULE_MAP

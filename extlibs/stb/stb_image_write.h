@@ -1179,7 +1179,7 @@ STBIWDEF unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int s
 
    // each tag requires 12 bytes of overhead
    out = (unsigned char *) STBIW_MALLOC(8 + 12+13 + 12+zlen + 12);
-   if (!out) return 0;
+   if (!out) { STBIW_FREE(zlib); return 0; }
    *out_len = 8 + 12+13 + 12+zlen + 12;
 
    o=out;

@@ -156,6 +156,42 @@ typedef struct xge_input_queue_item_t {
 #define STBIW_MALLOC(sz) xrtMalloc(sz)
 #define STBIW_REALLOC(p, sz) xrtRealloc((p), (sz))
 #define STBIW_FREE(p) xrtFree(p)
+/* stb's built-in compressor assumes successful vector reallocations. Reuse
+ * the shared XRT compressor through stb's supported seam so OOM stays checked.
+ * The returned allocation obeys STBIW_FREE, with no extra copy or XRT instance. */
+static unsigned char* __xgePngZlibCompress(unsigned char* pData, int iSize,
+	int* pOutputSize, int iQuality)
+{
+	xdeflateconfig tConfig;
+	xbytesview tInput;
+	size_t iOutputSize = 0;
+	bytes pOutput;
+	if ( pOutputSize == NULL ) return NULL;
+	*pOutputSize = 0;
+	if ( pData == NULL || iSize < 0 ) return NULL;
+	xrtDeflateConfigInit(&tConfig);
+	tConfig.Format = XDEFLATE_ZLIB;
+	/* stb quality bounds its hash candidates at twice max(5, quality); it is
+	 * not a miniz level. Preserve that search budget and lazy matching. In
+	 * particular native default quality 8 maps to 16 probes (XRT level 4),
+	 * rather than level 8's 512 probes. Comparisons avoid integer overflow. */
+	tConfig.Level = iQuality <= 8 ? 4 : (iQuality <= 16 ? 5 :
+		(iQuality <= 64 ? 6 : (iQuality <= 128 ? 7 :
+		(iQuality <= 256 ? 8 : (iQuality <= 384 ? 9 : 10)))));
+	/* stb adds 57 PNG framing bytes in signed arithmetic. */
+	tConfig.OutputLimit = (uint64_t)INT_MAX - 57u;
+	tInput.Data = pData;
+	tInput.Size = (size_t)iSize;
+	pOutput = xrtDeflateAll(tInput, &tConfig, &iOutputSize);
+	if ( pOutput == NULL ) return NULL;
+	if ( iOutputSize > (size_t)INT_MAX - 57u ) {
+		xrtFree(pOutput);
+		return NULL;
+	}
+	*pOutputSize = (int)iOutputSize;
+	return pOutput;
+}
+#define STBIW_ZLIB_COMPRESS __xgePngZlibCompress
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "extlibs/stb/stb_image_write.h"
 

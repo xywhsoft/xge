@@ -3782,7 +3782,12 @@ static int stbi__jpeg_info_raw(stbi__jpeg *j, int *x, int *y, int *comp)
 static int stbi__jpeg_info(stbi__context *s, int *x, int *y, int *comp)
 {
    int result;
-   stbi__jpeg* j = (stbi__jpeg*) (stbi__malloc(sizeof(stbi__jpeg)));
+   stbi__jpeg* j;
+   /* Inspect buffered bytes without consuming a short callback buffer. Keep
+    * the original parser path when fewer than two bytes are available. */
+   if (s->img_buffer_end - s->img_buffer >= 2 &&
+       (s->img_buffer[0] != 0xff || s->img_buffer[1] != 0xd8)) return 0;
+   j = (stbi__jpeg*) (stbi__malloc(sizeof(stbi__jpeg)));
    if (j == NULL) return stbi__err("outofmem", "Out of memory");
    j->s = s;
    result = stbi__jpeg_info_raw(j, x, y, comp);

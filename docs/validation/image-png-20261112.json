@@ -1,0 +1,347 @@
+{
+  "schema": 1,
+  "passed": true,
+  "checks": 42,
+  "shippingDelivery": false,
+  "scope": "PNG native prerequisite: guarded rows, checked file I/O, recoverable compression/output OOM, non-JPEG info precheck.",
+  "nativeSourceBaseRevision": "2574c579a7d5a7dd2695c56fc6f17daea0022a5c",
+  "canonicalXrtSha256": "41bc24579f4b3207b0434755ca23dd06481af90c05f71e9b365848cf9a7c12d1",
+  "sourceNormalizedSha256": {
+    "src/xge/core/xge_impl.c": "0c37d0ce133730aa4bd00f69988540eadd3eee4bb87a7b90322bdfd43f105804",
+    "src/xge/text/xge_texture.c": "148c759fe27c2334f859f29cf91a6748cab89d8d65cd588f7e7e1243767e2d0b",
+    "extlibs/xrt/xrt_config.h": "22b64e6021315e094fda3d02a0d40aec074bca8c78509efd2eecee47a4ed4580",
+    "extlibs/stb/stb_image.h": "6da9b84bc91e239764deb906897abdd6599f9df022873aca8179a5f434c00615",
+    "extlibs/stb/stb_image_write.h": "d196260ba9be95c377ef4972a583cefef83631765ffbe1576b8e2da2aeabbf79"
+  },
+  "testNormalizedSha256": {
+    "tests/xge/xge_image_png_public_test.c": "38d5e23c99916e8941f02ee517aae6a1504fa5fa220c936944fe6168237d6350",
+    "tests/xge/xge_image_png_io_test.c": "71fafe9d7bba988d968b610b69749c828864e6a2443da9b8f3a3f479105408cb",
+    "tests/xge/xge_image_png_benchmark.c": "e27d7a85c4d80ee7a1c9e0bf5b7d193f0398b82160874563e5688e67f3617761",
+    "tools/test/check_image_png.py": "3f2b4bbec51a2f66cab97b947bad8681c90b0106158fdd038be222851cfe5973"
+  },
+  "cohorts": [
+    {
+      "platform": "win",
+      "qualification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\png-native-win-r4\\results.json",
+        "sha256": "b7e0ee755d5d5f9a0b29c2fe291ccf8926e4db498a3ffe2e5416c154faebc467"
+      },
+      "checks": 20,
+      "inputVerification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-inputs-win-r1.json",
+        "sha256": "ebbcf2614d989b445aeee8f11ba514e1fee7a3ef09d6efaca21324745c90796a"
+      },
+      "sourceFreeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r71-win.json",
+        "sha256": "6b8d0c44a3010e7f21e0fee804470a0c7ffba39013f3dab4eab9df741c4b5ca0"
+      },
+      "builds": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r71\\build-report.json",
+          "sha256": "8f9025a2513782aff5c38972311d72fe7af4564d7fd11bbfeaa685ba1f656d5d",
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r71\\xge3_host.dll",
+            "sha256": "281dac03d56686e642e3e0742501c5dff2e06035993b0bd33620c0ea2dd49ac8"
+          },
+          "compiled": 1,
+          "reused": 145,
+          "qualifiedParent": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-win-r67\\build-report.json",
+            "sha256": "39a574163a78d2e45c5704b041982fbfa362f70f321307d484bea148038cb744"
+          }
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r71\\build-report.json",
+          "sha256": "dafda36c465c2ec05fbba0260d00fde964f50d0a0de21998b38d49db9b0d0624",
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r71\\libxge3_static.a",
+            "sha256": "1d9b0ed9931b85fa220964a17db8fb68a591cfe6723d970fd32ec8b0a0b0107d"
+          },
+          "compiled": 2,
+          "reused": 144,
+          "qualifiedParent": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-win-r67\\build-report.json",
+            "sha256": "13b53f32c00054cffea49bd8f953366abdf41f15420a99ce73b0b9bc5109660a"
+          }
+        }
+      ],
+      "timing": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-win-r65-timing-r1\\results.json",
+          "sha256": "3664989e357d0f2d66f11400e69442070b7fd6951d29ccfcd4803d2fa11cb3d3",
+          "summary": [
+            {
+              "workload": "icon-gradient",
+              "bytes": 95,
+              "iterations": 100,
+              "medianSeconds": 0.002,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-gradient",
+              "bytes": 2984,
+              "iterations": 10,
+              "medianSeconds": 0.044,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-noise",
+              "bytes": 221715,
+              "iterations": 10,
+              "medianSeconds": 0.167,
+              "allocations": 0,
+              "reallocations": 0
+            }
+          ]
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-win-r71-timing-r1\\results.json",
+          "sha256": "d0067ce26772563d522cad00d6b9ec66fef64f4ffe512c730797ce7578ed3279",
+          "summary": [
+            {
+              "workload": "icon-gradient",
+              "bytes": 96,
+              "iterations": 100,
+              "medianSeconds": 0.001,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-gradient",
+              "bytes": 856,
+              "iterations": 10,
+              "medianSeconds": 0.019,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-noise",
+              "bytes": 167932,
+              "iterations": 10,
+              "medianSeconds": 0.111,
+              "allocations": 0,
+              "reallocations": 0
+            }
+          ]
+        }
+      ],
+      "comparisons": [
+        {
+          "workload": "icon-gradient",
+          "beforeBytes": 95,
+          "afterBytes": 96,
+          "cpuRatio": 0.5
+        },
+        {
+          "workload": "image-gradient",
+          "beforeBytes": 2984,
+          "afterBytes": 856,
+          "cpuRatio": 0.4318181818181818
+        },
+        {
+          "workload": "image-noise",
+          "beforeBytes": 221715,
+          "afterBytes": 167932,
+          "cpuRatio": 0.6646706586826348
+        }
+      ],
+      "allocationSamples": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-win-r65-r2\\results.json",
+          "sha256": "8491f3a2d0d0f792cac8ab6c95a36495c6abd0d7915a91c9629b9c3280a93570"
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-win-r71-r1\\results.json",
+          "sha256": "5d089942ca73cc51c5eeed91687487c17dca840688eea640eec1960911b4fdfd"
+        }
+      ],
+      "unusedMatrixSample": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\png-unused-trim-win-r1\\results.json",
+        "sha256": "01945343ff1658a6afd6e09d082dc11e9354eb2152f7f1f7d8d9d114a6110bd3",
+        "deltaBytes": 6144
+      }
+    },
+    {
+      "platform": "linux",
+      "qualification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\png-native-linux-r2\\results.json",
+        "sha256": "b57b02f2bc18337cc13de0dbaff956b9e93cbfe9c0187cd7a36088faa82f1d51"
+      },
+      "checks": 22,
+      "inputVerification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-inputs-linux-r1.json",
+        "sha256": "02a3aec6aa56902f569aecd56093eb5043b26135ba2a4f8d6a47a281b934f8c6"
+      },
+      "sourceFreeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-freeze-r71-linux.json",
+        "sha256": "7eeae223b1fec61b92545b9fe6ec05edfaac7874aa90764a1136cae3a6f41ed8"
+      },
+      "builds": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r71\\build-report.json",
+          "sha256": "bf56c061f28c8ac7c144a9640555926fd06f60b556e68d399875c404979f9762",
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r71\\libxge3_host.so",
+            "sha256": "f6b016db06847c3f49894ba3a754439e7eb59e6e2cfb21ed369bed084f75e80b"
+          },
+          "compiled": 1,
+          "reused": 145,
+          "qualifiedParent": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-host-linux-r67\\build-report.json",
+            "sha256": "79ae14e8f550f115392ac1c27edf816b24524f1d38a0d9e1eea036f72d15392b"
+          }
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r71\\build-report.json",
+          "sha256": "5835a771c38f2560a8b366a6668b3503f1d2c91b9ea1c3e6e64f4f016fb89f4d",
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r71\\libxge3_static.a",
+            "sha256": "d14c6aa9e8eac59070ca3c202bfbffb91b68c044d77d1371402fc4009c5525b7"
+          },
+          "compiled": 2,
+          "reused": 144,
+          "qualifiedParent": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-static-linux-r67\\build-report.json",
+            "sha256": "ed3e6ed6ec5b3935eb419df97fbc6e1c5a119ff04769a3940d0477745d974eee"
+          }
+        }
+      ],
+      "timing": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-linux-r65-timing-r1\\results.json",
+          "sha256": "c44644c4d73afec69b2fe93480a44004385262d19a31ac5da2d7014c75c95558",
+          "summary": [
+            {
+              "workload": "icon-gradient",
+              "bytes": 95,
+              "iterations": 100,
+              "medianSeconds": 0.001981,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-gradient",
+              "bytes": 2984,
+              "iterations": 10,
+              "medianSeconds": 0.042466,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-noise",
+              "bytes": 221715,
+              "iterations": 10,
+              "medianSeconds": 0.153257,
+              "allocations": 0,
+              "reallocations": 0
+            }
+          ]
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-linux-r71-timing-r1\\results.json",
+          "sha256": "5c5504bce90abcb0712de230b296aa657ed6eebb3d03a4ffa55a20959cff8920",
+          "summary": [
+            {
+              "workload": "icon-gradient",
+              "bytes": 96,
+              "iterations": 100,
+              "medianSeconds": 0.00132,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-gradient",
+              "bytes": 856,
+              "iterations": 10,
+              "medianSeconds": 0.019721,
+              "allocations": 0,
+              "reallocations": 0
+            },
+            {
+              "workload": "image-noise",
+              "bytes": 167932,
+              "iterations": 10,
+              "medianSeconds": 0.103219,
+              "allocations": 0,
+              "reallocations": 0
+            }
+          ]
+        }
+      ],
+      "comparisons": [
+        {
+          "workload": "icon-gradient",
+          "beforeBytes": 95,
+          "afterBytes": 96,
+          "cpuRatio": 0.6663301362948005
+        },
+        {
+          "workload": "image-gradient",
+          "beforeBytes": 2984,
+          "afterBytes": 856,
+          "cpuRatio": 0.4643950454481232
+        },
+        {
+          "workload": "image-noise",
+          "beforeBytes": 221715,
+          "afterBytes": 167932,
+          "cpuRatio": 0.6735026785073439
+        }
+      ],
+      "allocationSamples": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-linux-r65-r2\\results.json",
+          "sha256": "40738beae373b7e2206f1697b541b340f064e7c48a9252051cc5bc5b124c62c9"
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\png-measure-linux-r71-r1\\results.json",
+          "sha256": "4719db7b7949b813a241545830bd5f9fac4384f2aca6908d81d28fd5b919ea50"
+        }
+      ],
+      "unusedMatrixSample": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\png-unused-trim-linux-r1\\results.json",
+        "sha256": "4133087ab525d3b79bbbb65f43f438c91325da7ea31620da306a54295ae8b746",
+        "deltaBytes": 22240
+      }
+    }
+  ],
+  "controls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\png-baseline-win-r1\\results.json",
+      "sha256": "2f086e5090397681035dfdc212b7847e0ca32aa643ee5daff3fb298a714a8cd5",
+      "storedOriginalTest": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-source-r66\\tests\\xge\\xge_image_png_public_test.c",
+        "sha256": "a0774a01f41497c431fc8f4b4d9452053ce4e16c3f52a2172a2ac7a0c1f31175"
+      },
+      "scope": "Old r65 protected final-row read; Linux also /dev/full false success"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\png-baseline-linux-r1\\results.json",
+      "sha256": "a9309ea9267ad96d444614cbfa50dabd6d84cc871d63b5ad059e822ce29a15ed",
+      "storedOriginalTest": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-source-r66-linux\\tests\\xge\\xge_image_png_public_test.c",
+        "sha256": "a0774a01f41497c431fc8f4b4d9452053ce4e16c3f52a2172a2ac7a0c1f31175"
+      },
+      "scope": "Old r65 protected final-row read; Linux also /dev/full false success"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\png-native-win-r2\\results.json",
+      "sha256": "4edac658662dfe2ae29be5d58016e4d562e71635d3e57e8cc56e023b824000c6",
+      "scope": "r66 retained original stb compressor: public OOM prefix aborts after the guarded-row fix",
+      "log": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\png-native-win-r2\\host-c11-O0-run.log",
+        "sha256": "2dcd6f794c102a5d6e8694ff829a2f9232a23bad4f851d615304698d0ca4da99"
+      }
+    }
+  ],
+  "limitations": [
+    "Native CPU samples are three rounds, CPU clock, deterministic pixels and O2; no isolated hardware/throughput/RSS claim.",
+    "Heap counters are measured separately from counter-disabled CPU timing; timing-sample zeros are not allocation claims.",
+    "Actual shared-library language import, generic owned byte outputs and full XGE delivery remain separate.",
+    "Matrix-only static artifact grows 6144 bytes on Windows and 22240 bytes on Linux; residual trimming requires follow-up before final delivery.",
+    "Only aggregate UBSan is instrumented; other archive members and the shared runtime image are not."
+  ],
+  "docs": "docs/image-png-contract.md"
+}
