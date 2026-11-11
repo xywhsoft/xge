@@ -881,6 +881,18 @@ typedef xge_emoji_pack_t* xge_emoji_pack;
 /* Borrowed SVG paint handles remain valid until the owning SVG is cleared, reloaded, or destroyed. */
 typedef struct xge_svg_draw_item_t* xge_svg_paint;
 typedef int (*xge_svg_paint_visit_proc)(xge_svg_paint pPaint, void* pUser);
+/* Address-stable, zero-initialized caller storage; never copy an attached link.
+ * Paint observation does not retain its document. All access is serialized by
+ * the caller. Clear/reload/destruction detach before invoking the callback and
+ * before freeing paint storage. The callback may free its own link or unwatch
+ * peers, must return normally, and must not use the invalidated paint. */
+typedef void (*xge_svg_paint_invalidate_proc)(void* pUser);
+typedef struct xge_svg_paint_watch_t {
+	struct xge_svg_paint_watch_t* pNext;
+	struct xge_svg_paint_watch_t** ppPrevious;
+	xge_svg_paint_invalidate_proc onInvalidate;
+	void* pUser;
+} xge_svg_paint_watch_t;
 typedef struct xge_shader_t xge_shader_t;
 typedef xge_shader_t* xge_shader;
 typedef struct xge_material_t xge_material_t;
@@ -3518,6 +3530,12 @@ XGE_API int xgeSvgPaintGetById(xge_svg pSvg, uint32_t iId, xge_svg_paint* ppPain
 XGE_API int xgeSvgPaintGetByName(xge_svg pSvg, const char* sName, xge_svg_paint* ppPaint);
 /* 获取文档根节点。 */
 XGE_API int xgeSvgPaintGetPicture(xge_svg pSvg, xge_svg_paint* ppPaint);
+/* Observe the current content generation. Loading/clearing returns Busy;
+ * already attached links are rejected without disturbing their registration. */
+XGE_API int xgeSvgPaintLifetimeWatch(xge_svg_paint pPaint, xge_svg_paint_watch_t* pLink,
+	xge_svg_paint_invalidate_proc onInvalidate, void* pUser);
+/* O(1), allocation-free and idempotent for detached zero-initialized links. */
+XGE_API void xgeSvgPaintLifetimeUnwatch(xge_svg_paint_watch_t* pLink);
 /* 读取节点数值 id。 */
 XGE_API int xgeSvgPaintIdGet(xge_svg_paint pPaint, uint32_t* pId);
 /* 读取节点名称；未命名返回 XGE_ERROR_NOT_FOUND。 */

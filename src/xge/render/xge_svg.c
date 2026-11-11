@@ -549,6 +549,8 @@ struct xge_svg_t {
 	 * callbacks cannot replace its content while traversal/loading uses it. */
 	uint32_t iActiveTraversals;
 	bool bLoading;
+	bool bClearing;
+	xge_svg_paint_watch_t* pPaintWatches;
 };
 
 static xge_svg_cache_entry_t* g_xgeSvgCacheHead;
@@ -16080,7 +16082,7 @@ int xgeSvgClone(xge_svg pSvg, xge_svg* ppClone)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	*ppClone = NULL;
-	if ( pSvg->bLoading ) return XGE_ERROR_BUSY;
+	if ( pSvg->bLoading || pSvg->bClearing ) return XGE_ERROR_BUSY;
 	iRet = xgeSvgCreate(&pClone);
 	if ( iRet != XGE_OK ) return iRet;
 
@@ -16176,6 +16178,15 @@ static int __xgeSvgContentClear(xge_svg pSvg)
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pSvg->bClearing ) return XGE_ERROR_BUSY;
+	pSvg->bClearing=true;
+	while ( pSvg->pPaintWatches != NULL ) {
+		xge_svg_paint_watch_t* link=pSvg->pPaintWatches;
+		xge_svg_paint_invalidate_proc notify=link->onInvalidate;
+		void* user=link->pUser;
+		xgeSvgPaintLifetimeUnwatch(link);
+		notify(user); /* The detached link may be freed by its callback. */
+	}
 	__xgeSvgSyntheticPaintReset(&pSvg->tPicturePaint);
 	__xgeSvgSyntheticPaintReset(&pSvg->tRootPaint);
 	__xgeSvgSyntheticPaintReset(&pSvg->tContentPaint);
@@ -16214,19 +16225,24 @@ static int __xgeSvgContentClear(xge_svg pSvg)
 	pSvg->iElementStackTop = 0;
 	pSvg->iCurrentElementNode = -1;
 	memset(pSvg->arrLastChildByDepth, 0xff, sizeof(pSvg->arrLastChildByDepth));
+	pSvg->bClearing=false;
 	return XGE_OK;
 }
 
 int xgeSvgClear(xge_svg pSvg)
 {
 	if ( !__xgeSvgValid(pSvg) ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( pSvg->iActiveTraversals || pSvg->bLoading ) return XGE_ERROR_BUSY;
-	return __xgeSvgContentClear(pSvg);
+	if ( pSvg->iActiveTraversals || pSvg->bLoading || pSvg->bClearing ) return XGE_ERROR_BUSY;
+	int status=xgeSvgAddRef(pSvg);
+	if ( status != XGE_OK ) return status;
+	status=__xgeSvgContentClear(pSvg);
+	xgeSvgDestroy(pSvg);
+	return status;
 }
 
 static int __xgeSvgLoadBegin(xge_svg pSvg)
 {
-	if ( pSvg->iActiveTraversals || pSvg->bLoading ) return XGE_ERROR_BUSY;
+	if ( pSvg->iActiveTraversals || pSvg->bLoading || pSvg->bClearing ) return XGE_ERROR_BUSY;
 	int status=xgeSvgAddRef(pSvg);
 	if ( status==XGE_OK ) pSvg->bLoading=true;
 	return status;
@@ -17563,6 +17579,34 @@ int xgeSvgPaintGetPicture(xge_svg pSvg, xge_svg_paint* ppPaint)
 	return XGE_OK;
 }
 
+void xgeSvgPaintLifetimeUnwatch(xge_svg_paint_watch_t* link)
+{
+	if ( link == NULL ) return;
+	if ( link->ppPrevious != NULL ) {
+		*link->ppPrevious=link->pNext;
+		if ( link->pNext != NULL ) link->pNext->ppPrevious=link->ppPrevious;
+	}
+	memset(link,0,sizeof(*link));
+}
+
+int xgeSvgPaintLifetimeWatch(xge_svg_paint paint,xge_svg_paint_watch_t* link,
+	xge_svg_paint_invalidate_proc notify,void* user)
+{
+	if ( paint == NULL || link == NULL || notify == NULL || !__xgeSvgValid(paint->pOwner) )
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if ( link->ppPrevious != NULL ) return XGE_ERROR_INVALID_STATE;
+	xge_svg owner=paint->pOwner;
+	if ( owner->bLoading || owner->bClearing ) return XGE_ERROR_BUSY;
+	if ( owner->iRefCount <= 0 ) return XGE_ERROR_INVALID_STATE;
+	link->pNext=owner->pPaintWatches;
+	link->ppPrevious=&owner->pPaintWatches;
+	link->onInvalidate=notify;
+	link->pUser=user;
+	if ( link->pNext != NULL ) link->pNext->ppPrevious=&link->pNext;
+	owner->pPaintWatches=link;
+	return XGE_OK;
+}
+
 int xgeSvgPaintIdGet(xge_svg_paint pPaint, uint32_t* pId)
 {
 	if ( (pPaint == NULL) || (pId == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -18734,7 +18778,7 @@ int xgeSvgPaintTraverse(xge_svg_paint pPaint, xge_svg_paint_visit_proc onPaint, 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xge_svg owner=pPaint->pOwner;
-	if ( owner->bLoading ) return XGE_ERROR_BUSY;
+	if ( owner->bLoading || owner->bClearing ) return XGE_ERROR_BUSY;
 	if ( owner->iActiveTraversals==UINT32_MAX ) return XGE_ERROR_OUT_OF_MEMORY;
 	iRet = xgeSvgAddRef(owner);
 	if ( iRet != XGE_OK ) return iRet;

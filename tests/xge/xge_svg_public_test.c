@@ -28,6 +28,7 @@ static xge_host_xrt_proc resolve(void* raw,const char* name)
 #endif
 static char document[65536];
 static int documentBytes;
+static void paintInvalidated(void* user){++*(unsigned*)user;}
 typedef struct State {xge_svg svg;unsigned visits,reads,frees;} State;
 static int count(xge_svg_paint paint,void* raw)
 {int type=0;assert(xgeSvgPaintTypeGet(paint,&type)==XGE_OK && type);++*(int*)raw;return 1;}
@@ -88,7 +89,14 @@ int main(int argc,char** argv)
     assert(xgeSvgPaintChildGetAt(picture,0,&child)==XGE_OK);
     assert(xgeSvgPaintParentGet(child,&parent)==XGE_OK && parent==picture);
     State visit={svg,0,0,0};assert(xgeSvgPaintTraverse(picture,traverse,&visit)==XGE_OK && visit.visits>1);
-    assert(xgeSvgClear(svg)==XGE_OK);assert(xgeSvgLoadMemory(svg,document,documentBytes)==XGE_OK);
+    unsigned invalidations=0;
+    xge_svg_paint_watch_t firstWatch={NULL,NULL,NULL,NULL},removedWatch={NULL,NULL,NULL,NULL};
+    assert(xgeSvgPaintLifetimeWatch(child,&firstWatch,paintInvalidated,&invalidations)==XGE_OK);
+    assert(xgeSvgPaintLifetimeWatch(picture,&removedWatch,paintInvalidated,&invalidations)==XGE_OK);
+    xgeSvgPaintLifetimeUnwatch(&removedWatch);
+    assert(xgeSvgClear(svg)==XGE_OK && invalidations==1 && !firstWatch.ppPrevious);
+    xgeSvgPaintLifetimeUnwatch(&firstWatch);
+    assert(xgeSvgLoadMemory(svg,document,documentBytes)==XGE_OK);
     xge_svg clone=NULL;assert(xgeSvgClone(svg,&clone)==XGE_OK && clone);
     xgeSvgDestroy(svg);xgeSvgDestroy(clone);
     assert(xgeSvgCreate(&svg)==XGE_OK);State read={svg,0,0,0};

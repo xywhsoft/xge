@@ -56,3 +56,47 @@ audio device, network or performance benchmark runs in this batch.
 These are native prerequisites. Safe language paint observation, complete SVG
 declarations, output storage contracts, actual rendering and final matched
 delivery remain separate work. No release/IDE installation is qualified here.
+
+## Paint content-generation observation
+
+`xgeSvgPaintLifetimeWatch` and `xgeSvgPaintLifetimeUnwatch` provide native
+invalidation for borrowed paints. The caller supplies one zero-initialized,
+address-stable 32-byte link on the tested x64 ABIs. It does not retain the
+document or make an expired raw paint usable. Keep the document alive and
+serialize access, as for the existing SVG API; never copy an attached link.
+
+Content replacement, Clear and destruction detach observers before notifying
+them and before resetting/freeing any paint storage. Each callback may free its
+own detached link or unwatch/free peers, must return normally and must not use
+the invalidated paint. Cloning does not copy observers. Invalid arguments do
+not start replacement or invalidate old paints. Once replacement starts, an
+allocation failure still invalidates the previous generation; it does not
+restore the old content or its paints.
+
+Clear now pins the document through notification and cleanup, so an invalidator
+may drop the last external reference safely. Reentrant Clear/load/clone/
+traversal and new observation reject the clearing/loading state. Observation
+can be registered during an ordinary traversal, whose independent document
+reference already protects that operation. Duplicate attachment is rejected
+without changing the original subscription; detached unwatch is idempotent.
+
+The private document grows from 9,416 to 9,424 requested bytes on x64. Register
+and unregister are O(1), allocate nothing and introduce no lock; invalidation
+is O(number of observers). Clear adds a reference acquire/release pair.
+Existing parser, native resource, clone and normal language-view allocation/
+bookkeeping costs remain. There is no timing or total-zero-overhead claim.
+
+`docs/validation/svg-watches-20261111.json` indexes full Windows/Linux O2 host
+and static builds (146 native translation units each), separate authoritative
+aggregate O0/O2 tests, actual host/static C11/C++11/C++17 clients and Linux
+aggregate ASan/UBSan: 149 command rows. The remaining archive and host XRT are
+uninstrumented. Tests cover self/peer removal, last-owner release, normal and
+failed replacement, clone independence, reentry, allocation-free observation
+under a zero allocation budget, existing embedded-font allocation sweeps and
+exact heap baselines. No window, GPU, audio device, network or security test ran.
+
+This raises the SVG public function count from 68 to 70. Safe language paint
+declarations and exact status/output borrowed-pointer admission still need
+their own compiler and SDK gates. The xlang fixed-array output gate was closed
+separately in `26701e7f4`. Complete rendering and matched final delivery remain
+open; this native batch does not install release/IDE binaries.
