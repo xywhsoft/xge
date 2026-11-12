@@ -151,7 +151,7 @@ static int doc_write_node(xjsonwriter* w, doc_state* s, uint64_t id)
 }
 XUI_API int xuiDocumentSerialize(xui_document_snapshot s, char** out, uint64_t* bytes)
 {
-    xjsonwriteconfig config; xjsonwriter* w; char* result = NULL; char* copy = NULL; size_t size = 0; int ok;
+    xjsonwriteconfig config; xjsonwriter* w; char* result = NULL; size_t size = 0; int ok;
     if (out) *out = NULL;
     if (bytes) *bytes = 0;
     if (!s || !out || !bytes) return XUI_ERROR_INVALID_ARGUMENT;
@@ -172,11 +172,7 @@ XUI_API int xuiDocumentSerialize(xui_document_snapshot s, char** out, uint64_t* 
     if (ok && xrtJsonWriterEnd(w) && xrtJsonWriterFinish(w)) result = xrtJsonWriterTake(w, &size);
     xrtJsonWriterFree(w);
     if (!result) return XUI_ERROR_OUT_OF_MEMORY;
-    if (size < SIZE_MAX) copy = malloc(size + 1);
-    if (copy) memcpy(copy, result, size + 1);
-    xrtFree(result);
-    if (!copy) return XUI_ERROR_OUT_OF_MEMORY;
-    *out = copy; *bytes = size; return XUI_OK;
+    *out = result; *bytes = size; return XUI_OK;
 }
 static int doc_read_extension_fields(const xvalue* value, uint64_t kind,
     xui_doc_node_desc_t* desc, void** payload)

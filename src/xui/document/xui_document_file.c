@@ -21,7 +21,7 @@ XUI_API int xuiDocumentSnapshotExportFile(xui_document_snapshot snapshot, const 
         result = xuiDocumentSnapshotCopySource(snapshot, NULL, 0, &length);
         if (result != XUI_OK) break;
         if (length >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-        data = malloc((size_t)length + 1); if (!data) return XUI_ERROR_OUT_OF_MEMORY;
+        data = xrtMalloc((size_t)length + 1); if (!data) return XUI_ERROR_OUT_OF_MEMORY;
         result = xuiDocumentSnapshotCopySource(snapshot, data, length + 1, &length); break;
     default: return XUI_ERROR_INVALID_ARGUMENT;
     }

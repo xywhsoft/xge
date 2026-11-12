@@ -21,10 +21,8 @@ static int doc_html_reserve(doc_html* b, size_t extra)
         if (capacity > SIZE_MAX / 2) { capacity = needed; break; }
         capacity *= 2;
     }
-    grown = malloc(capacity);
+    grown = xrtRealloc(b->text, capacity);
     if (!grown) { b->error = XUI_ERROR_OUT_OF_MEMORY; return 0; }
-    if (b->size) memcpy(grown, b->text, b->size);
-    free(b->text);
     b->text = grown; b->capacity = capacity;
     return 1;
 }
@@ -325,7 +323,7 @@ int doc_html_export_children(xui_document_snapshot s, uint64_t parent_id,
         doc_html_node(&b, s->state, DOC_ROOT, NULL, 0, 0);
     else doc_html_children(&b, s->state, parent->children);
     if (!b.error && !b.text) doc_html_put(&b, "");
-    if (b.error) { free(b.text); return b.error; }
+    if (b.error) { xrtFree(b.text); return b.error; }
     *out = b.text; *bytes = b.size; return XUI_OK;
 }
 XUI_API int xuiDocumentExportHtml(xui_document_snapshot s, char** out, uint64_t* bytes)

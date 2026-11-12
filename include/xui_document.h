@@ -21,6 +21,11 @@ typedef struct xui_doc_source_index_t* xui_document_source_index;
 typedef uint64_t xui_doc_node_id;
 #define XUI_DOCUMENT_ROOT UINT64_C(1)
 #define XUI_DOCUMENT_APPEND UINT64_MAX
+/* Public char** exports are independent resident-XRT allocations. Release
+ * through xuiDocumentFreeBuffer; a matched host may also adopt the complete
+ * allocation with xrtFree-compatible ownership. This does not change custom
+ * document-object allocators or borrowed snapshot slices. */
+#define XUI_DOCUMENT_EXPORT_XRT_ALLOCATOR 1u
 
 enum xui_doc_profile {
     XUI_DOCUMENT_RICH = 1,

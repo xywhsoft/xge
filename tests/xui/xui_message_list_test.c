@@ -548,6 +548,10 @@ cleanup:
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
 	}
+	if ( pTarget != NULL && tState.tProxy.surfaceDestroy != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
+		pTarget = NULL;
+	}
 	if ( iFailed ) {
 		return 1;
 	}

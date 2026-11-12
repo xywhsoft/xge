@@ -188,7 +188,7 @@ static void __xuiMessageAccessibleClearDocumentValues(xui_message_document_bindi
 	uint64_t i;
 	if ( pBinding == NULL ) return;
 	for ( i = 0; i < pBinding->iAccessibleNodeCount; i++ ) {
-		free(pBinding->arrAccessibleNodes[i].sValue);
+		xuiDocumentFreeBuffer(pBinding->arrAccessibleNodes[i].sValue);
 		pBinding->arrAccessibleNodes[i].sValue = NULL;
 	}
 	pBinding->iAccessibleRevision = 0;

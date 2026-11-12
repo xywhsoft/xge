@@ -724,7 +724,7 @@ static int doc_table_copy_reserve(doc_table_copy_buffer* b, size_t bytes)
         if (capacity > SIZE_MAX / 2) { capacity = wanted; break; }
         capacity *= 2;
     }
-    grown = realloc(b->data, capacity); if (!grown) return XUI_ERROR_OUT_OF_MEMORY;
+    grown = xrtRealloc(b->data, capacity); if (!grown) return XUI_ERROR_OUT_OF_MEMORY;
     b->data = grown; b->capacity = capacity; return XUI_OK;
 }
 static int doc_table_copy_append(doc_table_copy_buffer* b, const char* text, size_t bytes)
@@ -841,7 +841,7 @@ XUI_API int xuiDocumentSnapshotCopyTableMatrix(xui_document_snapshot snapshot,
         }
     }
 done:
-    free(output.data); free(scratch.data); doc_free(grid.cells);
+    xrtFree(output.data); xrtFree(scratch.data); doc_free(grid.cells);
     return result;
 }
 int doc_table_expand_selection(doc_state* state, uint64_t table, uint32_t* row,

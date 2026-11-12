@@ -1896,19 +1896,21 @@ int main(void)
         xui_test_proxy_state_t other_proxy;
         xui_context other_context = NULL;
         xui_widget other_list = NULL;
-        int before_changes;
         xuiTestProxyInit(&other_proxy);
         CHECK(xuiCreate(&other_context) == XUI_OK);
         CHECK(xuiSetProxy(other_context, &other_proxy.tProxy) == XUI_OK);
         CHECK(xuiMessageListCreate(other_context, &other_list, &list_desc) == XUI_OK);
         CHECK(xuiSetRootWidget(other_context, other_list) == XUI_OK);
         CHECK(xuiWidgetSetRect(other_list, (xui_rect_t){0, 0, 480, 190}) == XUI_OK);
-        before_changes = xuiMessageListGetChangeCount(other_list);
         binding.pDocument = document;
-        CHECK(xuiMessageListSetNodeDocument(other_list, "answer", &binding) != XUI_OK);
-        CHECK(xuiMessageListGetNodeDocument(other_list, "answer") == NULL);
-        CHECK(xuiMessageListGetChangeCount(other_list) == before_changes);
+        /* Models are independent of renderer/context ownership. Each binding
+         * retains the model and resolves UI resources in its own context. */
+        CHECK(xuiMessageListSetNodeDocument(other_list, "answer", &binding) == XUI_OK);
+        CHECK(xuiMessageListGetNodeDocument(other_list, "answer") == document);
         xuiDestroy(other_context);
+        xui_document_snapshot shared_snapshot = NULL;
+        CHECK(xuiDocumentAcquireSnapshot(document, &shared_snapshot) == XUI_OK);
+        xuiDocumentSnapshotRelease(shared_snapshot);
     }
 
     proxy.tProxy.surfaceDestroy(&proxy.tProxy, surface);

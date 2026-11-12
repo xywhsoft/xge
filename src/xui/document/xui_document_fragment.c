@@ -495,7 +495,7 @@ XUI_API int xuiDocumentFragmentSerialize(xui_document_fragment fragment,
     if (length >= SIZE_MAX - 16) {
         xuiDocumentFreeBuffer(native); return XUI_DOC_ERROR_LIMIT;
     }
-    wire = malloc((size_t)length + 17);
+    wire = xrtMalloc((size_t)length + 17);
     if (!wire) {
         xuiDocumentFreeBuffer(native); return XUI_ERROR_OUT_OF_MEMORY;
     }

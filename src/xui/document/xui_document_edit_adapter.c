@@ -289,7 +289,7 @@ void doc_view_accessible_clear(doc_view_data* v)
     uint64_t i;
     if (!v) return;
     if (v->accessible_text)
-        for (i = 0; i < v->accessible_count; i++) free(v->accessible_text[i]);
+        for (i = 0; i < v->accessible_count; i++) xuiDocumentFreeBuffer(v->accessible_text[i]);
     free(v->accessible_text); free(v->accessible_ids);
     v->accessible_text = NULL; v->accessible_ids = NULL;
     v->accessible_count = v->accessible_identity = v->accessible_revision = 0;
@@ -367,8 +367,8 @@ static const char* doc_view_accessible_text(doc_view_data* v, uint64_t index, do
     if (!bytes) return "";
     if (v->accessible_text[index]) return v->accessible_text[index];
     if (bytes >= SIZE_MAX) return NULL;
-    text = malloc((size_t)bytes + 1); if (!text) return NULL;
-    if (doc_seq_read(node->text, 0, text, bytes) != XUI_OK) { free(text); return NULL; }
+    text = xrtMalloc((size_t)bytes + 1); if (!text) return NULL;
+    if (doc_seq_read(node->text, 0, text, bytes) != XUI_OK) { xrtFree(text); return NULL; }
     text[bytes] = 0; v->accessible_text[index] = text; return text;
 }
 static int doc_accessible_inline_container(uint32_t kind)
@@ -516,10 +516,11 @@ int doc_accessible_text_selectable_kind(uint32_t kind)
         doc_accessible_structured_container(kind);
 }
 /* These spans are UI-owned. doc_plain_project_position/unproject can read them,
- * but doc_plain_projection_free must not release their malloc storage. */
+ * but doc_plain_projection_free must not release their mixed storage:
+ * text is an export-compatible XRT buffer, spans use the UI's CRT allocator. */
 static void doc_accessible_projection_free(doc_plain_projection* p)
 {
-    free(p->text); free(p->spans); memset(p, 0, sizeof(*p));
+    xrtFree(p->text); free(p->spans); memset(p, 0, sizeof(*p));
 }
 static int doc_accessible_projection_append(doc_plain_projection* p,
     doc_sequence* source, const char* bytes, uint64_t length,
@@ -536,7 +537,7 @@ static int doc_accessible_projection_append(doc_plain_projection* p,
             }
             capacity *= 2;
         }
-        grown_text = realloc(p->text, (size_t)capacity);
+        grown_text = xrtRealloc(p->text, (size_t)capacity);
         if (!grown_text) return XUI_ERROR_OUT_OF_MEMORY;
         p->text = grown_text; p->capacity = capacity;
     }
@@ -648,7 +649,7 @@ static int doc_accessible_projection_build(xui_document_snapshot snapshot,
     out->origin.iKind = XUI_DOC_POSITION_GAP;
     result = doc_accessible_projection_emit(out, node, NULL, 0);
     if (result == XUI_OK && !out->text) {
-        out->text = malloc(1);
+        out->text = xrtMalloc(1);
         if (!out->text) result = XUI_ERROR_OUT_OF_MEMORY;
         else out->text[0] = 0;
     }
@@ -679,7 +680,7 @@ int doc_accessible_snapshot_value(xui_document_snapshot snapshot,
     } else if (doc_accessible_inline_container(node->kind)) {
         result = doc_accessible_inline_measure(snapshot->state, node, &length);
         if (result != XUI_OK) return result;
-        text = malloc((size_t)length + 1);
+        text = xrtMalloc((size_t)length + 1);
         if (!text) return XUI_ERROR_OUT_OF_MEMORY;
         for (i = 0; i < doc_seq_size(node->children); i++) {
             doc_node* child; uint64_t part; const char* substitute;
@@ -695,14 +696,14 @@ int doc_accessible_snapshot_value(xui_document_snapshot snapshot,
     } else {
         length = doc_seq_size(node->text);
         if (length >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-        text = malloc((size_t)length + 1);
+        text = xrtMalloc((size_t)length + 1);
         if (!text) return XUI_ERROR_OUT_OF_MEMORY;
         if (length) result = doc_seq_read(node->text, 0, text, length);
         if (result == XUI_OK) text[length] = 0;
     }
     if (result == XUI_OK && memchr(text, 0, (size_t)length) != NULL)
         result = XUI_DOC_ERROR_UNREPRESENTABLE;
-    if (result != XUI_OK) { free(text); return result; }
+    if (result != XUI_OK) { xrtFree(text); return result; }
     *value = text; *bytes = length;
     return XUI_OK;
 }

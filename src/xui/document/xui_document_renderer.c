@@ -736,7 +736,7 @@ int doc_render_copy_range(xui_document_renderer r, const xui_doc_range_t* range,
         end = (order < 0 ? range->tCaret : range->tAnchor).iOffset;
     }
     if (end - start >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-    *text = malloc((size_t)(end - start) + 1); if (!*text) return XUI_ERROR_OUT_OF_MEMORY;
+    *text = xrtMalloc((size_t)(end - start) + 1); if (!*text) return XUI_ERROR_OUT_OF_MEMORY;
     *bytes = end - start; doc_seq_read(doc_render_source(r), start, *text, *bytes); (*text)[*bytes] = 0; return XUI_OK;
 }
 static int doc_render_clear_checked(xui_document_renderer r,bool* completed)

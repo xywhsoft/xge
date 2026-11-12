@@ -3331,7 +3331,7 @@ int doc_snapshot_copy_range_limit(xui_document_snapshot s, const xui_doc_range_t
         if (c.result != XUI_OK) return c.result;
         exact = c.length;
     }
-    c.text = malloc((size_t)exact + 1);
+    c.text = xrtMalloc((size_t)exact + 1);
     if (!c.text) return XUI_ERROR_OUT_OF_MEMORY;
     c.length = 0;
     if (c.a.iKind == XUI_DOC_POSITION_SOURCE)
@@ -3340,7 +3340,7 @@ int doc_snapshot_copy_range_limit(xui_document_snapshot s, const xui_doc_range_t
         doc_copy_range_node(&c, DOC_ROOT);
     if (c.result != XUI_OK || c.length != exact) {
         result = c.result != XUI_OK ? c.result : XUI_DOC_ERROR_SCHEMA;
-        free(c.text);
+        xrtFree(c.text);
         return result;
     }
     c.text[exact] = 0;

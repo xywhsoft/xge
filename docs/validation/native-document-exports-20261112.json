@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "shippingDelivery": false,
+  "scope": "Seven public owned Document exporters, paired XRT FreeBuffer, JSON writer pointer identity, 448 allocation budgets per O0/O2 run, complete core and full-engine accessibility/MessageList consumers. Hosted/static native SDK builds use the qualified canonical xlang XRT snapshot.",
+  "parentNativeHead": "1ba93e6b3ea49e80d9d821894811caef599634f3",
+  "production": {
+    "include/xui_document.h": "b163fa5448dc811926c28edf9001319b10148b07407882b72ecbacee14a02a38",
+    "src/xui/document/xui_document.c": "a8712c6144c650769150bc97d8c7b57974e3828e88db1af2304905a654504c4a",
+    "src/xui/document/xui_document_io.c": "e8977b5933670a7e0369cde7bf095bd3cd69e68b3c4da15ac26a2c6344c310ca",
+    "src/xui/document/xui_document_html.c": "53991e2b63dc966e883b3586f96d3609a1b3118d3c21abcb276926710bc07d3f",
+    "src/xui/document/xui_document_range.c": "a55f8227c3afd2655e16f4d3c58c36cade15468a3ff75a209b84ee2395441fd7",
+    "src/xui/document/xui_document_commands.c": "65be90323bc5864ed5e66ec13561dd1c192fd17a23b5d4488fffa61e7a49bc1c",
+    "src/xui/document/xui_document_table.c": "ad850e037439f01370e769e22ebe95f651fa746342d7891b888a7edca31bb416",
+    "src/xui/document/xui_document_fragment.c": "2fa3cb676e440d293b8ba70e4f7b5b943b08c5064f9761cc4d49a6e0ec96fd5f",
+    "src/xui/document/xui_document_renderer.c": "e024ed4f742643e60d6392bedebb1eb059b99c6917241b9bc32ad14a80db1064",
+    "src/xui/document/xui_document_edit_adapter.c": "e80719926de4059e0c9afde067b93ab00f20986b333f946f913634b6b6babf87",
+    "src/xui/document/xui_document_accessible_internal.h": "2ab28971605791c9bcb9ce287fb304beba0e0ac69ca461419a945d6501d59fec",
+    "src/xui/controls/xui_message_list.c": "a8a3ee12b220c0f61777f040e2ea9be3baa155e972ed33cee0e117acce8b3f68",
+    "src/xui/document/xui_document_file.c": "c6f7a8b0ec7393e565e621e26c6b4841757d461a37be11dbedc8512b950dee79"
+  },
+  "tests": {
+    "tests/xui/xui_document_export_allocator_test.c": "41c713598390caec414e2efdb906bd75ab1d384eb224ff682af42ee151da42c1",
+    "tests/xui/xui_document_html_character_reference_test.c": "d7e95bd9eb8b4d56460b3ad330aa745ba3838d23d3f1ea2fd4a0ce85df7c13be",
+    "tests/xui/xui_document_html_named_reference_test.c": "ae602c48def468a755fad2acb97f4764ab396cbc5b4cc32580cfe2023585bd8f",
+    "tests/xui/xui_message_document_test.c": "c8e2fe16b8a6dedc03750fde278004aac1f974c24c96f610cb2a09303186e930",
+    "tests/xui/xui_message_list_test.c": "60a41eaf3b2425dc14daab73be7f792a2ace49d4e719a039afb127b9182de1e0",
+    "tools/test/check_document_export_allocator.py": "b5352c5453c2e8337fb4140ff62b2d0d7ff37562a33cdea009be809c6a5d57b4",
+    "tools/test/check_document_export_ui.py": "842e7f3a9d1bd3bd4d50ff853c1cbd1436032e77f5a41b7d2555eab490f633d8"
+  },
+  "commands": {
+    "native-win": 79,
+    "ui-win": 13,
+    "sdk-win": 4,
+    "native-linux": 79,
+    "ui-linux": 13,
+    "sdk-linux": 4
+  },
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-document-export-freeze-r6.json",
+      "sha256": "12dcb3710d4670129c6fa6c4c4da4fd7388d78e3c14444196108b70a27d6c058"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-document-export-freeze-r8.json",
+      "sha256": "4e2c05e19598ee0f9ed7c3363809c89badd4e0353f93243a818ae88b01a3ea3c"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-native-win-r6\\results.json",
+      "sha256": "73d253ea08e68ce4cd098f0d6270b36b333fdb96b81ab2a73090e165af960d61"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-ui-win-r7\\results.json",
+      "sha256": "dedee26a47500589c1bf899bb4b00060a5e95f2802038cb981a63a999988dd56"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-sdk-win-r2\\results.json",
+      "sha256": "644e98851b46f9b2ec56d54266802e43dc4c21708963b0ec2c5718f927526e91"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-native-linux-r6\\results.json",
+      "sha256": "30a7d527342913bf0f7923d964e1871b1b16f164cad2303158aa2a6095de4ed9"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-ui-linux-r7\\results.json",
+      "sha256": "a586510eacc702d8f0539d52ae815e90b5b7ae192cad2085abf720e2bffabdc1"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-sdk-linux-r2\\results.json",
+      "sha256": "c1386110529b6ec47d363bfbc4c20e007cf9310a2bf39cc32c339f3ade47160e"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\document-export-ui-baseline-win-r1\\xui_message_document_test-execute.log",
+      "sha256": "ff5bc9666969859f4680057a0ecdff6665771261006bcb7adc286851a0273126"
+    }
+  ],
+  "notes": [
+    "Multi-context model test was stale under the existing shared Document model contract; same failure reproduced with the prior SDK. New assertion verifies successful binding, context cleanup and surviving snapshot acquisition.",
+    "The ordinary MessageList fixture leaked its caller-owned target Surface; explicit release restores zero live allocations.",
+    "Initial Linux LSan found the plain-text file-export branch still using CRT allocation; it now uses XRT and complete sanitizer gates pass.",
+    "Custom document model allocators and borrowed views remain separate from public export buffers.",
+    "No final SDK/IDE installation and no network/GPU security tests."
+  ]
+}

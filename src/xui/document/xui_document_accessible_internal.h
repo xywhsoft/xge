@@ -5,7 +5,7 @@
 #include "xui.h"
 
 /* UI-owned semantic projection shared by DocumentView and embedded Documents.
- * The caller frees ids and value with free(). */
+ * The caller frees ids with free(), and value with xuiDocumentFreeBuffer(). */
 int doc_accessible_snapshot_ids(xui_document_snapshot snapshot,
 	xui_doc_node_id** ids, uint64_t* count);
 int doc_accessible_role(const doc_node* node);

@@ -133,12 +133,12 @@ static void reference_buffer_failures(void)
             unsigned depth = 99;
             int result;
             reference_budget = budget;
-            result = reference_fault_import_document(fixtures[fixture], strlen(fixtures[fixture]), &document, &depth);
+            result = reference_fault_import_document(fixtures[fixture], strlen(fixtures[fixture]), &document, &depth, false);
             reference_budget = -1;
             REF_CHECK(reference_live == 0);
             if (result == XUI_OK) { xuiDocumentRelease(document); break; }
             REF_CHECK(result == XUI_ERROR_OUT_OF_MEMORY && !document && depth == 0);
-            REF_CHECK(reference_fault_import_document(fixtures[fixture], strlen(fixtures[fixture]), &document, &depth) == XUI_OK);
+            REF_CHECK(reference_fault_import_document(fixtures[fixture], strlen(fixtures[fixture]), &document, &depth, false) == XUI_OK);
             REF_CHECK(document && !reference_live); xuiDocumentRelease(document); total++;
         }
         REF_CHECK(budget > 0 && budget < 64);

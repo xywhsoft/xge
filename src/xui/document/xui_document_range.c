@@ -672,9 +672,9 @@ XUI_API int xuiDocumentSnapshotCopyPlainText(xui_document_snapshot s, char** out
     if (s->state->node_count > (UINT64_MAX - s->state->text_bytes - 1) / 2) return XUI_DOC_ERROR_LIMIT;
     b.capacity = s->state->text_bytes + 2 * s->state->node_count;
     if (b.capacity >= SIZE_MAX) return XUI_DOC_ERROR_LIMIT;
-    b.text = malloc((size_t)b.capacity + 1); if (!b.text) return XUI_ERROR_OUT_OF_MEMORY;
+    b.text = xrtMalloc((size_t)b.capacity + 1); if (!b.text) return XUI_ERROR_OUT_OF_MEMORY;
     doc_plain_node(s->state, DOC_ROOT, &b);
-    if (b.error) { free(b.text); return b.error; }
+    if (b.error) { xrtFree(b.text); return b.error; }
     b.text[b.size] = 0; *out = b.text; *bytes = b.size; return XUI_OK;
 }
 

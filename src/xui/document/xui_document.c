@@ -954,7 +954,7 @@ XUI_API int xuiDocumentUndo(xui_document d, xui_document_change_set* out) { retu
 XUI_API int xuiDocumentRedo(xui_document d, xui_document_change_set* out) { return doc_history_apply(d, 0, out); }
 XUI_API int xuiDocumentCanUndo(xui_document d) { return d && !d->writer && !d->notifying && d->undo != NULL; }
 XUI_API int xuiDocumentCanRedo(xui_document d) { return d && !d->writer && !d->notifying && d->redo != NULL; }
-XUI_API void xuiDocumentFreeBuffer(void* p) { free(p); }
+XUI_API void xuiDocumentFreeBuffer(void* p) { xrtFree(p); }
 
 static bool doc_owned_trace(const void* raw,xrtownershipvisitor visit,void* user)
 {
