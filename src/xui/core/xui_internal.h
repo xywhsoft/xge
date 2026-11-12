@@ -167,6 +167,14 @@ static inline int xuiInternalCallScopeEndOutcome(xui_call_scope_t* scope,int sta
     return status;
 }
 
+/* Entry points with no further cleanup must return their owned receipt to TLS.
+ * Keep EndOutcome available for callers that still need to retire a prefix. */
+static inline int xuiInternalCallScopeEndRestored(xui_call_scope_t* scope,int status,xerror* first)
+{
+    int result=xuiInternalCallScopeEndOutcome(scope,status,&first);
+    xrtSetErrorTake(first);return result;
+}
+
 bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user);
 /* C-stack receipt, not a TLS stack. Preserve an explicit failed bit even when
  * no diagnostic could allocate, and keep the first void-hook diagnostic. */

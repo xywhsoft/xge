@@ -8042,7 +8042,7 @@ XUI_API int xuiCodeEditGetOffsetRect(xui_widget widget,int offset,xui_rect_t* re
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
     int previous=data->iCacheActivity;data->iCacheActivity=2;
     status=__xuiCodeEditGetOffsetRectImpl(widget,offset,rect);data->iCacheActivity=previous;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 

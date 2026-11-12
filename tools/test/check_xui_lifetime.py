@@ -4,7 +4,10 @@ import argparse, hashlib, json, os, shutil, subprocess, time
 
 SOURCES = ['tests/xui/xui_test_xrt_impl.c', 'modules/xlayout/xlayout.c',
     'src/xui/core/xui_core.c', 'src/xui/accessibility/xui_native_accessibility.c',
-    'src/xui/core/xui_widget.c', 'src/xui/core/xui_callback_owned.c', 'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
+    'src/xui/core/xui_widget.c', 'src/xui/core/xui_callback_owned.c',
+    'src/xui/core/xui_owned_manager.c', 'src/xui/core/xui_owned_resource_slots.c',
+    'src/xui/core/xui_proxy_resource.c', 'src/xui/core/xui_icon.c',
+    'src/xui/core/xui_layout.c', 'src/xui/core/xui_input.c',
     'src/xui/core/xui_edit.c', 'src/xui/core/xui_drag_drop.c', 'src/xui/accessibility/xui_accessibility.c',
     'src/xui/core/xui_text.c', 'src/xui/core/xui_assets.c', 'src/xui/core/xui_builtin_atlas.c',
     'src/xui/core/xui_unicode.c', 'src/xui/workflow/xui_flow_graph.c', 'src/xui/workflow/xui_workflow.c',
@@ -27,6 +30,7 @@ def main():
     parser.add_argument('--cache', type=Path, required=True)
     parser.add_argument('--cc', default='gcc')
     parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--tests', nargs='+', choices=('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget', 'owned_choice', 'owned_navigation'), default=None)
     args = parser.parse_args()
     root, out, cache = args.root.resolve(), args.out.resolve(), args.cache.resolve()
     cc = shutil.which(args.cc); assert cc
@@ -39,7 +43,7 @@ def main():
     compiler_hash = hashlib.sha256(Path(cc).read_bytes()).hexdigest()
     tool_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     report = dict(complete=False, passed=False, compiler=cc, compilerSha256=compiler_hash,
-                  toolSha256=tool_hash, sanitize=args.sanitize, networkTests=False, rows=[], objects=[])
+                  toolSha256=tool_hash, sanitize=args.sanitize, networkTests=False, selectedTests=args.tests, rows=[], objects=[])
 
     def save(): (out/'results.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
     def run(name, command, required=True):
@@ -79,7 +83,7 @@ def main():
             print(opt, source, 'reuse' if reused else 'compile', flush=True)
             return obj
         objects = [compile_source(source) for source in SOURCES]
-        for test in ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget', 'owned_choice', 'owned_navigation'):
+        for test in (args.tests or ('lifetime', 'lifetime_observer', 'drag_drop_reentry', 'owned_callback', 'owned_payload', 'owned_layout', 'owned_widget', 'owned_choice', 'owned_navigation')):
             obj = compile_source('tests/xui/xui_'+test+'_test.c')
             executable = out/(test+'-'+opt+('.exe' if os.name == 'nt' else '.out'))
             run(test+'-'+opt+'-link', [cc, *flags, *(['-no-pie'] if args.sanitize else []),

@@ -1654,7 +1654,7 @@ static int __xuiMessageLayoutNodes(xui_widget widget,xui_message_list_data_t* da
     if(status==XUI_OK && (publicationVersion!=data->iChangeCount || widget->bDestroyPending || widget->pContext->bCloseRequested)) {
         data->bLayoutValid=0;data->iLayoutDirtyFrom=0;status=XUI_ERROR_BUSY;
     }
-    if(own){data->iCacheActivity=0;xerror* error=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&error);}
+    if(own){data->iCacheActivity=0;xerror* error=xrtTakeError();status=xuiInternalCallScopeEndRestored(&scope,status,error);}
     return status;
 }
 
@@ -3786,7 +3786,7 @@ static int __xuiMessageContentMeasure(xui_widget widget,xui_vec2_t constraint,xu
     if(data->iCacheActivity)return XUI_ERROR_BUSY;
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
     data->iCacheActivity=2;status=__xuiMessageContentMeasureImpl(widget,constraint,size,user);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4167,7 +4167,7 @@ static int __xuiMessageCacheRender(xui_widget widget,xui_draw_context draw,uint3
     if(data->iCacheActivity)return XUI_ERROR_BUSY;
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);if(status!=XUI_OK)return status;
     data->iCacheActivity=2;status=__xuiMessageCacheRenderImpl(widget,draw,state,user);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4528,7 +4528,7 @@ XUI_API int xuiMessageListSetNodes(xui_widget pWidget,const xui_message_node_t* 
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListSetNodesImpl(pWidget,pNodes,iCount);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4566,7 +4566,7 @@ XUI_API int xuiMessageListAddNode(xui_widget pWidget,const xui_message_node_t* p
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListAddNodeImpl(pWidget,pNode);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4750,7 +4750,7 @@ XUI_API int xuiMessageListSetNodeDocument(xui_widget pWidget,const char* sId,con
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListSetNodeDocumentImpl(pWidget,sId,pDesc);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4942,7 +4942,7 @@ XUI_API int xuiMessageListUpdateNodeText(xui_widget pWidget,const char* sId,cons
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListUpdateNodeTextImpl(pWidget,sId,sText);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4969,7 +4969,7 @@ XUI_API int xuiMessageListAppendNodeText(xui_widget pWidget,const char* sId,cons
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListAppendNodeTextImpl(pWidget,sId,sText);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4996,7 +4996,7 @@ XUI_API int xuiMessageListSetNodeTitle(xui_widget pWidget,const char* sId,const 
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListSetNodeTitleImpl(pWidget,sId,sTitle);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5024,7 +5024,7 @@ XUI_API int xuiMessageListSetNodeCollapsed(xui_widget pWidget,const char* sId,in
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListSetNodeCollapsedImpl(pWidget,sId,bCollapsed);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5060,7 +5060,7 @@ XUI_API int xuiMessageListClear(xui_widget pWidget)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListClearImpl(pWidget);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5123,7 +5123,7 @@ XUI_API xui_rect_t xuiMessageListGetNodeRect(xui_widget widget,int index)
     data->iCacheActivity=2;status=__xuiMessageLayoutNodes(widget,data);
     if(status==XUI_OK)result=data->arrNodes[index].tNodeRect;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK ? result:(xui_rect_t){0};
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK ? result:(xui_rect_t){0};
 }
 
 XUI_API xui_rect_t xuiMessageListGetBubbleRect(xui_widget widget,int index)
@@ -5134,7 +5134,7 @@ XUI_API xui_rect_t xuiMessageListGetBubbleRect(xui_widget widget,int index)
     data->iCacheActivity=2;status=__xuiMessageLayoutNodes(widget,data);
     if(status==XUI_OK)result=data->arrNodes[index].tBubbleRect;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK ? result:(xui_rect_t){0};
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK ? result:(xui_rect_t){0};
 }
 
 XUI_API int xuiMessageListSetScroll(xui_widget pWidget, float fOffsetY)
@@ -5274,7 +5274,7 @@ XUI_API int xuiMessageListSetFont(xui_widget pWidget,xui_font pFont)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListSetFontImpl(pWidget,pFont);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5766,7 +5766,7 @@ XUI_API int xuiMessageListImportText(xui_widget pWidget,const char* sText)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiMessageListImportTextImpl(pWidget,sText);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 

@@ -1019,7 +1019,7 @@ static xui_text_edit_paint_cache_t* __xuiTextEditPaintCacheEnsure(xui_widget pWi
     pData->bProducingPaint=1;
     xui_text_edit_paint_cache_t* result=__xuiTextEditPaintCacheEnsureImpl(pWidget,pData,pFont,iLine,sText,iTextSize);
     pData->bProducingPaint=0;
-    if(ownActivity){pData->iCacheActivity=0;xerror* error=xrtTakeError();if(xuiInternalCallScopeEndOutcome(&scope,XUI_OK,&error)!=XUI_OK)result=NULL;}
+    if(ownActivity){pData->iCacheActivity=0;xerror* error=xrtTakeError();if(xuiInternalCallScopeEndRestored(&scope,XUI_OK,error)!=XUI_OK)result=NULL;}
     return result;
 }
 
@@ -1595,7 +1595,7 @@ static int __xuiTextEditBuildLines(xui_widget pWidget,xui_text_edit_data_t* pDat
     bool ownActivity=pData->iCacheActivity==0;xui_call_scope_t scope={0};
     if(ownActivity){int status=xuiCallScopeBegin(pWidget->pContext,&scope);if(status!=XUI_OK)return status;pData->iCacheActivity=2;}
     pData->bBuildingLines=1;int status=__xuiTextEditBuildLinesImpl(pWidget,pData,pFont,fWrapWidth);pData->bBuildingLines=0;
-    if(ownActivity){pData->iCacheActivity=0;xerror* error=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&error);}
+    if(ownActivity){pData->iCacheActivity=0;xerror* error=xrtTakeError();status=xuiInternalCallScopeEndRestored(&scope,status,error);}
     return status;
 }
 
@@ -2006,7 +2006,7 @@ static int __xuiTextEditSetTextInternal(xui_widget pWidget,xui_text_edit_data_t*
     pData->iCacheActivity=1;
     status=__xuiTextEditSetTextInternalImpl(pWidget,pData,sText,bNotify,bUndo);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -2087,7 +2087,7 @@ static int __xuiTextEditDeleteRange(xui_widget pWidget,xui_text_edit_data_t* pDa
     pData->iCacheActivity=1;
     status=__xuiTextEditDeleteRangeImpl(pWidget,pData,iStart,iEnd,bNotify,bUndo);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -2209,7 +2209,7 @@ static int __xuiTextEditInsertText(xui_widget pWidget,xui_text_edit_data_t* pDat
     pData->iCacheActivity=1;
     status=__xuiTextEditInsertTextImpl(pWidget,pData,sInsert,iInsertSize);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -2306,7 +2306,7 @@ static int __xuiTextEditMoveSelectionToCursor(xui_widget pWidget,xui_text_edit_d
     pData->iCacheActivity=1;
     status=__xuiTextEditMoveSelectionToCursorImpl(pWidget,pData,iTarget);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -3360,7 +3360,7 @@ static int __xuiTextEditCacheRender(xui_widget pWidget,xui_draw_context pDraw,ui
     pData->iCacheActivity=2;
     status=__xuiTextEditCacheRenderImpl(pWidget,pDraw,iStateId,pUser);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4622,7 +4622,7 @@ XUI_API int xuiTextEditSetFont(xui_widget pWidget,xui_font pFont)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetFontImpl(pWidget,pFont);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4670,7 +4670,7 @@ XUI_API int xuiTextEditSetMaxLength(xui_widget pWidget,int iMaxLength)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetMaxLengthImpl(pWidget,iMaxLength);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4731,7 +4731,7 @@ XUI_API int xuiTextEditSetWordWrap(xui_widget pWidget,int bWordWrap)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetWordWrapImpl(pWidget,bWordWrap);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -4770,7 +4770,7 @@ XUI_API int xuiTextEditSetLineNumbers(xui_widget pWidget,int bVisible,float fWid
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetLineNumbersImpl(pWidget,bVisible,fWidth);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5030,7 +5030,7 @@ XUI_API int xuiTextEditSetSelection(xui_widget pWidget,int iStart,int iEnd)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetSelectionImpl(pWidget,iStart,iEnd);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5781,7 +5781,7 @@ static int __xuiTextEditApplyHistoryState(xui_widget pWidget,xui_text_edit_data_
     pData->iCacheActivity=1;
     status=__xuiTextEditApplyHistoryStateImpl(pWidget,pData,pState,bRedo);
     pData->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -5859,7 +5859,7 @@ XUI_API xui_scroll_model_t* xuiTextEditGetScrollModel(xui_widget widget)
     xui_scroll_model_t* result=&data->tScrollModel;
     bool closing=widget->bDestroyPending || context->bCloseRequested || context->bDestroyPending;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK && !closing ? result:NULL;
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK && !closing ? result:NULL;
 }
 
 XUI_API xui_widget xuiTextEditGetHScrollBarWidget(xui_widget widget)
@@ -5872,7 +5872,7 @@ XUI_API xui_widget xuiTextEditGetHScrollBarWidget(xui_widget widget)
     xui_widget result=data->pHScrollBar;
     bool closing=widget->bDestroyPending || context->bCloseRequested || context->bDestroyPending;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK && !closing ? result:NULL;
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK && !closing ? result:NULL;
 }
 
 XUI_API xui_widget xuiTextEditGetVScrollBarWidget(xui_widget widget)
@@ -5885,7 +5885,7 @@ XUI_API xui_widget xuiTextEditGetVScrollBarWidget(xui_widget widget)
     xui_widget result=data->pVScrollBar;
     bool closing=widget->bDestroyPending || context->bCloseRequested || context->bDestroyPending;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK && !closing ? result:NULL;
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK && !closing ? result:NULL;
 }
 
 static int xuiTextEditSetScrollImpl(xui_widget pWidget, float fScrollX, float fScrollY)
@@ -5922,7 +5922,7 @@ XUI_API int xuiTextEditSetScroll(xui_widget pWidget,float fScrollX,float fScroll
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetScrollImpl(pWidget,fScrollX,fScrollY);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -6030,7 +6030,7 @@ XUI_API int xuiTextEditSetVisualMetrics(xui_widget pWidget,float fBorderWidth,fl
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(pWidget->pContext,&scope);
     if(status!=XUI_OK)return status;
     data->iCacheActivity=1;status=xuiTextEditSetVisualMetricsImpl(pWidget,fBorderWidth,fLineGap);data->iCacheActivity=0;
-    xerror* error=xrtTakeError();return xuiInternalCallScopeEndOutcome(&scope,status,&error);
+    xerror* error=xrtTakeError();return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 
@@ -6106,7 +6106,7 @@ XUI_API xui_rect_t xuiTextEditGetCursorRect(xui_widget widget)
     data->iCacheActivity=2;int status=__xuiTextEditUpdateCursorRect(widget,data);
     if(status==XUI_OK)result=data->tCursorRect;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK ? result:(xui_rect_t){0};
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK ? result:(xui_rect_t){0};
 }
 
 XUI_API int xuiTextEditGetLineCount(xui_widget widget)
@@ -6116,7 +6116,7 @@ XUI_API int xuiTextEditGetLineCount(xui_widget widget)
     xui_call_scope_t scope={0};if(xuiCallScopeBegin(widget->pContext,&scope)!=XUI_OK)return 0;
     data->iCacheActivity=2;int status=__xuiTextEditUpdateCursorRect(widget,data),count=data->iLineCount;
     data->iCacheActivity=0;xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndOutcome(&scope,status,&error)==XUI_OK ? count:0;
+    return xuiInternalCallScopeEndRestored(&scope,status,error)==XUI_OK ? count:0;
 }
 
 XUI_API uint32_t xuiTextEditGetState(xui_widget pWidget)
