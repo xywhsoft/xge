@@ -13,6 +13,12 @@ tools\test\build_dbg_test.bat
 
 `tools\build\build_dll.bat` 生成 `build/xge.dll` 与 `build/xge.lib`；该 DLL 同时包含 XGE 和 XUI。`tools\build\build_dbg_dll.bat` 生成带调试 API 的 `xgedbg` 变体。
 
+调试构建的 `xge_build_config.h` 显式写入 `XGE_DEBUGMODE=1`，必须在第一个
+公共头之前包含，才能使消费者的调试类型和 API 与实际库一致。不要用普通版头
+替换调试 SDK 的配置。构建报告为 `build-report-debug.json`；普通构建仍使用
+`build-report.json`。两端完整 O2 调试 SDK、静态 SDK 和 C/C++ 头验证见
+`docs/validation/debug-sdk-config-20261113.json`。
+
 `tools\build\build_dll.bat ide` 生成 `build/ide/xge.dll` 与 `build/ide/xge.lib`，额外启用
 `XGE_XRT_PROFILE_IDE` 的 XRT 服务，供 IDE 和 xllm/xwork/xcode 共用一个运行时。
 默认配置不受影响。第二个参数可以指定独立输出目录，例如

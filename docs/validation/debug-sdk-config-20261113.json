@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "shippingDelivery": false,
+  "scope": "Dynamic debug builder emits its actual XGE_DEBUGMODE=1 into generated first-include configuration. Normal configuration bytes are unchanged by the conditional. Exact debug hosted and static native SDKs built and staged on Windows/Linux; six native header modes per platform. Windows language execution separately covers all five debug functions before platform/GPU startup.",
+  "parentNativeHead": "d902e6b8c2c40adbc612ddb59c1d170689702fd9",
+  "production": {
+    "tools/build/build.py": "42efefa67f5e7ece9376b53d8377217e36fdd710adf88c73614ff11d83814e77"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-debug-sdk-freeze-r9.json",
+    "sha256": "edae912211c14718684f257a9f9bf9c90bfc067ee2a7de0b8f54536ae1645321"
+  },
+  "builds": [
+    {
+      "platform": "win",
+      "compiledUnits": 163,
+      "image": "xge3_hostdbg.dll",
+      "runtimeBytes": 9580079,
+      "configSha256": "526662aead03a9e4592f3e57adadc6760ef5eb44145bf2bfaa4938ff060f6b7e",
+      "buildReportSha256": "6cbe385e818345da93f80e535e50ad01c56507a2b8fcf315d33830c5ea7888a6"
+    },
+    {
+      "platform": "linux",
+      "compiledUnits": 163,
+      "image": "libxge3_hostdbg.so",
+      "runtimeBytes": 10437328,
+      "configSha256": "422caa4474889331d82900defe69a83b24319038d066e80fbf4999d468970302",
+      "buildReportSha256": "12bdbe702af8bd8f1f4039ac36571d4cd1452ead5e7b2904b21a2dff06867270"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\debug-capabilities-sdk-win-r3\\results.json",
+      "sha256": "c17a34808945819805c86d9ed939ea09336408bcd5bf150e77dd7838daad9c00"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\debug-sdk-native-header-win-r5\\results.json",
+      "sha256": "e95c63056b235f3690112d26c026d13c6512d9c7ab1e25a048fd993261dce50e"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\debug-capabilities-sdk-linux-r3\\results.json",
+      "sha256": "3e90e47a25f536eaaa53d314aa2a38d08f34bc4f530024252c34b3ecb54abe66"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\debug-sdk-native-header-linux-r5\\results.json",
+      "sha256": "ad3c1906c78c7375959a2e59d4df80caf630335df763ffcdc57fc20ebfdbc45e"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\debug-capabilities-language-win-r4\\results.json",
+      "sha256": "a865744bbf1e52cb007db9ef3d17a3b4f25f32b730002a944cd4dbee45a13f5e"
+    }
+  ],
+  "limitations": [
+    "No live GPU/platform or cross-thread debug qualification.",
+    "Linux language execution and final SDK/IDE installation are separate."
+  ]
+}

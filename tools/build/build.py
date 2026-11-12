@@ -140,6 +140,8 @@ def main():
     api_major = int(re.search(r"#define\s+XGE_VERSION_MAJOR\s+(\d+)", (ROOT / "include/xge.h").read_text(encoding="utf-8")).group(1))
     config += f"#define XGE_BUILD_API_MAJOR {api_major}\n"
     config += f"#define XGE_BUILD_PROFILE {PROFILES[args.profile]}\n"
+    if args.debug:
+        config += "#define XGE_DEBUGMODE 1\n"
     config += "".join(f"#define {name} {int(name in features)}\n" for name in sorted(names))
     if args.profile == "ide":
         config += "#define XGE_XRT_PROFILE_IDE\n"
