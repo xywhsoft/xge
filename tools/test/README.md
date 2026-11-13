@@ -115,3 +115,26 @@ The CPU Proxy's prior and new 1000 warm-render workloads both allocate/free
 allocation ceiling, rather than claiming the renderer allocates nothing. It
 does not establish timing equivalence, real graphics behavior, owned custom
 Icon/formatter closures or every reentrant cache mutation.
+
+The retained IconPicker text formatter adds a 40-command successor gate:
+
+```text
+python tools/test/check_icon_picker_owned_formatter.py --root . --engine build/host --runtime <matching-XRT-library> --out build/picker-owned-formatter
+```
+
+It retains the 36 preceding checks and adds GCC O0/O2 clients for the owned
+formatter. Twenty cases cover replacement, selection removal, Widget/Context
+close, exact nullable error outcomes, malformed extents, UTF-8 preview limits
+and embedded NUL. Eight registration OOM budgets, failed/reentrant owner Hold,
+consuming Drop failure and complete ownership-graph visitation are checked.
+These native tests deliberately use the legacy raw CPU renderer; the separate
+xlang consumer gate uses real owned Proxy/Font/Surface/Draw controls.
+
+`xuiIconPickerSetFormatterOwned` takes an `xstrview`-returning callback. Its
+result is owned XRT text, not a borrowed view: the renderer copies its bounded
+preview, frees Data with `xrtFree`, then drops the callback snapshot. Switching
+between the old and owned setters replaces the same formatter slot. The
+preview retains the existing 255-byte limit, incomplete UTF-8 tail trimming
+and C-string display termination at the first embedded NUL. No private Picker
+size growth is needed on the qualified x64 targets. Internal Icon operation
+helpers have hidden ELF visibility and are not new public exports.

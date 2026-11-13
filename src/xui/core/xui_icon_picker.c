@@ -40,7 +40,10 @@ typedef struct xui_icon_picker_data_t {
 	xui_font pFont;
 	xui_icon_picker_change_proc onChange;
 	void* pChangeUser;
-	xui_icon_picker_format_proc onFormat;
+	union {
+		xui_icon_picker_format_proc onFormat;
+		xui_icon_picker_text_owned_proc onFormatOwned;
+	};
 	void* pFormatUser;
 	float fCellWidth;
 	float fCellHeight;
@@ -76,6 +79,7 @@ typedef struct xui_icon_picker_data_t {
 	uint32_t iChildStyleHash;
 	int bChildStyleSynced;
 	int iChangeCount;
+	int bFormatOwned;
 	char sTooltip[256];
 	char sAccessibleValue[256];
 } xui_icon_picker_data_t;
@@ -648,6 +652,29 @@ static int __xuiIconPickerSyncState(xui_widget pWidget, xui_icon_picker_data_t* 
 	return __xuiIconPickerInvalidate(pWidget, pData);
 }
 
+static int __xuiIconPickerFormatOwned(xui_widget widget,xui_icon_picker_data_t* data,xui_icon icon,char* buffer,int capacity)
+{
+    xui_icon_picker_text_owned_proc selected=data->onFormatOwned;
+    void* user=data->pFormatUser;xui_callback_snapshot_t snapshot={0};
+    int result=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onFormatOwned,&user,&snapshot);
+    if(result!=XUI_OK)return result;
+    xstrview text=selected(widget,icon,user);
+    /* A failed language callback can return an empty fallback. Observe its
+     * diagnostic before inspecting the returned owned span. */
+    if(xrtGetError())result=XUI_ERROR_CALLBACK_FAILED;
+    else if(text.Size>(size_t)PTRDIFF_MAX || (!text.Data && text.Size))result=XUI_ERROR_INVALID_ARGUMENT;
+    if(result==XUI_OK && text.Data){
+        size_t count=text.Size<(size_t)(capacity-1) ? text.Size:(size_t)(capacity-1);
+        memcpy(buffer,text.Data,count);buffer[count]=0;
+        xuiInternalUtf8TrimIncomplete(buffer);
+    }
+    xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
+    xrtFree((void*)text.Data);
+    result=xuiInternalCallbackSnapshotEndOutcome(&snapshot,result,first);
+    if(result!=XUI_OK)buffer[0]=0;
+    return result;
+}
+
 static int __xuiIconPickerFormatValue(xui_widget pWidget, xui_icon_picker_data_t* pData, xui_icon pIcon, char* sBuffer, int iCapacity)
 {
 	const char* sText;
@@ -670,6 +697,8 @@ static int __xuiIconPickerFormatValue(xui_widget pWidget, xui_icon_picker_data_t
 		snprintf(sBuffer, (size_t)iCapacity, "%s", (sText != NULL) ? sText : "");
 		break;
 	case XUI_ICON_PICKER_TEXT_CUSTOM:
+		if ( pData->bFormatOwned )
+			return __xuiIconPickerFormatOwned(pWidget,pData,pIcon,sBuffer,iCapacity);
 		if ( pData->onFormat != NULL ) {
 			iRet = pData->onFormat(pWidget, pIcon, sBuffer, iCapacity, pData->pFormatUser);
 			if ( iRet != XUI_OK ) {
@@ -2022,10 +2051,34 @@ XUI_API int xuiIconPickerSetFormatter(xui_widget pWidget, xui_icon_picker_format
 {
 	xui_icon_picker_data_t* pData = __xuiIconPickerGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bFormatOwned || xuiInternalCallbackSlotOwned(pWidget,&pData->onFormatOwned) ) {
+		xui_callback_update_t update={0};
+		int result=xuiInternalCallbackUpdateBegin(pWidget,&pData->onFormatOwned,false,pUser,NULL,&update);
+		if(result!=XUI_OK)return result;
+		pData->onFormat=onFormat;pData->bFormatOwned=0;pData->pFormatUser=pUser;
+		xuiInternalCallbackUpdatePublish(&update);
+		result=xuiWidgetInvalidate(pWidget,XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return xuiInternalCallbackUpdateEnd(&update,result);
+	}
 	if ( pData->onFormat == onFormat && pData->pFormatUser == pUser ) return XUI_OK;
 	pData->onFormat = onFormat;
 	pData->pFormatUser = pUser;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiIconPickerSetFormatterOwned(xui_widget widget,xui_icon_picker_text_owned_proc format,void* user,const xui_callback_owner_t* owner)
+{
+    xui_icon_picker_data_t* data=__xuiIconPickerGetData(widget);
+    if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update={0};
+    int result=xuiInternalCallbackUpdateBegin(widget,&data->onFormatOwned,format!=NULL,user,owner,&update);
+    if(result!=XUI_OK)return result;
+    if(format){data->onFormatOwned=format;data->bFormatOwned=1;}
+    else{data->onFormat=NULL;data->bFormatOwned=0;}
+    data->pFormatUser=user;
+    xuiInternalCallbackUpdatePublish(&update);
+    result=xuiWidgetInvalidate(widget,XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    return xuiInternalCallbackUpdateEnd(&update,result);
 }
 
 XUI_API int xuiIconPickerSetCategory(xui_widget pWidget, xui_icon_category pCategory)

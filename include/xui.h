@@ -3171,6 +3171,9 @@ typedef void (*xui_cascader_change_proc)(xui_widget_t* pWidget, int iLeafIndex, 
 typedef void (*xui_color_picker_change_proc)(xui_widget_t* pWidget, uint32_t iColor, void* pUser);
 typedef void (*xui_icon_picker_change_proc)(xui_widget_t* pWidget, uint32_t iOldId, uint32_t iNewId, void* pUser);
 typedef int (*xui_icon_picker_format_proc)(xui_widget_t* pWidget, xui_icon_t* pIcon, char* sBuffer, int iCapacity, void* pUser);
+/* Returns caller-owned XRT text, released with xrtFree by the Picker. A
+ * missing span is empty. The display remains a bounded C-string preview. */
+typedef xstrview (*xui_icon_picker_text_owned_proc)(xui_widget_t* pWidget, xui_icon_t* pIcon, void* pUser);
 typedef void (*xui_date_picker_proc)(xui_widget_t* pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
 typedef void (*xui_input_change_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
 typedef struct xui_edit_event_t {
@@ -12795,6 +12798,11 @@ XUI_API int xuiIconPickerSetChange(xui_widget pWidget, xui_icon_picker_change_pr
 XUI_API int xuiIconPickerSetChangeOwned(xui_widget pWidget, xui_icon_picker_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册显示文本格式化回调；回调在绘制期间同步执行，仅应写入给定缓冲区。 */
 XUI_API int xuiIconPickerSetFormatter(xui_widget pWidget, xui_icon_picker_format_proc onFormat, void* pUser);
+/* The callback owner is held through invocation and preview copying. Switching
+ * either formatter kind atomically replaces the other kind. Owned text must
+ * use this engine's XRT allocator; preview keeps at most 255 bytes, trims an
+ * incomplete UTF-8 tail and ends at the first embedded NUL. */
+XUI_API int xuiIconPickerSetFormatterOwned(xui_widget pWidget, xui_icon_picker_text_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置同一 xui_context 内的图标类别（控件持有引用；重复设置同一类别不会清除选择）。 */
 XUI_API int xuiIconPickerSetCategory(xui_widget pWidget, xui_icon_category pCategory);
 /* 读取图标类别（借用句柄，不增加引用计数）。 */
