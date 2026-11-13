@@ -161,3 +161,16 @@ This is distinct from the still-pending active-reader snapshot protocol: a
 backend reading a Surface must also keep it alive across reentrant mutation.
 Controlled old/current reader probes stop before premature physical release;
 they are evidence of that remaining gap, not passing reader acceptance.
+
+Owned custom Icon callbacks and Painter resource admission have a 56-command
+successor (the previous 48 commands plus the two new O0/O2 native clients):
+
+```text
+python tools/test/check_icon_custom_owned.py --root . --engine build/host --runtime <matching-XRT-library> --out build/icon-custom-owned
+```
+
+This covers independent callback owner slots and user data, four graph edges,
+transactional Hold/OOM rollback, queued post-publication expiry, consuming Drop
+errors and callback reentry with exact nullable error delivery. Painter checks
+use actual owned Font/Surface/Draw controls with distinct backend capabilities.
+See `docs/xui-owned-custom-icons.md` for ownership, object sizes and limits.

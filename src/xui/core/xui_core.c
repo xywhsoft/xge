@@ -2,6 +2,7 @@
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "xui_native_accessibility_internal.h"
+#include "xui_proxy_resource.h"
 
 #include <limits.h>
 #include <math.h>
@@ -656,6 +657,23 @@ XUI_API const char* xuiTranslate(xui_context pContext, int iTextId)
 static int __xuiPainterValid(xui_painter pPainter)
 {
 	return (pPainter != NULL) && (pPainter->iMagic == XUI_PAINTER_MAGIC);
+}
+
+static bool __xuiPainterSurfaceCompatible(xui_painter painter,xui_surface surface)
+{
+    xui_proxy expected=painter->pContext->pOwnedProxy;
+    if(!expected)return true;
+    xui_proxy actual=xuiSurfaceGetProxy(surface);
+    return actual && actual->_pCapability==expected->_pCapability &&
+        xuiInternalProxyResourceReady(surface,XUI_OWNED_SURFACE);
+}
+static bool __xuiPainterFontCompatible(xui_painter painter,xui_font font)
+{
+    xui_proxy expected=painter->pContext->pOwnedProxy;
+    if(!expected)return true;
+    xui_proxy actual=xuiFontGetProxy(font);
+    return actual && actual->_pCapability==expected->_pCapability &&
+        xuiInternalProxyResourceReady(font,XUI_OWNED_FONT);
 }
 
 static int __xuiPathValid(xui_path pPath)
@@ -3008,7 +3026,7 @@ XUI_API int xuiPainterDrawSurface(xui_painter pPainter, xui_surface pSurface, xu
 {
 	xui_proxy pProxy;
 
-	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) ) {
+	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) || !__xuiPainterSurfaceCompatible(pPainter,pSurface) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( ((iColor & 0xffu) == 0u) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
@@ -3023,7 +3041,7 @@ XUI_API int xuiPainterDrawSurfaceQuad(xui_painter pPainter, xui_surface pSurface
 {
 	xui_proxy pProxy;
 
-	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) || (pVertices == NULL) ) {
+	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) || (pVertices == NULL) || !__xuiPainterSurfaceCompatible(pPainter,pSurface) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( ((pVertices[0].iColor | pVertices[1].iColor | pVertices[2].iColor | pVertices[3].iColor) & 0xffu) == 0u ) {
@@ -3253,7 +3271,7 @@ XUI_API int xuiPainterDrawText(xui_painter pPainter, xui_font pFont, const char*
 {
 	xui_proxy pProxy;
 
-	if ( !__xuiPainterValid(pPainter) || (pFont == NULL) || (sText == NULL) ) {
+	if ( !__xuiPainterValid(pPainter) || (pFont == NULL) || (sText == NULL) || !__xuiPainterFontCompatible(pPainter,pFont) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (sText[0] == '\0') || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
@@ -3285,7 +3303,7 @@ XUI_API int xuiPainterDrawNinePatch(xui_painter pPainter, xui_surface pSurface, 
 	int iIndex;
 	int iRet;
 
-	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) ||
+	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) || !__xuiPainterSurfaceCompatible(pPainter,pSurface) ||
 	     (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) || (tDst.fW < 0.0f) || (tDst.fH < 0.0f) ||
 	     (tSlice.fLeft < 0.0f) || (tSlice.fTop < 0.0f) || (tSlice.fRight < 0.0f) || (tSlice.fBottom < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;

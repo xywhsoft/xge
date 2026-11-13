@@ -235,7 +235,7 @@ int xuiInternalSurfaceSlotsEnd(xui_surface_slot_update_t* updates,size_t count,b
 }
 bool xuiInternalContextTraceResources(xui_context context,xrtownershipvisitor visit,void* user)
 {
-    if(!context->pOwnedProxy)return true;
+    if(!context->pOwnedProxy)return xuiInternalContextTraceIcons(context,visit,user);
     if(!visit(xuiProxyOwnership(context->pOwnedProxy),user))return false;
     if(context->pTransferData){xrtownershipref data=xuiDataObjectOwnership(context->pTransferData);
         if(!data.Data || !visit(data,user))return false;}

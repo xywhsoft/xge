@@ -6732,6 +6732,23 @@ XUI_API int xuiIconAddResource(xui_icon_category pCategory, const char* sName, x
 XUI_API int xuiIconAddAlias(xui_icon_category pCategory, const char* sName, xui_icon pTarget, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
 /* 添加自绘图标（注册绘制回调）。 */
 XUI_API int xuiIconAddCustom(xui_icon_category pCategory, const char* sName, const xui_icon_custom_desc_t* pCustom, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
+/* Immutable owned custom callback group. Each callback has independent user
+ * data/owner; an absent callback must have no owner. All owners are acquired
+ * transactionally before publication and traced from the actual Context.
+ * Draw is required. Active Icon operations retain the complete group through
+ * the callback return/output tail. Destroy runs once before the four owners
+ * are dropped, including when physical deletion follows Context close.
+ * Callback arguments remain borrowed for that invocation. Failure before
+ * publication does not invoke Destroy; post-publication retirement/rollback
+ * does. A checked cleanup failure can accompany a non-NULL published result;
+ * native callers must remove that partial result. Expiry before return yields
+ * NULL/INVALID_STATE. Cleanup never retries a consuming Drop. */
+XUI_API int xuiIconAddCustomOwned(xui_icon_category pCategory, const char* sName,
+    xui_icon_custom_draw_proc onDraw, void* pDrawUser, const xui_callback_owner_t* pDrawOwner,
+    xui_icon_custom_measure_proc onMeasure, void* pMeasureUser, const xui_callback_owner_t* pMeasureOwner,
+    xui_icon_custom_prepare_proc onPrepare, void* pPrepareUser, const xui_callback_owner_t* pPrepareOwner,
+    xui_icon_custom_destroy_proc onDestroy, void* pDestroyUser, const xui_callback_owner_t* pDestroyOwner,
+    const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
 /* 按名查找图标（解析别名）；不存在返回 NULL。 */
 XUI_API xui_icon xuiIconFind(xui_icon_category pCategory, const char* sName);
 /* 按图标 id 查找；不存在返回 NULL。 */

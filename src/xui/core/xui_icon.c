@@ -2,8 +2,10 @@
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "xui_proxy_resource.h"
+#include "xui_callback_hold_internal.h"
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_ICON_CATEGORY_MAGIC 0x58494341u
@@ -14,6 +16,15 @@
 #define XUI_ICON_DEFAULT_CACHE_CAPACITY 4
 #define XUI_ICON_MAX_CACHE_CAPACITY 64
 #define XUI_ICON_ALIAS_DEPTH_MAX 32
+#define XUI_ICON_CUSTOM_OWNED_TAG UINT32_MAX
+
+typedef struct xui_icon_owned_callback_t {
+    void* pUser;
+    xui_callback_owner_t tOwner;
+} xui_icon_owned_callback_t;
+typedef struct xui_icon_custom_owned_t {
+    xui_icon_owned_callback_t draw,measure,prepare,destroy;
+} xui_icon_custom_owned_t;
 
 typedef struct xui_icon_cache_entry_t {
 	xui_surface pSurface;
@@ -74,6 +85,14 @@ struct xui_icon_t {
 	uint32_t iCacheClock;
 	xui_lifetime_link_t* pLifetimeLinks;
 };
+
+/* Only the private cached descriptor uses the tag. Legacy public descriptors
+ * are normalized to sizeof by their constructor and cannot spoof it. This
+ * reuses existing storage; ordinary Icons do not grow for custom callbacks. */
+static xui_icon_custom_owned_t* __xuiIconCustomOwned(xui_icon icon)
+{return icon->tCustom.iSize==XUI_ICON_CUSTOM_OWNED_TAG ? icon->tCustom.pUser:NULL;}
+static void __xuiIconCustomFinalize(xui_icon icon);
+static void __xuiIconCreationGone(void* raw){*(bool*)raw=true;}
 
 static int __xuiIconContextValid(xui_context pContext)
 {
@@ -388,9 +407,9 @@ static void __xuiIconDestroyOne(xui_icon pIcon)
 			}
 		}
 	}
-	if ( (pIcon->iSourceType == XUI_ICON_SOURCE_CUSTOM) &&
-	     (pIcon->tCustom.onDestroy != NULL) ) {
-		pIcon->tCustom.onDestroy(pIcon, pIcon->tCustom.pUser);
+	if ( pIcon->iSourceType == XUI_ICON_SOURCE_CUSTOM ) {
+		if(__xuiIconCustomOwned(pIcon))__xuiIconCustomFinalize(pIcon);
+		else if(pIcon->tCustom.onDestroy)pIcon->tCustom.onDestroy(pIcon,pIcon->tCustom.pUser);
 	}
 	if ( pIcon->sName != NULL ) xrtFree(pIcon->sName);
 	if ( pIcon->sDisplayName != NULL ) xrtFree(pIcon->sDisplayName);
@@ -505,6 +524,39 @@ static int __xuiIconCategoryOperationEnd(xui_icon_category category,xui_call_sco
     xerror* first=__xuiIconOperationSeal(scope,status);
     __xuiIconCategoryReleaseOwner(category);
     return __xuiIconOperationFinish(scope,status,first);
+}
+
+static void __xuiIconCustomDrop(xui_context context,xui_icon_custom_owned_t* group,int* status,xerror** first)
+{
+    if(!group)return;
+    xui_icon_owned_callback_t* slots[]={&group->draw,&group->measure,&group->prepare,&group->destroy};
+    for(size_t i=0;i<4;++i){
+        int next=xuiInternalCallbackOwnerDropOutcome(context,&slots[i]->tOwner,*status,*first);
+        xerror* error=xrtTakeError();
+        if(next!=XUI_OK || error){
+            if(*status==XUI_OK){*status=next!=XUI_OK?next:XUI_ERROR_CALLBACK_FAILED;*first=error;}
+            else xrtErrorFree(error);
+        }
+    }
+    xrtFree(group);
+}
+static void __xuiIconCustomFinalize(xui_icon icon)
+{
+    xui_context context=icon->pContext;xui_icon_custom_owned_t* group=__xuiIconCustomOwned(icon);
+    icon->tCustom.iSize=sizeof(icon->tCustom);icon->tCustom.pUser=NULL;
+    /* Cleanup admission accepts a closing Context and isolates inherited TLS.
+     * Its enclosing native destructor still owns the carrier if admission
+     * fails. Every acquired owner is consumed once on all paths. */
+    xui_call_scope_t scope={0};int status=xuiInternalCleanupCallScopeBegin(context,&scope);
+    if(status==XUI_OK && icon->tCustom.onDestroy)
+        icon->tCustom.onDestroy(icon,group->destroy.pUser);
+    xerror* first=xrtTakeError();
+    if(status==XUI_OK && first)status=XUI_ERROR_CALLBACK_FAILED;
+    if(scope.pContext)xuiInternalCallScopeRecordOutcome(&scope,status,first);
+    else xuiInternalContextRecordOutcome(context,status,first);
+    __xuiIconCustomDrop(context,group,&status,&first);
+    if(scope.pContext)status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
+    (void)status;xrtSetErrorTake(first);
 }
 
 static void __xuiIconCategoryChanged(xui_icon_category pCategory)
@@ -817,8 +869,9 @@ surface_size:
 		return __xuiIconIntrinsicSizeDepth(pIcon->pAlias, pSize, iDepth + 1);
 	case XUI_ICON_SOURCE_CUSTOM:
 		if ( pIcon->tCustom.onMeasure != NULL ) {
+			xui_icon_custom_owned_t* owned=__xuiIconCustomOwned(pIcon);
 			iRet = pIcon->tCustom.onMeasure(pIcon, pSize,
-				pIcon->tCustom.pUser);
+				owned?owned->measure.pUser:pIcon->tCustom.pUser);
 			if ( iRet == XUI_OK &&
 			     (!__xuiIconFloatPositive(pSize->fX) ||
 			      !__xuiIconFloatPositive(pSize->fY)) )
@@ -961,9 +1014,10 @@ static int __xuiIconPrepareDepth(xui_icon pIcon, float fWidth, float fHeight, in
 		return __xuiIconPrepareDepth(pIcon->pAlias, fWidth, fHeight, iDepth + 1);
 	case XUI_ICON_SOURCE_CUSTOM:
 		if ( pIcon->tCustom.onPrepare != NULL ) {
+			xui_icon_custom_owned_t* owned=__xuiIconCustomOwned(pIcon);
 			iRet = __xuiIconPixelSize(pIcon, fWidth, fHeight, &iPixelWidth, &iPixelHeight);
 			if ( iRet != XUI_OK ) return iRet;
-			return pIcon->tCustom.onPrepare(pIcon, iPixelWidth, iPixelHeight, pIcon->tCustom.pUser);
+			return pIcon->tCustom.onPrepare(pIcon, iPixelWidth, iPixelHeight, owned?owned->prepare.pUser:pIcon->tCustom.pUser);
 		}
 		break;
 	default:
@@ -1072,7 +1126,10 @@ static int __xuiIconDrawDepth(xui_painter pPainter, xui_icon pIcon, xui_rect_t t
 		return __xuiIconDrawDepth(pPainter, pIcon->pAlias, tDrawRect, &tAliasDesc, iDepth + 1, 0);
 	case XUI_ICON_SOURCE_CUSTOM:
 		if ( pIcon->tCustom.onDraw == NULL ) return XUI_ERROR_UNSUPPORTED;
-		return pIcon->tCustom.onDraw(pIcon, pPainter, tDrawRect, pDesc, pIcon->tCustom.pUser);
+		{
+			xui_icon_custom_owned_t* owned=__xuiIconCustomOwned(pIcon);
+			return pIcon->tCustom.onDraw(pIcon,pPainter,tDrawRect,pDesc,owned?owned->draw.pUser:pIcon->tCustom.pUser);
+		}
 	default:
 		return XUI_ERROR_UNSUPPORTED;
 	}
@@ -1212,14 +1269,20 @@ XUI_API void xuiIconDrawDescDefault(xui_icon_draw_desc_t* pDesc)
 bool xuiInternalContextTraceIcons(xui_context context,xrtownershipvisitor visit,void* user)
 {
     if(!context || !visit)return false;
-    if(!context->pOwnedProxy)return true;
     /* This Context physically owns every Icon carrier, including unregistered
      * alias-retained instances. Visit each actual Surface owner exactly once;
      * category/alias handles do not duplicate the Surface ownership slot. */
     for(xui_icon icon=context->pIcons;icon;icon=icon->pNextAll){
-        if(icon->bOwnSurface && icon->pSurface && !visit(xuiSurfaceOwnership(icon->pSurface),user))return false;
-        for(int i=0;i<icon->iCacheCount;++i)
-            if(icon->pCache[i].pSurface && !visit(xuiSurfaceOwnership(icon->pCache[i].pSurface),user))return false;
+        if(context->pOwnedProxy){
+            if(icon->bOwnSurface && icon->pSurface && !visit(xuiSurfaceOwnership(icon->pSurface),user))return false;
+            for(int i=0;i<icon->iCacheCount;++i)
+                if(icon->pCache[i].pSurface && !visit(xuiSurfaceOwnership(icon->pCache[i].pSurface),user))return false;
+        }
+        xui_icon_custom_owned_t* group=__xuiIconCustomOwned(icon);
+        if(group){
+            const xui_callback_owner_t* owners[]={&group->draw.tOwner,&group->measure.tOwner,&group->prepare.tOwner,&group->destroy.tOwner};
+            for(size_t i=0;i<4;++i)if(owners[i]->onHold && !visit(owners[i]->tReference,user))return false;
+        }
     }
     return true;
 }
@@ -1762,6 +1825,67 @@ XUI_API int xuiIconAddCustom(xui_icon_category pCategory, const char* sName, con
 	pIcon->tCustom.iSize = sizeof(pIcon->tCustom);
 	if ( ppIcon != NULL ) *ppIcon = pIcon;
 	return XUI_OK;
+}
+
+XUI_API int xuiIconAddCustomOwned(xui_icon_category category,const char* name,
+    xui_icon_custom_draw_proc draw,void* drawUser,const xui_callback_owner_t* drawOwner,
+    xui_icon_custom_measure_proc measure,void* measureUser,const xui_callback_owner_t* measureOwner,
+    xui_icon_custom_prepare_proc prepare,void* prepareUser,const xui_callback_owner_t* prepareOwner,
+    xui_icon_custom_destroy_proc destroy,void* destroyUser,const xui_callback_owner_t* destroyOwner,
+    const xui_icon_desc_t* descriptor,xui_icon* output)
+{
+    if(output)*output=NULL;
+    const xui_callback_owner_t* owners[]={drawOwner,measureOwner,prepareOwner,destroyOwner};
+    const bool present[]={draw!=NULL,measure!=NULL,prepare!=NULL,destroy!=NULL};
+    if(!draw || !name || !*name || !__xuiIconDescValid(descriptor))return XUI_ERROR_INVALID_ARGUMENT;
+    for(size_t i=0;i<4;++i)
+        if(!xuiInternalCallbackOwnerRawValid(owners[i]) || (!present[i] && owners[i] && owners[i]->onHold))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=__xuiIconCategoryOperationBegin(category,&scope);
+    if(status!=XUI_OK)return status;
+    xui_context context=category->pContext;
+    bool registered=category->bRegistered;
+    xui_icon_custom_owned_t* group=xrtCalloc(1,sizeof(*group));
+    if(!group)return __xuiIconCategoryOperationEnd(category,&scope,XUI_ERROR_OUT_OF_MEMORY);
+    xui_icon_owned_callback_t* slots[]={&group->draw,&group->measure,&group->prepare,&group->destroy};
+    void* users[]={drawUser,measureUser,prepareUser,destroyUser};bool held[4]={false};
+    for(size_t i=0;i<4;++i){slots[i]->pUser=users[i];if(owners[i])slots[i]->tOwner=*owners[i];}
+    for(size_t i=0;i<4;++i){
+        status=xuiInternalCallbackHoldFresh(&slots[i]->tOwner,&held[i]);
+        if(status!=XUI_OK)break;
+        if((registered && !category->bRegistered) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){status=XUI_ERROR_INVALID_STATE;break;}
+    }
+    xui_icon icon=NULL;
+    if(status==XUI_OK)status=__xuiIconRegister(category,name,XUI_ICON_SOURCE_CUSTOM,descriptor,&icon);
+    if(status==XUI_OK){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+        else{
+            icon->tCustom=(xui_icon_custom_desc_t){XUI_ICON_CUSTOM_OWNED_TAG,measure,prepare,draw,destroy,group};
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+            /* Hold may queue a state callback that retires the just-created
+             * model when the outermost native receipt ends. Observe physical
+             * expiry before handing a borrowed registry result to the caller. */
+            bool gone=false;xui_lifetime_link_t watch={0};
+            status=xuiIconLifetimeWatch(icon,&watch,__xuiIconCreationGone,&gone);
+            if(status!=XUI_OK){
+                xerror* first=xrtTakeError();xuiInternalCallScopeRecordOutcome(&scope,status,first);
+                __xuiIconRollbackRegistration(icon);xrtClearError();xrtSetErrorTake(first);
+                return __xuiIconCategoryOperationEnd(category,&scope,status);
+            }
+            status=__xuiIconCategoryOperationEnd(category,&scope,XUI_OK);
+            if(!gone)xuiLifetimeUnwatch(&watch);
+            if(gone){if(status==XUI_OK){status=XUI_ERROR_INVALID_STATE;xrtClearError();}}
+            else if(output)*output=icon;
+            return status;
+        }
+    }
+    xerror* first=xrtTakeError();xuiInternalCallScopeRecordOutcome(&scope,status,first);
+    if(icon)__xuiIconRollbackRegistration(icon);
+    xrtClearError();
+    for(size_t i=0;i<4;++i)if(!held[i])slots[i]->tOwner=(xui_callback_owner_t){0};
+    __xuiIconCustomDrop(context,group,&status,&first);
+    xrtSetErrorTake(first);
+    return __xuiIconCategoryOperationEnd(category,&scope,status);
 }
 
 XUI_API xui_icon xuiIconFind(xui_icon_category pCategory, const char* sName)

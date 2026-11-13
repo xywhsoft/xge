@@ -1,0 +1,160 @@
+{
+  "date": "2026-11-13",
+  "qualified": true,
+  "shippingDelivery": false,
+  "nativeBaseCommit": "d0b0f03af7ce1a17d89ab0983432e79e4db34d77",
+  "scope": "Immutable four-slot custom Icon callback owners and Painter owned-backend admission. No Icon/Category object growth. No active-reader or manual-Painter lifetime claim.",
+  "sources": {
+    "include/xui.h": "d91978398cded2524abcdf93f7fb03f3107f6ee92da1b2fb6902d62dba30b6b0",
+    "src/xui/core/xui_core.c": "a02c4d919af6fa16c685940c5a4111fec72d8ec9265e8e0a6e3af4697f5d40ca",
+    "src/xui/core/xui_icon.c": "12f3c30fc7c29714364cdb5b62b9d7ae6a2b64be0b6c1d70cea8949f62661d2f",
+    "src/xui/core/xui_owned_resource_slots.c": "3e58b861b12483f814042459215e7f8dd29fedb9c2b94009197f6c13f50bdd70",
+    "tests/xui/xui_icon_custom_owned_test.c": "70b2b19d1a1b4cf5c6197a4e9dd737bc6078a5451ef1f615d2c9616cf45bf07e",
+    "tests/xui/xui_painter_backend_guard_test.c": "e5202595b206c7c3825210bde7cf51ca29e3dcee39ed360299dde54fbefffc19",
+    "tools/test/check_icon_custom_owned.py": "430bf65681718efc7645b99f599c2fdada54fdecc586a025537aa91eb05013b2",
+    "tools/test/README.md": "73c099f56eb3ec6f1b215da43c413c66380bce72638c8dcd8cfba260f8d4ce3e",
+    "docs/xui-owned-custom-icons.md": "cfe8d7ed19ba61650c230c756709efd8be95648030b315550a01175b014a4f26"
+  },
+  "platforms": {
+    "win": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-sdk-win-r3\\results.json",
+        "sha256": "667a3d25c0e851eb5896c4b9c8b1a7b3e6f684f484c06b3af0e30d68f7eeb280",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-native-win-r3\\results.json",
+        "sha256": "cc761b9b6ff97e9f9bc4f2a368d0a943ed297abc32fc4b894892164289e544fb",
+        "commands": 56
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-edit-win-r3\\results.json",
+        "sha256": "380454ac1c51b8d30f3d705acd6ec3413cd3b2940f7808061b5910d6a91a220a",
+        "commands": 16
+      },
+      "languageModels": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-models-win-r3\\results.json",
+        "sha256": "c17c1cf30510e0d70376be5e90ed4d6f1ab52c080f7914d027eb2669c687ef37",
+        "commands": 15
+      },
+      "ownedFormatter": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-formatter-win-r3\\results.json",
+        "sha256": "68c1b839f718f695b9d0c087f529740eb1244c02917a078b7e3524e8974e8914",
+        "commands": 14
+      },
+      "customLanguage": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-language-win-r2\\results.json",
+        "sha256": "7d6d1b1a4170a8ad23e0577cffb19f68933ef6a2cc0ee03f0850243ad99d2844",
+        "commands": 18
+      },
+      "backendBaseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\painter-backend-baseline-win-r1\\results.json",
+        "sha256": "dbb5054d89c1080aaae70598150a692e9cccec66ccdc84a5d3a38e29e05e1246",
+        "commands": 10,
+        "controlledExitBeforeForeignPayloadUse": 84
+      },
+      "layout": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-layout-win-r1\\results.json",
+        "sha256": "da58c9cc9a54fa1c73f9d568df7af6b7d80b9fb0d8480bb6c24aff0b1d359f67",
+        "commands": 2,
+        "bytes": {
+          "before": [
+            312,
+            272
+          ],
+          "after": [
+            312,
+            272,
+            160,
+            40
+          ]
+        }
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-custom-icon-win-freeze-r3.json",
+        "sha256": "8848dcf3addd1274a4175aafcab7742d92bc1f9b03b079758778baad5c745c7b",
+        "inputs": 12079,
+        "rootOverridesStillMatch": true
+      },
+      "host": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-sdk-win-r3\\host\\xge3_host.dll",
+        "sha256": "aa2302ff58fc1b724926279c7c0fbdbd6d0b9130b02143738c59d603e0172e52",
+        "bytes": 9592367,
+        "changeFromCacheClear": 4608
+      }
+    },
+    "linux": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-sdk-linux-r3\\results.json",
+        "sha256": "aa4ea30e9597e3837becf9fdaccf86adfda4a697c79ed555d2fe586088a99be1",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-native-linux-r3\\results.json",
+        "sha256": "faac5834dcf86bccf98d3fe8db13641bd7ac6388e06d92947f2967fe072374fb",
+        "commands": 56
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-edit-linux-r3\\results.json",
+        "sha256": "e4dc4423998eed3a8c1dc3f99cf0fcae2a19eed4e099d06a5c8c8b914577ebfc",
+        "commands": 16
+      },
+      "languageModels": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-models-linux-r3\\results.json",
+        "sha256": "89671e2a902e7c419762e7099cb945ef4bb0eacc0317767f57facd0b5563389a",
+        "commands": 15
+      },
+      "ownedFormatter": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-formatter-linux-r3\\results.json",
+        "sha256": "07046fbf8c69e220e30d5f9000aac708ce42c874ae1f36975df960d9457d07e8",
+        "commands": 14
+      },
+      "customLanguage": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-language-linux-r2\\results.json",
+        "sha256": "f34eb14301a10161de83d26ccf77a264dd64947d061d9cc6c3dd8a125cdff65e",
+        "commands": 18
+      },
+      "backendBaseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\painter-backend-baseline-linux-r1\\results.json",
+        "sha256": "35de0f0603619dd7cd89b183c4ca7f5f5eb42ff1cde3b28f487a1f06a2aab3db",
+        "commands": 10,
+        "controlledExitBeforeForeignPayloadUse": 84
+      },
+      "layout": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-layout-linux-r1\\results.json",
+        "sha256": "4da0e89d7f3fe3ff8b635005a88d18c9d4f4b1d8a538902148c5cd6afe5faf23",
+        "commands": 2,
+        "bytes": {
+          "before": [
+            312,
+            272
+          ],
+          "after": [
+            312,
+            272,
+            160,
+            40
+          ]
+        }
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-custom-icon-linux-freeze-r3.json",
+        "sha256": "3f6208c6892a8fb3fe06f6ebef74d53950d19e0571baec4cf7a2d815577dc613",
+        "inputs": 12079,
+        "rootOverridesStillMatch": true
+      },
+      "host": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\custom-icon-sdk-linux-r3\\host\\libxge3_host.so",
+        "sha256": "df084e871eb0177ed5a6c3079841baef3b559dd3f40429d8c9fe90af8c7c28ee",
+        "bytes": 10449616,
+        "changeFromCacheClear": 4096
+      }
+    }
+  },
+  "limits": [
+    "No active Surface reader snapshot fix.",
+    "Manual Painter lifetime not exposed.",
+    "No arbitrary module/global closure-cycle or real graphics acceptance.",
+    "Checked scopes, capability lookups, callback records and code/closure bookkeeping remain; no zero-CPU-overhead claim."
+  ]
+}
