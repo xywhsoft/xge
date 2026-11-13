@@ -62,3 +62,18 @@ compiler outputs, rather than source inputs. Keep platform build caches
 separate when preparing isolated Windows/Linux source trees. The November 13
 receipt preserves the original overbroad freeze failures and records an
 independent unchanged-source and unchanged-staged-output verification.
+
+Callback-bearing Icon size/prepare/draw and Category preload operations also
+hold their native carrier reference and Context receipt for the entire native
+body and cleanup tail:
+
+```text
+python tools/test/check_icon_operation_lifetime.py --root . --engine build/host --runtime <matching-XRT-library> --out build/icon-operations
+```
+
+The 28-command gate adds 56 lifetime/error combinations, including alias
+retention, and 4000 zero-heap normal operations. Its raw Painter fixture keeps
+an explicit caller-owned Context scope for the Painter session; it does not
+claim an owned raw Painter API. Cache invalidation or mutation from callbacks
+still needs separate qualification. Platform source snapshots for this cohort
+exclude generated build caches and keep Windows/Linux caches separate.
