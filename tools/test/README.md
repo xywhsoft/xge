@@ -84,12 +84,13 @@ Checked borrowed text reads are covered separately:
 python tools/test/check_text_read_views.py --root . --engine build/host --runtime <matching-XRT-library> --out build/text-reads
 ```
 
-The 12-command gate builds/runs the sized document/editor read, generic edit
-and TextEdit fixtures at GCC O0/O2. It checks embedded NUL and UTF-8 extents,
+The 16-command gate builds/runs the sized document/editor read, generic edit,
+full CodeEdit and TextEdit fixtures at GCC O0/O2. It checks embedded NUL and UTF-8 extents,
 present-empty versus absent output, native snapshot OOM, and 1000 cached reads
 with unchanged XRT allocation/free/reallocation counters. It does not measure
-language string allocation or execute rendering. The broad CodeEdit UI suite
-is separate: the preceding and new SDKs both fail its existing find-scope
-table assertion (expected three columns/rows, actual two columns/zero rows).
-Its failed original and controlled baseline comparison reports are preserved;
-that suite is not counted as a passing read-view check.
+language string allocation or open a native window. The broad CodeEdit suite
+uses the CPU rendering Proxy. Its prior find-scope table failure came from
+asserting synchronously before the 80 ms native debounce update. The test now
+advances the update loop by 40 ms and 50 ms, checks the pending empty table,
+then the expected three columns/three rows. Original failures and baseline
+comparisons remain historical evidence; no native find behavior changes.

@@ -1,0 +1,65 @@
+{
+  "date": "2026-11-13",
+  "qualified": true,
+  "shippingDelivery": false,
+  "scope": "Correct the unchanged CodeEdit regression to advance the native 80 ms debounce update before asserting the find table. No native production behavior, ABI or SDK byte changes.",
+  "sourceBaseCommit": "46289a17fb25c2b21c873e8b8c12f75598906762",
+  "plannedTest": "9b5e61998490013c53ddf17de73b69e3aec14a1891e693cf1785be6a83a84751",
+  "patch": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\find-debounce-only-r2.patch",
+    "sha256": "1b6c859489c993aa74d29fd5d2db463f76b473bffa0d3edfdae3f2855a9a6544"
+  },
+  "preservedUnrelatedWorkspaceTestEdits": true,
+  "sources": {
+    "tools/test/check_text_read_views.py": "2dc5c401ae651ea17d8799d0fb1666424f6d9513cb9c5adc4e8334d5b6630f31",
+    "tools/test/README.md": "2bfc9b3c47d63b27874719e8ee7b1a054bbc90d1c35713961b1c69a4fe731f8b"
+  },
+  "platforms": {
+    "win": {
+      "gate": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-native-find-win-r2\\results.json",
+        "sha256": "cd56609ab5260727f594787efb3231c0dece09e59c8e51a6647266f3398464b6",
+        "commands": 16
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-find-debounce-win-freeze-r2.json",
+        "sha256": "6246dfd1e999f60055a34200b6c9a74ae8e0bd8c66f02effea791c870597a524",
+        "inputs": 12068
+      },
+      "workspaceVariant": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\find-debounce-probe-win-r1\\results.json",
+        "sha256": "f5c4f6c824a366dd54e82e23d4b52942ee78bf5949cd2bcc5a7f34c4c40d6352",
+        "commands": 4
+      },
+      "oldFailure": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-legacy-baseline-win-r1\\results.json",
+        "sha256": "dd7645aade877fef1eea6a99a65004accf4ada681598da9df405d019c2c1111a"
+      },
+      "productionUnchanged": true
+    },
+    "linux": {
+      "gate": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-native-find-linux-r2\\results.json",
+        "sha256": "0229a46354e8bea3cb11f012e928a7073752d134a8183775c6a04d2d0bf70583",
+        "commands": 16
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-find-debounce-linux-freeze-r2.json",
+        "sha256": "ceda822d1b6db4e23397f9fd2c3499c7f23b53f543e01b0b21d2b4bfd5e98553",
+        "inputs": 12068
+      },
+      "workspaceVariant": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\find-debounce-probe-linux-r1\\results.json",
+        "sha256": "80b8e7bfed5c2d5042bd116f2365986fcdf414f8f3fdd3b3d593ca2626afdeff",
+        "commands": 4
+      },
+      "oldFailure": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-legacy-baseline-linux-r1\\results.json",
+        "sha256": "a42e7969b583a767cab12c540014fdea518e5973a6bdf72d39fb3c3b95931d48"
+      },
+      "productionUnchanged": true
+    }
+  },
+  "timing": "40 ms update retains the pending empty table; a further 50 ms update commits three columns and three rows. Real elapsed sleeps are not used.",
+  "acceptanceBoundary": "GCC O0/O2 clients consume the already qualified O2 engine and CPU rendering Proxy. Both planned committed test and workspace variant (which has unrelated bracket assertions) pass; only the five debounce lines are committed. No real graphics backend or final IDE installation."
+}

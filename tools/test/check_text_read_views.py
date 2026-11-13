@@ -15,7 +15,7 @@ def main():
     metadata=json.loads((engine/'build-report.json').read_text(encoding='utf-8'))
     assert metadata['linked']and metadata['xrt_mode']=='host'
     native=engine/('xge3_host.dll'if win else'libxge3_host.so');library=engine/'xge3_host.lib'if win else native
-    sources=[root/'tests/xui'/n for n in('xui_text_read_view_test.c','xui_edit_contract_test.c','xui_text_edit_test.c')]
+    sources=[root/'tests/xui'/n for n in('xui_text_read_view_test.c','xui_edit_contract_test.c','xui_code_edit_test.c','xui_text_edit_test.c')]
     files=[Path(__file__),cc,native,library,runtime,engine/'build-report.json',engine/'xge_build_config.h',*sources,root/'src/xui/code/xui_code_document.c',root/'src/xui/core/xui_edit.c',root/'extlibs/xrt/xrt.h',root/'extlibs/xrt/xrt_config.h',root/'tests/xui/xui_test_proxy.c',root/'tests/xui/xui_test_proxy.h']
     files.extend(p for p in(engine/'host-xrt').rglob('*')if p.is_file())
     files.extend(p for p in(root/'include').rglob('*.h')if p.is_file())

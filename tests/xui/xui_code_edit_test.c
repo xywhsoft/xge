@@ -1364,6 +1364,11 @@ int main(void)
 	iRet = __xuiCodeEditDispatchText(pContext, 'h');
 	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type h");
 	iRet = __xuiCodeEditDispatchText(pContext, 'a');
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type final a");
+	/* Find input is debounced by the native update loop. */
+	iRet = xuiUpdate(pContext, 0.04f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetRowCount(pFindResultTable) == 0, "find scope remains pending before deadline");
+	iRet = xuiUpdate(pContext, 0.05f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnCount(pFindResultTable) == 3 && xuiTableViewGetRowCount(pFindResultTable) == 3, "find scope result table columns");
 	iRet = xuiWindowSetOpen(pFindWindow, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "find scope close find window");
