@@ -1,0 +1,168 @@
+{
+  "date": "2026-11-14",
+  "qualified": true,
+  "shippingDelivery": false,
+  "nativeBaseCommit": "a14c83bb62d852d58bd59314a7c8ab9eb8c9ca1a",
+  "scope": "Standalone CPU DecodeBudget TU available with base 3D and MODEL disabled; shared native owner output. Existing XRT quota algorithm unchanged.",
+  "sources": {
+    "config/modules.json": "f1f8d5ca3cad91ba5f4f1337a28e57e805b24377bd474bf194c92ff81f7a8d41",
+    "include/xge.h": "83ee77632ce3fabdebf59dba9948cc477e7613fb6ccaceb5ced04679346af3d3",
+    "src/xge/3d/xge3d_instance.inc": "8b846fbbe6cf210654226303b78bb29cc3f644b81438837746a5508f89a9bb95",
+    "src/xge/3d/xge3d_decode_budget.c": "c989380b056cc498761d1a0e13a679f69394bfb0b81376babc39b30dcb16a95e",
+    "tests/xge/test_3d_decode_budget.c": "f39c762b64db5ad8064ccb95f02e6fd7ace0cba3a3666538c621f7d368491f3c",
+    "tools/test/check_3d_decode_budget.py": "bd6165fc5d8b9ef4937938a10a49e02c39326f09462c82e9f35772e6b7dba7d4",
+    "docs/3d-decode-budget.md": "78689fbd769ab0505fe687df832ecae03b98a136b713f83c0f55a356a904c517",
+    "tools/test/README.md": "53ee24da378b1fc0b72f2f169e311e8b69aa84717c7f15923951224628b7b4eb"
+  },
+  "platforms": {
+    "win": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-sdk-win-r1\\results.json",
+        "sha256": "9e6f61bb27dff9de568360bd789a80663fc4235e111b4f9bd0a8cfbd664d9491",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-native-win-r2\\results.json",
+        "sha256": "2af08a3860c5119cedcceaacb46ab64a33f1c94a0406994307810b6ca969c6a4",
+        "commands": 25,
+        "minimalImports": [
+          {
+            "level": "O0",
+            "imports": [
+              "KERNEL32.dll",
+              "msvcrt.dll",
+              "xl.dll"
+            ]
+          },
+          {
+            "level": "O2",
+            "imports": [
+              "KERNEL32.dll",
+              "msvcrt.dll",
+              "xl.dll"
+            ]
+          }
+        ]
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-edit-win-r2\\results.json",
+        "sha256": "327067ca8d6a61974a6218629e0fb536f91b9b4db94798e454cefad9c0591a21",
+        "commands": 16
+      },
+      "languageModels": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-models-win-r2\\results.json",
+        "sha256": "ab1743addf0ff8fd94c2c3861eafa7bc84bbf29255e328434d93ee8f721d7efd",
+        "commands": 15
+      },
+      "ownedFormatter": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-formatter-win-r2\\results.json",
+        "sha256": "1ae4e0544dc508340023fb173d0b57f86ea45c4217efcbf80da8c0c3b526978a",
+        "commands": 14
+      },
+      "budgetConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-language-win-r1\\results.json",
+        "sha256": "aa9181b836381996937e03452375f73f2ef60858dcd6847751e98f2129b19519",
+        "commands": 24
+      },
+      "spatialConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-spatial-win-r1\\results.json",
+        "sha256": "9af7b2940d7403acaf84bf71dd475d60d6b1734ed19ce731da5cfbb53af270e7",
+        "commands": 21
+      },
+      "filesConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-files-win-r1\\results.json",
+        "sha256": "b775ed9ab061dd9e1860f41782b84009ca73f7a4d50ead10e3febf87a63a69f5",
+        "commands": 22
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-decode-budget-win-freeze-r1.json",
+        "sha256": "b9f72e47667b6f7bac94c0084e94b5259b8eb5d65235d6b62c7e33fb1ead5802",
+        "inputs": 12082,
+        "rootOverridesStillMatch": true
+      },
+      "host": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-sdk-win-r1\\host\\xge3_host.dll",
+        "sha256": "2c63852ec8b7b55a14cdec4f896c5a8edd6d388571fba8c163680a905d90ed74",
+        "bytes": 9592879,
+        "changeFromCustomIcon": 512
+      }
+    },
+    "linux": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-sdk-linux-r1\\results.json",
+        "sha256": "3f7f4673b885e532106966a9941ce4b0ad2140d80e3ae42e2560426c9e98738c",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-native-linux-r1\\results.json",
+        "sha256": "782a071f722a4bd63a337a683b23f89b28aeb550587ee1ac2ef1f338624f41e3",
+        "commands": 25,
+        "minimalImports": [
+          {
+            "level": "O0",
+            "imports": [
+              "libxl.so",
+              "libc.so.6"
+            ]
+          },
+          {
+            "level": "O2",
+            "imports": [
+              "libxl.so",
+              "libc.so.6"
+            ]
+          }
+        ]
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-edit-linux-r1\\results.json",
+        "sha256": "007cd621a2d5fdd9c4deefd3056c2091b5f07d18c2e463d93e119415447e4b3d",
+        "commands": 16
+      },
+      "languageModels": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-models-linux-r1\\results.json",
+        "sha256": "1bb9b1073aef20cd5dbe1ff50dd0295028674b269a0016d95b0476ac41b31335",
+        "commands": 15
+      },
+      "ownedFormatter": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-formatter-linux-r1\\results.json",
+        "sha256": "3a54910280376661207d5e47cddab3942edcbab6deaab873520b3cac7f02c030",
+        "commands": 14
+      },
+      "budgetConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-language-linux-r1\\results.json",
+        "sha256": "ba012e683772739e6ed84ab10aa983ee769cbf87f30396e635fedc5a3d7b7fa2",
+        "commands": 24
+      },
+      "spatialConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-spatial-linux-r1\\results.json",
+        "sha256": "9281d32a7e4c4534ce4f867e2e0fb623c46e092831c67592228aaa86f2a1ccf9",
+        "commands": 21
+      },
+      "filesConsumer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-files-linux-r1\\results.json",
+        "sha256": "ab02fd2cbf91ead13596c17797c4c2509dfd2c0c105e5da05b0812c81fd4a595",
+        "commands": 22
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-decode-budget-linux-freeze-r1.json",
+        "sha256": "5750a52e009f1274d38a458d085eeaf55e0e1e97539ebdaf80693a428b727b73",
+        "inputs": 12082,
+        "rootOverridesStillMatch": true
+      },
+      "host": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\decode-budget-sdk-linux-r1\\host\\libxge3_host.so",
+        "sha256": "77c1fcf500be78c4de6abae4a18a2573484b6250efad25bb773be4a1f90f0b75",
+        "bytes": 10449616,
+        "changeFromCustomIcon": 0
+      }
+    }
+  },
+  "boundaries": [
+    "No GPU/window/model parser/network test.",
+    "MODEL=0 independence proven for standalone native budget TU/client; full language SDK in this receipt uses the recorded 3D configuration.",
+    "Native quota backing allocation is outside managed XRT debug allocation counters/fault injection.",
+    "Native live charge/ref ownership and existing root lifetime protocols are used; no language callback graph added to this CPU leaf.",
+    "Package DLL initialization, broad 3D resources/query projection, language thread transfer and final delivery remain."
+  ]
+}

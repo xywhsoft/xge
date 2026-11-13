@@ -4774,18 +4774,6 @@ XGE_API int xge3dMeshAddRef(xge3d_mesh *mesh);
 XGE_API int xge3dMaterialAddRef(xge3d_material *material);
 /* 增加 3D 纹理引用计数。 */
 XGE_API int xge3dTextureAddRef(xge3d_texture *texture);
-#if XGE3D_ENABLE_MODEL
-typedef struct xge3d_instance_builder xge3d_instance_builder;
-/* Retained asset storage for admission budgets. Includes encoded source,
- * glTF parser allocations/external buffers, container capacities, meshes,
- * materials and texture pixels. GPU required includes the full mip chain.
- * Excludes temporary decode peaks, scene instances/animators/collision indexes, allocator and
- * driver overhead. Shared resources are conservatively counted per asset.
- * Query immutable loaded assets without concurrent mutation/retirement. */
-typedef struct xge3d_asset_memory_t {
-    size_t size;
-    uint64_t cpu_storage_bytes, gpu_required_bytes, source_bytes, parser_bytes;
-} xge3d_asset_memory_t;
 /* Shared quota for live XRT heap requests made by bounded model/clip loads,
  * including parser, decoder scratch, queued results and retained allocations.
  * Charges follow blocks across threads and survive scope/owner destruction.
@@ -4800,12 +4788,27 @@ typedef struct xge3d_decode_budget_info_t {
 } xge3d_decode_budget_info_t;
 /* 创建共享的解码内存配额。 */
 XGE_API int xge3dDecodeBudgetCreate(uint64_t bytes,xge3d_decode_budget **out);
+/* Acquire an independent native owner. NULL/failure clears out; success
+ * transfers one reference. Quotas remain live while charged blocks/scopes do. */
+XGE_API int xge3dDecodeBudgetShareOwned(xge3d_decode_budget *budget,xge3d_decode_budget **out);
 /* 释放解码配额引用；活跃分配仍按内部引用完成记账。 */
 XGE_API void xge3dDecodeBudgetFree(xge3d_decode_budget *budget);
 /* 查询解码配额限制、峰值、活跃分配与拒绝次数。 */
 XGE_API int xge3dDecodeBudgetInfo(xge3d_decode_budget *budget,xge3d_decode_budget_info_t *out);
 /* 更新解码配额上限，不回收已存在的活跃分配。 */
 XGE_API int xge3dDecodeBudgetSetLimit(xge3d_decode_budget *budget,uint64_t bytes);
+#if XGE3D_ENABLE_MODEL
+typedef struct xge3d_instance_builder xge3d_instance_builder;
+/* Retained asset storage for admission budgets. Includes encoded source,
+ * glTF parser allocations/external buffers, container capacities, meshes,
+ * materials and texture pixels. GPU required includes the full mip chain.
+ * Excludes temporary decode peaks, scene instances/animators/collision indexes, allocator and
+ * driver overhead. Shared resources are conservatively counted per asset.
+ * Query immutable loaded assets without concurrent mutation/retirement. */
+typedef struct xge3d_asset_memory_t {
+    size_t size;
+    uint64_t cpu_storage_bytes, gpu_required_bytes, source_bytes, parser_bytes;
+} xge3d_asset_memory_t;
 /* 在共享解码配额约束下从 URI 加载模型。 */
 XGE_API int xge3dModelLoadBudget(const char *uri,xge3d_decode_budget *budget,xge3d_model **out);
 /* 在共享解码配额约束下从内存加载模型。 */

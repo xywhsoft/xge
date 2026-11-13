@@ -174,3 +174,15 @@ transactional Hold/OOM rollback, queued post-publication expiry, consuming Drop
 errors and callback reentry with exact nullable error delivery. Painter checks
 use actual owned Font/Surface/Draw controls with distinct backend capabilities.
 See `docs/xui-owned-custom-icons.md` for ownership, object sizes and limits.
+
+The standalone 3D quota gate uses the same explicit O2 host/XRT contract:
+
+```text
+python tools/test/check_3d_decode_budget.py --root . --engine build/host --runtime <matching-XRT-library> --out build/decode-budget
+```
+
+Its 25 commands include shared owners/live charges/limits at O0/O2, existing
+CPU hierarchy and spatial regressions, plus a MODEL=0 program linking just the
+quota TU and XRT. Object/import checks exclude model/parser/GL/XGE engine
+dependencies in that standalone program. C/C++ headers compile with MODEL off.
+No window, model file, GPU or network is used; see docs/3d-decode-budget.md.
