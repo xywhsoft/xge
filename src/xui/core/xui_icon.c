@@ -1947,7 +1947,23 @@ XUI_API void xuiIconClear(xui_icon_category category)
 {
     if(!__xuiIconCategoryValid(category))return;
     xui_call_scope_t scope={0};if(xuiCallScopeBegin(category->pContext,&scope)!=XUI_OK)return;
+    /* A finalizer may unregister this category or clear the Context registry.
+     * The Context receipt alone does not retain the category's array. Keep
+     * one temporary native reference until the complete clear body returns. */
+    int status=xuiIconCategoryAddRef(category);
+    if(status!=XUI_OK){
+        xrtSetErrorKind(status==XUI_ERROR_LIMIT_EXCEEDED ? XERR_RANGE:XERR_STATE);
+        (void)xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());return;
+    }
     __xuiIconClear(category);
+    /* Seal a new body diagnostic before consuming the temporary reference.
+     * Entry ambient errors are not new failures. Final cleanup may itself
+     * invoke a destructor, whose failure must not replace the first error. */
+    xerror* first=xrtTakeError();
+    if(first!=scope._pFirstError || scope.iResult!=XUI_OK)
+        xuiInternalCallScopeRecordOutcome(&scope,XUI_OK,first);
+    __xuiIconCategoryReleaseOwner(category);
+    xrtErrorFree(first);
     (void)xuiInternalCallScopeEndRestored(&scope,XUI_OK,xrtTakeError());
 }
 XUI_API int xuiIconRelease(xui_icon icon)

@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "shippingDelivery": false,
+  "parentNativeHead": "b4409240b658f25aa247eb11670f58075163637d",
+  "scope": "Temporary Category reference keeps IconClear array storage alive through category unregister, category registry clear, Context close and recursive clear. Native CPU SDK and C clients only.",
+  "production": {
+    "src/xui/core/xui_icon.c": "d62fcc58b37108a5c207d0540e3717e8d6c15737665d2f987e5f2c817959d8e2",
+    "tests/xui/xui_icon_clear_reentry_test.c": "37c6c8d3befc6bc9ffc821ff56620b50f36b37a32bcc11e4f3ffd447ef4bbf19",
+    "tools/test/check_icon_clear_reentry.py": "27fa6c5080864b26061d4a2bc6dfba59c011c6dd261949955f294ef4e86d6899"
+  },
+  "publicHeaderSha256": {
+    "xge.h": "655607c5d277d956358c22a208a2cd6456aabd2bb119ac39cc82e4054963c848",
+    "xge_config.h": "4c812ea0173e6dde0eb2bbd28fa3d5422b1611a5b5090150573ccb1c382de1f5",
+    "xge_host_xrt.h": "5e43dc2cff98741941c1be6d02832d6cf34256521c94975e4fe96fd411e7b60f",
+    "xnative_transfer.h": "620fe84af1c7c5f40006a65a4ca4435a5d62f2fd500b345514829e27c08dff6f",
+    "xui.h": "16644061bd4dde5fd4e86ac05bc8d1767db9e01dc657a8aabc016b66404a6655",
+    "xui_config.h": "735eb9adf7a85f28902454478f96984f91b2b3971d00deefa28dc8df06ecbfad",
+    "xui_document.h": "b163fa5448dc811926c28edf9001319b10148b07407882b72ecbacee14a02a38",
+    "xui_document_ui.h": "e343a8600039805be3c5e481fe1d15dbcd426490ce2ad2b5dca65f78b6574bb2"
+  },
+  "publicAndPrivateLayoutsUnchanged": true,
+  "platforms": {
+    "win": {
+      "sourceQualification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-win-r1-source-qualification.json",
+        "sha256": "4af68ee60b834996fa7003a78e37f50aab0ed4a6945bf6d48414bf4577a47a38",
+        "inputCount": 12063
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-win-r1\\results.json",
+        "sha256": "107b094f735d61c78098276d6c8a79b5e2e869d3b2cd0d4b86c973ed1240a631",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-native-win-r2\\results.json",
+        "sha256": "7043e10487598d1b8e90e0a41a9c188f0844c37ae0b157571e024e91b7173010",
+        "commands": 24
+      },
+      "runtime": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-win-r1\\host\\xge3_host.dll",
+        "sha256": "465f5a5eb27c1f7f66a6e6c78136f71f02b729e7414fdb41225b057a89c99e17",
+        "bytes": 9583663,
+        "byteDelta": 512
+      }
+    },
+    "linux": {
+      "sourceQualification": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-linux-r1-source-qualification.json",
+        "sha256": "d726f7e0b57c8798a392f1afc776bc5c21c8631f25845ecc546eb1e74ff66cbc",
+        "inputCount": 12063
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-linux-r1\\results.json",
+        "sha256": "3d36ce6e528d2cf07e4587c3e5ac26737e9631cbc63a0f0d016509da045bd930",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-native-linux-r1\\results.json",
+        "sha256": "640f3d5b4f8741833751cfe3769bb403a82f437c050d46dbe2f416bfb3158e24",
+        "commands": 24
+      },
+      "runtime": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-sdk-linux-r1\\host\\libxge3_host.so",
+        "sha256": "1aff8bd5393d881d8a6879accca1419380c43d96053f6fe5c693ca910a987426",
+        "bytes": 10441392,
+        "byteDelta": 0
+      }
+    }
+  },
+  "baseline": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-baseline-win-r1\\results.json",
+      "sha256": "6f770bd5244961faebd99f3d1f7f079ec2d3ed31db6275e9f7e182fcdc835fc4",
+      "exitCode": 74,
+      "guard": "Stops inside finalizer before returning to the invalidated outer reader"
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\icon-clear-baseline-linux-r1\\results.json",
+      "sha256": "3ef9ce0fccda2602b75cfe284e1b9d5d98bb43372c218f58e5cb3372e4b31201",
+      "exitCode": 74,
+      "guard": "Stops inside finalizer before returning to the invalidated outer reader"
+    }
+  },
+  "costs": [
+    "One temporary native Category reference increment/decrement per successful IconClear, under its existing Context receipt. No new fields or per-call heap storage.",
+    "1000 empty clears show zero XRT allocations/frees/reallocations. New diagnostics are sealed before consuming the temporary reference; ambient errors remain ambient."
+  ],
+  "limits": [
+    "No retained custom/formatter closure integration claim.",
+    "Loader/draw/prepare callbacks and other mutation paths still require their own reentry qualification.",
+    "Native engine O2 and GCC O0/O2 clients; no sanitizer, device/window/network or final-delivery claim."
+  ],
+  "harnessNote": "Initial Windows client wrapper called the new argc/argv main with no arguments. That client-only compile failure is preserved in icon-clear-native-win-r1. The wrapper was corrected, and all 24 commands passed in r2; production SDK bytes were reused unchanged.",
+  "sourceBoundaryCorrection": "Both original all-file producer checks included three generated HarfBuzz .o/.d/.json shared-cache outputs. Their raw failures are preserved. Independent source qualifications exclude only these exact compiler outputs, verify every other original frozen byte and every staged runtime/SDK output, and record the corrected 12063 source inputs unchanged. No native source was changed or rebuilt for that harness correction."
+}
