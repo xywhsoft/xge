@@ -138,3 +138,26 @@ preview retains the existing 255-byte limit, incomplete UTF-8 tail trimming
 and C-string display termination at the first embedded NUL. No private Picker
 size growth is needed on the qualified x64 targets. Internal Icon operation
 helpers have hidden ELF visibility and are not new public exports.
+
+Cache finalizer reentry and owned clear outcomes have a 48-command successor:
+
+```text
+python tools/test/check_icon_cache_clear_reentry.py --root . --engine build/host --runtime <matching-XRT-library> --out build/icon-cache-clear
+```
+
+The added raw CPU test covers 60 SVG/raster Touch and category descriptor
+clear combinations: nested clear, unregister, category removal, Context close,
+replacement cache publication and exact diagnostics. It also checks 2000 empty
+mutations with unchanged XRT heap counters. The owned cache test separately
+uses actual native Surface controls for 72 combinations of reentry/Context
+close, negative finalizer status, NULL/present diagnostics and an ambient error.
+A later cleanup error cannot replace the first outcome, including NULL.
+
+Clear detaches its array/loaded slot before backend destruction, so a nested
+clear cannot destroy the same owner twice or discard a newly built replacement.
+Touch and descriptor clear hold their actual carriers and Context through
+cleanup and checked receipt delivery. No public ABI or object layouts change.
+This is distinct from the still-pending active-reader snapshot protocol: a
+backend reading a Surface must also keep it alive across reentrant mutation.
+Controlled old/current reader probes stop before premature physical release;
+they are evidence of that remaining gap, not passing reader acceptance.

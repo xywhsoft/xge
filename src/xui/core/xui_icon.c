@@ -278,30 +278,35 @@ static void __xuiIconDestroySurface(xui_icon pIcon, xui_surface pSurface)
 static void __xuiIconClearCache(xui_icon pIcon)
 {
 	int i;
+	xui_icon_cache_entry_t* pCache;
+	int iCount;
 
 	if ( pIcon == NULL ) {
 		return;
 	}
-	for ( i = 0; i < pIcon->iCacheCount; i++ ) {
-		__xuiIconDestroySurface(pIcon, pIcon->pCache[i].pSurface);
-	}
-	if ( pIcon->pCache != NULL ) {
-		xrtFree(pIcon->pCache);
-	}
+	/* Detach before entering any backend finalizer. Reentrant clear must see
+	 * empty slots, and a replacement cache created there belongs to the Icon,
+	 * not to this retiring array. Active readers need their own protocol. */
+	pCache = pIcon->pCache;
+	iCount = pIcon->iCacheCount;
 	pIcon->pCache = NULL;
 	pIcon->iCacheCount = 0;
 	pIcon->iCacheCapacity = 0;
 	pIcon->iCacheClock = 0;
+	for ( i = 0; i < iCount; i++ ) {
+		__xuiIconDestroySurface(pIcon, pCache[i].pSurface);
+	}
+	xrtFree(pCache);
 }
 
 static void __xuiIconClearLoadedSurface(xui_icon pIcon)
 {
-	if ( (pIcon != NULL) && (pIcon->pSurface != NULL) && pIcon->bOwnSurface ) {
-		__xuiIconDestroySurface(pIcon, pIcon->pSurface);
-	}
 	if ( pIcon != NULL ) {
+		xui_surface pSurface = pIcon->pSurface;
+		int bOwnSurface = pIcon->bOwnSurface;
 		pIcon->pSurface = NULL;
 		pIcon->bOwnSurface = 0;
+		if ( pSurface != NULL && bOwnSurface ) __xuiIconDestroySurface(pIcon, pSurface);
 	}
 }
 
@@ -1443,18 +1448,28 @@ XUI_API int xuiIconCategorySetDesc(xui_icon_category pCategory, const xui_icon_c
 	tDesc.iSize = sizeof(tDesc);
 	if ( tDesc.iCacheCapacity == 0 )
 		tDesc.iCacheCapacity = XUI_ICON_DEFAULT_CACHE_CAPACITY;
-	if ( __xuiIconCategoryDescEqual(&pCategory->tDesc, &tDesc) ) return XUI_OK;
+	xui_call_scope_t scope={0};
+	int status=__xuiIconCategoryOperationBegin(pCategory,&scope);
+	if(status!=XUI_OK)return status;
+	if ( __xuiIconCategoryDescEqual(&pCategory->tDesc, &tDesc) )
+		return __xuiIconCategoryOperationEnd(pCategory,&scope,XUI_OK);
 	pCategory->tDesc = tDesc;
 	for ( i = 1; i <= pCategory->arrIcons.Count; i++ ) {
 		xui_icon* ppIcon;
 
 		ppIcon = (xui_icon*)xuiXrtArrayGet(&pCategory->arrIcons, i);
 		if ( (ppIcon != NULL) && (*ppIcon != NULL) ) {
-			__xuiIconClearCache(*ppIcon);
+			xui_icon icon=*ppIcon;xui_call_scope_t reading={0};
+			status=xuiInternalIconOperationBegin(icon,&reading);
+			if(status!=XUI_OK)break;
+			__xuiIconClearCache(icon);
+			status=xuiInternalIconOperationEnd(icon,&reading,XUI_OK);
+			if(status!=XUI_OK || pCategory->pContext->bCloseRequested ||
+			   pCategory->pContext->bDestroyPending)break;
 		}
 	}
 	__xuiIconCategoryChanged(pCategory);
-	return XUI_OK;
+	return __xuiIconCategoryOperationEnd(pCategory,&scope,status);
 }
 
 XUI_API int xuiIconCategoryGetDesc(xui_icon_category pCategory, xui_icon_category_desc_t* pDesc)
@@ -1916,9 +1931,10 @@ XUI_API int xuiIconSetMetadata(xui_icon pIcon, const xui_icon_desc_t* pDesc)
 
 XUI_API int xuiIconTouch(xui_icon pIcon)
 {
-	if ( !__xuiIconValid(pIcon) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope={0};int status=xuiInternalIconOperationBegin(pIcon,&scope);
+	if(status!=XUI_OK)return status;
 	__xuiIconChanged(pIcon, 1);
-	return XUI_OK;
+	return xuiInternalIconOperationEnd(pIcon,&scope,XUI_OK);
 }
 
 XUI_API int xuiIconGetIntrinsicSize(xui_icon pIcon, xui_vec2_t* pSize)
