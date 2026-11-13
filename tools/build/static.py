@@ -2,8 +2,9 @@
 """Build a direct-XRT static XGE archive without changing the normal DLL build.
 
 The existing profile/configuration guards select the same physical sources.
-single/xge.c remains one aggregate member; XUI/3D and optional HarfBuzz retain
-their normal translation-unit boundaries. Every compiled function/data item
+Pure image alpha processing is an independent member. single/xge.c keeps the
+remaining aggregate; XUI/3D and optional HarfBuzz retain their translation-unit
+boundaries. Every compiled function/data item
 gets its compiler section. Actual final reachability is the linker's job.
 No XRT implementation or generated host import slots enter this archive.
 """
@@ -78,7 +79,7 @@ def main():
     includes=shlex.split((root/'config/includes.rsp').read_text(encoding='utf-8'))
     flags=['-std=c11','-O2','-Wall','-Wextra','-Wno-unused-parameter','-Wno-unused-function',
         '-Wno-cast-function-type','-ffunction-sections','-fdata-sections','-DXGE_XRT_HOST=1',
-        '-DXGE_STATIC_BUILD=1',f'-DXGE_DEBUGMODE={int(a.debug_api)}',f'-DXGE_BUILD_PROFILE={profiles[a.profile]["id"]}',
+        '-DXGE_STATIC_BUILD=1','-DXGE_IMAGE_ALPHA_SEPARATE_TU=1',f'-DXGE_DEBUGMODE={int(a.debug_api)}',f'-DXGE_BUILD_PROFILE={profiles[a.profile]["id"]}',
         *includes,*['-D'+v for v in a.define]]
     if not windows:flags+=['-fPIC','-D_GNU_SOURCE']
     if a.profile=='ide':
@@ -108,7 +109,7 @@ def main():
         if not any(v.startswith('XUI_ENABLE_WEBVIEW2=')for v in a.define):flags+=['-DXUI_ENABLE_WEBVIEW2=1']
         flags+=['-isystem',include.as_posix()];external_links.append(loader);runtime_dependencies.append(runtime)
         for path in [loader,runtime,*include.rglob('*.h')]:inputs[str(path.resolve())]=sha(path)
-    modules=json.loads((root/'config/modules.json').read_text(encoding='utf-8'));sources=['single/xge.c']
+    modules=json.loads((root/'config/modules.json').read_text(encoding='utf-8'));sources=['single/xge.c','src/xge/text/xge_image_alpha.c']
     for group,header,prefix in [('xui_sources','xui_config.h','XGE_ENABLE_XUI && '),('3d_sources','xge_config.h','')]:
         choices=list(modules.get(group,{}).items())
         text='#include "'+header+'"\n'+''.join(f'#if {prefix}({guard})\nXGE_SOURCE_{i}\n#endif\n'for i,(_,guard)in enumerate(choices))
@@ -123,7 +124,7 @@ def main():
     config='#ifndef XGE_BUILD_CONFIG_H\n#define XGE_BUILD_CONFIG_H\n'
     config+=f'#define XGE_BUILD_API_MAJOR {api}\n#define XGE_BUILD_PROFILE {profiles[a.profile]["id"]}\n'
     config+=''.join(f'#define {name} {int(name in features)}\n'for name in names)
-    config+='#define XGE_XRT_HOST 1\n#define XGE_STATIC_BUILD 1\n#define XL6_XGE_STATIC 1\n'
+    config+='#define XGE_XRT_HOST 1\n#define XGE_STATIC_BUILD 1\n#define XGE_IMAGE_ALPHA_SEPARATE_TU 1\n#define XL6_XGE_STATIC 1\n'
     if a.debug_api:config+='#define XGE_DEBUGMODE 1\n'
     if webview2:config+='#define XUI_ENABLE_WEBVIEW2 1\n'
     public=sorted((root/'include').glob('*.h'));abi_inputs='XGE_PUBLIC_ABI_V2\n'+''.join(path.relative_to(root).as_posix()+'\0'+path.read_text(encoding='utf-8')+'\0'for path in [*public,root/'extlibs/xrt/xrt.h'])
@@ -227,7 +228,7 @@ extern const xge_host_xrt_contract_t xgeStaticXrtContractV1;
         cxx_runtime_undefined=cpp_runtime,
         runtime_dependencies=[dict(path=str(v.resolve()),sha256=sha(v),deployment='Must remain available to the final application loader')for v in runtime_dependencies],
         reuse_parent=str(a.reuse_build.resolve()/'build-report.json')if a.reuse_build else None,
-        granularity='single/xge.c aggregate member plus configured physical XUI/3D TUs; compiler section reachability, not function-source splitting',
+        granularity='independent pure image alpha member, single/xge.c aggregate and configured physical XUI/3D TUs; compiler section reachability for the remaining aggregate',
         seconds=round(time.monotonic()-started,3))
     save()
     if not unchanged:raise RuntimeError('Native source changed during static build')

@@ -1,0 +1,108 @@
+{
+  "date": "2026-11-14",
+  "qualified": true,
+  "shippingDelivery": false,
+  "networkTests": false,
+  "nativeParent": "2a95629ce282a7de27c492168a2237ff7c8b2500",
+  "sources": {
+    "include/xge.h": "84bac625ab199e8ea19d58d99634b87fe611cf7de80a1ecc0e3eba03efd1bbd7",
+    "src/xge/core/xge_impl.c": "9275f35166fa9a13afb549ac55cf9c8ff846c850d93b52295c57c6d41276215b",
+    "src/xge/text/xge_texture.c": "8354056a9f55374b4b93d79b1fa990c9778487083af55de26a8d2e341077bdf4",
+    "src/xge/text/xge_image_alpha.c": "fedeb8b1ef6f879ac25b9cc41611b990c8b247344d94a415576003dea74f6ebd",
+    "tools/build/static.py": "6e61c3e101925fc529c015f5b5e845b69821207ff21907596a54df1ac7a1155d",
+    "tests/xge/xge_image_alpha_test.c": "b2f6e5fe2465afa12bee9f4dd51edc0e77d88b36d982dea637f310f6722f15d4",
+    "tools/test/check_image_alpha.py": "a6374bb28e056b0613b7ee31ffece497d556f166731cf6f43014215514e0559c",
+    "tools/test/check_image_alpha_sdk.py": "f55ac00562b02fa78e71e167032a27a2439bd1ee560305131ec28a2d20c05729",
+    "docs/image-alpha.md": "4c71ab5391f45de7fc5a2b9514693a495e9dbb1cb78d332593912a9389c0a735"
+  },
+  "platforms": {
+    "win": {
+      "baseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-baseline-win-r1\\results.json",
+        "sha256": "9e87595e485b9e9870d3bf265196c99c139ec01131dda188728f4f06fd7c9d4f",
+        "commands": 2
+      },
+      "standalone": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-native-win-r3\\results.json",
+        "sha256": "4c145fde9a5ec0a2a238b9c60f105d96cb91469ffc8b8e32834f1763744f1e0d",
+        "commands": 18
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-sdk-win-r3\\results.json",
+        "sha256": "f081cb97d1922d7d63ff0efd313f959338effb5f71ac77310c9d5034f38b323d",
+        "commands": 4
+      },
+      "publicClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-public-win-r3\\results.json",
+        "sha256": "0d9d1d3a0213c01a8cda9e67b123e89fc64b3be09b4604a7f9a0cb08d0b2b46b",
+        "commands": 18
+      },
+      "pngRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-png-win-r3\\results.json",
+        "sha256": "415bccec15a79569ff356fa94c2112b8ece8edd54513673c82f2612e52ae5dc3",
+        "commands": 20
+      },
+      "sourceFreeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-image-alpha-win-freeze-r3.json",
+        "sha256": "c0cb97b82a4c024bb9f0276d3a7b378bd6c3562ed23c30b71cb5bc84c476a6b7"
+      }
+    },
+    "linux": {
+      "baseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-baseline-linux-r1\\results.json",
+        "sha256": "c9a76330e2ace4bbe1db414001c03bb918c695d1012d631a52fdd00053bb96cf",
+        "commands": 2
+      },
+      "standalone": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-native-linux-r3\\results.json",
+        "sha256": "e0a1813c5da6b0cf951d037943c5f8eb22b39d96eb41fdd9e945603af9a7ff0a",
+        "commands": 20
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-sdk-linux-r3\\results.json",
+        "sha256": "37b18b2a7c3269a0bb3d6a8721df313b8b2327658540c00ab6df73f90eab1788",
+        "commands": 4
+      },
+      "publicClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-public-linux-r3\\results.json",
+        "sha256": "5d08c422cc32ce1aa9a94f7cc70a1b0a3232e68ebbcf92c5de5e15d275d4cb84",
+        "commands": 18
+      },
+      "pngRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-png-linux-r4\\results.json",
+        "sha256": "d2e5b368ac17f09bb3ab039cbb56ad660ed472102b6b05d5a20048cd5ec2011d",
+        "commands": 22
+      },
+      "sourceFreeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-image-alpha-linux-freeze-r3.json",
+        "sha256": "aee343d1ca85a4229e2b6ac981a9f4ae477548169c213a54dcfdee1a8e49e005"
+      }
+    }
+  },
+  "staticReportMetadataOnlySuccessor": {
+    "build": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-static-metadata-win-r2\\build-report.json",
+      "sha256": "fca5e3dffaeaf3423f4b831d725caf87d90d367364ac35692a92df7ec3ad50e1",
+      "commands": 0
+    },
+    "publicClients": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\image-alpha-static-metadata-public-win-r1\\results.json",
+      "sha256": "783c3cf410c0e2c66dc2790b4df1b41731b6b08426e08303bf2019e4823bad3c",
+      "commands": 18
+    },
+    "description": "Same flags/ABI and 164 reused objects; one generated contract object rebuilt. Report granularity now names the independent alpha member. SDK r3 reports retain their original bytes and earlier description."
+  },
+  "contracts": {
+    "legacy": "Raw C retains repeated transform semantics and invalid-input no-op; padded-row writes fixed.",
+    "checked": "RGBA8 geometry/stride/state checked before writes; PRE succeeds unchanged; straight/unmarked converts once; invalid/unsupported returns status without mutation.",
+    "allocation": "No XRT, allocator, engine, GPU or thread call in the pure native operation; compiler CRT stack-protector hooks may remain.",
+    "static": "Pure alpha archive member is independently linked by C/C++ clients without XRT/graphics libraries; other engine components retain their normal dependencies.",
+    "defaultDecision": "Idempotence is the unpublished recommended default for the new safe method; optional preference remains open."
+  },
+  "preservedEvidence": [
+    "F:\\xlang-validation\\xge-full-20261110\\image-alpha-qualification-win-r1\\results.json",
+    "F:\\xlang-validation\\xge-full-20261110\\image-alpha-static-metadata-win-r1\\build-report.json",
+    "F:\\xlang-validation\\xge-full-20261110\\image-alpha-qualification-linux-r3\\results.json"
+  ],
+  "remaining": "Managed language integration has separate evidence. Real rendering and final matched SDK/runtime/IDE delivery remain outside this CPU prerequisite batch."
+}

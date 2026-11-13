@@ -572,28 +572,6 @@ void* xgeImageGetPixels(xge_image pImage)
 	return pImage->pPixels;
 }
 
-void xgeImagePremultiply(xge_image pImage)
-{
-	unsigned char* pPixels;
-	int i;
-	int iCount;
-	unsigned int iA;
-
-	if ( (pImage == NULL) || (pImage->pPixels == NULL) || (pImage->iFormat != XGE_PIXEL_RGBA8) ) {
-		return;
-	}
-	pPixels = (unsigned char*)pImage->pPixels;
-	iCount = pImage->iWidth * pImage->iHeight;
-	for ( i = 0; i < iCount; i++ ) {
-		iA = (unsigned int)pPixels[(i * 4) + 3];
-		pPixels[(i * 4) + 0] = (unsigned char)(((unsigned int)pPixels[(i * 4) + 0] * iA + 127u) / 255u);
-		pPixels[(i * 4) + 1] = (unsigned char)(((unsigned int)pPixels[(i * 4) + 1] * iA + 127u) / 255u);
-		pPixels[(i * 4) + 2] = (unsigned char)(((unsigned int)pPixels[(i * 4) + 2] * iA + 127u) / 255u);
-	}
-	pImage->iFlags &= ~XGE_IMAGE_STRAIGHT_ALPHA;
-	pImage->iFlags |= XGE_IMAGE_PREMULTIPLIED;
-}
-
 typedef struct __xgeImageWriteContext {
 	FILE* pFile;
 	int bFailed;

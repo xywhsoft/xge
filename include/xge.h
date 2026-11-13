@@ -2724,8 +2724,19 @@ XGE_API int xgeImageLoadMemoryEx(xge_image pImage, const void* pData, int iSize,
 XGE_API int xgeImageInfoMemory(const void* pData, int iSize, int* pWidth, int* pHeight);
 /* 取图像像素首地址（调用方只读）。 */
 XGE_API void* xgeImageGetPixels(xge_image pImage);
-/* 就地预乘 alpha。 */
+/* Multiply RGBA8 RGB by alpha in place; every call repeats the transform.
+ * Positive stride must fit a complete row; nonpositive stride means tight.
+ * Row padding is untouched and final-row padding is not required. NULL,
+ * invalid geometry/stride or another pixel format is a no-op. The caller
+ * supplies writable storage through the last row and exclusive image access. */
 XGE_API void xgeImagePremultiply(xge_image pImage);
+/* State-aware RGBA8 conversion. Straight or unmarked input is converted once;
+ * valid already-premultiplied input succeeds without pixel writes. Geometry
+ * is checked before either outcome. Invalid storage/geometry or contradictory
+ * alpha flags returns INVALID_ARGUMENT; another format returns UNSUPPORTED.
+ * Failure leaves pixels/flags unchanged. The storage/access contract above
+ * applies, and unrelated flag bits are preserved. No allocation or XRT call. */
+XGE_API int xgeImagePremultiplyChecked(xge_image pImage);
 /* 把像素缓冲写出为 PNG 文件。 */
 XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride);
 /* pPixels are straight RGBA by default. Pass XGE_IMAGE_PREMULTIPLIED when
