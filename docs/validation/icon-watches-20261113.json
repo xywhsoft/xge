@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "shippingDelivery": false,
+  "parentNativeHead": "380f2f0e67199b3064f1e64ed729ee78aa8f16d7",
+  "scope": "Physical Icon/Category observer storage and checked registry-owner removal, with Context scope preservation. Local CPU native SDK and C clients only; language models and retained callback integration remain separate.",
+  "production": {
+    "include/xui.h": "16644061bd4dde5fd4e86ac05bc8d1767db9e01dc657a8aabc016b66404a6655",
+    "src/xui/core/xui_internal.h": "b7e611c9b6ef13fd4adf6e21f4996d8b913acce48de6eeecabd99d2f716eb72e",
+    "src/xui/core/xui_widget.c": "70a3deee91c4dcb29be0cfb6ff522f825c16000f9a82c2c95783ded60278100d",
+    "src/xui/core/xui_icon.c": "8b495f7c7cc23060bbae783a7843039bff6109aee16287ebe3c5ed333f647c74",
+    "tests/xui/xui_icon_watch_test.c": "d242f9ce00eac094d280c389ba186d378e347365707ab5fb8166638232915d03",
+    "tools/test/check_icon_watches.py": "16169142bd8b0696367bbca93e18542859104f9b853158f293c7b512e777d392"
+  },
+  "sourceFreezes": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-icon-watch-freeze-r2.json",
+      "sha256": "4ae8652d055370aa4ff0234541bbe14efc78a23f2ca1cfd0b4978b9ae12fb0b4"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-icon-watch-freeze-r3.json",
+      "sha256": "ef8cbebdebc2952475d6fafd7d6c40ca778482caed6679275505d68e2a43c6b7"
+    }
+  ],
+  "platforms": {
+    "win": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-sdk-win-r2\\results.json",
+        "sha256": "e63cd18148c008d31f1206cb325e2e38e9f0c6804379d28ac9f8d29c9f09919b",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-native-win-r1\\clients\\results.json",
+        "sha256": "af9551f9351ccac52caf98da5607e7be50e733dd3c518d8596c4ccc8af003455",
+        "commands": 20
+      },
+      "privateLayout": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-layout-win-r1\\results.json",
+        "sha256": "c5dd3fff24b841083b89ea048f1bce6bf474d30685d388d4187ce824af7d123b"
+      },
+      "privateBytes": {
+        "category": {
+          "before": 264,
+          "after": 272,
+          "watchOffset": 264
+        },
+        "icon": {
+          "before": 304,
+          "after": 312,
+          "watchOffset": 304
+        }
+      },
+      "nativeRuntime": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-sdk-win-r2\\host\\xge3_host.dll",
+        "sha256": "fcbc01a6073e433c26c1a203d52e208a1923a04a9d601eaaf258e89dadd06b5a",
+        "bytes": 9583151,
+        "byteDelta": 2048
+      }
+    },
+    "linux": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-sdk-linux-r2\\results.json",
+        "sha256": "4ea186c6981b7ba2ba07ed58f05bb11348eeb75eba049d00ad2725edea50add4",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-native-linux-r1\\clients\\results.json",
+        "sha256": "3079d86bde7fad3c1d49c3b9c359fe5fce3f4d8caf0e7ea182e30eec2bc1e269",
+        "commands": 20
+      },
+      "privateLayout": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-layout-linux-r1\\results.json",
+        "sha256": "016334ba9c59918f38303489c052cd85c63a17174e78053df8c3840cca248ec9"
+      },
+      "privateBytes": {
+        "category": {
+          "before": 264,
+          "after": 272,
+          "watchOffset": 264
+        },
+        "icon": {
+          "before": 304,
+          "after": 312,
+          "watchOffset": 304
+        }
+      },
+      "nativeRuntime": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-watch-sdk-linux-r2\\host\\libxge3_host.so",
+        "sha256": "1d6d557b0af0d8ceb5d074eb2d7436800b9696cabd11600e47068be3232c8d2e",
+        "bytes": 10441392,
+        "byteDelta": 4096
+      }
+    }
+  },
+  "costs": [
+    "One 8-byte tail pointer in each native Category and Icon on both x64 targets. Existing public structs do not change. Four public functions are added.",
+    "1000 Category+Icon watch/unwatch pairs show zero XRT allocations/frees/reallocations. Observer storage is caller-owned.",
+    "Cold physical deletion walks its observers; checked removal holds the canonical Context scope. Metadata lookup and drawing do not add per-method wrappers."
+  ],
+  "limits": [
+    "No full IconPicker public API completion claim.",
+    "No retained loader/custom/formatter closure ownership qualification.",
+    "Bulk mutation and same-object callback reentry require further work.",
+    "GCC clients are O0/O2, native SDK is O2; this is not sanitizer qualification.",
+    "No window/device/network tests or final delivery installation."
+  ]
+}

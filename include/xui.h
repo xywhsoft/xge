@@ -6682,8 +6682,14 @@ XUI_API xui_icon_category xuiIconCategoryGetAt(xui_context pContext, int iIndex)
 XUI_API int xuiIconCategoryAddRef(xui_icon_category pCategory);
 /* 类别引用计数减一，归零时释放。 */
 XUI_API int xuiIconCategoryRelease(xui_icon_category pCategory);
+/* Remove only this object's registry owner. Explicit AddRef references remain
+ * caller-owned. accepted stays true if a later finalizer reports failure. */
+XUI_API int xuiIconCategoryRemoveOwnerChecked(xui_icon_category pCategory, bool* pAccepted);
 /* 读取类别引用计数。 */
 XUI_API int xuiIconCategoryGetRefCount(xui_icon_category pCategory);
+/* Observers detach before physical destruction, including Context shutdown.
+ * Storage belongs to the caller until invalidation or xuiLifetimeUnwatch. */
+XUI_API int xuiIconCategoryLifetimeWatch(xui_icon_category pCategory, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 读取类别名。 */
 XUI_API const char* xuiIconCategoryGetName(xui_icon_category pCategory);
 /* 读取类别修订号（内容变更自增，驱动缓存失效）。 */
@@ -6737,8 +6743,12 @@ XUI_API void xuiIconClear(xui_icon_category pCategory);
 XUI_API int xuiIconAddRef(xui_icon pIcon);
 /* 图标引用计数减一，归零时释放。 */
 XUI_API int xuiIconRelease(xui_icon pIcon);
+XUI_API int xuiIconRemoveOwnerChecked(xui_icon pIcon, bool* pAccepted);
 /* 读取图标引用计数。 */
 XUI_API int xuiIconGetRefCount(xui_icon pIcon);
+/* Invalidation precedes the custom finalizer. Read-only metadata remains
+ * readable in onDestroy; retaining or watching that dying Icon is rejected. */
+XUI_API int xuiIconLifetimeWatch(xui_icon pIcon, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 读取图标 id。 */
 XUI_API xui_icon_id xuiIconGetId(xui_icon pIcon);
 /* 读取图标名。 */

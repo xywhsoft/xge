@@ -8,6 +8,8 @@
 
 #define XUI_ICON_CATEGORY_MAGIC 0x58494341u
 #define XUI_ICON_MAGIC 0x5849434Fu
+#define XUI_ICON_CATEGORY_DESTROYING_MAGIC (XUI_ICON_CATEGORY_MAGIC ^ 1u)
+#define XUI_ICON_DESTROYING_MAGIC (XUI_ICON_MAGIC ^ 1u)
 #define XUI_ICON_DEFAULT_SIZE 16.0f
 #define XUI_ICON_DEFAULT_CACHE_CAPACITY 4
 #define XUI_ICON_MAX_CACHE_CAPACITY 64
@@ -37,6 +39,7 @@ struct xui_icon_category_t {
 	int iUpdateDepth;
 	int bUpdateDirty;
 	int bRegistered;
+	xui_lifetime_link_t* pLifetimeLinks;
 };
 
 struct xui_icon_t {
@@ -69,6 +72,7 @@ struct xui_icon_t {
 	int iCacheCount;
 	int iCacheCapacity;
 	uint32_t iCacheClock;
+	xui_lifetime_link_t* pLifetimeLinks;
 };
 
 static int __xuiIconContextValid(xui_context pContext)
@@ -76,6 +80,12 @@ static int __xuiIconContextValid(xui_context pContext)
 	return (pContext != NULL) && (pContext->iMagic == XUI_CONTEXT_MAGIC);
 }
 
+/* Read-only metadata stays available to the physical custom finalizer.
+ * Mutations, new retains and watches require the ordinary active magic. */
+static int __xuiIconCategoryMemoryValid(xui_icon_category category)
+{return category && (category->iMagic==XUI_ICON_CATEGORY_MAGIC || category->iMagic==XUI_ICON_CATEGORY_DESTROYING_MAGIC) && __xuiIconContextValid(category->pContext);}
+static int __xuiIconMemoryValid(xui_icon icon)
+{return icon && (icon->iMagic==XUI_ICON_MAGIC || icon->iMagic==XUI_ICON_DESTROYING_MAGIC) && __xuiIconContextValid(icon->pContext);}
 static int __xuiIconCategoryValid(xui_icon_category pCategory)
 {
 	return (pCategory != NULL) &&
@@ -348,7 +358,10 @@ static void __xuiIconDestroyOne(xui_icon pIcon)
 	if ( pIcon == NULL ) {
 		return;
 	}
+	if ( pIcon->iMagic != XUI_ICON_MAGIC ) return;
+	pIcon->iMagic = XUI_ICON_DESTROYING_MAGIC;
 	__xuiIconUnlinkAll(pIcon);
+	xuiInternalLifetimeInvalidateAll(&pIcon->pLifetimeLinks);
 	__xuiIconClearCache(pIcon);
 	if ( (pIcon->iSourceType == XUI_ICON_SOURCE_SURFACE) &&
 	     (pIcon->pSurface != NULL) && pIcon->bOwnSurface ) {
@@ -402,6 +415,10 @@ static void __xuiIconCategoryDestroyOne(xui_icon_category pCategory)
 	if ( pCategory == NULL ) {
 		return;
 	}
+	if ( pCategory->iMagic != XUI_ICON_CATEGORY_MAGIC ) return;
+	pCategory->iMagic = XUI_ICON_CATEGORY_DESTROYING_MAGIC;
+	__xuiIconCategoryUnlinkAll(pCategory);
+	xuiInternalLifetimeInvalidateAll(&pCategory->pLifetimeLinks);
 	for ( i = 1; i <= pCategory->arrIcons.Count; i++ ) {
 		xui_icon* ppIcon;
 
@@ -417,7 +434,6 @@ static void __xuiIconCategoryDestroyOne(xui_icon_category pCategory)
 		}
 	}
 	pCategory->iIconCount = 0;
-	__xuiIconCategoryUnlinkAll(pCategory);
 	xrtMapUnit(&pCategory->mapIcons);
 	xrtArrayUnit(&pCategory->arrIcons);
 	if ( pCategory->sName != NULL ) xrtFree(pCategory->sName);
@@ -1021,6 +1037,8 @@ static int __xuiIconRegister(xui_icon_category pCategory, const char* sName, int
 	     !__xuiIconDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pCategory->pContext->bDestroying || pCategory->pContext->bDestroyPending || pCategory->pContext->bCloseRequested )
+		return XUI_ERROR_INVALID_STATE;
 	pExistingId = (uint32_t*)xuiXrtMapGet(&pCategory->mapIcons, (void*)sName, (uint32_t)strlen(sName));
 	if ( pExistingId != NULL ) return XUI_ERROR_ALREADY_INITIALIZED;
 	pIcon = (xui_icon)xrtMalloc(sizeof(*pIcon));
@@ -1178,6 +1196,8 @@ XUI_API int xuiIconCategoryCreate(xui_context pContext, const char* sName, const
 	if ( !__xuiIconContextValid(pContext) || (sName == NULL) || (sName[0] == '\0') ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pContext->bDestroying || pContext->bDestroyPending || pContext->bCloseRequested )
+		return XUI_ERROR_INVALID_STATE;
 	if ( xuiXrtMapGetPtr(&pContext->mapIconCategories, (void*)sName, (uint32_t)strlen(sName)) != NULL ) {
 		return XUI_ERROR_ALREADY_INITIALIZED;
 	}
@@ -1353,7 +1373,7 @@ XUI_API int xuiIconCategoryGetRefCount(xui_icon_category pCategory)
 
 XUI_API const char* xuiIconCategoryGetName(xui_icon_category pCategory)
 {
-	return __xuiIconCategoryValid(pCategory) ? pCategory->sName : NULL;
+	return __xuiIconCategoryMemoryValid(pCategory) ? pCategory->sName : NULL;
 }
 
 XUI_API uint32_t xuiIconCategoryGetGeneration(xui_icon_category pCategory)
@@ -1778,38 +1798,38 @@ XUI_API int xuiIconGetRefCount(xui_icon pIcon)
 
 XUI_API xui_icon_id xuiIconGetId(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->iId : XUI_ICON_ID_INVALID;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->iId : XUI_ICON_ID_INVALID;
 }
 
 XUI_API const char* xuiIconGetName(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->sName : NULL;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->sName : NULL;
 }
 
 XUI_API const char* xuiIconGetDisplayName(xui_icon pIcon)
 {
-	if ( !__xuiIconValid(pIcon) ) return NULL;
+	if ( !__xuiIconMemoryValid(pIcon) ) return NULL;
 	return (pIcon->sDisplayName != NULL) ? pIcon->sDisplayName : pIcon->sName;
 }
 
 XUI_API const char* xuiIconGetTags(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->sTags : NULL;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->sTags : NULL;
 }
 
 XUI_API int xuiIconGetSourceType(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->iSourceType : 0;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->iSourceType : 0;
 }
 
 XUI_API uint32_t xuiIconGetGeneration(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->iGeneration : 0u;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->iGeneration : 0u;
 }
 
 XUI_API void* xuiIconGetUser(xui_icon pIcon)
 {
-	return __xuiIconValid(pIcon) ? pIcon->pUser : NULL;
+	return __xuiIconMemoryValid(pIcon) ? pIcon->pUser : NULL;
 }
 
 XUI_API int xuiIconSetMetadata(xui_icon pIcon, const xui_icon_desc_t* pDesc)
@@ -1936,6 +1956,52 @@ XUI_API int xuiIconRelease(xui_icon icon)
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(icon->pContext,&scope);
     if(status!=XUI_OK)return status;
     status=__xuiIconRelease(icon);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+
+/* Caller-owned observer storage; no allocation or native owning edge. */
+XUI_API int xuiIconCategoryLifetimeWatch(xui_icon_category category,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
+{
+    if(!__xuiIconCategoryMemoryValid(category) || !link || !invalidate)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=category->pContext;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    if(category->iMagic!=XUI_ICON_CATEGORY_MAGIC || context->bDestroying || context->bDestroyPending || context->bCloseRequested)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalLifetimeWatch(&category->pLifetimeLinks,link,invalidate,user);
+}
+XUI_API int xuiIconLifetimeWatch(xui_icon icon,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
+{
+    if(!__xuiIconMemoryValid(icon) || !link || !invalidate)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=icon->pContext;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    if(icon->iMagic!=XUI_ICON_MAGIC || context->bDestroying || context->bDestroyPending || context->bCloseRequested)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalLifetimeWatch(&icon->pLifetimeLinks,link,invalidate,user);
+}
+
+XUI_API int xuiIconCategoryRemoveOwnerChecked(xui_icon_category category,bool* accepted)
+{
+    if(!accepted)return XUI_ERROR_INVALID_ARGUMENT;
+    *accepted=false;
+    if(!__xuiIconCategoryValid(category))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(category->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    if(category->bRegistered){
+        if(xuiIconCategoryFind(category->pContext,category->sName)!=category)status=XUI_ERROR_INVALID_STATE;
+        else{*accepted=true;status=__xuiIconCategoryRemove(category->pContext,category->sName);}
+    }else *accepted=true;
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+XUI_API int xuiIconRemoveOwnerChecked(xui_icon icon,bool* accepted)
+{
+    if(!accepted)return XUI_ERROR_INVALID_ARGUMENT;
+    *accepted=false;
+    if(!__xuiIconValid(icon))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(icon->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    if(icon->bRegistered){
+        xui_icon_category category=icon->pCategory;
+        if(!__xuiIconCategoryValid(category) || xuiIconFindById(category,icon->iId)!=icon)status=XUI_ERROR_INVALID_STATE;
+        else{*accepted=true;status=__xuiIconRemoveById(category,icon->iId);}
+    }else *accepted=true;
     return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
 

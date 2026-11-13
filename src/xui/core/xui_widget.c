@@ -74,7 +74,7 @@ XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink)
 	pLink->onInvalidate = NULL; pLink->pUser = NULL;
 }
 
-static int __xuiLifetimeWatch(xui_lifetime_link_t** ppHead, xui_lifetime_link_t* pLink,
+int xuiInternalLifetimeWatch(xui_lifetime_link_t** ppHead, xui_lifetime_link_t* pLink,
 	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
 {
 	if ( pLink == NULL || onInvalidate == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -92,7 +92,7 @@ XUI_API int xuiContextLifetimeWatch(xui_context pContext, xui_lifetime_link_t* p
 {
 	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
-	return __xuiLifetimeWatch(&pContext->pLifetimeLinks, pLink, onInvalidate, pUser);
+	return xuiInternalLifetimeWatch(&pContext->pLifetimeLinks, pLink, onInvalidate, pUser);
 }
 
 XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLink,
@@ -102,7 +102,7 @@ XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLin
 	xui_context pContext = pWidget->pContext;
 	if ( pWidget->bDestroyPending || !xuiInternalContextIsValid(pContext) ||
 		pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
-	return __xuiLifetimeWatch(&pWidget->pLifetimeLinks, pLink, onInvalidate, pUser);
+	return xuiInternalLifetimeWatch(&pWidget->pLifetimeLinks, pLink, onInvalidate, pUser);
 }
 
 void xuiInternalLifetimeInvalidateAll(xui_lifetime_link_t** ppHead)

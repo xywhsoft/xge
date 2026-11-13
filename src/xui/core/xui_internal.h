@@ -1106,6 +1106,7 @@ int xuiInternalMenuIsLive(xui_context pContext, xui_widget pWidget);
 bool xuiInternalWidgetDestroyFlush(xui_context pContext);
 void xuiInternalContextDestroyWidgets(xui_context pContext);
 /* Caller holds an operation/physical-destruction scope across callbacks. */
+int xuiInternalLifetimeWatch(xui_lifetime_link_t** head,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user);
 void xuiInternalLifetimeInvalidateAll(xui_lifetime_link_t** ppHead);
 void xuiInternalContextInvalidateLifetimes(xui_context pContext);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);

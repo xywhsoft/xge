@@ -29,3 +29,16 @@ cases, and the existing Icon and IconPicker regressions. It opens no window.
 `docs/validation/icon-context-release-20261113.json` records the qualified
 Windows/Linux cohorts. Object lifetime watches, data models, retained custom
 callbacks and other same-object reentry cases remain separate work.
+
+Physical Icon/Category lifetime watches and checked registry-owner removal use:
+
+```text
+python tools/test/check_icon_watches.py --root . --engine build/host --runtime <matching-XRT-library> --out build/icon-watches
+```
+
+This adds expiry-before-finalizer, peer unwatch, native retained references,
+alias retention, Context destruction, accepted-with-callback-error and 1000
+zero-heap watch/unwatch pairs to the preceding cases. The gate runs 20 commands
+per platform with GCC O0/O2 clients and the explicit O2 engine. This is the
+native model floor; it does not certify retained custom callbacks or every
+same-object reentry path. See `docs/validation/icon-watches-20261113.json`.
