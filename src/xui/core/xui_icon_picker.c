@@ -725,7 +725,8 @@ static int __xuiIconPickerDrawChevron(xui_proxy pProxy, xui_draw_context pDraw, 
 	return pProxy->drawLine(pProxy, pDraw, fCX, fCY + 1.5f, fCX + fStep, fCY - 1.5f, 1.0f, iColor);
 }
 
-static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiIconPickerCacheRenderBody(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser,
+    xui_icon* pRetained,xui_call_scope_t* pScope)
 {
 	xui_icon_picker_data_t* pData;
 	xui_icon_picker_data_t tResolved;
@@ -789,9 +790,12 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 	        xuiIconFindById(pData->pCategory, pData->iSelectedId) : NULL;
 	sValue[0] = '\0';
 	if ( pIcon != NULL ) {
-		iRet = __xuiIconPickerFormatValue(pWidget, pData, pIcon, sValue, (int)sizeof(sValue));
-		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
+		iRet = xuiInternalIconOperationBegin(pIcon,pScope);
 		if ( iRet != XUI_OK ) return iRet;
+		*pRetained = pIcon;
+		iRet = __xuiIconPickerFormatValue(pWidget, pData, pIcon, sValue, (int)sizeof(sValue));
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiIconPickerAlive(pContext, pWidget, pData) ) return XUI_OK;
 	}
 	if ( pIcon != NULL ) {
 		if ( sValue[0] != '\0' ) {
@@ -830,6 +834,15 @@ static int __xuiIconPickerCacheRender(xui_widget pWidget, xui_draw_context pDraw
 		return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), tResolved.fBorderWidth, iBorder);
 	}
 	return XUI_OK;
+}
+
+static int __xuiIconPickerCacheRender(xui_widget pWidget,xui_draw_context pDraw,uint32_t iStateId,void* pUser)
+{
+    xui_icon retained=NULL;xui_call_scope_t scope={0};
+    int result=__xuiIconPickerCacheRenderBody(pWidget,pDraw,iStateId,pUser,&retained,&scope);
+    /* Formatters can remove the selection or change categories. Its real
+     * reference must cover formatting, drawing and all native output use. */
+    return retained ? xuiInternalIconOperationEnd(retained,&scope,result):result;
 }
 
 static int __xuiIconPickerViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)

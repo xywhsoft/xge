@@ -8562,6 +8562,10 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 	}
 	if ( pWidget->onCacheRender != NULL ) {
 		iRet = xuiInternalInvokeCacheRenderCallback(pWidget,pDraw,iStateId);
+		/* RenderPrepare walks a void, best-effort tree. Seal a callback failure
+		 * before draw cleanup or pending destruction can discard/replace it,
+		 * including failure when no diagnostic could be allocated. */
+		if ( iRet < 0 ) xuiInternalContextRecordOutcome(pWidget->pContext,iRet,xrtGetError());
 	}
 	/* Destruction is deferred by RenderPrepare's operation, but the cache must
 	 * stop now and close its draw before any surface can be purged. */

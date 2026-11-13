@@ -1184,6 +1184,10 @@ xui_rect_t xuiInternalWindowFrameResize(xui_rect_t tRect, xui_rect_t tBounds,
 
 int xuiInternalWidgetIsValid(xui_widget pWidget);
 int xuiInternalIconCategoryBelongsToContext(xui_icon_category pCategory, xui_context pContext);
+/* Native readers spanning callbacks retain their selected Icon and Context.
+ * End must follow the entire reader body, including callback output use. */
+int xuiInternalIconOperationBegin(xui_icon pIcon,xui_call_scope_t* pScope);
+int xuiInternalIconOperationEnd(xui_icon pIcon,xui_call_scope_t* pScope,int iResult);
 void* xuiInternalCodeDocumentGetLexerCCache(xui_code_document pDocument);
 int xuiInternalCodeDocumentSetLexerCCache(xui_code_document pDocument,
 	void* pCache, void (*onDestroy)(void* pCache));

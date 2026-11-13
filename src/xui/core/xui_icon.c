@@ -456,7 +456,7 @@ static void __xuiIconCategoryReleaseOwner(xui_icon_category pCategory)
  * native readers finish. An alias root retains its immutable target chain.
  * This protects physical lifetime; cache mutation during a callback still
  * requires the corresponding mutation protocol. */
-static int __xuiIconOperationBegin(xui_icon icon,xui_call_scope_t* scope)
+int xuiInternalIconOperationBegin(xui_icon icon,xui_call_scope_t* scope)
 {
     if(!__xuiIconValid(icon))return XUI_ERROR_INVALID_ARGUMENT;
     int status=xuiCallScopeBegin(icon->pContext,scope);
@@ -489,7 +489,7 @@ static int __xuiIconOperationFinish(xui_call_scope_t* scope,int status,xerror* f
      * return, even when ending the scope retires its independent reference. */
     return xuiInternalCallScopeEndRestored(scope,status,first);
 }
-static int __xuiIconOperationEnd(xui_icon icon,xui_call_scope_t* scope,int status)
+int xuiInternalIconOperationEnd(xui_icon icon,xui_call_scope_t* scope,int status)
 {
     xerror* first=__xuiIconOperationSeal(scope,status);
     __xuiIconReleaseOwner(icon);
@@ -1927,29 +1927,29 @@ XUI_API int xuiIconGetIntrinsicSize(xui_icon pIcon, xui_vec2_t* pSize)
 		pSize->fX = 0.0f;
 		pSize->fY = 0.0f;
 	}
-    xui_call_scope_t scope={0};int status=__xuiIconOperationBegin(pIcon,&scope);
+    xui_call_scope_t scope={0};int status=xuiInternalIconOperationBegin(pIcon,&scope);
     if(status!=XUI_OK)return status;
     status=__xuiIconIntrinsicSizeDepth(pIcon,pSize,0);
-    return __xuiIconOperationEnd(pIcon,&scope,status);
+    return xuiInternalIconOperationEnd(pIcon,&scope,status);
 }
 
 XUI_API int xuiIconPrepare(xui_icon pIcon, float fWidth, float fHeight)
 {
 	if ( !__xuiIconFloatNonNegative(fWidth) ||
 	     !__xuiIconFloatNonNegative(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
-    xui_call_scope_t scope={0};int status=__xuiIconOperationBegin(pIcon,&scope);
+    xui_call_scope_t scope={0};int status=xuiInternalIconOperationBegin(pIcon,&scope);
     if(status!=XUI_OK)return status;
     status=__xuiIconPrepareDepth(pIcon,fWidth,fHeight,0);
-    return __xuiIconOperationEnd(pIcon,&scope,status);
+    return xuiInternalIconOperationEnd(pIcon,&scope,status);
 }
 
 XUI_API int xuiIconDraw(xui_painter pPainter, xui_icon pIcon, xui_rect_t tRect, const xui_icon_draw_desc_t* pDesc)
 {
 	if ( !__xuiIconDrawDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
-    xui_call_scope_t scope={0};int status=__xuiIconOperationBegin(pIcon,&scope);
+    xui_call_scope_t scope={0};int status=xuiInternalIconOperationBegin(pIcon,&scope);
     if(status!=XUI_OK)return status;
     status=__xuiIconDrawDepth(pPainter,pIcon,tRect,pDesc,0,1);
-    return __xuiIconOperationEnd(pIcon,&scope,status);
+    return xuiInternalIconOperationEnd(pIcon,&scope,status);
 }
 
 XUI_API int xuiIconCategoryPreload(xui_icon_category category,float width,float height)

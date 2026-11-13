@@ -94,3 +94,24 @@ asserting synchronously before the 80 ms native debounce update. The test now
 advances the update loop by 40 ms and 50 ms, checks the pending empty table,
 then the expected three columns/three rows. Original failures and baseline
 comparisons remain historical evidence; no native find behavior changes.
+
+The selected IconPicker formatter/draw reader and generic cache callback
+failure receipt have a combined regression gate:
+
+```text
+python tools/test/check_icon_picker_format_lifetime.py --root . --engine build/host --runtime <matching-XRT-library> --out build/picker-format-lifetime
+```
+
+Its 36 commands retain the earlier Icon lifetime/diagnostic tests and add 40
+selection/alias/unregister/close/error combinations plus 24 generic cache
+failure cases. The selected Icon and Context remain retained until all native
+format/draw output use is complete. A negative cache callback result is sealed
+before draw cleanup/pending destruction; an absent first diagnostic stays
+absent, and a later error-report hook cannot replace it. Raw best-effort render
+behavior is retained; checked callers balance a frame `xuiCallScopeBegin/End`.
+
+The CPU Proxy's prior and new 1000 warm-render workloads both allocate/free
+1000 times and perform zero reallocations. The test enforces that prior native
+allocation ceiling, rather than claiming the renderer allocates nothing. It
+does not establish timing equivalence, real graphics behavior, owned custom
+Icon/formatter closures or every reentrant cache mutation.
