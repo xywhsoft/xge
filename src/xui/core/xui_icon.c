@@ -1244,7 +1244,7 @@ XUI_API xui_icon_category xuiIconCategoryFind(xui_context pContext, const char* 
 	return (xui_icon_category)xuiXrtMapGetPtr(&pContext->mapIconCategories, (void*)sName, (uint32_t)strlen(sName));
 }
 
-XUI_API int xuiIconCategoryRemove(xui_context pContext, const char* sName)
+static int __xuiIconCategoryRemove(xui_context pContext, const char* sName)
 {
 	xui_icon_category pCategory;
 	uint32_t i;
@@ -1269,7 +1269,7 @@ XUI_API int xuiIconCategoryRemove(xui_context pContext, const char* sName)
 	return XUI_OK;
 }
 
-XUI_API void xuiIconCategoryClear(xui_context pContext)
+static void __xuiIconCategoryClear(xui_context pContext)
 {
 	uint32_t i;
 
@@ -1336,7 +1336,7 @@ XUI_API int xuiIconCategoryAddRef(xui_icon_category pCategory)
 	return XUI_OK;
 }
 
-XUI_API int xuiIconCategoryRelease(xui_icon_category pCategory)
+static int __xuiIconCategoryRelease(xui_icon_category pCategory)
 {
 	if ( !__xuiIconCategoryValid(pCategory) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pCategory->bRegistered && (pCategory->iRefCount <= 1) ) {
@@ -1702,7 +1702,7 @@ XUI_API xui_icon xuiIconFindById(xui_icon_category pCategory, xui_icon_id iId)
 	return (ppIcon != NULL) ? *ppIcon : NULL;
 }
 
-XUI_API int xuiIconRemoveById(xui_icon_category pCategory, xui_icon_id iId)
+static int __xuiIconRemoveById(xui_icon_category pCategory, xui_icon_id iId)
 {
 	xui_icon pIcon;
 	xui_icon* ppIcon;
@@ -1728,7 +1728,7 @@ XUI_API int xuiIconRemove(xui_icon_category pCategory, const char* sName)
 	return (pIcon != NULL) ? xuiIconRemoveById(pCategory, pIcon->iId) : XUI_ERROR_INVALID_ARGUMENT;
 }
 
-XUI_API void xuiIconClear(xui_icon_category pCategory)
+static void __xuiIconClear(xui_icon_category pCategory)
 {
 	uint32_t i;
 
@@ -1761,7 +1761,7 @@ XUI_API int xuiIconAddRef(xui_icon pIcon)
 	return XUI_OK;
 }
 
-XUI_API int xuiIconRelease(xui_icon pIcon)
+static int __xuiIconRelease(xui_icon pIcon)
 {
 	if ( !__xuiIconValid(pIcon) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pIcon->bRegistered && (pIcon->iRefCount <= 1) ) {
@@ -1887,6 +1887,56 @@ XUI_API int xuiIconDrawByName(xui_painter pPainter, xui_icon_category pCategory,
 
 	pIcon = xuiIconFind(pCategory, sName);
 	return (pIcon != NULL) ? xuiIconDraw(pPainter, pIcon, tRect, pDesc) : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+
+/* A custom finalizer can request Context destruction. Keep the canonical
+ * native receipt until the releasing body has finished reading its arrays,
+ * strings and callback tail. No native object layout, registry or heap pin
+ * is added; read-only and non-destructive paths retain their existing cost. */
+XUI_API int xuiIconCategoryRemove(xui_context context,const char* name)
+{
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiIconCategoryRemove(context,name);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+XUI_API void xuiIconCategoryClear(xui_context context)
+{
+    xui_call_scope_t scope={0};if(xuiCallScopeBegin(context,&scope)!=XUI_OK)return;
+    __xuiIconCategoryClear(context);
+    (void)xuiInternalCallScopeEndRestored(&scope,XUI_OK,xrtTakeError());
+}
+XUI_API int xuiIconCategoryRelease(xui_icon_category category)
+{
+    if(!__xuiIconCategoryValid(category))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(category->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiIconCategoryRelease(category);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+XUI_API int xuiIconRemoveById(xui_icon_category category,xui_icon_id id)
+{
+    if(!__xuiIconCategoryValid(category))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(category->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiIconRemoveById(category,id);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+XUI_API void xuiIconClear(xui_icon_category category)
+{
+    if(!__xuiIconCategoryValid(category))return;
+    xui_call_scope_t scope={0};if(xuiCallScopeBegin(category->pContext,&scope)!=XUI_OK)return;
+    __xuiIconClear(category);
+    (void)xuiInternalCallScopeEndRestored(&scope,XUI_OK,xrtTakeError());
+}
+XUI_API int xuiIconRelease(xui_icon icon)
+{
+    if(!__xuiIconValid(icon))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(icon->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiIconRelease(icon);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
 
 #endif

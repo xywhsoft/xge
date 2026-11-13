@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "shippingDelivery": false,
+  "scope": "Canonical native Context receipts keep the Context alive through six destructive Icon/Category bodies and the delegated remove-by-name route. Local CPU host/static native SDK, standalone C and language-consumer regression only; not full IconPicker integration.",
+  "parentNativeHead": "4c0d6b19f88160b49989b47b08b0ea23390fd1b3",
+  "production": {
+    "src/xui/core/xui_icon.c": "693e8b635995cf1fba8f19694d02a31f73bd6278e02b75030558aba0d11be3ca",
+    "tests/xui/xui_icon_context_release_test.c": "bef16992e863b65dd42fe054103d6706bd50e3ce65b7d979c442b2d9054bbfa2",
+    "tests/xui/xui_icon_context_error_test.c": "60f4a56cb5c37937a8a5bc838af0fda4da218529293677651d3ffd8278225912",
+    "tools/test/check_icon_context_release.py": "2470bebad6dde8446ca1fcd9279b56fa793f3497389f071bc8bdda811cda40eb"
+  },
+  "sourceFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-icon-release-freeze-r1.json",
+    "sha256": "4fb21b5fab0aae998c3da09f6723810dd37eaa72ada5234e6b63bbb4cd7e6c28"
+  },
+  "testOverlayFreeze": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-icon-release-freeze-r2.json",
+    "sha256": "f3d58d4679232bc69e6242fb2d72fd2106aaf805a8bec5d7bd6f21ca8f559932"
+  },
+  "baseline": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\icon-context-baseline-observations-20261113.json",
+    "sha256": "3c93db37063879f0b11401e9205eeb2943b49176668117c1cd26c5329f18ef84"
+  },
+  "platforms": {
+    "win": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-release-sdk-win-r1\\results.json",
+        "sha256": "0ecc1dc2a6fbcefefc5d3e4bf89be73e8431a202b78c1959f096126743320fd0",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-context-native-win-r3\\results.json",
+        "sha256": "c94ccdb9a94b9c4976c94db10b969477adafad59901f65f4811a6b08554d1de3",
+        "commands": 16
+      },
+      "language": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-context-qualified-win-r1\\results.json",
+        "sha256": "edfc332626c96a888ac3805e9d3e5225de849bb7e19aeff1eac741d51b9562e3",
+        "commands": 15
+      },
+      "nativeRuntimeBytes": 9581103,
+      "nativeRuntimeByteDelta": 2560
+    },
+    "linux": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-release-sdk-linux-r1\\results.json",
+        "sha256": "893009d602c6a729897529800bb4d36942947260bc507b598079fb274ed0c84b",
+        "commands": 4
+      },
+      "nativeClients": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-context-native-linux-r3\\results.json",
+        "sha256": "fb9cea654f3cf2ffbc22e25189263888e185c9d540826dd04e04543ddfd48521",
+        "commands": 16
+      },
+      "language": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\icon-context-qualified-linux-r1\\results.json",
+        "sha256": "9a1b41d462510f623eb9e33ccd35b67400c705dba2f92c55833453a7f3143bac",
+        "commands": 15
+      },
+      "nativeRuntimeBytes": 10437296,
+      "nativeRuntimeByteDelta": 0
+    }
+  },
+  "layout": "Both private icon/category struct definitions and public build configuration bytes unchanged.",
+  "costs": {
+    "privateObjectSizeDelta": 0,
+    "heapPinAllocations": 0,
+    "measuredEmptyClearOperations": 1000,
+    "measuredHeapAllocations": 0,
+    "measuredHeapFrees": 0,
+    "measuredHeapReallocations": 0,
+    "addedNativeBookkeeping": "Canonical Context begin/end receipts and diagnostic reference handling on destructive paths; no read-only path changes."
+  },
+  "limits": [
+    "No actual window/GPU/audio/network tests",
+    "O0/O2 are client optimization levels; native engine is O2, not a sanitized producer",
+    "Category/Icon lifetime watches, owning data models and retained custom/formatter callbacks remain unfinished",
+    "Same-object callback reentry and bulk mutation are separate remaining contracts",
+    "Final runtime/SDK/IDE not installed"
+  ]
+}
