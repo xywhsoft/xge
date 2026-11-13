@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-14",
+  "qualified": true,
+  "shippingDelivery": false,
+  "scope": "Native Context-owned language prerequisites; CPU host SDK C/CPP only, not complete xlang or graphical/static delivery.",
+  "parent": "b0948c3743b2e4e9f909224550f79dc0f3d4bd3d",
+  "sources": {
+    "include/xui.h": "b4a3e530fa3ca9fd07ef48f2870f28dca8d30b827f551ca207bd1e98d410ee6c",
+    "src/xui/core/xui_core.c": "485fec7ba131754bf2c74a03c425d2b1d222b67943a32c4f6b3c647185958a77",
+    "src/xui/core/xui_internal.h": "a49ee535008ea44eaa3c23188d2260dfc0e6865610e519210bef897963505db3",
+    "tests/xui/xui_localization_owned_test.c": "fbdcf4fdd73af4743cff3c8324d342d23498b71b6ee5a575c786c00bc0e708cd",
+    "tools/test/check_localization.py": "5f27c876e56d92b96e30db1ec39120383bd2d3224c740e395190c8b961843984",
+    "docs/localization-ownership.md": "9cced2d280ffa924148dd4017d6f642a4fd1ccaf602c4e4dec88a0334934f584"
+  },
+  "platforms": {
+    "win": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-sdk-win-r2\\results.json",
+        "sha256": "aa0b779e6e2ac4f40ed6a95391c9fd163517d91ae74ffe0f950712f3fb13ba67",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-native-win-r2\\results.json",
+        "sha256": "151eaefb600ab2c2496223753b23a618a23f8450090e0479b1d3f40494016844",
+        "commands": 6
+      },
+      "editRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-edit-native-win-r1\\results.json",
+        "sha256": "1c9136dede7da1e02244226bc6e53add9cafafe34e883789ca75fd8d9f4f0c19",
+        "commands": 16
+      }
+    },
+    "linux": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-sdk-linux-r2\\results.json",
+        "sha256": "506ef5fabfc14e6401955d8a6cef00bb98171a16dfed56bfb970e38941b0497d",
+        "commands": 4
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-native-linux-r2\\results.json",
+        "sha256": "276f6c818cfd959f0c6afcf42906ed6d7c3d97c7d34266279259e57707881851",
+        "commands": 6
+      },
+      "editRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\localization-edit-native-linux-r1\\results.json",
+        "sha256": "1943cd1dd8cd5e4aed15d8c985e6a252a6fa4e050e231a93ecaeca836c00e003",
+        "commands": 16
+      }
+    }
+  },
+  "testCorrection": "The frozen SDK carries the first test-only XUI_TR_OK spelling. The executed test source uses authoritative XUI_TR_EDIT_COPY and is hashed separately in sources/native reports; engine code and SDK bytes are unchanged.",
+  "contracts": {
+    "lifetime": "Context registry owner; observer invalidation precedes string/slot/storage release.",
+    "rollback": "Unpublished custom pack only; bool removed is independent from tail status. Active, built-in or fallback-referenced packs reject without removal.",
+    "ids": "Reject INT_MAX/exhausted allocator before increment; no rewind of IDs/revisions/capacity after failed publication.",
+    "texts": "Read-only own slots preserve unset/empty; Translate retains existing fallback semantics; mutable raw xarray remains explicit C interoperability."
+  },
+  "costs": "One pointer per native pack; no observer/query allocation; creation scope/watch plus existing copies/storage. Language snapshots, common lifecycle checks and actual backend costs are separate.",
+  "remaining": "Downstream xlang declarations and general const-char NULL-alias physical ABI normalization, full compiler/static language/actual graphical acceptance and final SDK/IDE delivery remain in active goal."
+}

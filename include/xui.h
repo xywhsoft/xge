@@ -6385,6 +6385,26 @@ XUI_API xarray* xuiGetLanguageTextArray(xui_language pLanguage);
 XUI_API const char* xuiGetLanguageCode(xui_language pLanguage);
 /* 读取语言显示名。 */
 XUI_API const char* xuiGetLanguageName(xui_language pLanguage);
+/* Context-owned language observation. Notifications precede freeing strings
+ * or slots; observer storage is caller-owned and allocates nothing. */
+XUI_API int xuiLanguageLifetimeWatch(xui_language pLanguage, xui_lifetime_link_t* pLink,
+    xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Factory rollback for a newly created custom pack. Built-in, active or
+ * fallback-referenced packs are rejected unchanged. Removed is independent
+ * of a later checked call-scope failure; dropping a language view never calls
+ * this operation. Normal pack lifetime remains the owning Context's lifetime. */
+XUI_API int xuiLanguageRollbackCreate(xui_language pLanguage, bool* pRemoved);
+/* Read the pack's own slots, without translation/fallback or exposing its
+ * mutable xarray. Text is borrowed until mutation/Context release. NULL is an
+ * unset/invalid slot; a present empty string is distinct. IDs are one-based. */
+XUI_API uint64_t xuiLanguageGetTextCount(xui_language pLanguage);
+XUI_API const char* xuiLanguageGetText(xui_language pLanguage, int iTextId);
+XUI_API xui_context xuiLanguageGetContext(xui_language pLanguage);
+/* Status/output creation for managed callers. A non-NULL output transfers a
+ * new Context registry entry even on checked tail failure; failed publication
+ * uses RollbackCreate. Code/name are copied, fallback follows CreateLanguage. */
+XUI_API int xuiCreateLanguageOwned(xui_context pContext, const char* sCode,
+    const char* sName, int iFallbackLanguageId, xui_language* pLanguage);
 /* 按文本 id 取当前语言译文（无翻译回落默认语言）。 */
 XUI_API const char* xuiTranslate(xui_context pContext, int iTextId);
 /* 绑定渲染代理（xuiCreate 后、渲染前调用；引擎适配见 xuiProxyXge）。 */

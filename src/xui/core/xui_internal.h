@@ -358,6 +358,7 @@ typedef struct xui_internal_window_frame_layout_t {
 struct xui_language_t {
 	uint32_t iMagic;
 	xui_context pContext;
+	xui_lifetime_link_t* pLifetimeLinks;
 	int iLanguageId;
 	int iFallbackLanguageId;
 	char* sCode;

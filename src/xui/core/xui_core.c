@@ -304,7 +304,7 @@ static void __xuiLanguageFreeTextArray(xui_language pLanguage)
 	xui_language_text_t* pText;
 	uint32_t i;
 
-	if ( !__xuiLanguageValid(pLanguage) ) {
+	if ( pLanguage == NULL ) {
 		return;
 	}
 	for ( i = 1u; i <= pLanguage->arrTexts.Count; ++i ) {
@@ -323,6 +323,8 @@ static void __xuiLanguageDestroyOne(xui_language pLanguage)
 	if ( !__xuiLanguageValid(pLanguage) ) {
 		return;
 	}
+	pLanguage->iMagic = 0;
+	xuiInternalLifetimeInvalidateAll(&pLanguage->pLifetimeLinks);
 	__xuiLanguageFreeTextArray(pLanguage);
 	if ( pLanguage->sCode != NULL ) {
 		xrtFree(pLanguage->sCode);
@@ -556,6 +558,9 @@ XUI_API xui_language xuiCreateLanguage(xui_context pContext, const char* sCode, 
 	if ( __xuiContextFindLanguage(pContext, iFallbackLanguageId) == NULL ) {
 		iFallbackLanguageId = XUI_LANGUAGE_EN;
 	}
+	/* Keep exhaustion defined: signed post-increment at INT_MAX was UB. */
+	if ( pContext->iNextCustomLanguageId < XUI_LANGUAGE_CUSTOM_BASE ||
+	     pContext->iNextCustomLanguageId == INT_MAX ) return NULL;
 	iLanguageId = pContext->iNextCustomLanguageId++;
 	if ( pContext->iNextCustomLanguageId < XUI_LANGUAGE_CUSTOM_BASE ) {
 		pContext->iNextCustomLanguageId = XUI_LANGUAGE_CUSTOM_BASE;
@@ -621,6 +626,69 @@ XUI_API const char* xuiGetLanguageCode(xui_language pLanguage)
 XUI_API const char* xuiGetLanguageName(xui_language pLanguage)
 {
 	return __xuiLanguageValid(pLanguage) ? pLanguage->sName : "";
+}
+
+XUI_API int xuiLanguageLifetimeWatch(xui_language language,xui_lifetime_link_t* link,
+    xui_lifetime_invalidate_proc invalidate,void* user)
+{
+    if(!__xuiLanguageValid(language) || !link || !invalidate)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=language->pContext;
+    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    if(context->bDestroying || context->bDestroyPending || context->bCloseRequested)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalLifetimeWatch(&language->pLifetimeLinks,link,invalidate,user);
+}
+XUI_API int xuiLanguageRollbackCreate(xui_language language,bool* removed)
+{
+    if(!removed)return XUI_ERROR_INVALID_ARGUMENT;
+    *removed=false;
+    if(!__xuiLanguageValid(language) || !__xuiContextValid(language->pContext))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=language->pContext;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+    uint32_t position=0;
+    if(language->bBuiltin || context->iCurrentLanguageId==language->iLanguageId)status=XUI_ERROR_INVALID_STATE;
+    for(uint32_t i=1;status==XUI_OK && i<=context->arrLanguages.Count;++i){
+        xui_language candidate=*(xui_language*)xuiXrtArrayGet(&context->arrLanguages,i);
+        if(candidate==language)position=i;
+        else if(candidate->iFallbackLanguageId==language->iLanguageId)status=XUI_ERROR_BUSY;
+    }
+    if(status==XUI_OK && !position)status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK){
+        xuiXrtArrayRemove(&context->arrLanguages,position,1u);
+        *removed=true;
+        __xuiLanguageDestroyOne(language);
+    }
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+}
+XUI_API uint64_t xuiLanguageGetTextCount(xui_language language)
+{return __xuiLanguageValid(language) ? (uint64_t)language->arrTexts.Count:0;}
+XUI_API const char* xuiLanguageGetText(xui_language language,int id)
+{xui_language_text_t* slot=__xuiLanguageGetTextSlot(language,id);return slot ? slot->sText:NULL;}
+XUI_API xui_context xuiLanguageGetContext(xui_language language)
+{return __xuiLanguageValid(language) ? language->pContext:NULL;}
+static void __xuiLanguageCreationGone(void* user){*(bool*)user=true;}
+XUI_API int xuiCreateLanguageOwned(xui_context context,const char* code,const char* name,
+    int fallback,xui_language* output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!__xuiContextValid(context) || !code || !name)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+    xui_language created=NULL;bool dead=false;xui_lifetime_link_t watch={0};
+    if(context->iNextCustomLanguageId<XUI_LANGUAGE_CUSTOM_BASE || context->iNextCustomLanguageId==INT_MAX)
+        status=XUI_ERROR_INVALID_STATE;
+    else{
+        created=xuiCreateLanguage(context,code,name,fallback);
+        if(!created)status=XUI_ERROR_OUT_OF_MEMORY;
+        else status=xuiLanguageLifetimeWatch(created,&watch,__xuiLanguageCreationGone,&dead);
+    }
+    status=xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
+    xuiLifetimeUnwatch(&watch);
+    if(!dead)*output=created;
+    else if(status==XUI_OK)status=XUI_ERROR_INVALID_STATE;
+    return status;
 }
 
 XUI_API const char* xuiTranslate(xui_context pContext, int iTextId)
