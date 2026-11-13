@@ -77,3 +77,19 @@ an explicit caller-owned Context scope for the Painter session; it does not
 claim an owned raw Painter API. Cache invalidation or mutation from callbacks
 still needs separate qualification. Platform source snapshots for this cohort
 exclude generated build caches and keep Windows/Linux caches separate.
+
+Checked borrowed text reads are covered separately:
+
+```text
+python tools/test/check_text_read_views.py --root . --engine build/host --runtime <matching-XRT-library> --out build/text-reads
+```
+
+The 12-command gate builds/runs the sized document/editor read, generic edit
+and TextEdit fixtures at GCC O0/O2. It checks embedded NUL and UTF-8 extents,
+present-empty versus absent output, native snapshot OOM, and 1000 cached reads
+with unchanged XRT allocation/free/reallocation counters. It does not measure
+language string allocation or execute rendering. The broad CodeEdit UI suite
+is separate: the preceding and new SDKs both fail its existing find-scope
+table assertion (expected three columns/rows, actual two columns/zero rows).
+Its failed original and controlled baseline comparison reports are preserved;
+that suite is not counted as a passing read-view check.

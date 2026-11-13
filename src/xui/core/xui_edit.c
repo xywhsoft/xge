@@ -208,6 +208,30 @@ XUI_API const char* xuiEditGetText(xui_widget pWidget)
 	return (pTarget != NULL && pTarget->pEditAdapter->getText != NULL) ? pTarget->pEditAdapter->getText(pTarget) : NULL;
 }
 
+#if XUI_ENABLE_CODE_EDIT
+/* Reuse the document's checked snapshot view for the editor's public read. */
+XUI_API int xuiCodeEditGetTextView(xui_widget widget,xstrview* view)
+{
+    if(!view)return XUI_ERROR_INVALID_ARGUMENT;
+    *view=(xstrview){0};
+    return xuiCodeDocumentGetTextView(xuiCodeEditGetDocument(widget),view);
+}
+#endif
+
+XUI_API int xuiEditGetTextView(xui_widget widget,xstrview* view)
+{
+    if(!view)return XUI_ERROR_INVALID_ARGUMENT;
+    *view=(xstrview){0};
+    xui_widget target=__xuiEditTarget(widget);
+    if(!target || !target->pEditAdapter->getText)return XUI_OK;
+#if XUI_ENABLE_CODE_EDIT
+    xui_widget_type code=xuiWidgetFindType(xuiWidgetGetContext(target),"codeedit");
+    if(code && xuiWidgetIsType(target,code))return xuiCodeEditGetTextView(target,view);
+#endif
+    const char* text=target->pEditAdapter->getText(target);
+    *view=(xstrview){text,text ? strlen(text):0};return XUI_OK;
+}
+
 XUI_API int xuiEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
 	xui_widget pTarget = __xuiEditTarget(pWidget);

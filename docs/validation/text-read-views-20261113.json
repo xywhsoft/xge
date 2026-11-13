@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-13",
+  "qualified": true,
+  "shippingDelivery": false,
+  "nativeBaseCommit": "7a91ec09",
+  "scope": "Checked status + borrowed extent native CodeDocument/CodeEdit/generic Edit reads; old C-string APIs remain. No object layout change. Not complete editor rendering/callback acceptance.",
+  "sources": {
+    "include/xui.h": "9b1b6ede1663ea0a82656a2c0840f0b921a74e972d3050b26491ea25d7deb36d",
+    "src/xui/code/xui_code_document.c": "f353907fc14539144180686c87b6bed59a91773688c713a57299e0a0af20f192",
+    "src/xui/core/xui_edit.c": "d203cc8caa7645147e470cb88807cb851e5f13cc616338cb03de486c54d81da9",
+    "tests/xui/xui_text_read_view_test.c": "32a6ba44b298cb7bdc6505c14ca7f2c87adb47e1d6fc4a5c1ab5e5aa814f6eb2",
+    "tools/test/check_text_read_views.py": "849cd65abf47bcef481cf2e36295fc36254491824d134c0eb3925cd07132a397",
+    "tools/test/README.md": "92a2b7f8445a2ff984c89d5a25fcfd950fa1bbca49e6411fc7ac4bce88bbbe46"
+  },
+  "platforms": {
+    "win": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-sdk-win-r1\\results.json",
+        "sha256": "37915745cc444b1f63f489c6b9010345969645b9debe13878518ec6f604dc480",
+        "commands": 4
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-text-read-win-freeze-r1.json",
+        "sha256": "fc1ad6f7a558057dc38df5d2cc59350347c8f5087ec8e959cf103be699d743db",
+        "inputs": 12068
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-native-win-r2\\results.json",
+        "sha256": "49d54dd570c6189577d1a4106d919c0a58d42d8776c866f44f7a43e355afde89",
+        "commands": 12
+      },
+      "legacySuiteBaseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-legacy-baseline-win-r1\\results.json",
+        "sha256": "dd7645aade877fef1eea6a99a65004accf4ada681598da9df405d019c2c1111a"
+      },
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-sdk-win-r1\\host\\xge3_host.dll",
+        "sha256": "f118e7d2685dacb5f432a81c6866b696ee593bb5ce4b42727a5f1fc81a04b400",
+        "bytes": 9586735,
+        "deltaFromPreviousBytes": 512
+      },
+      "productionUnchangedFromQualifiedSnapshot": true
+    },
+    "linux": {
+      "producer": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-sdk-linux-r1\\results.json",
+        "sha256": "fba5fd71b2fa5cb9fe297dc749c120c15a6500beb5ecf9aa25e75a949b0daea1",
+        "commands": 4
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-text-read-linux-freeze-r1.json",
+        "sha256": "d7d5f2fcc92eb8f477ee833df9d928c1a7f0de6de7ecbfedfd10714eede0f4c3",
+        "inputs": 12068
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-native-linux-r2\\results.json",
+        "sha256": "0aedc90cdf3d36a82e9859f421ff14e19c960ff0e5707f1882d169bd0b7be346",
+        "commands": 12
+      },
+      "legacySuiteBaseline": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-legacy-baseline-linux-r1\\results.json",
+        "sha256": "a42e7969b583a767cab12c540014fdea518e5973a6bdf72d39fb3c3b95931d48"
+      },
+      "image": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\text-read-sdk-linux-r1\\host\\libxge3_host.so",
+        "sha256": "c0fceb8f7f1ab6bb8a11170bcf692295c3df1ae622be60c2f457b07b7076ca32",
+        "bytes": 10445520,
+        "deltaFromPreviousBytes": 4128
+      },
+      "productionUnchangedFromQualifiedSnapshot": true
+    }
+  },
+  "nativeCosts": {
+    "cachedDocumentReads": "1000 reads: no XRT allocations/frees/reallocations",
+    "emptyDocument": "present non-NULL zero-size view without allocation",
+    "coldNonemptyDocument": "native flat snapshot allocation/copy; checked OOM",
+    "codeEdit": "existing document accessor then checked document view, no strlen",
+    "genericEdit": "delegate resolution and registered CodeEdit type lookup; C-string adapters still use strlen",
+    "language": "one independent string allocation/copy remains; tested separately"
+  },
+  "legacySuiteGap": "Both previous and new native SDKs fail unchanged broad CodeEdit UI find-scope table assertion at GCC O0/O2 on Windows/Linux: actual status 0, 2 columns/0 rows, expected 3 columns/3 rows. Four controlled comparison runs per platform preserve this failure, not counted as passed editor regression."
+}

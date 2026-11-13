@@ -1196,6 +1196,21 @@ XUI_API const char* xuiCodeDocumentGetText(xui_code_document pDocument)
 	return (pDocument->sSnapshot != NULL) ? pDocument->sSnapshot : "";
 }
 
+XUI_API int xuiCodeDocumentGetTextView(xui_code_document document,xstrview* view)
+{
+    if(!view)return XUI_ERROR_INVALID_ARGUMENT;
+    *view=(xstrview){0};
+    if(!document)return XUI_ERROR_INVALID_ARGUMENT;
+    /* The legacy snapshot reserves length+1 using a signed native count. */
+    if(document->iLength<0 || document->iLength==INT_MAX)return XUI_ERROR_LIMIT_EXCEEDED;
+    if(!document->iLength){*view=(xstrview){"",0};return XUI_OK;}
+    int status=__xuiCodeDocumentEnsureSnapshot(document);
+    if(status!=XUI_OK)return status;
+    if(!document->sSnapshot)return XUI_ERROR_INVALID_STATE;
+    *view=(xstrview){document->sSnapshot,(size_t)document->iLength};return XUI_OK;
+}
+
+
 XUI_API int xuiCodeDocumentGetByte(xui_code_document pDocument, int iOffset, char* pByte)
 {
 	if ( pDocument == NULL || pByte == NULL ||

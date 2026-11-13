@@ -7671,6 +7671,10 @@ XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sTex
 XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char* sText, int iLength);
 /* 读取全文（NUL 结尾；文档持有，勿改）。 */
 XUI_API const char* xuiCodeDocumentGetText(xui_code_document pDocument);
+/* Read a borrowed complete byte-length view, including embedded NUL. Failure
+ * returns status with a zeroed view; empty text is present with Size == 0.
+ * The view remains valid until the document is mutated or released. */
+XUI_API int xuiCodeDocumentGetTextView(xui_code_document pDocument, xstrview* pView);
 /* 读取指定偏移的单字节。 */
 XUI_API int xuiCodeDocumentGetByte(xui_code_document pDocument, int iOffset, char* pByte);
 /* 拷贝区间文本到调用方缓冲；容量不足时输出所需长度。 */
@@ -8233,6 +8237,9 @@ XUI_API int xuiCodeEditSetTextLength(xui_widget pWidget, const char* sText, int 
 XUI_API int xuiCodeEditLoadTextFile(xui_widget pWidget, const char* sPath, int iCharset);
 /* 读取全文（编辑器持有）。 */
 XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
+/* Complete text snapshot view and checked native status; no strlen truncation.
+ * Borrowed data follows the editor/document mutation and lifetime rules. */
+XUI_API int xuiCodeEditGetTextView(xui_widget pWidget, xstrview* pView);
 /* 注册输入拦截回调（外部输入法/补全引擎用）。 */
 XUI_API int xuiCodeEditSetInputHandler(xui_widget pWidget, xui_code_input_proc onInput, void* pUser);
 /* 批量应用文本编辑（多光标/重排序安全）。 */
@@ -8413,6 +8420,10 @@ XUI_API int xuiEditGetBehavior(xui_widget pWidget, xui_edit_behavior_t* pBehavio
 XUI_API int xuiEditSetText(xui_widget pWidget, const char* sText);
 /* 读取全文（控件持有）。 */
 XUI_API const char* xuiEditGetText(xui_widget pWidget);
+/* Borrowed text with explicit extent and status. CodeEdit delegates preserve
+ * embedded NUL; controls whose edit adapter is C-string based retain that
+ * adapter contract. Unsupported targets yield an absent view (NULL, 0). */
+XUI_API int xuiEditGetTextView(xui_widget pWidget, xstrview* pView);
 /* 设置选区区间。 */
 XUI_API int xuiEditSetSelection(xui_widget pWidget, int iStart, int iEnd);
 /* 输出选区区间。 */
