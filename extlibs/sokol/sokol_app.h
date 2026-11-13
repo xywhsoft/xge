@@ -13817,6 +13817,11 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp.x11.display = XOpenDisplay(NULL);
     if (!_sapp.x11.display) {
         _SAPP_PANIC(LINUX_X11_OPEN_DISPLAY_FAILED);
+        /* XGE: a custom logger may record the failure and return. No X11
+           resource or app callback exists yet; release only init-state
+           buffers and stop before dereferencing the absent Display. */
+        _sapp_discard_state();
+        return;
     }
     _sapp.x11.screen = DefaultScreen(_sapp.x11.display);
     _sapp.x11.root = DefaultRootWindow(_sapp.x11.display);

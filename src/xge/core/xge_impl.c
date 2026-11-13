@@ -2332,6 +2332,9 @@ static void __xgeSokolLog(const char* sTag, uint32_t iLogLevel, uint32_t iLogIte
 
 	(void)sFile;
 	(void)pUser;
+	/* Keep the first fatal platform result even when the backend unwinds
+	 * before the application init callback (e.g. no X11 display). */
+	if ( iLogLevel == 0 ) __xgeFrameRunFailure(XGE_ERROR_BACKEND_FAILED);
 	switch ( iLogLevel ) {
 		case 0: iLevel = XGE_LOG_FATAL; break;
 		case 1: iLevel = XGE_LOG_ERROR; break;

@@ -1,0 +1,124 @@
+{
+  "date": "2026-11-14",
+  "qualified": true,
+  "shippingDelivery": false,
+  "networkTests": false,
+  "parent": "a77ee176c3db4b7f96c54119ffbdda8bd5c8fd6a",
+  "scope": "XOpenDisplay failure before X11 resources exist: discard Sokol buffers, preserve first checked XGE Run failure. No ABI change; not all Sokol fatal-stage recovery.",
+  "fullEngineRebuild": false,
+  "sources": {
+    "extlibs/sokol/sokol_app.h": "cf54a160ac08bea9d1db3d6f6ed7167bb2da0df43fa1e4897a4a72984bc97ce4",
+    "src/xge/core/xge_impl.c": "5c90b18dae48453a0413253cf1eff72362bdcd4d3cc4db23e12d419db86ee7fb",
+    "tests/xge/sokol_x11_startup_lifetime_test.c": "9b06aae2f9f97c8b1d15834d1a0086e7fe6b97d2ec3d46309614f6be07106747",
+    "tests/xge/xge_x11_startup_test.c": "d338b65a05dce792d5a435c5dd5bc2d8eafe53c2f972d4e9d0c3df5f9d8445df",
+    "tools/test/check_x11_startup.py": "ade4f4fff5b16d488011baf2bdbc5c3b99e74e2bab9fcf8fe3fb9414df956448",
+    "docs/x11-startup-failure.md": "7445eb7a01452083749c56e36ceb7344f8948b16fb37f89857fa3b267f5e6ed5"
+  },
+  "sdkBuilds": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-win-r1\\results.json",
+      "sha256": "eed253270550f601e6be61b4585de246cb17187a4e6dc73c1602aa9327f2be85",
+      "optimization": "O2",
+      "commands": 4,
+      "objects": {
+        "host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-win-r1\\host\\build-report.json",
+          "sha256": "07e3500baf2b684c80cfb9a3ee18d9d8265dce626898450cb941e62cfa058718",
+          "compiled": [
+            "single/xge.c"
+          ],
+          "reusedCount": 163
+        },
+        "static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-win-r1\\static\\build-report.json",
+          "sha256": "ea74d57979cfee6e2da8e34ee039bcf3cf7720b977aadfb134fc14b0628af279",
+          "compiled": [
+            "single\\xge.c",
+            "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-win-r1\\static\\xge_static_contract.c"
+          ],
+          "reusedCount": 163
+        }
+      }
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-linux-r1\\results.json",
+      "sha256": "9f7d7ab99052eac11a141b62a1ba131cb1f92a67f98e2789a34b2e1eb8b31a46",
+      "optimization": "O2",
+      "commands": 4,
+      "objects": {
+        "host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-linux-r1\\host\\build-report.json",
+          "sha256": "20f0a2c61de601abfec27fd2ee2e7f0419146d55af6d739d767d898742121e2b",
+          "compiled": [
+            "single/xge.c"
+          ],
+          "reusedCount": 163
+        },
+        "static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-sdk-linux-r1\\static\\build-report.json",
+          "sha256": "c4f167d2a360c3708441bf476751f9b85a0e323ec1e992a9ecec8ac4c3223dff",
+          "compiled": [
+            "single/xge.c",
+            "/mnt/f/xlang-validation/xge-full-20261110/x11-startup-sdk-linux-r1/static/xge_static_contract.c"
+          ],
+          "reusedCount": 163
+        }
+      }
+    }
+  },
+  "reports": {
+    "x11-startup-native-linux-r1": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-native-linux-r1\\results.json",
+      "sha256": "5028f928b47610b3420d5e24a4d58b37fe8d593bf5aba0e3b6a7e2d30fe73dc9",
+      "commands": 12,
+      "scope": "Actual X11 connection-failure unwind, checked XGE result and same-process retry.\n\nThe standalone vendored Sokol and actual direct-XRT static XGE are both tested.\nGraphics mode needs a local X server; use Xvfb with TCP listening disabled for\nsoftware-GL acceptance. No attack, remote service or network protocol tests.\n"
+    },
+    "x11-startup-gl-regression-linux-r1": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-gl-regression-linux-r1\\results.json",
+      "sha256": "2372ba2e6baa26c3752fc4a336c9879c74a48347c2620ddd22917dffb55f35d2",
+      "commands": 6,
+      "scope": "Actual Linux static engine GL startup failure and first-frame suppression."
+    },
+    "x11-sokol-early-linux-r1": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-sokol-early-linux-r1\\results.json",
+      "sha256": "a0228792f8833080e412419964a0018afedb96730dc9a93aa5b558ec651b8f08",
+      "commands": 6,
+      "scope": "Standalone actual Sokol only; custom allocator, XOpenDisplay failure and real software GL retry. Does not qualify XGE archive or language integration."
+    },
+    "x11-sokol-sanitizers-linux-r1": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\x11-sokol-sanitizers-linux-r1\\results.json",
+      "sha256": "d2c6eeaa513f4b77a35d5fac57c50e93b40f965fa3dd1823f50d4617cb931795",
+      "commands": 2,
+      "scope": "ASan/UBSan/LSan standalone actual Sokol header and custom allocator, no-display failure only. No instrumented XGE archive or graphics-driver acceptance."
+    }
+  },
+  "positiveNativeCommands": 26,
+  "oldNativeReproduction": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-old-linux-r2\\results.json",
+    "sha256": "68b13f2bc8291eb603480cac72f143e6cc40ca8e694c821f8bdf64dd2b78d875",
+    "commands": 8,
+    "expectedSigsegvRuns": 4,
+    "positiveAcceptance": false
+  },
+  "binarySizes": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\x11-startup-binary-sizes-r1.json",
+    "sha256": "def6328f0dbf98637e5b12a282ac267f05db5fba9fe3debefe9ca958d4921272"
+  },
+  "allocationEvidence": {
+    "repetitions": 12,
+    "perFailedRunAllocations": 2,
+    "perFailedRunFrees": 2,
+    "liveXrtAllocationsChanged": false,
+    "actualLocalDisplayRecovery": true,
+    "noFramesOnFailure": true,
+    "manualModeRequiresDisplay": false,
+    "sanitizerScope": "ASan/UBSan/LSan actual standalone Sokol only; XGE archive and graphics driver not instrumented"
+  },
+  "limitations": [
+    "Linux Xvfb/Mesa software GL, not hardware GPU or complete platform-backend acceptance.",
+    "Healthy-path allocation/call behavior is unchanged; logger has one new level-zero source test and fatal path uses existing Run lock/error reference. No CPU equivalence claim.",
+    "Later GLX/EGL/window errors, allocator panics and display disconnect need separate stage-aware recovery; no unsafe global longjmp added.",
+    "Qualified 1-TU host rebuild plus 163 reused objects; static 2 compiled (aggregate and generated contract) plus 163 reused. Not full source rebuild.",
+    "Prior fixture compile failure and original crash reports remain external. No runtime/IDE installation or publication."
+  ]
+}
