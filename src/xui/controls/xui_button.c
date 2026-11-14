@@ -1501,7 +1501,9 @@ XUI_API xui_widget_type xuiButtonGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "button";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	/* External image generations can change while this subtree is clean. */
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_button_data_t);
 	tDesc.onInit = __xuiButtonInit;
 	tDesc.onDestroy = __xuiButtonDestroy;

@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "qualified-native-fix",
+  "shippingDelivery": false,
+  "scope": "CheckBox/Toggle failed-init self-cleanup, Button/CheckBox/Toggle external-image cache probes. Existing Radio included as positive control. No public ABI or failed-stage destructor policy change.",
+  "sourceSha256": {
+    "src/xui/controls/xui_button.c": "6f5d59ea229869815897a8e4f65e79f2c7a3ba85c91efef84820f4dc1bd38e2f",
+    "src/xui/controls/xui_checkbox.c": "4b2d2b43b0d4463dc394d3ab6db4d0555fa751151b05a8610e989cc99570d1ca",
+    "src/xui/controls/xui_toggle.c": "f0ebb8ac163718d52f7845c597c8f3ff2399ae28aeb4ed501ef792829b446d94",
+    "tests/xui/xui_choice_init_failure_test.c": "1172005a4d4f79e98777692a3d2bfe6bc659d12f428b0b9c548668ec16df3b9e",
+    "tests/xui/xui_choice_surface_generation_test.c": "a715fbe492f9dd11f4dd4c3d9609d978749f7f394ca1181f2382287487244564",
+    "tools/test/check_choice_init_and_cache.py": "9c1671ca1177f112136459f8c13350cd282859111362c9c29f3dfd6b16798c13"
+  },
+  "qualification": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-fixes-native-evidence-win-r1.json",
+      "sha256": "e6385261bb8fbbf802eced6c93d6a9125fcaade41ac37af483e81b262d8d3a49",
+      "passed": true,
+      "commands": 52,
+      "acceptance": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\choice-fixes-native-win-r1\\results.json",
+        "sha256": "f753ca0c713d8e16b1d89ee139e4253c5d32f471f094483e36b654c1ece82171",
+        "verifiedInputs": 39
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\choice-fixes-sdk-win-r1\\results.json",
+        "sha256": "6ad50c4759495533f4d0c1cf3ef3e374bc107738166515c9dfa68576b021f725",
+        "counts": {
+          "host": {
+            "compiled": 5,
+            "reused": 159
+          },
+          "static": {
+            "compiled": 6,
+            "reused": 160
+          }
+        }
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-choice-fixes-win-freeze-r1.json",
+        "sha256": "6edcad3cff4e92bd8c3621a710995ea66b7d67810d54286d557556b712b49949"
+      }
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-fixes-native-evidence-linux-r1.json",
+      "sha256": "047f7097eeb0e740d1706575d15011291b5507b8d71a86c33aebb2148df6e948",
+      "passed": true,
+      "commands": 52,
+      "acceptance": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/choice-fixes-native-linux-r1/results.json",
+        "sha256": "236714afe3f30e5914845f2a85bd0e40036ff351441a6b4c1bf78338ad454847",
+        "verifiedInputs": 38
+      },
+      "sdk": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/choice-fixes-sdk-linux-r1/results.json",
+        "sha256": "4037b5f2672dd46598d93077a65b845597523a114493a0e142d4683f20185328",
+        "counts": {
+          "host": {
+            "compiled": 5,
+            "reused": 159
+          },
+          "static": {
+            "compiled": 6,
+            "reused": 160
+          }
+        }
+      },
+      "freeze": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/native-choice-fixes-linux-freeze-r1.json",
+        "sha256": "f2d126f3d8e93826dff479a064ddfaf2a7308343c41e53e5d0de618a97db8a9d"
+      }
+    }
+  },
+  "totalExecutedCommands": 104,
+  "oldSdkControls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-constructor-audit-win-r1\\results.json",
+      "sha256": "c736c32ede81d63678a29519f99f98b9db5fedfd9847efc17bbed29648ad7a05"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-constructor-audit-win-r1\\case1.log",
+      "sha256": "935071bdd8e03fc37c5cdab60f83e570ec6bc24fbfa9e23896b4cfef0c486991"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-constructor-audit-win-r1\\case2.log",
+      "sha256": "3b7f42168b6a3c0ac6183fa528d834aa7f6dcab158a0d2c08bdf2c3630d7429a"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\choice-cache-minimal-old-win-r2\\results.json",
+      "sha256": "2b1cc63b6b7a17d1471f10a1f67a8acb8f13d134f0ac5a086686680109fc77b8"
+    }
+  ],
+  "cost": "Existing generation probes now run on clean frames for these three types. Repeated slots of the same Surface are deduplicated by unchanged native code; unchanged images keep cached draws. No CPU-equivalence claim.",
+  "broaderDiagnostic": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\widget-default-constructor-audit-win-r1\\results.json",
+    "sha256": "838d1c35752d6b382e6080bdeed9272da5ce510d5891964b496fba4317eddf21",
+    "scope": "All exported NULL-descriptor Widget constructor triads, O2 hosted old SDK; not full descriptor/language qualification.",
+    "notFullQualification": true,
+    "remaining": "Eleven additional constructors still have independently observed allocation leaks; CodeEdit needs a budget beyond96 for a success boundary. This receipt fixes only the two choice initializers."
+  },
+  "limits": [
+    "Independent C O0/O2 host/static, not language or GPU certification.",
+    "Each initializer execution covers four constructors, full/default descriptors and64 budgets each (512 total).",
+    "Each cache case has its own minimal tree, so another child cannot mask missing clean-frame preparation.",
+    "Unchanged Checkbox/Toggle/Radio legacy suites run. The old Button full suite requires unrelated newer test-proxy geometry fields and was not substituted; Button isolated cache and constructor tests run.",
+    "O2 native relink compiled5/reused159 from original full164/0 SDK; static compiled6/reused160. Exact snapshots pinned; unrelated worktree changes excluded.",
+    "Historical diagnostics preserved; no shipping installation, push or version update."
+  ]
+}

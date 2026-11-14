@@ -920,22 +920,31 @@ static int __xuiCheckBoxInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->bUseBuiltinAtlas = (pDesc != NULL) ? (pDesc->bUseBuiltinAtlas != 0) : 0;
 	iRet = __xuiCheckBoxTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
 	tPadding = (xui_thickness_t){4.0f, 3.0f, 4.0f, 3.0f};
 	iRet = xuiWidgetSetPadding(pWidget, tPadding);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiCheckBoxInitCacheStates(pWidget);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
 	iRet = __xuiCheckBoxInitEvents(pWidget);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
-	return __xuiCheckBoxSyncState(pWidget, pData);
+	iRet = __xuiCheckBoxSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* A failed init stage still owns its partial text. Widget cache/events
+	 * belong to the completed base stage; Font remains borrowed here. */
+	xrtFree(pData->sText);
+	pData->sText = NULL;
+	pData->iTextCapacity = 0;
+	return iRet;
 }
 
 static void __xuiCheckBoxDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1064,7 +1073,9 @@ XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "checkbox";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	/* External image generations can change while this subtree is clean. */
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_checkbox_data_t);
 	tDesc.onInit = __xuiCheckBoxInit;
 	tDesc.onDestroy = __xuiCheckBoxDestroy;

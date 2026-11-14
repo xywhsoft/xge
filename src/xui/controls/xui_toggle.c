@@ -1149,23 +1149,35 @@ static int __xuiToggleInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	pData->bChecked = (pDesc != NULL) ? (pDesc->bChecked != 0) : 0;
 	pData->bUseBuiltinAtlas = (pDesc != NULL) ? (pDesc->bUseBuiltinAtlas != 0) : 0;
 	iRet = __xuiToggleTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiToggleInnerTextSet(NULL, pData,
 		(pDesc != NULL) ? pDesc->sUncheckedText : "",
 		(pDesc != NULL) ? pDesc->sCheckedText : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	tPadding = (xui_thickness_t){4.0f, 3.0f, 4.0f, 3.0f};
 	iRet = xuiWidgetSetPadding(pWidget, tPadding);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = xuiWidgetSetFocusable(pWidget, 1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = xuiWidgetSetTabStop(pWidget, 1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiToggleInitCacheStates(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiToggleInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiToggleSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = __xuiToggleSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* Only successful stages enter the generic destroy chain. Release all
+	 * partial text buffers here; base cache/events and Font admission stay
+	 * with the existing Widget construction transaction. */
+	xrtFree(pData->sText);
+	xrtFree(pData->sUncheckedText);
+	xrtFree(pData->sCheckedText);
+	pData->sText = pData->sUncheckedText = pData->sCheckedText = NULL;
+	pData->iTextCapacity = pData->iUncheckedTextCapacity = pData->iCheckedTextCapacity = 0;
+	return iRet;
 }
 
 static void __xuiToggleDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1298,7 +1310,9 @@ XUI_API xui_widget_type xuiToggleGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "toggle";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	/* External image generations can change while this subtree is clean. */
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_toggle_data_t);
 	tDesc.onInit = __xuiToggleInit;
 	tDesc.onDestroy = __xuiToggleDestroy;
