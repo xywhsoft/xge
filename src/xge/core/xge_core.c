@@ -23,6 +23,40 @@ static uint64 g_xgeFrameRunThread;
  * owned data even when no language callback is registered. */
 static xge_callback_owner_t g_xgeEngineCode;
 static char* g_xgeTitle;
+/* Logical Unit may precede the event loop's physical context teardown. Keep
+ * the resolver and engine code until that boundary, or an OS-close retry. */
+static bool g_xgeUnitPending;
+
+static int __xgeUnitRetireCode(void)
+{
+    g_xgeUnitPending=true;
+    int result=__xgeGraphicsLibraryRetire();
+    if(result!=XGE_OK)return result;
+    g_xgeUnitPending=false;
+    xge_callback_owner_t code=g_xgeEngineCode;
+    g_xgeEngineCode=(xge_callback_owner_t){0};
+    /* The resident Drop hook protects the complete native return tail. */
+    return __xgeCallbackOwnerDrop(code);
+}
+
+static void __xgeUnitBackendEnded(void)
+{
+    if(!g_xgeUnitPending){
+        __xgeGraphicsBackendEnded(&g_xgeGraphicsLifetime,g_xge.bInitialized!=0);
+        return;
+    }
+    /* BackendEnding already closed graphics admission. Keep callback/init
+     * admission closed as well across an arbitrary final code-owner Drop. */
+    xrtAtomic32Store(&g_xgeCallbackShutdown,1,XMEMORY_RELEASE);
+    xerror* previous=xrtTakeError();xerror* first=NULL;int result=XGE_OK;
+    __xgeCallbackOutcome(__xgeUnitRetireCode(),&result,&first);
+    __xgeGraphicsBackendEnded(&g_xgeGraphicsLifetime,g_xge.bInitialized!=0);
+    if(g_xgeUnitPending)__xgeGraphicsCloseFinish(&g_xgeGraphicsLifetime,true);
+    xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
+    if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
+    else xrtSetErrorTake(previous);
+    __xgeFrameRunFailure(result);
+}
 
 int xgeInit(const xge_desc_t* pDesc)
 {return xgeInitWithCode(pDesc,NULL);}
@@ -242,11 +276,11 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(XGE_OK,&result,&first);
 finish:
     xrtFree(g_xgeTitle);g_xgeTitle=NULL;g_xge.objDesc.sTitle=NULL;
-    __xgeGraphicsCloseFinish(&g_xgeGraphicsLifetime,g_xge.bSokolRunning!=0);
-	xge_callback_owner_t code=g_xgeEngineCode;g_xgeEngineCode=(xge_callback_owner_t){0};
-	/* The owner's resident Drop hook protects the complete native return tail.
-	 * Clear the global first and keep callback/init admission closed until done. */
-	__xgeCallbackOutcome(__xgeCallbackOwnerDrop(code),&result,&first);
+    if(g_xge.bSokolRunning)g_xgeUnitPending=true;
+    else __xgeCallbackOutcome(__xgeUnitRetireCode(),&result,&first);
+    /* A failed library close retains the exact handle AND its code owner.
+     * CLOSED blocks reinitialization until a creator-thread Unit retry. */
+    __xgeGraphicsCloseFinish(&g_xgeGraphicsLifetime,g_xge.bSokolRunning!=0 || g_xgeUnitPending);
 	xrtAtomic32Store(&g_xgeCallbackShutdown,0,XMEMORY_RELEASE);
 	if(result!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}
 	else xrtSetErrorTake(previous);

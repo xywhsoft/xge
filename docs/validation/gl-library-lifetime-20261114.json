@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Private GL table/library ownership and checked engine retirement, actual Windows/Linux desktop tests.",
+  "fullGoalComplete": false,
+  "shippingDelivery": false,
+  "publicAbiChange": false,
+  "languageCompilerChange": false,
+  "networkTests": false,
+  "parentRevision": "dc7857c2fe84a0aa54d9c2ca2b05f694000cdb4b",
+  "sources": {
+    "src/xge/core/xge_impl.c": "223eba1dd8a28fa2b9ae4ad48233d04f4eb6ca99f5248c92171a704650427f51",
+    "src/xge/core/xge_core.c": "7ff59e39a6c0b41ec86b567ba72a230ad33d44e5806374e183d5b0a1642ba4e0",
+    "src/xge/core/xge_command.c": "8862c82247c4027ef21f28e418bfa5b41ec83865917596d14e0834d8c1a3c514",
+    "src/xge/render/xge_gl_library.h": "2f134eb51b461f144f842dcc622d09a72aa664ed5c66a57ce08c10839c68f7d6",
+    "tests/xge/xge_gl_library_test.c": "ce21a3802ddf1bd88fde385eeec9105cd08a06bf7aec2a2f3b95be94bf1e12cb",
+    "tests/xge/xge_gl_library_engine_test.c": "2b7f0c72b49d5b07e9a6157e1ec0d20286d5bf8f73c8f4e3e143d4fea8cee4bc",
+    "tests/xge/xge_linux_glx_failure_test.c": "3ee17827d99252680b584b2e9b2c1b819e9a24eb6ee8da1da49cc52f541b5986",
+    "tools/test/check_gl_libraries.py": "396e740683a430096df9744f1bade6e39e87db2e35f44faf368bf796343696a2",
+    "tools/test/check_gl_library_engine.py": "05a1a9d0b5246849e1fa0a85c021c6af660d39f2ab7bc7e1c95680aa21fc9c95",
+    "docs/gl-library-lifetime.md": "73760456c45633b1e096685b42dc22a75d90f3b6788bd03593756cabba62a8e2"
+  },
+  "reports": {
+    "privateWin": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-libraries-private-win-r1\\results.json",
+      "sha256": "9cc7f0ad025c4054455b8c78d4f67ca5c1558f4167209170dccedfd50f5fa557",
+      "commands": 36,
+      "refused": 0
+    },
+    "privateLinux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-libraries-private-linux-r1\\results.json",
+      "sha256": "1b1f02a7d3ad65ccc4fdb28e6f5da6d86564b83c8bf1903b86f18dc316cfce78",
+      "commands": 36,
+      "refused": 0
+    },
+    "engineWin": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-engine-win-r2\\results.json",
+      "sha256": "2e378588353cc23802ee5636ec75119a81d77f31773d75433945252567269199",
+      "commands": 14,
+      "refused": 2
+    },
+    "engineLinux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-engine-linux-r2\\results.json",
+      "sha256": "65dff38c7a03cfb38ccb59d628ef10845b9f8f92574ab4acf4f5b4fa031fb3e4",
+      "commands": 14,
+      "refused": 2
+    },
+    "ownedGraphicsWin": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-native-win-r1\\results.json",
+      "sha256": "3c7e948b77e703dd24dec4e58af9b0ee8ffb129f32be19df2da69412d7703aa7",
+      "commands": 44,
+      "refused": 0
+    },
+    "glxRegressionLinux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-glx-regression-linux-r1\\results.json",
+      "sha256": "12f6d4287edb16cda0bdad841d27e134406226890411de73c26417529cff23c9",
+      "commands": 38,
+      "refused": 0
+    }
+  },
+  "platforms": {
+    "win": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-gl-library-win-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-gl-library-win-freeze-r1.json",
+        "sha256": "9ec4d706a6265c2a154e4539691f9f77bbfed570ab545d0e81fba6a26fd9fe23"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-sdk-win-r1\\results.json",
+        "sha256": "8dc7640711f0c62186863835026d313f7aa06f98c08f683a55d714a91f615e7a",
+        "commands": 4
+      },
+      "host": {
+        "compiled": [
+          "single/xge.c",
+          "src/xui/code/xui_code_document.c"
+        ],
+        "reused": 162
+      },
+      "static": {
+        "compiled": [
+          "single\\xge.c",
+          "F:\\xlang-validation\\xge-full-20261110\\gl-library-sdk-win-r1\\static\\xge_static_contract.c"
+        ],
+        "compiledCount": 2,
+        "reusedCount": 164
+      },
+      "size": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-sizes-win-r1.json",
+        "sha256": "7295f977d1323b897327dbaa4badcdab94652854709370ea35750618e7447a60",
+        "fileDelta": 512,
+        "textDelta": 640,
+        "bssDelta": 32
+      }
+    },
+    "linux": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-gl-library-linux-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-gl-library-linux-freeze-r1.json",
+        "sha256": "bf88e03178134bd286af1863fcbc5f5d4a1d6b7d8abe9926288bf207098d039a"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-sdk-linux-r1\\results.json",
+        "sha256": "e98a7b385cd0c95d882f24ebf7e29926464dbef491ca863eb95ba04077326e77",
+        "commands": 4
+      },
+      "host": {
+        "compiled": [
+          "single/xge.c",
+          "src/xui/code/xui_code_document.c"
+        ],
+        "reused": 162
+      },
+      "static": {
+        "compiled": [
+          "single/xge.c",
+          "/mnt/f/xlang-validation/xge-full-20261110/gl-library-sdk-linux-r1/static/xge_static_contract.c"
+        ],
+        "compiledCount": 2,
+        "reusedCount": 164
+      },
+      "size": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-sizes-linux-r1.json",
+        "sha256": "1337b95883dff29d640747fdd617613755574c0392c75c16af9ad86c1a0a669f",
+        "fileDelta": 0,
+        "textDelta": 960,
+        "bssDelta": 32
+      }
+    }
+  },
+  "positiveNativeProcessSteps": 174,
+  "legacyBuildSteps": 4,
+  "legacyDefectRejections": 4,
+  "historicalFailures": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-engine-win-r1\\results.json",
+      "reason": "Fixture expected one startup library reference; Sokol also owns one. No product change."
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\gl-library-engine-linux-r1\\results.json",
+      "reason": "All cases ran, but shared fixture changed before final input-stability check. r2 qualifies final bytes."
+    }
+  ],
+  "limits": [
+    "Private table tests inspect fake addresses without invoking them; actual engine gate uses real GL.",
+    "PE/ELF interception counts explicit loader references, not internal OS loader reference totals.",
+    "OS close failure is injected before the real close; retained reference is physically unchanged.",
+    "Default O2 SDKs reuse qualified objects, not a full native rebuild.",
+    "Frozen SDK test files predate final separate live-test overlays; exact product sources match this change.",
+    "Unrelated XUI working changes excluded; no release installation.",
+    "No macOS/Android/WebAssembly device, disconnect-path, complete ecosystem or hardware-performance certification."
+  ],
+  "costs": {
+    "newDrawTimeOperations": 0,
+    "newBridgeAllocation": false,
+    "staticOwnerSlots": 2,
+    "stackCandidate": true,
+    "coldOperations": "Library opens/resolves, checked closes and bounded retry duty; no CPU equivalence claim."
+  }
+}

@@ -294,7 +294,7 @@ static int __xgeRenderThreadFlushWithEGL(xge_context_t* pContext)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
+	if ( __xgeGraphicsLoadGL(xgeGraphicsBackendGet().iType) != XGE_OK ) {
 		__xgeRenderThreadEGLSnapshot(pContext, &tEGL);
 		xgeEGLUnit(&tEGL);
 		return XGE_ERROR_GPU_FAILED;

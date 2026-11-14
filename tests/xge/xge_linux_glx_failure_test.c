@@ -35,16 +35,16 @@ int main(int argc,char** argv)
         int status=xgeRun(frame,NULL);
         if(status!=XGE_OK || frames!=attempt+1 || application_errors)fprintf(stderr,"Healthy engine attempt=%u status=%d frames=%u applicationErrors=%u\n",attempt,status,frames,application_errors);
         assert(status==XGE_OK && frames==attempt+1 && !application_errors);
-        /* xge_impl's existing resolver caches one process-wide libGL owner.
-         * Sokol must add no retained owner on any completed window run. */
+        /* XGE retains its resolver until checked Unit. Sokol has already
+         * retired its independent owner after physical window teardown. */
         startup_fault_balanced_libraries(1);
         assert(xgeSetFrameCallbackOwned(NULL,NULL,NULL)==XGE_OK && xgeUnitChecked()==XGE_OK && !xrtGetError());
-        startup_fault_balanced_libraries(1);
+        startup_fault_balanced();
         /* A completed graphics lifetime is ENDED; the next healthy run needs
          * fresh initialization. Pre-startup failures still permit direct retry. */
         if(attempt<2)assert(xgeInit(&desc)==XGE_OK);
     }
-    startup_fault_balanced_libraries(1);assert(XSetErrorHandler(original)==app_error);
+    startup_fault_balanced();assert(XSetErrorHandler(original)==app_error);
     printf("XGE GLX stage %d: three checked balanced failures and same-process actual engine retry passed\n",mode);
     return 0;
 }

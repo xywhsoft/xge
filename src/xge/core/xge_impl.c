@@ -708,6 +708,7 @@ static void __xgeLogError(const char* sTag, const char* sMessage)
 #include "xge_callback_owned.h"
 static int __xgeFrameCallbackInvoke(int*,bool*);
 static void __xgeFrameRunFailure(int);
+static void __xgeUnitBackendEnded(void);
 static xspinlock g_xgeErrorSpin = XRT_SPIN_INIT;
 static xge_error_proc g_xgeErrorCallback;
 static void* g_xgeErrorUser;
@@ -783,216 +784,96 @@ static void __xgeReportErrorInternal(int iCode, int bRecoverable, const char* sS
 	(void)xgeReportError(&tError);
 }
 
+#include "src/xge/render/xge_gl_library.h"
 #if defined(__EMSCRIPTEN__)
-static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
-{
-	(void)iBackend;
-	(void)iIndex;
-	return NULL;
-}
-
-// Emscripten WebGL 函数加载
-static void* __xgeGLGetProc(const char* sName)
-{
-	if ( sName == NULL ) {
-		return NULL;
-	}
-	return emscripten_webgl_get_proc_address(sName);
-}
+static const char* __xgeGraphicsLibraryName(int backend,int index)
+{(void)backend;(void)index;return NULL;}
+static int __xgeGLSystemOpen(xge_gl_library* library)
+{library->handle=(void*)1;return XGE_OK;}
+static int __xgeGLSystemClose(xge_gl_library* library)
+{(void)library;return XGE_OK;}
+static void* __xgeGLSystemProc(const char* name,void* library)
+{(void)library;return name ? emscripten_webgl_get_proc_address(name):NULL;}
 #elif defined(_WIN32) || defined(_WIN64)
-static HMODULE g_xgeOpenGL = NULL;
-static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
-static int g_xgeOpenGLLibraryTried = 0;
-static FARPROC (WINAPI *g_xgeWGLGetProcAddress)(LPCSTR) = NULL;
-
-static int __xgeWin32IsInvalidGLProc(void* pProc)
+static int __xgeWin32IsInvalidGLProc(void* proc)
+{return !proc || proc==(void*)1 || proc==(void*)2 || proc==(void*)3 || proc==(void*)-1;}
+static HMODULE __xgeWin32LoadGraphicsLibrary(const char* name)
 {
-	return (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1);
+    if(!name)return NULL;
+    UINT previous=SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX|SEM_NOGPFAULTERRORBOX);
+    SetErrorMode(previous|SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX|SEM_NOGPFAULTERRORBOX);
+    HMODULE library=NULL;
+#ifdef LOAD_LIBRARY_SEARCH_SYSTEM32
+    if(!strcmp(name,"opengl32.dll"))library=LoadLibraryExA(name,NULL,LOAD_LIBRARY_SEARCH_SYSTEM32);
+#endif
+    if(!library)library=LoadLibraryA(name);
+    SetErrorMode(previous);return library;
 }
-
-static HMODULE __xgeWin32LoadGraphicsLibrary(const char* sLibrary)
+static const char* __xgeGraphicsLibraryName(int backend,int index)
 {
-	HMODULE hLibrary;
-	UINT iOldErrorMode;
-	UINT iLoadFlags;
-
-	hLibrary = NULL;
-	if ( sLibrary == NULL ) {
-		return NULL;
-	}
-	iOldErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-	SetErrorMode(iOldErrorMode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-	if ( strcmp(sLibrary, "opengl32.dll") == 0 ) {
-		iLoadFlags = 0;
-		#ifdef LOAD_LIBRARY_SEARCH_SYSTEM32
-			iLoadFlags |= LOAD_LIBRARY_SEARCH_SYSTEM32;
-		#endif
-		if ( iLoadFlags != 0 ) {
-			hLibrary = LoadLibraryExA(sLibrary, NULL, iLoadFlags);
-		}
-	}
-	if ( hLibrary == NULL ) {
-		hLibrary = LoadLibraryA(sLibrary);
-	}
-	SetErrorMode(iOldErrorMode);
-	return hLibrary;
+    if(backend==XGE_GPU_BACKEND_GLES30 || backend==XGE_GPU_BACKEND_WEBGL2)
+        return index==0 ? "libGLESv2.dll":index==1 ? "GLESv2.dll":NULL;
+    return index==0 ? "opengl32.dll":NULL;
 }
-
-static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+static int __xgeGLSystemOpen(xge_gl_library* library)
 {
-	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
-		if ( iIndex == 0 ) {
-			return "libGLESv2.dll";
-		}
-		if ( iIndex == 1 ) {
-			return "GLESv2.dll";
-		}
-		return NULL;
-	}
-	if ( iIndex == 0 ) {
-		return "opengl32.dll";
-	}
-	return NULL;
+    const char* name;
+    for(int i=0;(name=__xgeGraphicsLibraryName(library->backend,i))!=NULL;++i){
+        library->handle=(void*)__xgeWin32LoadGraphicsLibrary(name);
+        if(library->handle){
+            if(library->backend==XGE_GPU_BACKEND_OPENGL33)
+                library->entry=(void*)GetProcAddress((HMODULE)library->handle,"wglGetProcAddress");
+            return XGE_OK;
+        }
+    }
+    return XGE_ERROR_BACKEND_FAILED;
 }
-
-// windows OpenGL 函数加载
-static void* __xgeGLGetProc(const char* sName)
+static int __xgeGLSystemClose(xge_gl_library* library)
+{return FreeLibrary((HMODULE)library->handle) ? XGE_OK:XGE_ERROR_BACKEND_FAILED;}
+static void* __xgeGLSystemProc(const char* name,void* raw)
 {
-	void* pProc;
-	int iBackend;
-	int i;
-	const char* sLibrary;
-
-	iBackend = xgeGraphicsBackendGet().iType;
-	pProc = NULL;
-	if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
-		if ( g_xgeWGLGetProcAddress != NULL ) {
-			pProc = (void*)g_xgeWGLGetProcAddress(sName);
-		}
-	}
-	if ( __xgeWin32IsInvalidGLProc(pProc) ) {
-		if ( g_xgeOpenGLLibraryBackend != iBackend ) {
-			g_xgeOpenGL = NULL;
-			g_xgeOpenGLLibraryBackend = iBackend;
-			g_xgeOpenGLLibraryTried = 0;
-			g_xgeWGLGetProcAddress = NULL;
-		}
-		if ( (g_xgeOpenGL == NULL) && !g_xgeOpenGLLibraryTried ) {
-			g_xgeOpenGLLibraryTried = 1;
-			for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
-				SetLastError(ERROR_SUCCESS);
-				g_xgeOpenGL = __xgeWin32LoadGraphicsLibrary(sLibrary);
-				if ( g_xgeOpenGL != NULL ) {
-					if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
-						g_xgeWGLGetProcAddress = (FARPROC (WINAPI *)(LPCSTR))GetProcAddress(g_xgeOpenGL, "wglGetProcAddress");
-					}
-					break;
-				}
-				__xgeLogFormat(XGE_LOG_ERROR, "platform", "LoadLibrary(%s) failed err=%lu", sLibrary, (unsigned long)GetLastError());
-			}
-		}
-		if ( g_xgeOpenGL != NULL ) {
-			if ( (iBackend == XGE_GPU_BACKEND_OPENGL33) && (g_xgeWGLGetProcAddress != NULL) ) {
-				pProc = (void*)g_xgeWGLGetProcAddress(sName);
-			}
-		}
-		if ( __xgeWin32IsInvalidGLProc(pProc) && (g_xgeOpenGL != NULL) ) {
-			pProc = (void*)GetProcAddress(g_xgeOpenGL, sName);
-		}
-	}
-	return pProc;
-}
-#elif defined(__APPLE__)
-static void* g_xgeOpenGL = NULL;
-static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
-
-static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
-{
-	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
-		if ( iIndex == 0 ) {
-			return "/System/Library/Frameworks/OpenGLES.framework/Versions/Current/OpenGLES";
-		}
-		return NULL;
-	}
-	if ( iIndex == 0 ) {
-		return "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL";
-	}
-	return NULL;
-}
-
-// macOS OpenGL 函数加载
-static void* __xgeGLGetProc(const char* sName)
-{
-	int iBackend;
-	int i;
-	const char* sLibrary;
-
-	iBackend = xgeGraphicsBackendGet().iType;
-	if ( g_xgeOpenGLLibraryBackend != iBackend ) {
-		g_xgeOpenGL = NULL;
-		g_xgeOpenGLLibraryBackend = iBackend;
-	}
-	if ( g_xgeOpenGL == NULL ) {
-		for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
-			g_xgeOpenGL = dlopen(sLibrary, RTLD_LAZY);
-			if ( g_xgeOpenGL != NULL ) {
-				break;
-			}
-		}
-	}
-	if ( g_xgeOpenGL != NULL ) {
-		return dlsym(g_xgeOpenGL, sName);
-	}
-	return NULL;
+    xge_gl_library* library=(xge_gl_library*)raw;void* proc=NULL;
+    if(!name || !library->handle)return NULL;
+    /* Resolve only against THIS candidate's backend and WGL entry, never a
+     * stale cached entry belonging to the previous committed library. */
+    if(library->backend==XGE_GPU_BACKEND_OPENGL33 && library->entry)
+        proc=(void*)((FARPROC (WINAPI *)(LPCSTR))library->entry)(name);
+    if(__xgeWin32IsInvalidGLProc(proc))
+        proc=(void*)GetProcAddress((HMODULE)library->handle,name);
+    return __xgeWin32IsInvalidGLProc(proc) ? NULL:proc;
 }
 #else
-static void* g_xgeOpenGL = NULL;
-static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
-
-static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+static const char* __xgeGraphicsLibraryName(int backend,int index)
 {
-	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
-		if ( iIndex == 0 ) {
-			return "libGLESv2.so.2";
-		}
-		if ( iIndex == 1 ) {
-			return "libGLESv2.so";
-		}
-		return NULL;
-	}
-	if ( iIndex == 0 ) {
-		return "libGL.so.1";
-	}
-	if ( iIndex == 1 ) {
-		return "libGL.so";
-	}
-	return NULL;
+    int es=backend==XGE_GPU_BACKEND_GLES30 || backend==XGE_GPU_BACKEND_WEBGL2;
+#if defined(__APPLE__)
+    if(index)return NULL;
+    return es ? "/System/Library/Frameworks/OpenGLES.framework/Versions/Current/OpenGLES":
+        "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL";
+#else
+    return index==0 ? (es ? "libGLESv2.so.2":"libGL.so.1"):
+        index==1 ? (es ? "libGLESv2.so":"libGL.so"):NULL;
+#endif
 }
-
-// Linux OpenGL 函数加载
-static void* __xgeGLGetProc(const char* sName)
+static int __xgeGLSystemOpen(xge_gl_library* library)
 {
-	int iBackend;
-	int i;
-	const char* sLibrary;
-
-	iBackend = xgeGraphicsBackendGet().iType;
-	if ( g_xgeOpenGLLibraryBackend != iBackend ) {
-		g_xgeOpenGL = NULL;
-		g_xgeOpenGLLibraryBackend = iBackend;
-	}
-	if ( g_xgeOpenGL == NULL ) {
-		for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
-			g_xgeOpenGL = dlopen(sLibrary, RTLD_LAZY | RTLD_GLOBAL);
-			if ( g_xgeOpenGL != NULL ) {
-				break;
-			}
-		}
-	}
-	if ( g_xgeOpenGL != NULL ) {
-		return dlsym(g_xgeOpenGL, sName);
-	}
-	return NULL;
+    const char* name;
+    for(int i=0;(name=__xgeGraphicsLibraryName(library->backend,i))!=NULL;++i){
+        library->handle=dlopen(name,RTLD_LAZY
+#if !defined(__APPLE__)
+            |RTLD_GLOBAL
+#endif
+        );
+        if(library->handle)return XGE_OK;
+    }
+    return XGE_ERROR_BACKEND_FAILED;
+}
+static int __xgeGLSystemClose(xge_gl_library* library)
+{return dlclose(library->handle)==0 ? XGE_OK:XGE_ERROR_BACKEND_FAILED;}
+static void* __xgeGLSystemProc(const char* name,void* raw)
+{
+    xge_gl_library* library=(xge_gl_library*)raw;
+    return name && library->handle ? dlsym(library->handle,name):NULL;
 }
 #endif
 
@@ -1633,7 +1514,7 @@ static void __xgeSokolInit(void)
 	#endif
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
-	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
+	if ( __xgeGraphicsLoadGL(xgeGraphicsBackendGet().iType) != XGE_OK ) {
 		/* Sokol calls frame immediately after init, even when init requested
 		 * quit. Stop it before publishing callbacks or touching a GL slot. */
 		g_xge.bRunning = 0;
@@ -1772,11 +1653,13 @@ static void __xgeSokolCleanup(void)
 	__xgeBuiltinRenderersReset();
 	g_xge.bGraphicsRunning = 0;
 	g_xge.bSokolRunning = 0;
-    __xgeGraphicsBackendEnded(&g_xgeGraphicsLifetime,g_xge.bInitialized!=0);
+    /* Resources are gone and this context can no longer serve a GL call. */
+    xge_gl_unload();
 #if XGE_ENABLE_3D
     xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
 #endif
 	__xgePlatformRuntimeUpdate();
+    __xgeUnitBackendEnded();
 }
 
 // 映射 Sokol 鼠标按钮
