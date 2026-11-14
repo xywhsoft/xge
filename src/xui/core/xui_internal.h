@@ -416,6 +416,15 @@ typedef struct xui_widget_cache_slot_t {
 	uint32_t iFlags;
 } xui_widget_cache_slot_t;
 
+/* One owner acquisition per registration. Native snapshot references keep
+ * its payload/code alive without calling arbitrary owner Hold under a graph
+ * mutation gate. All references are UI-thread serialized and scoped. */
+typedef struct xui_callback_record_t {
+    xui_callback_owner_t tOwner;
+    size_t iReferences;
+    struct xui_callback_record_t* pNext;
+} xui_callback_record_t;
+
 struct xui_hotkey_t {
 	xui_widget pWidget;
 	int iKey;
@@ -425,6 +434,7 @@ struct xui_hotkey_t {
 	int iCommand;
 	char* sCommand;
 	void* pData;
+    xui_callback_record_t* pOwned;
 };
 
 struct xui_font_entry_t {
@@ -561,6 +571,7 @@ struct xui_context_t {
 	xui_layout_stats_t tLayoutStats;
 	xui_render_stats_t tRenderStats;
 	xui_error_proc onError;
+    xui_callback_record_t* pErrorOwner;
 	void* pErrorUser;
 	int bReportingError;
 	xui_accessibility_event_proc onAccessibilityEvent;
@@ -904,6 +915,14 @@ int xuiInternalContextIsValid(xui_context pContext);
 void xuiInternalOperationEnter(xui_context pContext);
 void xuiInternalOperationLeave(xui_context pContext);
 int xuiInternalCallbackOwnerValid(const xui_callback_owner_t*);
+int xuiInternalCallbackRecordCreate(xui_context,bool,const xui_callback_owner_t*,xui_callback_record_t**);
+/* Retain runs under the caller's mutation gate, with Context already active. */
+int xuiInternalCallbackRecordRetain(xui_callback_record_t*);
+int xuiInternalCallbackRecordRelease(xui_context,xui_callback_record_t*,int,const xerror*);
+/* Caller owns a whole native operation; NULL Widget removes all. Removal is
+ * published as one group before any owner Drop can reenter the registry. */
+int xuiInternalInputClearHotkeys(xui_context,xui_widget,bool);
+
 /* Pure native preflight runs after reentrant Hold, before allocation/mutation.
  * Widget publishers use the existing serialized UI-thread contract. */
 typedef int (*xui_callback_preflight_proc)(xui_widget pWidget,void* pData);

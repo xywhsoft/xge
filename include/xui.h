@@ -6355,6 +6355,12 @@ XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
 XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope);
 /* 注册错误回调（全部框架错误的统一出口）。 */
 XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
+/* Owned registration retains one real owner before publication. Replacement,
+ * clearing and Context destruction consume it. The selected callback remains
+ * alive through self-replacement/clear and recursive errors remain suppressed.
+ * Native callbacks are creator-thread synchronous. Error text/widget pointers
+ * are borrowed for this call only; copy text before returning. */
+XUI_API int xuiSetErrorCallbackOwned(xui_context pContext, xui_error_proc onError, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册无障碍事件回调（平台桥接消费）。 */
 XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext, xui_accessibility_event_proc onEvent, void* pUser);
 /* 主动上报错误（走上下文错误回调链）。 */
@@ -6975,6 +6981,12 @@ XUI_API xui_widget xuiGetPointerCaptureEx(xui_context pContext, uint64_t iPointe
 XUI_API int xuiFocusNext(xui_context pContext, int iForward);
 /* 注册全局热键（键+修饰 → 回调）。 */
 XUI_API int xuiHotKeyRegister(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, xui_widget_event_proc onEvent, void* pUser);
+/* The registration owns the callback; the Widget remains weak. Key routing
+ * pins every selected registration before calling any handler. Reentrant
+ * replacement/unregister/clear cannot expire a selected callback. Raw and
+ * command replacement also release previous owned callbacks. NULL callback
+ * preserves the native Widget HOTKEY-event route; use Unregister to remove it. */
+XUI_API int xuiHotKeyRegisterOwned(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, xui_widget_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册热键到命令派发。 */
 XUI_API int xuiHotKeyRegisterCommand(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, int iCommand, const char* sCommand, void* pData);
 /* 注销一处热键。 */

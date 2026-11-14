@@ -1282,15 +1282,28 @@ void xuiInternalContextBumpGeneration(xui_context pContext)
 	}
 }
 
-XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser)
+XUI_API int xuiSetErrorCallbackOwned(xui_context context,xui_error_proc callback,void* user,const xui_callback_owner_t* owner)
 {
-	if ( !__xuiContextValid(pContext) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pContext->onError = onError;
-	pContext->pErrorUser = (onError != NULL) ? pUser : NULL;
-	return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    xui_callback_record_t* candidate=NULL; xui_callback_record_t* retired=NULL;
+    result=xuiInternalCallbackRecordCreate(context,callback!=NULL,owner,&candidate);
+    if(result==XUI_OK){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation))result=XUI_ERROR_INVALID_STATE;
+        else{
+            retired=context->pErrorOwner;context->pErrorOwner=candidate;candidate=NULL;
+            context->onError=callback;context->pErrorUser=callback ? user:NULL;
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+    }
+    xerror* first=xrtTakeError();if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    int next=xuiInternalCallbackRecordRelease(context,candidate,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    next=xuiInternalCallbackRecordRelease(context,retired,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
+XUI_API int xuiSetErrorCallback(xui_context context,xui_error_proc callback,void* user)
+{return xuiSetErrorCallbackOwned(context,callback,user,NULL);}
 
 XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext,
 	xui_accessibility_event_proc onEvent, void* pUser)
@@ -1301,25 +1314,31 @@ XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext,
 	return XUI_OK;
 }
 
-XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError)
+XUI_API int xuiReportError(xui_context context,const xui_error_info_t* error)
 {
-	xui_error_info_t tError;
-
-	if ( !__xuiContextValid(pContext) || (pError == NULL) ||
-	     (pError->iSize < sizeof(*pError)) || (pError->iCode == XUI_OK) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pContext->onError == NULL) || pContext->bReportingError ) {
-		return XUI_OK;
-	}
-	tError = *pError;
-	tError.iSize = sizeof(tError);
-	xuiInternalOperationEnter(pContext);
-	pContext->bReportingError = 1;
-	pContext->onError(pContext, &tError, pContext->pErrorUser);
-	pContext->bReportingError = 0;
-	xuiInternalOperationLeave(pContext);
-	return XUI_OK;
+    if(!__xuiContextValid(context) || !error || error->iSize<sizeof(*error) || error->iCode==XUI_OK)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!context->onError || context->bReportingError)return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiInternalCleanupCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    xui_error_info_t selected=*error;selected.iSize=sizeof(selected);
+    xui_error_proc callback=context->onError;void* user=context->pErrorUser;
+    xui_callback_record_t* record=context->pErrorOwner;
+    context->bReportingError=1;xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation)){result=XUI_ERROR_INVALID_STATE;record=NULL;}
+    else{
+        result=xuiInternalCallbackRecordRetain(record);
+        if(result!=XUI_OK)record=NULL;
+        if(!xrtOwnershipScopeEnd(&mutation))abort();
+    }
+    /* Error observers may inspect the business diagnostic. The receipt owns
+     * it independently and distinguishes it from a fresh observer failure. */
+    if(result==XUI_OK){xrtSetErrorTake(xrtErrorRef(scope._pFirstError));callback(context,&selected,user);}
+    context->bReportingError=0;
+    xerror* first=xrtTakeError();
+    if(first==scope._pFirstError){xrtErrorFree(first);first=NULL;}
+    if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    int next=xuiInternalCallbackRecordRelease(context,record,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
 
 void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode, int iStage,
@@ -1368,16 +1387,11 @@ void xuiInternalContextDestroyRenderTree(xui_context pContext)
 
 void xuiInternalContextDestroyInput(xui_context pContext)
 {
-	int i;
-
 	if ( !__xuiContextValid(pContext) ) {
 		return;
 	}
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( pContext->pHotkeys[i].sCommand != NULL ) {
-			xrtFree(pContext->pHotkeys[i].sCommand);
-		}
-	}
+    int status=xuiInternalInputClearHotkeys(pContext,NULL,true);
+    if(status!=XUI_OK)xuiInternalContextRecordOutcome(pContext,status,xrtGetError());
 	if ( pContext->pHotkeys != pContext->arrInlineHotkeys ) {
 		xrtFree(pContext->pHotkeys);
 	}
@@ -1623,24 +1637,9 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 		}
 	}
 	xuiInternalTooltipDetachWidget(pContext, pWidget);
-	/* Hotkeys own command copies. Remove entries for the destroyed subtree
-	 * instead of leaving inert records allocated for the context lifetime. */
-	i = 0;
-	while ( i < pContext->iHotkeyCount ) {
-		xui_hotkey_t* pHotkey = &pContext->pHotkeys[i];
-		if ( !__xuiContextWidgetContains(pWidget, pHotkey->pWidget) ) {
-			i++;
-			continue;
-		}
-		if ( pHotkey->sCommand != NULL ) {
-			xrtFree(pHotkey->sCommand);
-		}
-		if ( i + 1 < pContext->iHotkeyCount ) {
-			memmove(pHotkey, pHotkey + 1,
-				sizeof(pContext->pHotkeys[0]) * (size_t)(pContext->iHotkeyCount - i - 1));
-		}
-		pContext->iHotkeyCount--;
-	}
+    /* Detach the complete selected set before any owner Drop can reenter. */
+    int hotkeyStatus=xuiInternalInputClearHotkeys(pContext,pWidget,true);
+    if(hotkeyStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,hotkeyStatus,xrtGetError());
 	__xuiContextClearOverlayOwners(pContext->pOverlayRoot, pWidget);
 	for ( i = pContext->iEventRead; i < pContext->iEventCount; i++ ) {
 		if ( __xuiContextWidgetContains(pWidget, pContext->pEvents[i].pTarget) ) {
@@ -2087,6 +2086,14 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	xuiInternalOperationEnter(pContext);
 	xuiInternalContextInvalidateLifetimes(pContext);
 	xuiInternalOperationLeave(pContext);
+    /* Stop error observation before consuming arbitrary callback owners. */
+    xrtownershipscope callbackMutation={0};
+    if(!xrtOwnershipMutationBegin(&callbackMutation))abort();
+    xui_callback_record_t* errorOwner=pContext->pErrorOwner;
+    pContext->pErrorOwner=NULL;pContext->onError=NULL;pContext->pErrorUser=NULL;
+    if(!xrtOwnershipScopeEnd(&callbackMutation))abort();
+    int callbackStatus=xuiInternalCallbackRecordRelease(pContext,errorOwner,receipt.iResult,receipt._pFirstError);
+    if(callbackStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,callbackStatus,xrtGetError());
 	xuiInternalNativeAccessibilityDetach(pContext);
 	pContext->bDestroyPending = 0;
 	pContext->pStateChangeHead = NULL;

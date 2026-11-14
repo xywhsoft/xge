@@ -246,4 +246,43 @@ int xuiInternalCallbackSnapshotEnd(xui_callback_snapshot_t* snapshot,int result)
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     return xuiInternalCallbackSnapshotEndOutcome(snapshot,result,first);
 }
+
+int xuiInternalCallbackRecordCreate(xui_context context,bool hasCallback,
+    const xui_callback_owner_t* incoming,xui_callback_record_t** output)
+{
+    if(!output || !xuiInternalCallbackOwnerValid(incoming) ||
+       (!hasCallback && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!incoming || !incoming->onHold)return XUI_OK;
+    xui_callback_record_t* record=xrtCalloc(1,sizeof(*record));
+    if(!record)return XUI_ERROR_OUT_OF_MEMORY;
+    record->tOwner=*incoming;bool held=false;
+    int status=xuiInternalCallbackHoldFresh(&record->tOwner,&held);
+    if(status==XUI_OK && (context->bCloseRequested || context->bDestroyPending || context->bDestroying))status=XUI_ERROR_INVALID_STATE;
+    if(status!=XUI_OK){
+        xerror* first=xrtTakeError();xuiInternalContextRecordOutcome(context,status,first);
+        if(held)__xuiCallbackOutcome(xuiInternalCallbackOwnerDropOutcome(context,&record->tOwner,status,first),&status,&first);
+        xrtFree(record);xrtSetErrorTake(first);return status;
+    }
+    record->iReferences=1;*output=record;return XUI_OK;
+}
+int xuiInternalCallbackRecordRetain(xui_callback_record_t* record)
+{
+    if(!record)return XUI_OK;
+    if(!record->iReferences)return XUI_ERROR_INVALID_STATE;
+    if(record->iReferences==SIZE_MAX)return XUI_ERROR_LIMIT_EXCEEDED;
+    ++record->iReferences;return XUI_OK;
+}
+int xuiInternalCallbackRecordRelease(xui_context context,xui_callback_record_t* record,
+    int primary,const xerror* error)
+{
+    if(!record)return XUI_OK;
+    /* Private references are UI-thread local; published slots unlink under
+     * the graph gate before release. Native operations protect snapshots. */
+    if(!record->iReferences)return XUI_ERROR_INVALID_STATE;
+    bool consumed=--record->iReferences==0;
+    if(!consumed)return XUI_OK;
+    xui_callback_owner_t owner=record->tOwner;xrtFree(record);
+    return xuiInternalCallbackOwnerDropOutcome(context,&owner,primary,error);
+}
 #endif

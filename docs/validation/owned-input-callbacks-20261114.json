@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "complete": true,
+  "passed": true,
+  "date": "2026-11-14",
+  "shippingDelivery": false,
+  "languageBindingsQualified": false,
+  "scope": "Native owned hotkey/error registrations, direct typed dispatch, selected record lifetime, graph tracing, reentrant clear and checked receipts.",
+  "parentCommit": "af126edc082b242a465275321158cc7ca723df00",
+  "sdk": "Full r2 hosted rebuild:164 TUs/platform,0 reused. r3 relinks only input against that original full r2, for the independent error-observer close fix; static caches verify dependency hashes.",
+  "protocols": [
+    "One real owner Hold per registration",
+    "Snapshot pins before callbacks; no per-dispatch owner Hold",
+    "Legacy/command replacement consumes old records",
+    "Whole-set detach before reentrant Drop",
+    "Context trace includes every registered hotkey/error owner",
+    "Context scope and callback receipt preserve first checked outcome"
+  ],
+  "tests": {
+    "primaryCommands": 32,
+    "existingEditCommands": 32,
+    "costCommands": 16,
+    "platforms": [
+      "Windows x64",
+      "Linux x64"
+    ],
+    "nativeClients": [
+      "host O0",
+      "host O2",
+      "static O0",
+      "static O2"
+    ],
+    "network": false,
+    "languageCompiler": false,
+    "window": false
+  },
+  "costs": {
+    "contextBytesWin": [
+      147704,
+      147840
+    ],
+    "contextDelta": 136,
+    "hotkeyBytes": [
+      56,
+      64
+    ],
+    "recordBytes": 48,
+    "preparedOwnedReplacements1000": {
+      "alloc": 1000,
+      "free": 1000,
+      "realloc": 0
+    },
+    "preparedRawReplacements1000": {
+      "alloc": 0,
+      "free": 0,
+      "realloc": 0
+    },
+    "hotDispatch1000": {
+      "alloc": 0,
+      "free": 0,
+      "realloc": 0,
+      "additionalOwnerHolds": 0
+    },
+    "wholeZeroOverheadClaim": false,
+    "cpuEquivalenceClaim": false
+  },
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-sdk-win-r2\\results.json",
+      "sha256": "01c7df36c5d1cd8efe0fac0b5c5564c905046412164bc5f25eb37c91291f4f8a",
+      "commands": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-sdk-win-r3\\results.json",
+      "sha256": "5da0deeece0c2e37e9165cf81ed2791e13e1c34f1839cfecafc238d8877bac90",
+      "commands": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-native-win-r4\\results.json",
+      "sha256": "6c1049367eddd3e03d73622c030ebf411d34b1f0e4ca8502e58f4fa557a53cc9",
+      "commands": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-edit-win-r1\\results.json",
+      "sha256": "575e6cb13172092aeb73aafe48c5502ee4d5074c1580101182c00e2815f999d2",
+      "commands": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-cost-win-r1\\results.json",
+      "sha256": "4a3b8012060087fcf4f1916726a719c736b23da1e992e57fa2391c6fc41a3c9f",
+      "commands": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-sdk-linux-r2\\results.json",
+      "sha256": "347fb58292cc7d46705b4c572f9057371a21f459d75ec81344fc0d53954e9415",
+      "commands": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-sdk-linux-r3\\results.json",
+      "sha256": "fd4799f12aa91ad1a2077c77b08eba2575f42061e27d47136de84b0c8bffcbd2",
+      "commands": 2
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-native-linux-r4\\results.json",
+      "sha256": "f0639fa84144462e40e8accfebfadc0270017e05c3feb8a25bacb1b3167cd5c0",
+      "commands": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-edit-linux-r1\\results.json",
+      "sha256": "60c1808adeb65042856f90b4f9661495bba712bacf2a0189657f0d00bed3b56c",
+      "commands": 16
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-owner-cost-linux-r1\\results.json",
+      "sha256": "11dc85726c5267cc557564692982b4572ab78078bce43f1759bc5e7a860fb1ef",
+      "commands": 8
+    }
+  ],
+  "normalizedSourceSha256": {
+    "include/xui.h": "28e7c13a34713e9d1f47891dd64422ca0d44bceb8359e874fef69adfbc973d9a",
+    "src/xui/core/xui_internal.h": "482278f93839f611233a1e9725d50036f52a1f1514b79208f36da83697b66f53",
+    "src/xui/core/xui_callback_owned.c": "2e28d0df474ab2b72b7a8bbdeafce696ca78e6944b32d660c4dbedf07deea891",
+    "src/xui/core/xui_input.c": "96da6a9acd96b010e1242cafb561ed0e3bb658893a8ba441a7f32c78564f422c",
+    "src/xui/core/xui_core.c": "5c1283c66f1a3b78f26383a1881836268ad17e79b233ecc9ac38cf5506720bc6",
+    "src/xui/core/xui_widget.c": "4e2c665043074c914162437d603873a0d1c1b92a4eed2edb0a77303665aae0c5",
+    "tests/xui/xui_owned_input_callbacks_test.c": "647f0bd262df61dba3a923d40ef7621d6184913d8a81ceb3e5b462d32f8dcb8f",
+    "tests/xui/xui_owned_input_callbacks_cost_test.c": "0840ed2d16aca6cc3be33d5c2011df3c015ace65e661b5d54ef51adc95a3b90d",
+    "tools/test/check_owned_input_callbacks.py": "81c7d646d247b758dccdf29f60f33237069554cf2233426b54f9fb0d542c2d6c",
+    "docs/owned-input-callbacks.md": "6edb02872909cffbd728c53ea60ea8422ce4a3e859ada3ec49bb8c64d76de7f7"
+  },
+  "limitations": [
+    "Native completion only; xlang CString pointer-field compiler contract, declaration/callback integration, full compiler builds and final matched delivery remain.",
+    "No sensitive network or security tests.",
+    "Unrelated XGE CodeEdit/TextEdit/MessageList/geometry worktree edits excluded."
+  ]
+}

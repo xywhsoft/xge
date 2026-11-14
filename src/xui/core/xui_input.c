@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_INPUT_CONTEXT_PRESS_SECONDS 0.55f
@@ -1997,6 +1998,7 @@ static int __xuiInputDispatchHotkeyEvent(xui_context pContext, const xui_hotkey_
 	}
 	if ( pHotkey->onEvent != NULL ) {
 		iRet = pHotkey->onEvent(pHotkey->pWidget, &tEvent, pHotkey->pUser);
+        if(iRet>=0 && xrtGetError())return XUI_ERROR_CALLBACK_FAILED;
 		if ( iRet < 0 ) {
 			return iRet;
 		}
@@ -2005,7 +2007,8 @@ static int __xuiInputDispatchHotkeyEvent(xui_context pContext, const xui_hotkey_
 			return XUI_OK;
 		}
 	}
-	return __xuiInputDispatchEventWithFlags(pContext, &tEvent, pFlags);
+	if(xuiInternalContextDestroyPending(pContext) || !xuiInternalWidgetIsValid(pHotkey->pWidget))return XUI_OK;
+    return __xuiInputDispatchEventWithFlags(pContext, &tEvent, pFlags);
 }
 
 static int __xuiInputInvokeAction(xui_widget pWidget, int bDefault)
@@ -2072,67 +2075,57 @@ static int __xuiInputDispatchFocusKeyBubble(xui_context pContext, xui_widget pTa
 	return XUI_OK;
 }
 
-static int __xuiInputDispatchHotkeysEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult)
+static int __xuiInputDispatchHotkeysEx(xui_context context,int key,uint32_t modifiers,uint32_t* output)
 {
-	xui_hotkey_t arrInline[8];
-	xui_hotkey_t* pSnapshot;
-	int iSnapshotCount;
-	int i;
-	int j;
-	int iRet;
-	int iFlags;
-
-	iSnapshotCount = 0;
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( __xuiInputHotkeyMatches(&pContext->pHotkeys[i], iKey, iModifiers) ) iSnapshotCount++;
-	}
-	if ( iSnapshotCount <= 0 ) return XUI_OK;
-	pSnapshot = arrInline;
-	if ( iSnapshotCount > (int)(sizeof(arrInline) / sizeof(arrInline[0])) ) {
-		pSnapshot = (xui_hotkey_t*)xrtCalloc((size_t)iSnapshotCount, sizeof(*pSnapshot));
-		if ( pSnapshot == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	} else {
-		memset(arrInline, 0, sizeof(arrInline));
-	}
-	j = 0;
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( !__xuiInputHotkeyMatches(&pContext->pHotkeys[i], iKey, iModifiers) ) continue;
-		pSnapshot[j] = pContext->pHotkeys[i];
-		pSnapshot[j].sCommand = NULL;
-		if ( pContext->pHotkeys[i].sCommand != NULL ) {
-			pSnapshot[j].sCommand = __xuiInputStringDuplicate(pContext->pHotkeys[i].sCommand);
-			if ( pSnapshot[j].sCommand == NULL ) {
-				iRet = XUI_ERROR_OUT_OF_MEMORY;
-				goto cleanup;
-			}
-		}
-		j++;
-	}
-	iRet = XUI_OK;
-	for ( i = 0; i < iSnapshotCount; i++ ) {
-		if ( xuiInternalContextDestroyPending(pContext) ) break;
-		if ( !xuiInternalWidgetIsValid(pSnapshot[i].pWidget) ) continue;
-		iFlags = 0;
-		iRet = __xuiInputDispatchHotkeyEvent(pContext, &pSnapshot[i], &iFlags);
-		if ( iRet != XUI_OK ) {
-			goto cleanup;
-		}
-		if ( pResult != NULL ) {
-			*pResult |= XUI_INPUT_RESULT_HOTKEY;
-			if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 ) {
-				*pResult |= XUI_INPUT_RESULT_CONSUMED;
-			}
-		}
-		if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 ) {
-			break;
-		}
-	}
-cleanup:
-	for ( i = 0; i < iSnapshotCount; i++ ) {
-		if ( pSnapshot[i].sCommand != NULL ) xrtFree(pSnapshot[i].sCommand);
-	}
-	if ( pSnapshot != arrInline ) xrtFree(pSnapshot);
-	return iRet;
+    int count=0;
+    for(int i=0;i<context->iHotkeyCount;++i)
+        if(__xuiInputHotkeyMatches(&context->pHotkeys[i],key,modifiers))++count;
+    if(!count)return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);
+    if(result!=XUI_OK)return result;
+    xui_hotkey_t local[8]={0};xui_hotkey_t* snapshot=local;
+    if(count>(int)(sizeof(local)/sizeof(local[0]))){
+        snapshot=xrtCalloc((size_t)count,sizeof(*snapshot));
+        if(!snapshot){result=XUI_ERROR_OUT_OF_MEMORY;goto cleanup;}
+    }
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation)){result=XUI_ERROR_INVALID_STATE;goto cleanup;}
+    int selected=0;
+    for(int i=0;i<context->iHotkeyCount;++i){
+        if(!__xuiInputHotkeyMatches(&context->pHotkeys[i],key,modifiers))continue;
+        snapshot[selected]=context->pHotkeys[i];snapshot[selected].sCommand=NULL;
+        result=xuiInternalCallbackRecordRetain(snapshot[selected].pOwned);
+        if(result!=XUI_OK){snapshot[selected].pOwned=NULL;break;}
+        if(context->pHotkeys[i].sCommand){
+            snapshot[selected].sCommand=__xuiInputStringDuplicate(context->pHotkeys[i].sCommand);
+            if(!snapshot[selected].sCommand){result=XUI_ERROR_OUT_OF_MEMORY;break;}
+        }
+        ++selected;
+    }
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    if(result!=XUI_OK)goto cleanup;
+    for(int i=0;i<count;++i){
+        if(xuiInternalContextDestroyPending(context))break;
+        if(!xuiInternalWidgetIsValid(snapshot[i].pWidget))continue;
+        int flags=0;result=__xuiInputDispatchHotkeyEvent(context,&snapshot[i],&flags);
+        if(result!=XUI_OK)break;
+        if(output){*output|=XUI_INPUT_RESULT_HOTKEY;if(flags&XUI_EVENT_DISPATCH_STOP)*output|=XUI_INPUT_RESULT_CONSUMED;}
+        if(flags&XUI_EVENT_DISPATCH_STOP)break;
+    }
+cleanup: {
+    xerror* first=xrtTakeError();if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    if(snapshot){
+        for(int i=0;i<count;++i){
+            xrtFree(snapshot[i].sCommand);
+            int next=xuiInternalCallbackRecordRelease(context,snapshot[i].pOwned,result,first);
+            xuiInternalContextCleanupOutcome(context,next,&result,&first);
+        }
+        if(snapshot!=local)xrtFree(snapshot);
+    }
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);
+    xrtSetErrorTake(first);return result;
+}
 }
 
 static int __xuiInputKeyDownExOperation(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult)
@@ -3027,137 +3020,104 @@ static int __xuiInputReserveHotkeys(xui_context pContext, int iCapacity)
 	return XUI_OK;
 }
 
-static void __xuiInputHotkeyReset(xui_hotkey_t* pHotkey)
+static int __xuiInputHotkeyFind(xui_context context,xui_widget widget,int key,uint32_t modifiers)
 {
-	if ( pHotkey == NULL ) {
-		return;
-	}
-	if ( pHotkey->sCommand != NULL ) {
-		xrtFree(pHotkey->sCommand);
-	}
-	memset(pHotkey, 0, sizeof(*pHotkey));
+    for(int i=0;i<context->iHotkeyCount;++i)
+        if(context->pHotkeys[i].pWidget==widget && context->pHotkeys[i].iKey==key && context->pHotkeys[i].iModifiers==modifiers)return i;
+    return -1;
 }
-
-static int __xuiInputHotkeyFind(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers)
+static int __xuiInputHotkeySet(xui_context context,xui_widget widget,int key,uint32_t modifiers,
+    xui_widget_event_proc callback,void* user,int command,const char* name,void* data,const xui_callback_owner_t* owner)
 {
-	int i;
-
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( (pContext->pHotkeys[i].pWidget == pWidget) &&
-		     (pContext->pHotkeys[i].iKey == iKey) &&
-		     (pContext->pHotkeys[i].iModifiers == iModifiers) ) {
-			return i;
-		}
-	}
-	return -1;
+    if(!xuiInternalContextIsValid(context) || !xuiInternalWidgetIsValid(widget) || widget->pContext!=context || key<0)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);
+    if(result!=XUI_OK)return result;
+    xui_callback_record_t* candidate=NULL;char* copy=NULL;
+    xui_callback_record_t* retired=NULL;char* previous=NULL;
+    result=xuiInternalCallbackRecordCreate(context,callback!=NULL,owner,&candidate);
+    if(result!=XUI_OK)goto finish;
+    if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto finish;}
+    if(name && name[0]){copy=__xuiInputStringDuplicate(name);if(!copy){result=XUI_ERROR_OUT_OF_MEMORY;goto finish;}}
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation)){result=XUI_ERROR_INVALID_STATE;goto finish;}
+    int index=__xuiInputHotkeyFind(context,widget,key,modifiers);
+    if(index<0){
+        result=__xuiInputReserveHotkeys(context,context->iHotkeyCount+1);
+        if(result==XUI_OK){index=context->iHotkeyCount++;memset(&context->pHotkeys[index],0,sizeof(context->pHotkeys[0]));}
+    }
+    if(result==XUI_OK){
+        xui_hotkey_t* slot=&context->pHotkeys[index];retired=slot->pOwned;previous=slot->sCommand;
+        slot->pWidget=widget;slot->iKey=key;slot->iModifiers=modifiers;slot->onEvent=callback;slot->pUser=user;
+        slot->iCommand=command;slot->sCommand=copy;slot->pData=data;slot->pOwned=candidate;
+        copy=NULL;candidate=NULL;
+    }
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    if(result==XUI_OK)(void)xuiWidgetSetEventInterest(widget,name && name[0] ? XUI_EVENT_MASK_COMMAND:XUI_EVENT_MASK_HOTKEY,1);
+finish: {
+    xerror* first=xrtTakeError();if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);xrtFree(copy);xrtFree(previous);
+    int next=xuiInternalCallbackRecordRelease(context,candidate,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    next=xuiInternalCallbackRecordRelease(context,retired,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
-
-static int __xuiInputHotkeySet(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, xui_widget_event_proc onEvent, void* pUser, int iCommand, const char* sCommand, void* pData)
-{
-	xui_hotkey_t* pHotkey;
-	char* sCopy;
-	int iIndex;
-	int iRet;
-
-	if ( !xuiInternalContextIsValid(pContext) ||
-	     !xuiInternalWidgetIsValid(pWidget) ||
-	     (pWidget->pContext != pContext) ||
-	     (iKey < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	sCopy = NULL;
-	if ( (sCommand != NULL) && (sCommand[0] != '\0') ) {
-		sCopy = __xuiInputStringDuplicate(sCommand);
-		if ( sCopy == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-	}
-	iIndex = __xuiInputHotkeyFind(pContext, pWidget, iKey, iModifiers);
-	if ( iIndex < 0 ) {
-		iRet = __xuiInputReserveHotkeys(pContext, pContext->iHotkeyCount + 1);
-		if ( iRet != XUI_OK ) {
-			if ( sCopy != NULL ) {
-				xrtFree(sCopy);
-			}
-			return iRet;
-		}
-		iIndex = pContext->iHotkeyCount++;
-		memset(&pContext->pHotkeys[iIndex], 0, sizeof(pContext->pHotkeys[iIndex]));
-	} else if ( pContext->pHotkeys[iIndex].sCommand != NULL ) {
-		xrtFree(pContext->pHotkeys[iIndex].sCommand);
-	}
-	pHotkey = &pContext->pHotkeys[iIndex];
-	pHotkey->pWidget = pWidget;
-	pHotkey->iKey = iKey;
-	pHotkey->iModifiers = iModifiers;
-	pHotkey->onEvent = onEvent;
-	pHotkey->pUser = pUser;
-	pHotkey->iCommand = iCommand;
-	pHotkey->sCommand = sCopy;
-	pHotkey->pData = pData;
-	if ( sCopy != NULL ) {
-		(void)xuiWidgetSetEventInterest(pWidget, XUI_EVENT_MASK_COMMAND, 1);
-	} else {
-		(void)xuiWidgetSetEventInterest(pWidget, XUI_EVENT_MASK_HOTKEY, 1);
-	}
-	return XUI_OK;
 }
-
-XUI_API int xuiHotKeyRegister(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, xui_widget_event_proc onEvent, void* pUser)
+XUI_API int xuiHotKeyRegisterOwned(xui_context context,xui_widget widget,int key,uint32_t modifiers,
+    xui_widget_event_proc callback,void* user,const xui_callback_owner_t* owner)
+{return __xuiInputHotkeySet(context,widget,key,modifiers,callback,user,0,NULL,NULL,owner);}
+XUI_API int xuiHotKeyRegister(xui_context context,xui_widget widget,int key,uint32_t modifiers,xui_widget_event_proc callback,void* user)
+{return xuiHotKeyRegisterOwned(context,widget,key,modifiers,callback,user,NULL);}
+XUI_API int xuiHotKeyRegisterCommand(xui_context context,xui_widget widget,int key,uint32_t modifiers,int command,const char* name,void* data)
+{return __xuiInputHotkeySet(context,widget,key,modifiers,NULL,NULL,command,name,data,NULL);}
+XUI_API int xuiHotKeyUnregister(xui_context context,xui_widget widget,int key,uint32_t modifiers)
 {
-	return __xuiInputHotkeySet(pContext, pWidget, iKey, iModifiers, onEvent, pUser, 0, NULL, NULL);
+    if(!xuiInternalContextIsValid(context) || !xuiInternalWidgetIsValid(widget) || widget->pContext!=context || key<0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    xui_callback_record_t* retired=NULL;char* name=NULL;xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))result=XUI_ERROR_INVALID_STATE;
+    else{
+        int index=__xuiInputHotkeyFind(context,widget,key,modifiers);
+        if(index>=0){
+            retired=context->pHotkeys[index].pOwned;name=context->pHotkeys[index].sCommand;
+            memmove(&context->pHotkeys[index],&context->pHotkeys[index+1],sizeof(context->pHotkeys[0])*(size_t)(context->iHotkeyCount-index-1));
+            memset(&context->pHotkeys[--context->iHotkeyCount],0,sizeof(context->pHotkeys[0]));
+        }
+        if(!xrtOwnershipScopeEnd(&mutation))abort();
+    }
+    xerror* first=xrtTakeError();xuiInternalCallScopeRecordOutcome(&scope,result,first);xrtFree(name);
+    int next=xuiInternalCallbackRecordRelease(context,retired,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
-
-XUI_API int xuiHotKeyRegisterCommand(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, int iCommand, const char* sCommand, void* pData)
+int xuiInternalInputClearHotkeys(xui_context context,xui_widget widget,bool subtree)
 {
-	return __xuiInputHotkeySet(pContext, pWidget, iKey, iModifiers, NULL, NULL, iCommand, sCommand, pData);
+    xui_callback_record_t* retired=NULL;xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    int remaining=0;const int count=context->iHotkeyCount;
+    for(int i=0;i<count;++i){
+        xui_hotkey_t item=context->pHotkeys[i];bool match=!widget || item.pWidget==widget;
+        if(!match && subtree)for(xui_widget scan=item.pWidget;scan;scan=scan->pParent)if(scan==widget){match=true;break;}
+        if(match){
+            xrtFree(item.sCommand);
+            if(item.pOwned){item.pOwned->pNext=retired;retired=item.pOwned;}
+        }else context->pHotkeys[remaining++]=item;
+    }
+    context->iHotkeyCount=remaining;
+    memset(&context->pHotkeys[remaining],0,sizeof(context->pHotkeys[0])*(size_t)(count-remaining));
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    int result=XUI_OK;xerror* first=xrtTakeError();if(first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalContextRecordOutcome(context,result,first);
+    while(retired){
+        xui_callback_record_t* next=retired->pNext;retired->pNext=NULL;
+        int status=xuiInternalCallbackRecordRelease(context,retired,result,first);xuiInternalContextCleanupOutcome(context,status,&result,&first);retired=next;
+    }
+    xrtSetErrorTake(first);return result;
 }
-
-XUI_API int xuiHotKeyUnregister(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers)
+XUI_API int xuiHotKeyClearWidget(xui_widget widget)
 {
-	int iIndex;
-	int iMoveCount;
-
-	if ( !xuiInternalContextIsValid(pContext) ||
-	     !xuiInternalWidgetIsValid(pWidget) ||
-	     (pWidget->pContext != pContext) ||
-	     (iKey < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iIndex = __xuiInputHotkeyFind(pContext, pWidget, iKey, iModifiers);
-	if ( iIndex < 0 ) {
-		return XUI_OK;
-	}
-	__xuiInputHotkeyReset(&pContext->pHotkeys[iIndex]);
-	iMoveCount = pContext->iHotkeyCount - iIndex - 1;
-	if ( iMoveCount > 0 ) {
-		memmove(&pContext->pHotkeys[iIndex], &pContext->pHotkeys[iIndex + 1], sizeof(pContext->pHotkeys[0]) * (size_t)iMoveCount);
-	}
-	pContext->iHotkeyCount--;
-	return XUI_OK;
-}
-
-XUI_API int xuiHotKeyClearWidget(xui_widget pWidget)
-{
-	xui_context pContext;
-	int i;
-
-	if ( !xuiInternalWidgetIsValid(pWidget) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pContext = pWidget->pContext;
-	if ( !xuiInternalContextIsValid(pContext) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	i = 0;
-	while ( i < pContext->iHotkeyCount ) {
-		if ( pContext->pHotkeys[i].pWidget == pWidget ) {
-			(void)xuiHotKeyUnregister(pContext, pWidget, pContext->pHotkeys[i].iKey, pContext->pHotkeys[i].iModifiers);
-		} else {
-			i++;
-		}
-	}
-	return XUI_OK;
+    if(!xuiInternalWidgetIsValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    result=xuiInternalInputClearHotkeys(context,widget,false);xerror* first=xrtTakeError();
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
 
 static int __xuiCommandDispatchOperation(xui_context pContext, xui_widget pTarget, int iCommand, const char* sCommand, void* pData)
