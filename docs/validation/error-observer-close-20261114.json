@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "complete": true,
+  "passed": true,
+  "shippingDelivery": false,
+  "date": "2026-11-14",
+  "scope": "Stop queued business events after an error observer logically closes Context. Raw public C reproduction; independent of new owned-callback APIs.",
+  "baselineExit": 76,
+  "baseline": "Hosted/static, O0/O2 on Windows/Linux. Status0 but one command delivered after close.",
+  "fixed": "Minimal static SDK changes only one production input TU; O0/O2 on both platforms. No command delivered, status0 and clean XRT heap.",
+  "sourceSha256": "e378bcee8ed284cecdab7e5612182a3790675125d1ac8076b29888251fce4ad5",
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-close-baseline-win-r2\\results.json",
+      "sha256": "30b35dd20d7f64ffb2cd6c3bdf8e0f43102c243e72984c09f3b3915d49941429",
+      "commands": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-close-baseline-linux-r1\\results.json",
+      "sha256": "625366eedb6f53b74afbe2eed39624e918f8bda63ffb4b4e0e0c2c19050d39c2",
+      "commands": 8
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-close-fixed-win-r1\\results.json",
+      "sha256": "c23c73f90e052770fc7ba9143a51b52de2cd2629243dcec63fd90fc5f02571ef",
+      "commands": 4
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\input-close-fixed-linux-r1\\results.json",
+      "sha256": "b97247b2e905b14fea3328573820e23f842096b80e6ba7e85b1ca592ccc514da",
+      "commands": 4
+    }
+  ],
+  "excluded": "No language, physical keyboard, window, network, final SDK/IDE delivery or unrelated native worktree qualification."
+}

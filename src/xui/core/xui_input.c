@@ -2667,6 +2667,7 @@ static int __xuiDispatchPendingEventsOperation(xui_context pContext)
 			}
 			xuiInternalReportError(pContext, pErrorWidget, iRet, XUI_ERROR_STAGE_INPUT, 1,
 				"event.dispatch", "An event handler failed and the pending event pump continued.");
+            if ( xuiInternalContextDestroyPending(pContext) ) return XUI_OK;
 		}
 	}
 }
