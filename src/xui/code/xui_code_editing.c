@@ -14,6 +14,18 @@ static int __xuiCodeEditingWritable(xui_code_document pDocument, xui_code_select
 	return bReadonly ? XUI_ERROR_UNSUPPORTED : XUI_OK;
 }
 
+/* EndEdit can invoke an owned change callback, which may fail or close the
+ * document. Never continue with selection/document reads after that failure.
+ * If an earlier body operation failed, keep its status and diagnostic (even
+ * NULL) ahead of cleanup's later failure. This does not undo committed edits. */
+static int __xuiCodeEditingEndEdit(xui_code_document pDocument, int status)
+{
+    if(status==XUI_OK)return xuiCodeDocumentEndEdit(pDocument);
+    xerror* first=xrtTakeError();
+    (void)xuiCodeDocumentEndEdit(pDocument);
+    xrtClearError();xrtSetErrorTake(first);return status;
+}
+
 static int __xuiCodeEditingClampOffset(xui_code_document pDocument, int iOffset)
 {
 	int iLength;
@@ -332,7 +344,7 @@ XUI_API int xuiCodeEditingIndentSelection(xui_code_document pDocument, xui_code_
 		iAnchor = __xuiCodeEditingAdjustOffsetForInsert(iAnchor, iLineStart, iIndentLength);
 		iCaret = __xuiCodeEditingAdjustOffsetForInsert(iCaret, iLineStart, iIndentLength);
 	}
-	(void)xuiCodeDocumentEndEdit(pDocument);
+	iRet = __xuiCodeEditingEndEdit(pDocument, iRet);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iAnchor, iCaret);
 }
@@ -383,7 +395,7 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 			iCaret = __xuiCodeEditingAdjustOffsetForDelete(iCaret, iLineStart, iDeleteEnd);
 		}
 	}
-	(void)xuiCodeDocumentEndEdit(pDocument);
+	iRet = __xuiCodeEditingEndEdit(pDocument, iRet);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iAnchor, iCaret);
 }
@@ -471,7 +483,7 @@ XUI_API int xuiCodeEditingToggleLineComment(xui_code_document pDocument, xui_cod
 			iCaret = __xuiCodeEditingAdjustOffsetForInsert(iCaret, iPos, iCommentLength);
 		}
 	}
-	(void)xuiCodeDocumentEndEdit(pDocument);
+	iRet = __xuiCodeEditingEndEdit(pDocument, iRet);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, iAnchor, iCaret);
 }

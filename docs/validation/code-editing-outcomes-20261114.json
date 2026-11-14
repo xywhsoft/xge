@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Actual compound editing EndEdit failure/status/lifetime repair with current matched SDKs.",
+  "parentRevision": "0214760c3244237035e0b1da650e219fb5eef999",
+  "publicAbiChange": false,
+  "shippingDelivery": false,
+  "fullGoalComplete": false,
+  "networkTests": false,
+  "sources": {
+    "src/xui/code/xui_code_editing.c": "44ea0e75ecdb9347ac1bfa646b1e0b9e753dd284436b9a04af692ffe0a35d19c",
+    "tests/xui/xui_code_editing_outcome_test.c": "7ab8dbf73459a846f067828842c8cb372a5cc6dd097b98a578e1f5114edc71d6",
+    "tools/test/check_code_editing_outcome.py": "fa415adad73cdac5dba9057714c841badd9368dceee2b6a1aab3fc6a50ed33bb",
+    "docs/code-editing-outcomes.md": "b39b72702230440edcf85229de5a2e3cee9e01b95ab09d3634a5021b2678b8a9"
+  },
+  "reports": {
+    "native-win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-native-win-r1\\results.json",
+      "sha256": "492fc890f0131a4213446b9a1fbc189904d347bfc9baf83d767734f6daf8b1d2",
+      "commands": 28,
+      "refused": 2
+    },
+    "document-host-win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-document-host-win-r1\\results.json",
+      "sha256": "3159ca8be3005e1b3144e0ca55d5e5e24305267a1c72f4eef859c1f307f65151",
+      "commands": 4,
+      "refused": 0
+    },
+    "document-static-win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-document-static-win-r1\\results.json",
+      "sha256": "e8409d578d484bcb0186739e09b6c56602e3fcdcbdc71a122125ea4855a32672",
+      "commands": 4,
+      "refused": 0
+    },
+    "native-linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-native-linux-r1\\results.json",
+      "sha256": "772fec1d01fdb770f60b651782d69050cbd7beb2f553ffff0cc6239a35fdac00",
+      "commands": 28,
+      "refused": 2
+    },
+    "document-host-linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-document-host-linux-r1\\results.json",
+      "sha256": "f288eb63599bcca211cae6d713e551cfe50bf160396ba2481e61f785097f9a7f",
+      "commands": 4,
+      "refused": 0
+    },
+    "document-static-linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-document-static-linux-r1\\results.json",
+      "sha256": "8a26686ae2fd235feb7be38e369464770176daf0f22c2a808cccc5f9d2439089",
+      "commands": 4,
+      "refused": 0
+    }
+  },
+  "platforms": {
+    "win": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-code-editing-win-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-editing-win-freeze-r1.json",
+        "sha256": "8c9356f71d8cc883c97b64ca7242b66d5220cd0169d10b7dbdefb145221fb8b3"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-sdk-win-r1\\results.json",
+        "sha256": "0147030fd05a3d393238344318d227deec5bce22a71948a56ac86bff5d3a5656"
+      },
+      "hostCompiled": [
+        "single/xge.c",
+        "src/xui/code/xui_code_document.c",
+        "src/xui/code/xui_code_editing.c"
+      ],
+      "hostReused": 161,
+      "staticCompiled": [
+        "src\\xui\\code\\xui_code_editing.c",
+        "F:\\xlang-validation\\xge-full-20261110\\code-editing-sdk-win-r1\\static\\xge_static_contract.c"
+      ],
+      "staticReused": 164,
+      "size": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-sizes-win-r1.json",
+        "sha256": "f6f79ffc75bcaaf9231aa00c167dc74187ecb4e5bb390afdd1b5da01edb2978c",
+        "fileDelta": 0,
+        "textDelta": 128,
+        "bssDelta": 0
+      }
+    },
+    "linux": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-code-editing-linux-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-editing-linux-freeze-r1.json",
+        "sha256": "cfd6bafa3c6879877b4541cf24a2abe666d8e5b0a31e23db0adb7bb369c406f2"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-sdk-linux-r1\\results.json",
+        "sha256": "cde4f78c7c43bc10058d5533473e5e892bf79aeeba9e85c32f0f440c7262a78b"
+      },
+      "hostCompiled": [
+        "single/xge.c",
+        "src/xui/code/xui_code_document.c",
+        "src/xui/code/xui_code_editing.c"
+      ],
+      "hostReused": 161,
+      "staticCompiled": [
+        "src/xui/code/xui_code_editing.c",
+        "/mnt/f/xlang-validation/xge-full-20261110/code-editing-sdk-linux-r1/static/xge_static_contract.c"
+      ],
+      "staticReused": 164,
+      "size": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-editing-sizes-linux-r1.json",
+        "sha256": "3fb7da5cff8ec2f1fffb566efbf7f4e4aa89f69a9a4574d29cb76d893c79ba1d",
+        "fileDelta": 0,
+        "textDelta": 128,
+        "bssDelta": 0
+      }
+    }
+  },
+  "positiveNativeProcessSteps": 64,
+  "legacyBuildSteps": 4,
+  "legacyDefectRejections": 4,
+  "limits": [
+    "Native implementation is frozen without unrelated XUI working changes.",
+    "Final test/tool overlays separately pinned; frozen original fixture predates the added body/OOM mode.",
+    "Actual public native engine and full compiler XRT, no replacement implementation.",
+    "Existing grouped-edit side effects are retained on failure; not atomic rollback.",
+    "No old-close UAF/sanitizer execution or actual interactive editor UI claim.",
+    "No release installation, online push or whole-ecosystem completion."
+  ]
+}
