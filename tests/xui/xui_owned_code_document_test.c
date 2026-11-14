@@ -75,6 +75,7 @@ static void codeDocumentDestroyInsideNotification(void)
     assert(xuiCodeDocumentSetChangeCallback(state.document,codeDocumentCloseDuringChange,&state)==XUI_OK);
     assert(xuiCodeDocumentInsert(state.document,0,"x")==XUI_ERROR_INVALID_STATE && state.invalidated==1 && !state.document);
 }
+#ifndef XUI_OWNED_CODE_DOCUMENT_HELPERS
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
@@ -84,3 +85,4 @@ int main(void)
     xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     puts("CodeDocument native kernel: unique owner guard, stable observer, pre-edit rejection, undo/redo, weak Context and active deferred physical destruction passed");return 0;
 }
+#endif

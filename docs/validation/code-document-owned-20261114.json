@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Unique CodeDocument read pins and owned change callback graph; no shared RC.",
+  "parentCommit": "cea3671e04be51e73b48c57513822504669e5978",
+  "shippingDelivery": false,
+  "networkTests": false,
+  "sources": {
+    "include/xui.h": "f2c883cf98e23e388b162a81f41f72bcf6d4d1aedf167260b5ab1e96b381731d",
+    "src/xui/code/xui_code_document.c": "5e1919ef0991ae062d013ee8b6c55ecae912c91d77ea15fc2c103f1aafb5f603",
+    "src/xui/code/xui_code_document_owned.inl": "50705c16f3cf0919bfa9b047ca6ab81d513156244e1521eb463fecad49752999",
+    "tests/xui/xui_owned_code_document_test.c": "e76973114b95bc6874c885c6649fa6df3cc5635366470907f7fd7b4cf4258487",
+    "tests/xui/xui_owned_fonts_test.c": "52fceb9a3a00f7f3638c290f235a0e16d0bd0f78320f2972caedba8cb7750e60",
+    "tests/xui/xui_code_document_owned_callback_test.c": "0a011a1cba7dfe9f809831cf3fb42965c2b6c00eb0307a027684d23576cfa6f5",
+    "tools/test/check_code_document_owned.py": "8667d113806d1786b0dca27c1b80dc5af0af9067947a869899f5be29b8b00c4e",
+    "docs/code-document-owned-callbacks.md": "f69bc18fd87abd9a8dfde169c498ba6ce6260e02d9fce0900f3283ded6b71fef"
+  },
+  "canonicalCodeEdit": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-canonical-xui_code_edit.c",
+    "sha256": "0f207c0f09d0b9000b73cd5ddcd6b8422fcbf17449eb6402bf16373cc708b146"
+  },
+  "platforms": {
+    "win": {
+      "fullSdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r1\\results.json",
+        "sha256": "a2352fbe7b5e1de4d17ce2d188edf1dc5403e3ef2a92d9677a932a9583ceef08",
+        "commands": 4
+      },
+      "finalSdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r2\\results.json",
+        "sha256": "52eca020a7b9d272308ac05b43438fd95d693001d9851326a481964c4d246145",
+        "commands": 4
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-document-win-freeze-r2.json",
+        "sha256": "d0b29f2332dc40f9387a6c3be500740f852951127f72bddd5c6f365364a9a62a"
+      },
+      "callbackHost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-native-host-win-r6\\results.json",
+        "sha256": "f83b63990222867e725c9aef516adc328f3d73340a7c499a764eee7f7040bde2",
+        "commands": 4
+      },
+      "callbackStatic": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-native-static-win-r6\\results.json",
+        "sha256": "f4c8a442eacddc1c4b2149931e8c1e00c9963a9d3895a9c09c970a5efd86d730",
+        "commands": 4
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-editor-regression-win-r1\\results.json",
+        "sha256": "08c2778943526bb6027d5f8adf5982659c3c25eadcf9aa69e1b0407dd5eeca5d",
+        "commands": 16
+      },
+      "artifacts": {
+        "host": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r2\\host\\build-report.json",
+            "sha256": "f3a4f9a8af45c363d61136d633a507a30cb1c8589ef0d8a65cc32c8d52f1cf86"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r2\\host\\xge3_host.dll",
+            "sha256": "aa0bf312099a4c5a6543380d48045a440c1f261bab065344b24c375664e37bbb"
+          },
+          "bytes": 9601071,
+          "compiled": 1,
+          "reused": 163
+        },
+        "static": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r2\\static\\build-report.json",
+            "sha256": "d842286ce8818ecc496dfcc6b65e8b56f748054b1d1ec5e58360b6b298be110d"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-win-r2\\static\\libxge3_static.a",
+            "sha256": "c3f2631c9c383e99193378109e2c681899a9f5cf3b80450a1471523adba3332d"
+          },
+          "bytes": 19649514,
+          "compiled": 2,
+          "reused": 164
+        }
+      }
+    },
+    "linux": {
+      "fullSdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r1\\results.json",
+        "sha256": "3e5b24792178491d00fb71dc38f119381d3bc9e4a57fcc4d6cb1a65b07c42f6e",
+        "commands": 4
+      },
+      "finalSdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r2\\results.json",
+        "sha256": "60b6108d11d04666bd33e4ca545a50de4b2da99f3b652933ce7a72ad922f23f8",
+        "commands": 4
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-document-linux-freeze-r2.json",
+        "sha256": "66bb612e2493c4982e7d2a53c24a35960d19e8cb443a634de3edc9e5292e2ea5"
+      },
+      "callbackHost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-native-host-linux-r6\\results.json",
+        "sha256": "4f48af4c51ee1e886fbfa140cfe7af2fe18eea0d90eadffe5777fbf3e1e4de7e",
+        "commands": 4
+      },
+      "callbackStatic": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-native-static-linux-r6\\results.json",
+        "sha256": "ca910eaa266bc2a4c11c08cb15f6df10843458c62b786be2c2b0370ed70b8b87",
+        "commands": 4
+      },
+      "editorRegression": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-editor-regression-linux-r1\\results.json",
+        "sha256": "452bc529e2d23e5558a02f9233752a4342fcb5e6c5c4683e8c03706c461a6255",
+        "commands": 16
+      },
+      "artifacts": {
+        "host": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r2\\host\\build-report.json",
+            "sha256": "3a83e70c34274f1cc9f5fb92b2eaa9b0721535e7a5c3bf925e2b02821c40d90c"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r2\\host\\libxge3_host.so",
+            "sha256": "cd0b5cb143a66f521232e37c73b1c07d5382aefeec3a1135507f4a96e8f308ba"
+          },
+          "bytes": 10461968,
+          "compiled": 1,
+          "reused": 163
+        },
+        "static": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r2\\static\\build-report.json",
+            "sha256": "698071438b1351315d22c2d1c312c8b18907768366350bf4b2f0748d29337bec"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-sdk-linux-r2\\static\\libxge3_static.a",
+            "sha256": "3c5375affd766bc36ace397a5b6330226e112d8d7c6a113aa18f791f7c02e418"
+          },
+          "bytes": 17873480,
+          "compiled": 2,
+          "reused": 164
+        }
+      }
+    }
+  },
+  "developmentCounterexample": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\code-document-autosave-before-win-r4\\results.json",
+    "sha256": "71a91484954943ae35e734e60b9a03bd665770deb1e8c2097c073584c16b3e81"
+  },
+  "costs": {
+    "storage": "One xui_callback_owner_t record per document; 32 bytes on tested x64.",
+    "scope": "Real document/context pins, thread checks and XRT mutation gates.",
+    "dispatch": "One selected callback Hold/Drop pair.",
+    "warmNativeScopeAndReplacement": "1000 iterations; zero alloc/free/realloc; failure budget zero.",
+    "cpuEquivalenceClaim": false,
+    "independentString": "Counted copy before real receiver scope ends."
+  },
+  "remaining": [
+    "Batch payload handoff and partial-commit outcomes",
+    "Language integration has separate acceptance",
+    "Final matched ecosystem delivery"
+  ]
+}

@@ -230,6 +230,7 @@ static void cleanup_false_null(void)
     xui_call_scope_t scope={0};assert(xuiCallScopeBegin(context,&scope)==XUI_OK);xuiDestroy(context);
     assert(xuiCallScopeEnd(&scope)==XUI_ERROR_CALLBACK_FAILED && finalized==1 && owner.refs==0 && !xrtGetError());
 }
+#ifndef XUI_OWNED_FONTS_HELPERS
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);assert(xrtMemDebugEnable(true));
@@ -238,3 +239,4 @@ int main(void)
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes && before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     puts("Owned native font slots: 40 families, Init exactly once, context aliases/registry, rejection and false-NULL cleanup passed");return 0;
 }
+#endif

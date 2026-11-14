@@ -7714,6 +7714,21 @@ XUI_API int xuiCodeDocumentDestroyOwnerChecked(xui_code_document pDocument, bool
 XUI_API int xuiCodeDocumentDestroyChecked(xui_code_document pDocument);
 XUI_API bool xuiCodeDocumentOwnershipBusy(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document pDocument, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Address-stable, zero-initialized read/callback lifetime protection. These
+ * scopes pin the actual unique Document (and its observed Context if any),
+ * without setting its writer flag or inventing a reference count. A consumed
+ * owner is physically released only after the final native scope ends. */
+typedef struct xui_code_document_scope_t {
+    struct xui_code_document_scope_t* pSelf;
+    xui_code_document pDocument;
+    xui_context pContext;
+    xui_call_scope_t tContext;
+} xui_code_document_scope_t;
+XUI_API int xuiCodeDocumentCallBegin(xui_code_document pDocument, xui_code_document_scope_t* pScope);
+XUI_API int xuiCodeDocumentCallEnd(xui_code_document_scope_t* pScope);
+/* Pure owner-thread frozen graph enumeration. Internal edit observers are
+ * weak native relationships; an installed owned change callback is an edge. */
+XUI_API bool xuiCodeDocumentTraceOwnership(xui_code_document pDocument,xrtownershipvisitor onVisit,void* pUser);
 /* 整体替换文档内容（清空撤销历史）。 */
 XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sText);
 /* 以指定字节长度替换文档内容（支持内嵌 NUL）。 */
@@ -7754,6 +7769,10 @@ XUI_API int xuiCodeDocumentBeginEdit(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentEndEdit(xui_code_document pDocument);
 /* 注册文档变更回调。 */
 XUI_API int xuiCodeDocumentSetChangeCallback(xui_code_document pDocument, xui_code_document_change_proc onChange, void* pUser);
+/* Hold before publication, preserve the old slot on admission failure, and
+ * snapshot the selected callback owner through its complete dispatch tail.
+ * Passing NULL owner retains the legacy borrowed C callback contract. */
+XUI_API int xuiCodeDocumentSetChangeCallbackOwned(xui_code_document pDocument, xui_code_document_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 /* 撤销上一次编辑。 */
 XUI_API int xuiCodeDocumentUndo(xui_code_document pDocument);
 /* 重做上一次撤销。 */

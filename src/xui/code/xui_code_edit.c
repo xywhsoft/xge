@@ -7019,6 +7019,7 @@ static int __xuiCodeEditDestroyReady(xui_widget widget,const void* raw)
 static bool __xuiCodeEditTraceOwnership(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
 {
     const xui_code_edit_data_t* data=raw;if(data->iCacheActivity)return false;
+    if(data->pDocument && !xuiCodeDocumentTraceOwnership(data->pDocument,visit,user))return false;
     for(int i=0;i<data->iLineLayoutCount;++i){
         const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
         if(widget->pContext->pOwnedProxy && line->pFont && !visit(xuiFontOwnership(line->pFont),user))return false;

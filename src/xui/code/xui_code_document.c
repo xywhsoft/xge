@@ -2,9 +2,11 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 #include "xui_code_document_internal.h"
+#include "../core/xui_callback_hold_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct xui_code_line_t {
@@ -77,6 +79,7 @@ struct xui_code_document_t {
 	int bForcedDirty;
 	xui_code_document_change_proc onChange;
 	void* pChangeUser;
+    xui_callback_owner_t tChangeOwner;
 	xui_internal_code_document_edit_proc onEdit;
 	void* pEditUser;
 	void* pLexerCCache;
@@ -91,8 +94,10 @@ struct xui_code_document_call_t {
     xui_internal_code_document_prepare_proc prepare;
     xui_internal_code_document_edit_proc edited;
     void* user;
+    int callbackStatus;
 };
 static int __xuiCodeDocumentDestroyNow(xui_code_document);
+#include "xui_code_document_owned.inl"
 static int __xuiCodeDocumentCallBegin(xui_code_document document,xui_code_document_call_t* call)
 {
     if(!document || document->iMagic!=XUI_CODE_DOCUMENT_MAGIC || document->bDestroying || document->bDestroyPending)return XUI_ERROR_INVALID_STATE;
@@ -108,6 +113,7 @@ static int __xuiCodeDocumentCallEnd(xui_code_document_call_t* call,int status)
 {
     if(!call->document)return status;
     xui_code_document document=call->document;
+    if(status==XUI_OK && call->callbackStatus!=XUI_OK)status=call->callbackStatus;
     if(status==XUI_OK && (document->bDestroyPending ||
         (document->pInternalOwner && !xuiInternalWidgetIsValid(document->pInternalOwner)) ||
         (call->context && (call->context->bDestroyPending || call->context->bDestroying))))status=XUI_ERROR_INVALID_STATE;
@@ -138,7 +144,7 @@ static void __xuiCodeDocumentEdited(xui_code_document document,int start,int end
         call->edited(document,start,end,newEnd,firstLine,lastLine,newLastLine,reset,call->user);
 }
 XUI_API bool xuiCodeDocumentOwnershipBusy(xui_code_document document)
-{return !document || document->iMagic!=XUI_CODE_DOCUMENT_MAGIC || document->iActiveCalls || document->bDestroying;}
+{return !document || document->iCreatorThread!=xrtThreadCurrentId() || document->iMagic!=XUI_CODE_DOCUMENT_MAGIC || document->iActiveCalls || document->bDestroying;}
 XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document document,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidated,void* user)
 {
     if(!document || document->iMagic!=XUI_CODE_DOCUMENT_MAGIC || document->bDestroyPending || !link || !invalidated)return XUI_ERROR_INVALID_ARGUMENT;
@@ -150,6 +156,7 @@ XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document document,xui_lifetime
 }
 static int __xuiCodeDocumentImplSetTextLength(xui_code_document pDocument, const char* sText, int iLength);
 static int __xuiCodeDocumentImplLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
+static int __xuiCodeDocumentImplSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText);
 static int __xuiCodeDocumentImplBeginEdit(xui_code_document pDocument);
 static int __xuiCodeDocumentImplEndEdit(xui_code_document pDocument);
@@ -1057,7 +1064,9 @@ static void __xuiCodeDocumentNotifyChanged(xui_code_document pDocument)
 	tRange.iStart = pDocument->bHasLastEditRange ? pDocument->iLastEditStart : 0;
 	tRange.iEnd = pDocument->bHasLastEditRange ? pDocument->iLastEditEnd : pDocument->iLength;
 	pDocument->bChangePending = 0;
-	pDocument->onChange(pDocument, tRange, pDocument->iVersion, pDocument->pChangeUser);
+    int status=__xuiCodeDocumentDispatchChange(pDocument,tRange,pDocument->iVersion);
+    if(status!=XUI_OK && pDocument->pActiveCall && pDocument->pActiveCall->callbackStatus==XUI_OK)
+        pDocument->pActiveCall->callbackStatus=status;
 }
 
 XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument)
@@ -1093,6 +1102,7 @@ static int __xuiCodeDocumentDestroyNow(xui_code_document pDocument)
     pDocument->bDestroying=true;
     xuiLifetimeUnwatch(&pDocument->tObserverContextLink);
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    xuiInternalCleanupAdd(&receipt,__xuiCodeDocumentClearChange(pDocument));
     xuiInternalLifetimeInvalidateAll(&pDocument->pLifetimeLinks);
     xuiInternalCleanupAdd(&receipt,XUI_OK);
 	if ( pDocument->pLexerCCache != NULL &&
@@ -1117,7 +1127,8 @@ static int __xuiCodeDocumentDestroyOwnerChecked(xui_code_document document,xui_w
     if(!document || document->iMagic!=XUI_CODE_DOCUMENT_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
     if(document->iCreatorThread!=xrtThreadCurrentId() || document->bDestroying)return XUI_ERROR_BUSY;
     if(document->bDestroyPending || document->pInternalOwner!=internalOwner)return XUI_ERROR_INVALID_STATE;
-    document->bDestroyPending=true;*consumed=true;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    document->bDestroyPending=true;*consumed=true;if(!xrtOwnershipScopeEnd(&mutation))abort();
     return document->iActiveCalls ? XUI_OK:__xuiCodeDocumentDestroyNow(document);
 }
 XUI_API int xuiCodeDocumentDestroyOwnerChecked(xui_code_document document,bool* consumed)
@@ -1200,11 +1211,11 @@ XUI_API int xuiCodeDocumentGetTextView(xui_code_document document,xstrview* view
 {
     if(!view)return XUI_ERROR_INVALID_ARGUMENT;
     *view=(xstrview){0};
-    if(!document)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=__xuiCodeDocumentReadStatus(document);if(status!=XUI_OK)return status;
     /* The legacy snapshot reserves length+1 using a signed native count. */
     if(document->iLength<0 || document->iLength==INT_MAX)return XUI_ERROR_LIMIT_EXCEEDED;
     if(!document->iLength){*view=(xstrview){"",0};return XUI_OK;}
-    int status=__xuiCodeDocumentEnsureSnapshot(document);
+    status=__xuiCodeDocumentEnsureSnapshot(document);
     if(status!=XUI_OK)return status;
     if(!document->sSnapshot)return XUI_ERROR_INVALID_STATE;
     *view=(xstrview){document->sSnapshot,(size_t)document->iLength};return XUI_OK;
@@ -1294,7 +1305,7 @@ static int __xuiCodeDocumentImplLoadTextFile(xui_code_document pDocument, const 
 	return iRet;
 }
 
-XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset)
+static int __xuiCodeDocumentImplSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset)
 {
 	int iRet;
 
@@ -1603,10 +1614,7 @@ static int __xuiCodeDocumentImplEndEdit(xui_code_document pDocument)
 
 XUI_API int xuiCodeDocumentSetChangeCallback(xui_code_document pDocument, xui_code_document_change_proc onChange, void* pUser)
 {
-	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pDocument->onChange = onChange;
-	pDocument->pChangeUser = pUser;
-	return XUI_OK;
+    return xuiCodeDocumentSetChangeCallbackOwned(pDocument,onChange,pUser,NULL);
 }
 
 static int __xuiCodeDocumentImplUndo(xui_code_document pDocument)
@@ -1758,6 +1766,15 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
     xui_code_document_call_t call={0};int status=__xuiCodeDocumentCallBegin(pDocument,&call);
     if(status==XUI_OK)status=__xuiCodeDocumentImplLoadTextFile(pDocument,sPath,iCharset);
     return __xuiCodeDocumentCallEnd(&call,status);
+}
+
+XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset)
+{
+    xui_code_document_scope_t scope={0};int status=xuiCodeDocumentCallBegin(pDocument,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiCodeDocumentImplSaveTextFile(pDocument,sPath,iCharset);
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    xuiInternalCleanupAdd(&receipt,xuiCodeDocumentCallEnd(&scope));return xuiInternalCleanupEnd(NULL,&receipt);
 }
 
 XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText)
