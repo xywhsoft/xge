@@ -1840,6 +1840,7 @@ typedef struct sapp_allocator {
     _SAPP_LOGITEM_XMACRO(IMAGE_DATA_SIZE_MISMATCH, "image data size mismatch (must be width*height*4 bytes)") \
     _SAPP_LOGITEM_XMACRO(DROPPED_FILE_PATH_TOO_LONG, "dropped file path too long (sapp_desc.max_dropped_filed_path_length)") \
     _SAPP_LOGITEM_XMACRO(CLIPBOARD_STRING_TOO_BIG, "clipboard string didn't fit into clipboard buffer") \
+    _SAPP_LOGITEM_XMACRO(LINUX_GLX_MAKE_CURRENT_FAILED, "glXMakeCurrent() failed") \
 
 #define _SAPP_LOGITEM_XMACRO(item,msg) SAPP_LOGITEM_##item,
 typedef enum sapp_log_item {
@@ -3210,6 +3211,8 @@ typedef struct {
     int window_state;
     float dpi;
     unsigned char error_code;
+    XErrorHandler previous_error_handler;
+    bool error_handler_grabbed;
     Atom UTF8_STRING;
     Atom CLIPBOARD;
     Atom TARGETS;
@@ -3238,6 +3241,7 @@ typedef struct {
     int error_base;
     GLXContext ctx;
     GLXWindow window;
+    bool current;
 
     // GLX 1.3 functions
     PFNGLXGETFBCONFIGSPROC GetFBConfigs;
@@ -3277,6 +3281,8 @@ typedef struct {
     EGLDisplay display;
     EGLContext context;
     EGLSurface surface;
+    bool initialized;
+    bool current;
 } _sapp_egl_t;
 #endif // _SAPP_EGL
 #endif // _SAPP_LINUX
@@ -11886,13 +11892,17 @@ _SOKOL_PRIVATE int _sapp_x11_error_handler(Display* display, XErrorEvent* event)
 }
 
 _SOKOL_PRIVATE void _sapp_x11_grab_error_handler(void) {
+    SOKOL_ASSERT(!_sapp.x11.error_handler_grabbed);
     _sapp.x11.error_code = Success;
-    XSetErrorHandler(_sapp_x11_error_handler);
+    _sapp.x11.previous_error_handler = XSetErrorHandler(_sapp_x11_error_handler);
+    _sapp.x11.error_handler_grabbed = true;
 }
 
 _SOKOL_PRIVATE void _sapp_x11_release_error_handler(void) {
     XSync(_sapp.x11.display, False);
-    XSetErrorHandler(NULL);
+    XSetErrorHandler(_sapp.x11.previous_error_handler);
+    _sapp.x11.previous_error_handler = NULL;
+    _sapp.x11.error_handler_grabbed = false;
 }
 
 _SOKOL_PRIVATE void _sapp_x11_init_extensions(void) {
@@ -12354,7 +12364,7 @@ _SOKOL_PRIVATE void* _sapp_glx_getprocaddr(const char* procname)
     }
 }
 
-_SOKOL_PRIVATE void _sapp_glx_init(void) {
+_SOKOL_PRIVATE bool _sapp_glx_init(void) {
     const char* sonames[] = { "libGL.so.1", "libGL.so", 0 };
     for (int i = 0; sonames[i]; i++) {
         _sapp.glx.libgl = dlopen(sonames[i], RTLD_LAZY|RTLD_GLOBAL);
@@ -12364,6 +12374,7 @@ _SOKOL_PRIVATE void _sapp_glx_init(void) {
     }
     if (!_sapp.glx.libgl) {
         _SAPP_PANIC(LINUX_GLX_LOAD_LIBGL_FAILED);
+        return false;
     }
     _sapp.glx.GetFBConfigs          = (PFNGLXGETFBCONFIGSPROC)          dlsym(_sapp.glx.libgl, "glXGetFBConfigs");
     _sapp.glx.GetFBConfigAttrib     = (PFNGLXGETFBCONFIGATTRIBPROC)     dlsym(_sapp.glx.libgl, "glXGetFBConfigAttrib");
@@ -12395,16 +12406,20 @@ _SOKOL_PRIVATE void _sapp_glx_init(void) {
         !_sapp.glx.GetVisualFromFBConfig)
     {
         _SAPP_PANIC(LINUX_GLX_LOAD_ENTRY_POINTS_FAILED);
+        return false;
     }
 
     if (!_sapp.glx.QueryExtension(_sapp.x11.display, &_sapp.glx.error_base, &_sapp.glx.event_base)) {
         _SAPP_PANIC(LINUX_GLX_EXTENSION_NOT_FOUND);
+        return false;
     }
     if (!_sapp.glx.QueryVersion(_sapp.x11.display, &_sapp.glx.major, &_sapp.glx.minor)) {
         _SAPP_PANIC(LINUX_GLX_QUERY_VERSION_FAILED);
+        return false;
     }
-    if (_sapp.glx.major == 1 && _sapp.glx.minor < 3) {
+    if (_sapp.glx.major < 1 || (_sapp.glx.major == 1 && _sapp.glx.minor < 3)) {
         _SAPP_PANIC(LINUX_GLX_VERSION_TOO_LOW);
+        return false;
     }
     const char* exts = _sapp.glx.QueryExtensionsString(_sapp.x11.display, _sapp.x11.screen);
     if (_sapp_glx_extsupported("GLX_EXT_swap_control", exts)) {
@@ -12421,15 +12436,17 @@ _SOKOL_PRIVATE void _sapp_glx_init(void) {
         _sapp.glx.ARB_create_context = 0 != _sapp.glx.CreateContextAttribsARB;
     }
     _sapp.glx.ARB_create_context_profile = _sapp_glx_extsupported("GLX_ARB_create_context_profile", exts);
+    return true;
 }
 
 _SOKOL_PRIVATE int _sapp_glx_attrib(GLXFBConfig fbconfig, int attrib) {
-    int value;
+    int value = 0;
     _sapp.glx.GetFBConfigAttrib(_sapp.x11.display, fbconfig, attrib, &value);
     return value;
 }
 
-_SOKOL_PRIVATE GLXFBConfig _sapp_glx_choosefbconfig(void) {
+_SOKOL_PRIVATE bool _sapp_glx_choosefbconfig(GLXFBConfig* output) {
+    *output = 0;
     GLXFBConfig* native_configs;
     _sapp_gl_fbconfig* usable_configs;
     const _sapp_gl_fbconfig* closest;
@@ -12446,11 +12463,17 @@ _SOKOL_PRIVATE GLXFBConfig _sapp_glx_choosefbconfig(void) {
     }
 
     native_configs = _sapp.glx.GetFBConfigs(_sapp.x11.display, _sapp.x11.screen, &native_count);
-    if (!native_configs || !native_count) {
+    if (!native_configs || native_count <= 0) {
+        if (native_configs) XFree(native_configs);
         _SAPP_PANIC(LINUX_GLX_NO_GLXFBCONFIGS);
+        return false;
     }
 
     usable_configs = (_sapp_gl_fbconfig*) _sapp_malloc_clear((size_t)native_count * sizeof(_sapp_gl_fbconfig));
+    if (!usable_configs) {
+        XFree(native_configs);
+        return false;
+    }
     usable_count = 0;
     for (i = 0;  i < native_count;  i++) {
         const GLXFBConfig n = native_configs[i];
@@ -12499,35 +12522,47 @@ _SOKOL_PRIVATE GLXFBConfig _sapp_glx_choosefbconfig(void) {
     }
     XFree(native_configs);
     _sapp_free(usable_configs);
-    return result;
+    if (!result) {
+        _SAPP_PANIC(LINUX_GLX_NO_SUITABLE_GLXFBCONFIG);
+        return false;
+    }
+    *output = result;
+    return true;
 }
 
-_SOKOL_PRIVATE void _sapp_glx_choose_visual(Visual** visual, int* depth) {
-    GLXFBConfig native = _sapp_glx_choosefbconfig();
-    if (0 == native) {
-        _SAPP_PANIC(LINUX_GLX_NO_SUITABLE_GLXFBCONFIG);
-    }
+_SOKOL_PRIVATE bool _sapp_glx_choose_visual(Visual** visual, int* depth) {
+    GLXFBConfig native = 0;
+    if (!_sapp_glx_choosefbconfig(&native)) return false;
     XVisualInfo* result = _sapp.glx.GetVisualFromFBConfig(_sapp.x11.display, native);
     if (!result) {
         _SAPP_PANIC(LINUX_GLX_GET_VISUAL_FROM_FBCONFIG_FAILED);
+        return false;
     }
     *visual = result->visual;
     *depth = result->depth;
     XFree(result);
+    return true;
 }
 
-_SOKOL_PRIVATE void _sapp_glx_make_current(void) {
-    _sapp.glx.MakeCurrent(_sapp.x11.display, _sapp.glx.window, _sapp.glx.ctx);
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&_sapp.gl.framebuffer);
-}
-
-_SOKOL_PRIVATE void _sapp_glx_create_context(void) {
-    GLXFBConfig native = _sapp_glx_choosefbconfig();
-    if (0 == native){
-        _SAPP_PANIC(LINUX_GLX_NO_SUITABLE_GLXFBCONFIG);
+_SOKOL_PRIVATE bool _sapp_glx_make_current(void) {
+    _sapp_x11_grab_error_handler();
+    bool ok = _sapp.glx.MakeCurrent(_sapp.x11.display, _sapp.glx.window, _sapp.glx.ctx);
+    _sapp_x11_release_error_handler();
+    if (!ok || _sapp.x11.error_code != Success) {
+        _SAPP_PANIC(LINUX_GLX_MAKE_CURRENT_FAILED);
+        return false;
     }
+    _sapp.glx.current = true;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&_sapp.gl.framebuffer);
+    return true;
+}
+
+_SOKOL_PRIVATE bool _sapp_glx_create_context(void) {
+    GLXFBConfig native = 0;
+    if (!_sapp_glx_choosefbconfig(&native)) return false;
     if (!(_sapp.glx.ARB_create_context && _sapp.glx.ARB_create_context_profile)) {
         _SAPP_PANIC(LINUX_GLX_REQUIRED_EXTENSIONS_MISSING);
+        return false;
     }
     _sapp_x11_grab_error_handler();
     const int attribs[] = {
@@ -12538,18 +12573,27 @@ _SOKOL_PRIVATE void _sapp_glx_create_context(void) {
         0, 0
     };
     _sapp.glx.ctx = _sapp.glx.CreateContextAttribsARB(_sapp.x11.display, native, NULL, True, attribs);
+    _sapp_x11_release_error_handler();
     if (!_sapp.glx.ctx) {
         _SAPP_PANIC(LINUX_GLX_CREATE_CONTEXT_FAILED);
+        return false;
     }
-    _sapp_x11_release_error_handler();
+    _sapp_x11_grab_error_handler();
     _sapp.glx.window = _sapp.glx.CreateWindow(_sapp.x11.display, native, _sapp.x11.window, NULL);
-    if (!_sapp.glx.window) {
+    _sapp_x11_release_error_handler();
+    if (!_sapp.glx.window || _sapp.x11.error_code != Success) {
+        _sapp.glx.window = 0;
         _SAPP_PANIC(LINUX_GLX_CREATE_WINDOW_FAILED);
+        return false;
     }
-    _sapp_glx_make_current();
+    return _sapp_glx_make_current();
 }
 
 _SOKOL_PRIVATE void _sapp_glx_destroy_context(void) {
+    if (_sapp.glx.current) {
+        _sapp.glx.MakeCurrent(_sapp.x11.display, 0, NULL);
+        _sapp.glx.current = false;
+    }
     if (_sapp.glx.window) {
         _sapp.glx.DestroyWindow(_sapp.x11.display, _sapp.glx.window);
         _sapp.glx.window = 0;
@@ -12932,13 +12976,20 @@ _SOKOL_PRIVATE void _sapp_x11_set_icon(const sapp_icon_desc* icon_desc, int num_
     XFlush(_sapp.x11.display);
 }
 
-_SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
+_SOKOL_PRIVATE bool _sapp_x11_create_window(Visual* visual_or_null, int depth) {
     Visual* visual = visual_or_null;
     if (0 == visual_or_null) {
         visual = DefaultVisual(_sapp.x11.display, _sapp.x11.screen);
         depth = DefaultDepth(_sapp.x11.display, _sapp.x11.screen);
     }
+    _sapp_x11_grab_error_handler();
     _sapp.x11.colormap = XCreateColormap(_sapp.x11.display, _sapp.x11.root, visual, AllocNone);
+    _sapp_x11_release_error_handler();
+    if (!_sapp.x11.colormap || _sapp.x11.error_code != Success) {
+        _sapp.x11.colormap = 0;
+        _SAPP_PANIC(LINUX_X11_CREATE_WINDOW_FAILED);
+        return false;
+    }
     _SAPP_STRUCT(XSetWindowAttributes, wa);
     const uint32_t wamask = CWBorderPixel | CWColormap | CWEventMask;
     wa.colormap = _sapp.x11.colormap;
@@ -12973,8 +13024,10 @@ _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
                                      wamask,
                                      &wa);
     _sapp_x11_release_error_handler();
-    if (!_sapp.x11.window) {
+    if (!_sapp.x11.window || _sapp.x11.error_code != Success) {
+        _sapp.x11.window = 0;
         _SAPP_PANIC(LINUX_X11_CREATE_WINDOW_FAILED);
+        return false;
     }
     Atom protocols[] = {
         _sapp.x11.WM_DELETE_WINDOW
@@ -12983,6 +13036,10 @@ _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
 
     // NOTE: PPosition and PSize are obsolete and ignored
     XSizeHints* hints = XAllocSizeHints();
+    if (!hints) {
+        _SAPP_PANIC(MALLOC_FAILED);
+        return false;
+    }
     hints->flags = PWinGravity;
     hints->win_gravity = CenterGravity;
     XSetWMNormalHints(_sapp.x11.display, _sapp.x11.window, hints);
@@ -12995,6 +13052,7 @@ _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
     }
     _sapp_x11_update_window_title();
     _sapp_x11_update_dimensions_from_window_size();
+    return true;
 }
 
 _SOKOL_PRIVATE void _sapp_x11_destroy_window(void) {
@@ -13685,26 +13743,31 @@ _SOKOL_PRIVATE void _sapp_x11_process_event(XEvent* event) {
 
 #if defined(_SAPP_EGL)
 
-_SOKOL_PRIVATE void _sapp_egl_init(void) {
+_SOKOL_PRIVATE bool _sapp_egl_init(void) {
     #if defined(SOKOL_GLCORE)
         if (!eglBindAPI(EGL_OPENGL_API)) {
             _SAPP_PANIC(LINUX_EGL_BIND_OPENGL_API_FAILED);
+            return false;
         }
     #else
         if (!eglBindAPI(EGL_OPENGL_ES_API)) {
             _SAPP_PANIC(LINUX_EGL_BIND_OPENGL_ES_API_FAILED);
+            return false;
         }
     #endif
 
     _sapp.egl.display = eglGetDisplay((EGLNativeDisplayType)_sapp.x11.display);
     if (EGL_NO_DISPLAY == _sapp.egl.display) {
         _SAPP_PANIC(LINUX_EGL_GET_DISPLAY_FAILED);
+        return false;
     }
 
     EGLint major, minor;
     if (!eglInitialize(_sapp.egl.display, &major, &minor)) {
         _SAPP_PANIC(LINUX_EGL_INITIALIZE_FAILED);
+        return false;
     }
+    _sapp.egl.initialized = true;
 
     EGLint sample_count = _sapp.desc.sample_count > 1 ? _sapp.desc.sample_count : 0;
     EGLint alpha_size = _sapp.desc.alpha ? 8 : 0;
@@ -13728,8 +13791,9 @@ _SOKOL_PRIVATE void _sapp_egl_init(void) {
 
     EGLConfig egl_configs[32];
     EGLint config_count;
-    if (!eglChooseConfig(_sapp.egl.display, config_attrs, egl_configs, 32, &config_count) || config_count == 0) {
+    if (!eglChooseConfig(_sapp.egl.display, config_attrs, egl_configs, 32, &config_count) || config_count <= 0 || config_count > 32) {
         _SAPP_PANIC(LINUX_EGL_NO_CONFIGS);
+        return false;
     }
 
     EGLConfig config = egl_configs[0];
@@ -13752,23 +13816,28 @@ _SOKOL_PRIVATE void _sapp_egl_init(void) {
     EGLint visual_id;
     if (!eglGetConfigAttrib(_sapp.egl.display, config, EGL_NATIVE_VISUAL_ID, &visual_id)) {
         _SAPP_PANIC(LINUX_EGL_NO_NATIVE_VISUAL);
+        return false;
     }
 
     _SAPP_STRUCT(XVisualInfo, visual_info_template);
     visual_info_template.visualid = (VisualID)visual_id;
 
-    int num_visuals;
+    int num_visuals = 0;
     XVisualInfo* visual_info = XGetVisualInfo(_sapp.x11.display, VisualIDMask, &visual_info_template, &num_visuals);
-    if (!visual_info) {
+    if (!visual_info || num_visuals <= 0) {
+        if (visual_info) XFree(visual_info);
         _SAPP_PANIC(LINUX_EGL_GET_VISUAL_INFO_FAILED);
+        return false;
     }
 
-    _sapp_x11_create_window(visual_info->visual, visual_info->depth);
+    bool window_created = _sapp_x11_create_window(visual_info->visual, visual_info->depth);
     XFree(visual_info);
+    if (!window_created) return false;
 
     _sapp.egl.surface = eglCreateWindowSurface(_sapp.egl.display, config, (EGLNativeWindowType)_sapp.x11.window, NULL);
     if (EGL_NO_SURFACE == _sapp.egl.surface) {
         _SAPP_PANIC(LINUX_EGL_CREATE_WINDOW_SURFACE_FAILED);
+        return false;
     }
 
     EGLint ctx_attrs[] = {
@@ -13783,19 +13852,26 @@ _SOKOL_PRIVATE void _sapp_egl_init(void) {
     _sapp.egl.context = eglCreateContext(_sapp.egl.display, config, EGL_NO_CONTEXT, ctx_attrs);
     if (EGL_NO_CONTEXT == _sapp.egl.context) {
         _SAPP_PANIC(LINUX_EGL_CREATE_CONTEXT_FAILED);
+        return false;
     }
 
     if (!eglMakeCurrent(_sapp.egl.display, _sapp.egl.surface, _sapp.egl.surface, _sapp.egl.context)) {
         _SAPP_PANIC(LINUX_EGL_MAKE_CURRENT_FAILED);
+        return false;
     }
+    _sapp.egl.current = true;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, (GLint*)&_sapp.gl.framebuffer);
 
     eglSwapInterval(_sapp.egl.display, _sapp.swap_interval);
+    return true;
 }
 
 _SOKOL_PRIVATE void _sapp_egl_destroy(void) {
     if (_sapp.egl.display != EGL_NO_DISPLAY) {
-        eglMakeCurrent(_sapp.egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (_sapp.egl.current) {
+            eglMakeCurrent(_sapp.egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            _sapp.egl.current = false;
+        }
 
         if (_sapp.egl.context != EGL_NO_CONTEXT) {
             eglDestroyContext(_sapp.egl.display, _sapp.egl.context);
@@ -13807,7 +13883,10 @@ _SOKOL_PRIVATE void _sapp_egl_destroy(void) {
             _sapp.egl.surface = EGL_NO_SURFACE;
         }
 
-        eglTerminate(_sapp.egl.display);
+        if (_sapp.egl.initialized) {
+            eglTerminate(_sapp.egl.display);
+            _sapp.egl.initialized = false;
+        }
         _sapp.egl.display = EGL_NO_DISPLAY;
     }
 }
@@ -13864,21 +13943,26 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp_x11_create_standard_cursors();
     XkbSetDetectableAutoRepeat(_sapp.x11.display, true, NULL);
     _sapp_x11_init_keytable();
+    #if defined(SOKOL_WGPU) || defined(SOKOL_VULKAN)
+        bool backend_started = false;
+    #endif
     #if defined(_SAPP_GLX)
-        _sapp_glx_init();
         Visual* visual = 0;
         int depth = 0;
-        _sapp_glx_choose_visual(&visual, &depth);
-        _sapp_x11_create_window(visual, depth);
-        _sapp_glx_create_context();
+        if (!_sapp_glx_init()) goto startup_failed;
+        if (!_sapp_glx_choose_visual(&visual, &depth)) goto startup_failed;
+        if (!_sapp_x11_create_window(visual, depth)) goto startup_failed;
+        if (!_sapp_glx_create_context()) goto startup_failed;
         _sapp_glx_swapinterval(_sapp.swap_interval);
     #elif defined(_SAPP_EGL)
-        _sapp_egl_init();
+        if (!_sapp_egl_init()) goto startup_failed;
     #elif defined(SOKOL_WGPU)
-        _sapp_x11_create_window(0, 0);
+        if (!_sapp_x11_create_window(0, 0)) goto startup_failed;
+        backend_started = true;
         _sapp_wgpu_init();
     #elif defined(SOKOL_VULKAN)
-        _sapp_x11_create_window(0, 0);
+        if (!_sapp_x11_create_window(0, 0)) goto startup_failed;
+        backend_started = true;
         _sapp_vk_init();
     #endif
     sapp_set_icon(&desc->icon);
@@ -13910,18 +13994,31 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
         }
     }
     _sapp_call_cleanup();
+startup_failed:
+    /* No app cleanup callback on partial startup. Each native destructor only
+       consumes the resources actually acquired by its corresponding stage. */
     #if defined(_SAPP_GLX)
         _sapp_glx_destroy_context();
     #elif defined(_SAPP_EGL)
         _sapp_egl_destroy();
     #elif defined(SOKOL_WGPU)
-        _sapp_wgpu_discard();
+        if (backend_started) _sapp_wgpu_discard();
     #elif defined(SOKOL_VULKAN)
-        _sapp_vk_discard();
+        if (backend_started) _sapp_vk_discard();
     #endif
+    for (int i = 0; i < _SAPP_MOUSECURSOR_NUM; i++) {
+        if (_sapp.x11.custom_cursors[i]) sapp_unbind_mouse_cursor_image((sapp_mouse_cursor)i);
+    }
     _sapp_x11_destroy_window();
     _sapp_x11_destroy_standard_cursors();
     XCloseDisplay(_sapp.x11.display);
+    _sapp.x11.display = NULL;
+    #if defined(_SAPP_GLX)
+        if (_sapp.glx.libgl) {
+            dlclose(_sapp.glx.libgl);
+            _sapp.glx.libgl = NULL;
+        }
+    #endif
     _sapp_discard_state();
 }
 

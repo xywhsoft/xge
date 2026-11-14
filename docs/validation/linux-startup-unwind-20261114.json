@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Stage-aware Linux X11/GLX/EGL partial startup cleanup with existing checked XGE Run errors.",
+  "shippingDelivery": false,
+  "fullGoalComplete": false,
+  "networkTests": false,
+  "parentCommit": "c083fa3fc0b2c41d087909cfcea8927377422dc4",
+  "sources": {
+    "extlibs/sokol/sokol_app.h": "b70f8f6af0d7b8cb19a107e04e29be9d64c479a8e9f86bbe55f0a0b4303a9b4f",
+    "tests/xge/linux_startup_faults.h": "82cb1f95195672f7698678b406eebcbc0436844e7a0eb3bcc8fd7ce5c4511234",
+    "tests/xge/linux_startup_faults.c": "78164c1956f8ff9dc9b037243d42e6a99becd57e461b831123cfcce571d0220a",
+    "tests/xge/linux_egl_faults.c": "b4f5ab558047e64b31044481ae7e6b0ce8e4914fc4b11a5fcad2201548c6535b",
+    "tests/xge/sokol_linux_glx_failure_test.c": "9c5fa971f9966f9e8ba587904d2a7579ca587ab0c93d1dc2cb167c84b6a6780a",
+    "tests/xge/xge_linux_glx_failure_test.c": "b53f0121719ad782f235a6a3aa2ee0c2a00b6388a056ac0575d6831136182b1c",
+    "tools/test/check_linux_glx_unwind.py": "13b5ed14f7ba4dc554ce5763b47b106ffb8e13dcc8ef53970d68c6a1db4dbf90",
+    "tools/test/check_glx_engine_unwind.py": "dbae5c3eeb484a942b265a78b30a0d83dbfccf6d8c38f27bfd4b3fa4119a18c0",
+    "docs/linux-startup-unwind.md": "fe0dc792c0b3b388c3fab829542ed3457c9f9fd7a52fa2c3fc010bafe8b71be1"
+  },
+  "platforms": {
+    "win": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\results.json",
+        "sha256": "f7437a1bde98d47dad61e0359d36ef45fce101e8f7178b1b7bf77939e3d7e285",
+        "commands": 4,
+        "legacyCommands": 0
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-linux-unwind-win-freeze-r1.json",
+        "sha256": "2046a1b828fcdfb3b78388fb40b401b9fec020ef6b1d3d2f8de5d5c8d6673bfc"
+      },
+      "sizes": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sizes-win-r1.json",
+        "sha256": "914a305c634ee1bae81c7f0b602228d23ec6070745c2199574aa39215f2b912a"
+      },
+      "artifacts": {
+        "host": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\host\\build-report.json",
+            "sha256": "de5e72d3185b952dce018f327d93ac404a09fef6e04d915993e1f5a860e60152"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\host\\xge3_host.dll",
+            "sha256": "6d92530d2e814dd01292b71a9baf466b335f6cd6d7ae201aeb7a4046a7cdc21c"
+          },
+          "bytes": 9601071,
+          "compiled": [
+            "single/xge.c",
+            "src/xui/code/xui_code_document.c"
+          ],
+          "reused": 162
+        },
+        "static": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\static\\build-report.json",
+            "sha256": "e5fdc31368166918fb939e1ebe3318c2ec4d0f4edef173640dabde9d9a57696e"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\static\\libxge3_static.a",
+            "sha256": "528f5ded4af594b021ce5b58612f0e974066ea20789139fda41729bdd0ea2e57"
+          },
+          "bytes": 19649588,
+          "compiled": [
+            "single\\xge.c",
+            "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-win-r2\\static\\xge_static_contract.c"
+          ],
+          "reused": 164
+        }
+      }
+    },
+    "linux": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-linux-r2\\results.json",
+        "sha256": "2fd74271b2909ef3a246650d2d90a79d14fad7d60586a3eca1356ee181e3039a",
+        "commands": 4,
+        "legacyCommands": 0
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-linux-unwind-linux-freeze-r1.json",
+        "sha256": "0bcc4fa236a7aaddf217d3aac3ae79bf321ed3c9c68db3ba91b361197689991f"
+      },
+      "sizes": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sizes-linux-r1.json",
+        "sha256": "7bc0ef66c6b72c70758390891b2bb8d1a30bd7a78158fc394983dbe9be745665"
+      },
+      "artifacts": {
+        "host": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-linux-r2\\host\\build-report.json",
+            "sha256": "473696e25e8cc91892261debd023fc9e44454a775b200380e298d59af8d086c3"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-linux-r2\\host\\libxge3_host.so",
+            "sha256": "5950eb436d5f63ce04bc0d169ea43a5c3b51b78ce61980ef4ea29a03887083be"
+          },
+          "bytes": 10461968,
+          "compiled": [
+            "single/xge.c",
+            "src/xui/code/xui_code_document.c"
+          ],
+          "reused": 162
+        },
+        "static": {
+          "report": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-linux-r2\\static\\build-report.json",
+            "sha256": "bfecd73ec62ea852db50be0e1fd4bf39d86b0630d74807f47fb36eba18baa884"
+          },
+          "artifact": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-sdk-linux-r2\\static\\libxge3_static.a",
+            "sha256": "9183f461f034d81083957ec1b24ad391e7a39d98afe39a8bdaff4be216b55f4f"
+          },
+          "bytes": 17877680,
+          "compiled": [
+            "single/xge.c",
+            "/mnt/f/xlang-validation/xge-full-20261110/linux-unwind-sdk-linux-r2/static/xge_static_contract.c"
+          ],
+          "reused": 164
+        }
+      }
+    }
+  },
+  "nativeProfiles": {
+    "glx": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-glx-unwind-native-r8\\results.json",
+      "sha256": "cac261ac27ac4f3af43a9da61dd814d2077df3a60819314a812345f95d2f5006",
+      "commands": 44,
+      "legacyCommands": 4
+    },
+    "egl-desktop": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-egl-unwind-native-r6\\results.json",
+      "sha256": "209347a0f356da40a196aa470396108a6d3f1c28f63f8348d0123a332ed9ee4c",
+      "commands": 40,
+      "legacyCommands": 4
+    },
+    "egl-gles3": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-gles-unwind-native-r1\\results.json",
+      "sha256": "c94f3f0d046d765463fb32e21d27c9e2053780807d8695dff9c829e2e435c690",
+      "commands": 40,
+      "legacyCommands": 4
+    },
+    "actual-static-engine": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-glx-unwind-engine-r5\\results.json",
+      "sha256": "79e06598f001b4ab10990de9851b4137a27698165d07732a1ee4f39829a4cf6f",
+      "commands": 38,
+      "legacyCommands": 0
+    }
+  },
+  "regressions": {
+    "x11": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-native-regressions-r1\\x11\\results.json",
+      "sha256": "b3482463b96c53e30719175d5410a8bbf04870cff8d725dc27def8730e2e29e5",
+      "commands": 12,
+      "legacyCommands": 0
+    },
+    "glLoad": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-unwind-native-regressions-r1\\gl-load\\results.json",
+      "sha256": "a020f1bdb0d89729bddb675a9d1783fa76663f2791f4d38f52031ba7824a37fd",
+      "commands": 6,
+      "legacyCommands": 0
+    }
+  },
+  "counts": {
+    "corePositiveNativeCommands": 150,
+    "legacyBuildAndRejectionCommands": 12,
+    "otherNativeRegressionCommands": 18
+  },
+  "logItems": {
+    "existingPreserved": 125,
+    "newTotal": 126,
+    "appendOnly": "LINUX_GLX_MAKE_CURRENT_FAILED"
+  },
+  "environmentInvestigation": {
+    "probe": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\egl-display-reset-probe-r1\\results.json",
+      "sha256": "6e1f27ef7d71706f29e9859ed47e4b117c3951d87e7d0f333926b8dd990b6828"
+    },
+    "originalFailure": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\linux-egl-unwind-native-r1\\results.json",
+      "sha256": "2e76a896e8502f2751e24f040f02bfd4f48871f8f35646195fd93aa898e3ae62"
+    },
+    "result": "Reset allowed: one XOpenDisplay failure before selected EGL stage in 50 runs; noreset: zero in 50. Final matrices use noreset, no suppressed or automatically retried stage."
+  },
+  "historicalTestCorrections": [
+    "Host relink requires original full parent, not derived relink; rejected r1 SDK attempts kept.",
+    "Healthy native Run ends a graphics lifetime; test now Unit/Init between healthy runs, while direct retries after pre-startup failures remain.",
+    "Existing resolver cache is a distinct one-library owner; actual-engine gate requires no Sokol growth and records the remaining retirement audit."
+  ],
+  "costs": {
+    "fileDelta": {
+      "win": 0,
+      "linux": 0
+    },
+    "textDelta": {
+      "win": 0,
+      "linux": 832
+    },
+    "bssDelta": {
+      "win": 0,
+      "linux": 32
+    },
+    "cold": "Stage checks, XSync/handler preservation, actual native resource cleanup and Sokol library close at startup/teardown; no new per-frame source operation or allocation.",
+    "cpuEqualityClaim": false
+  },
+  "remaining": [
+    "Separate OpenGL resolver cache backend-switch/module-retirement audit",
+    "Later platform/display-disconnection and non-GL startup error branches",
+    "Final matched compiler/SDK/runtime/IDE delivery and full XGE/XUI/Document goal"
+  ]
+}
