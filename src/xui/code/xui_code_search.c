@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_code_document_internal.h"
 #include "xui_xrt_port.h"
 
 #include <ctype.h>
@@ -427,14 +428,23 @@ XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument,
 #endif
 }
 
+/* Retain the real Document through callbacks and every cleanup tail. The
+ * receipt remembers a failed status even when its diagnostic is NULL. */
+static int __xuiCodeSearchFinish(xui_code_document_scope_t* scope,xui_code_document document,
+ int endEdit,xui_cleanup_receipt_t* result)
+{
+ if(endEdit)xuiInternalCleanupAdd(result,xuiCodeDocumentEndEdit(document));
+ xuiInternalCleanupAdd(result,xuiCodeDocumentCallEnd(scope));
+ return xuiInternalCleanupEnd(NULL,result);
+}
+
 XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount)
 {
 	xui_code_range_t tRange;
 	size_t iReplacementSize;
 	int iCount;
 	int iOffset;
-	int iReplacementLength;
-	int iEndRet;
+	int iDocumentLength;
 	int iFindRet;
 	int iRet;
 
@@ -444,11 +454,17 @@ XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char
 	iOffset = 0;
 	iReplacementSize = strlen(sReplacement);
 	if ( iReplacementSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
-	iReplacementLength = (int)iReplacementSize;
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
+	xui_code_document_scope_t scope={0};
+	iRet=xuiCodeDocumentCallBegin(pDocument,&scope);
+	if(iRet!=XUI_OK)return iRet;
 	iRet = xuiCodeDocumentBeginEdit(pDocument);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,iRet);
+		return __xuiCodeSearchFinish(&scope,pDocument,0,&result);
+	}
+	iDocumentLength=xuiCodeDocumentGetLength(pDocument);
 	for ( ;; ) {
 		iFindRet = xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange);
 		if ( iFindRet == XUI_ERROR_UNSUPPORTED ) break;
@@ -456,19 +472,22 @@ XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char
 			iRet = iFindRet;
 			break;
 		}
-		iRet = xuiCodeDocumentReplace(pDocument, tRange.iStart, tRange.iEnd, sReplacement);
+		iRet = xuiInternalCodeDocumentReplaceLength(pDocument, tRange.iStart, tRange.iEnd, sReplacement, (int)iReplacementSize);
 		if ( iRet != XUI_OK ) break;
 		if ( iCount == INT_MAX ) {
 			iRet = XUI_ERROR_LIMIT_EXCEEDED;
 			break;
 		}
 		iCount++;
-		iOffset = tRange.iStart + iReplacementLength;
+		/* Replacement normalizes CRLF. Derive the actual inserted length from
+		 * the committed document, including no-op replacements, not strlen. */
+		int iNewLength=xuiCodeDocumentGetLength(pDocument);
+		iOffset=tRange.iStart+(iNewLength-(iDocumentLength-(tRange.iEnd-tRange.iStart)));
+		iDocumentLength=iNewLength;
 	}
-	iEndRet = xuiCodeDocumentEndEdit(pDocument);
-	if ( iRet == XUI_OK && iEndRet != XUI_OK ) iRet = iEndRet;
 	if ( pReplaceCount != NULL ) *pReplaceCount = iCount;
-	return iRet;
+	xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,iRet);
+	return __xuiCodeSearchFinish(&scope,pDocument,1,&result);
 }
 
 #ifndef XRT_NO_REGEX
@@ -571,9 +590,19 @@ XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char
 		__xuiCodeSearchSetError(sError, iErrorCapacity, "replacement is too large");
 		return XUI_ERROR_LIMIT_EXCEEDED;
 	}
+	xui_code_document_scope_t scope={0};
+	iRet=xuiCodeDocumentCallBegin(pDocument,&scope);
+	if(iRet!=XUI_OK)return iRet;
 	iRet = __xuiCodeSearchCreateRegex(&pRegex, sPattern, iFlags, sError, iErrorCapacity);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,iRet);
+		return __xuiCodeSearchFinish(&scope,pDocument,0,&result);
+	}
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
+	if(iTextLength<0 || iTextLength==INT_MAX){
+		xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,XUI_ERROR_LIMIT_EXCEEDED);
+		return __xuiCodeSearchFinish(&scope,pDocument,0,&result);
+	}
 	sText = (char*)xrtMalloc((size_t)iTextLength + 1u);
 	sOutput = NULL;
 	if ( sText == NULL ) {
@@ -622,19 +651,21 @@ XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char
 	}
 	iRet = __xuiCodeSearchAppend(&sOutput, &iLength, &iCapacity, sText + iPos, iTextLength - iPos);
 	if ( iRet != XUI_OK ) goto cleanup;
-	iRet = xuiCodeDocumentReplace(pDocument, 0, iTextLength, (sOutput != NULL) ? sOutput : "");
+	iRet = xuiInternalCodeDocumentReplaceLength(pDocument, 0, iTextLength, (sOutput != NULL) ? sOutput : "",iLength);
 	if ( pReplaceCount != NULL ) *pReplaceCount = iCount;
 	__xuiCodeSearchSetError(sError, iErrorCapacity, (iRet == XUI_OK) ? "" : "replace failed");
 
 cleanup:
-	xuiXrtRegexDestroy(pRegex);
-	xrtFree(sText);
-	xrtFree(sOutput);
 	if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) __xuiCodeSearchSetError(sError, iErrorCapacity, "out of memory");
 	else if ( iRet == XUI_ERROR_LIMIT_EXCEEDED ) __xuiCodeSearchSetError(sError, iErrorCapacity, "result is too large");
 	else if ( iRet == XUI_ERROR_INVALID_STATE && sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' )
 		__xuiCodeSearchSetError(sError, iErrorCapacity, "regex match failed");
-	return iRet;
+	xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,iRet);
+	xuiXrtRegexDestroy(pRegex);
+	xrtFree(sText);
+	xrtFree(sOutput);
+	xuiInternalCleanupAdd(&result,XUI_OK);
+	return __xuiCodeSearchFinish(&scope,pDocument,0,&result);
 #endif
 }
 

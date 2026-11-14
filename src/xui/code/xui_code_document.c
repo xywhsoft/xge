@@ -157,7 +157,7 @@ XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document document,xui_lifetime
 static int __xuiCodeDocumentImplSetTextLength(xui_code_document pDocument, const char* sText, int iLength);
 static int __xuiCodeDocumentImplLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 static int __xuiCodeDocumentImplSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
-static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText);
+static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText, int iTextLength);
 static int __xuiCodeDocumentImplBeginEdit(xui_code_document pDocument);
 static int __xuiCodeDocumentImplEndEdit(xui_code_document pDocument);
 static int __xuiCodeDocumentImplUndo(xui_code_document pDocument);
@@ -1475,7 +1475,7 @@ XUI_API int xuiCodeDocumentLineColumnToOffset(xui_code_document pDocument, int i
 	return XUI_OK;
 }
 
-static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText)
+static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText, int iTextLength)
 {
 	xui_code_edit_action_t tAction;
 	xui_code_edit_group_t* pGroup=NULL;
@@ -1488,16 +1488,28 @@ static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart,
 
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pDocument->bApplyingHistory ) return XUI_ERROR_UNSUPPORTED;
-	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, -1);
+	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, iTextLength);
 	if ( iRet != XUI_OK ) return iRet;
-	iStart = __xuiCodeDocumentClampOffset(pDocument, iStart);
-	iEnd = __xuiCodeDocumentClampOffset(pDocument, iEnd);
-	if ( iEnd < iStart ) {
-		int iTemp = iStart;
-		iStart = iEnd;
-		iEnd = iTemp;
+	if ( iTextLength >= 0 ) {
+		/* Search results are exact UTF-8 byte ranges. A valid match may end
+		 * inside a grapheme, but never inside a UTF-8 code point. */
+		int iLength = pDocument->iLength;
+		if ( iStart < 0 || iEnd < iStart || iEnd > iLength ||
+		     (iStart < iLength && (__xuiCodeDocumentByteAt(pDocument, iStart) & 0xc0) == 0x80) ||
+		     (iEnd < iLength && (__xuiCodeDocumentByteAt(pDocument, iEnd) & 0xc0) == 0x80) ) {
+			__xuiCodeDocumentSetError(pDocument, "invalid UTF-8 replacement range");
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	} else {
+		iStart = __xuiCodeDocumentClampOffset(pDocument, iStart);
+		iEnd = __xuiCodeDocumentClampOffset(pDocument, iEnd);
+		if ( iEnd < iStart ) {
+			int iTemp = iStart;
+			iStart = iEnd;
+			iEnd = iTemp;
+		}
 	}
-	sNormalized = __xuiCodeDocumentNormalizeText(sText, -1, &iInsertLength);
+	sNormalized = __xuiCodeDocumentNormalizeText(sText, iTextLength, &iInsertLength);
 	if ( sNormalized == NULL ) {
 		__xuiCodeDocumentSetError(pDocument, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1780,7 +1792,15 @@ XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char*
 XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText)
 {
     xui_code_document_call_t call={0};int status=__xuiCodeDocumentCallBegin(pDocument,&call);
-    if(status==XUI_OK)status=__xuiCodeDocumentImplReplace(pDocument,iStart,iEnd,sText);
+    if(status==XUI_OK)status=__xuiCodeDocumentImplReplace(pDocument,iStart,iEnd,sText,-1);
+    return __xuiCodeDocumentCallEnd(&call,status);
+}
+
+int xuiInternalCodeDocumentReplaceLength(xui_code_document document,int start,int end,const char* text,int bytes)
+{
+    if(bytes<0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_document_call_t call={0};int status=__xuiCodeDocumentCallBegin(document,&call);
+    if(status==XUI_OK)status=__xuiCodeDocumentImplReplace(document,start,end,text,bytes);
     return __xuiCodeDocumentCallEnd(&call,status);
 }
 

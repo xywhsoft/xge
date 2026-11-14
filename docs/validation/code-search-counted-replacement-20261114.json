@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Counted search replacement, normalized advancement, exact UTF-8 ranges and whole-call document lifetime.",
+  "parentRevision": "de19f702815d5da5a510ee04865bf61bbd879fec",
+  "qualified": true,
+  "publicAbiChange": false,
+  "shippingDelivery": false,
+  "fullGoalComplete": false,
+  "networkTests": false,
+  "sources": {
+    "src/xui/code/xui_code_document.c": "e1267e4725e61f719f9713b9b1d9064c30e77f8211460616dd282e174ca962fe",
+    "src/xui/code/xui_code_document_internal.h": "7d25936f76b6303fa9d019a7b0b1048fea2641aeca7263002ec85e19c350d416",
+    "src/xui/code/xui_code_search.c": "8fb12c7f8ecc752f1973c1e366e5f862ee24a549849f07caeb92745c0f24340a",
+    "tests/xui/xui_code_search_outcome_test.c": "5b00fb5f1633df59d4ec69d2acf4f4d66b70470ae3f54696abfa0a730c86cb9a",
+    "tools/test/check_code_search_outcome.py": "bba9b0a46f8d5aec7da59bab8c6363ff6d7ea2efb59695cc6b4573a414677762",
+    "docs/code-search-counted-replacement.md": "6b56de94021c3ae333857c0788e932b9a6535b70bd27d50e5c805106206c772f"
+  },
+  "platforms": {
+    "win": {
+      "reports": {
+        "native": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-native-win-r2\\results.json",
+          "sha256": "6ce5f30368f001c355a29b5f0658e8746bb3673a7c68b7c4a07565d8dcb9ee16",
+          "commands": 36,
+          "refused": 0
+        },
+        "editing-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-editing-regression-win-r3\\results.json",
+          "sha256": "9e9345e2844b64d453f4b90a43fa60219f9ceb3b671355e8543aa6dd9dae3d29",
+          "commands": 24,
+          "refused": 0
+        },
+        "document-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-document-regression-win-r2\\results.json",
+          "sha256": "0fcb40c9674669bdc69afaecbfd890de22101efd48362ed2ea67be6d091f6850",
+          "commands": 4,
+          "refused": 0
+        },
+        "legacy": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-legacy-win-r3\\results.json",
+          "sha256": "7c1218954d5d25373e330169792f3f7dd64a818fa0381e75e556f390c4fd61b4",
+          "commands": 32,
+          "refused": 8
+        },
+        "unicode-control": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-unicode-control-win-r1\\results.json",
+          "sha256": "49ed4a814e397b374de200c1e75f98986042668eafe9ebbfb9c45a364c4eff3f",
+          "commands": 8,
+          "refused": 4
+        }
+      },
+      "build": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-sdk-win-r2\\results.json",
+        "sha256": "14657c09ee9653cd2867696d998bbc7c848581260e9ef90e3918ec6d50149393"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-search-win-freeze-r2.json",
+        "sha256": "85e650f53f28ddef733be9787f9d1f539adf2f3041ef48d48e5380daf725e993"
+      },
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-cost-win-r2\\results.json",
+        "sha256": "c559d20df93eb52c356d7b4fb10b11f4c3e6458b2d85dd718c138d821eb2c1cc",
+        "deltas": {
+          "bytes": 2048,
+          "text": 1664,
+          "bss": 0
+        }
+      }
+    },
+    "linux": {
+      "reports": {
+        "native": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-native-linux-r2\\results.json",
+          "sha256": "b2c560a8fac413aef013974b85f0d69c6bc0f9e2a4d2258de8ee84f903a865ac",
+          "commands": 36,
+          "refused": 0
+        },
+        "editing-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-editing-regression-linux-r3\\results.json",
+          "sha256": "5d2ae3c020bcbc46ba7b3876569c68477931be7edfb1d555f30d65335bbfba4d",
+          "commands": 24,
+          "refused": 0
+        },
+        "document-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-document-regression-linux-r2\\results.json",
+          "sha256": "bee8f6cd73152242af96a73109f01eafd9718ce62d57784b2224540e4a4456a2",
+          "commands": 4,
+          "refused": 0
+        },
+        "legacy": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-legacy-linux-r3\\results.json",
+          "sha256": "de8ebc56c791e7a96cb11fbaa5afee253acdf0248c1edac57799b89513828d95",
+          "commands": 32,
+          "refused": 8
+        },
+        "unicode-control": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-unicode-control-linux-r1\\results.json",
+          "sha256": "1db08d71e49f53c53a976bafafbafb8a26d1bec5ef596f3a6a555f8221ebb1b3",
+          "commands": 8,
+          "refused": 4
+        }
+      },
+      "build": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-sdk-linux-r2\\results.json",
+        "sha256": "0e1cb6b4aeb23869694a153c0b5d657e6a41cfdf4ac9dc2aaace8e8258715905"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-code-search-linux-freeze-r2.json",
+        "sha256": "171469a61788bb31240fdf8b455eb257c6b8b8933fd38a1af22581ec4169d7bd"
+      },
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\code-search-cost-linux-r2\\results.json",
+        "sha256": "cf81e347d5b3c69e5bebd5be2f6ecd4eaec56cc322ecf2a7f024a5afdeddea69",
+        "deltas": {
+          "bytes": 32,
+          "text": 1600,
+          "bss": 0
+        }
+      }
+    }
+  },
+  "positiveNativeProcessSteps": 128,
+  "baselineControlSteps": 80,
+  "cpuEquivalenceClaim": false,
+  "limits": [
+    "No whole-engine source rebuild; dependency-qualified object reuse.",
+    "Legacy r3 tests are historical; immutable earlier snapshots retain their actual fixture/tool hashes.",
+    "Partial-grapheme legacy control uses bounded r1 candidate, not the original unbounded loop.",
+    "Editing regression win r2 failed due frozen fixture mode mismatch, not product output; r3 pins the current test-only overlay.",
+    "No interactive editor, final SDK/IDE delivery, complete XGE/XUI/Document claim or unrelated worktree edits."
+  ]
+}
