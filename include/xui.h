@@ -7002,6 +7002,15 @@ XUI_API int xuiTextLayoutLifetimeWatch(xui_text_layout pLayout,xui_lifetime_link
 
 /* 以新描述重置布局（复用对象）。 */
 XUI_API int xuiTextLayoutReset(xui_text_layout pLayout, const xui_text_layout_desc_t* pDesc);
+/* Refresh DPI once and read checked state. Any output may be NULL; failure
+ * leaves all state outputs unchanged. Scalar legacy getters below keep their
+ * original zero-on-failure ABI. */
+XUI_API int xuiTextLayoutGetState(xui_text_layout pLayout, xui_vec2_t* pSize, int* pLineCount, int* pTruncated);
+/* Borrow complete source bytes, including embedded NUL, after the same checked
+ * DPI refresh. Output is cleared on failure; the view lasts until reset,
+ * another DPI rebuild or destruction. Caller keeps the layout alive, reads on
+ * its creating thread and excludes mutations while using the borrowed view. */
+XUI_API int xuiTextLayoutGetTextView(xui_text_layout pLayout, xstrview* pView);
 /* 读取布局内容尺寸。 */
 XUI_API xui_vec2_t xuiTextLayoutGetSize(xui_text_layout pLayout);
 /* 读取布局行数。 */

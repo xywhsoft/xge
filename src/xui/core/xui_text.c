@@ -1944,6 +1944,8 @@ static int __xuiTextLayoutEnsureDpi(xui_text_layout layout,bool report)
     return __xuiTextLayoutRebuild(layout,&snapshot,true,report);
 }
 
+#include "xui_text_queries.inl"
+
 XUI_API xui_vec2_t xuiTextLayoutGetSize(xui_text_layout pLayout)
 {
 	xui_vec2_t tSize;
