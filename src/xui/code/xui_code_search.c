@@ -601,6 +601,7 @@ XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
 	if(iTextLength<0 || iTextLength==INT_MAX){
 		xui_cleanup_receipt_t result={0};xuiInternalCleanupStart(&result,XUI_ERROR_LIMIT_EXCEEDED);
+		xuiXrtRegexDestroy(pRegex);
 		return __xuiCodeSearchFinish(&scope,pDocument,0,&result);
 	}
 	sText = (char*)xrtMalloc((size_t)iTextLength + 1u);
@@ -718,45 +719,73 @@ XUI_API int xuiCodeSearchMarkAllPlain(xui_code_document pDocument, xui_code_anno
 
 XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_annotation_store pStore, const char* sPattern, uint32_t iFlags, int iIndicator, int* pMatchCount, char* sError, int iErrorCapacity)
 {
+#ifdef XRT_NO_REGEX
+	(void)pDocument; (void)pStore; (void)sPattern; (void)iFlags; (void)iIndicator;
+	if ( pMatchCount != NULL ) *pMatchCount = 0;
+	__xuiCodeSearchSetError(sError, iErrorCapacity, "XRT regex support is disabled");
+	return XUI_ERROR_UNSUPPORTED;
+#else
+	xui_xrt_regex_t* pRegex = NULL;
 	xui_code_search_result_t tResult;
-	int iOffset;
-	int iNext;
-	int iCount;
+	xui_code_document_scope_t scope = {0};
+	char* sText = NULL;
+	int iTextLength;
+	int iOffset = 0;
+	int iCount = 0;
 	int iRet;
 
 	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
 	if ( pMatchCount != NULL ) *pMatchCount = 0;
-	if ( (pDocument == NULL) || (pStore == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') ) {
+	if ( pDocument == NULL || pStore == NULL || sPattern == NULL || sPattern[0] == '\0' ) {
 		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = xuiCodeDocumentCallBegin(pDocument, &scope);
+	if ( iRet != XUI_OK ) return iRet;
 	iIndicator = __xuiCodeSearchIndicatorId(iIndicator);
 	(void)xuiCodeAnnotationClearIndicators(pStore, iIndicator);
-	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
-	iFlags &= ~XUI_CODE_SEARCH_WRAP;
-	iOffset = 0;
-	iCount = 0;
+	iTextLength = xuiCodeDocumentGetLength(pDocument);
+	if ( iTextLength < 0 || iTextLength == INT_MAX ) {
+		iRet = XUI_ERROR_LIMIT_EXCEEDED;
+		__xuiCodeSearchSetError(sError, iErrorCapacity, "document is too large");
+		goto cleanup;
+	}
+	sText = (char*)xrtMalloc((size_t)iTextLength + 1u);
+	if ( sText == NULL ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto cleanup; }
+	iRet = xuiCodeDocumentCopyRange(pDocument, 0, iTextLength, sText, iTextLength + 1, NULL);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = __xuiCodeSearchCreateRegex(&pRegex, sPattern, iFlags, sError, iErrorCapacity);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iFlags &= ~(XUI_CODE_SEARCH_BACKWARD | XUI_CODE_SEARCH_WRAP);
+	/* One immutable counted subject and one matcher for the whole operation. */
 	for ( ;; ) {
-		iRet = xuiCodeSearchFindRegex(pDocument, sPattern, iOffset, iFlags,
-			&tResult, sError, iErrorCapacity);
-		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
-		if ( iRet != XUI_OK ) return iRet;
+		iRet = __xuiCodeSearchFindRegexForward(pRegex, sText, iTextLength, iOffset, iTextLength, iFlags, &tResult);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) { iRet = XUI_OK; break; }
+		if ( iRet != XUI_OK ) goto cleanup;
 		if ( tResult.iEnd > tResult.iStart ) {
+			if ( iCount == INT_MAX ) { iRet = XUI_ERROR_LIMIT_EXCEEDED; goto cleanup; }
 			iRet = xuiCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tResult.iStart, tResult.iEnd, 0u, 0u);
-			if ( iRet != XUI_OK ) return iRet;
-			iCount++;
+			if ( iRet != XUI_OK ) goto cleanup;
+			++iCount;
 			iOffset = tResult.iEnd;
 		} else {
-			iNext = __xuiCodeSearchDocumentNextBoundary(pDocument,
-				xuiCodeDocumentGetLength(pDocument), tResult.iStart);
-			if ( iNext <= tResult.iStart ) break;
-			iOffset = iNext;
+			iOffset = __xuiCodeSearchNextBoundary(sText, iTextLength, tResult.iStart);
+			if ( iOffset <= tResult.iStart ) break;
 		}
-		if ( iOffset > xuiCodeDocumentGetLength(pDocument) ) break;
+		if ( iOffset > iTextLength ) break;
 	}
-	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
 	if ( pMatchCount != NULL ) *pMatchCount = iCount;
-	return XUI_OK;
+	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
+cleanup:
+	if ( iRet != XUI_OK && sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' ) {
+		__xuiCodeSearchSetError(sError, iErrorCapacity, iRet == XUI_ERROR_OUT_OF_MEMORY ? "out of memory" : "regex match failed");
+	}
+	xui_cleanup_receipt_t result = {0};
+	xuiInternalCleanupStart(&result, iRet);
+	xuiXrtRegexDestroy(pRegex);
+	xrtFree(sText);
+	return __xuiCodeSearchFinish(&scope, pDocument, 0, &result);
+#endif
 }
 
 #endif

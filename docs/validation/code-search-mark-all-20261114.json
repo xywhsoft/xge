@@ -1,0 +1,342 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "qualified": true,
+  "scope": "Single matcher/snapshot mark-all plus compiled-regex cleanup on the replacement length-limit branch.",
+  "parentRevision": "1b15f370cbeec7cfecc2cc8ef8ec4012fca7a9bc",
+  "shippingDelivery": false,
+  "fullGoalComplete": false,
+  "publicAbiChange": false,
+  "networkTests": false,
+  "sources": {
+    "src/xui/code/xui_code_search.c": "afda3bdf765a4186fc3e2bd8c7488ab0e02ec03db47b688c65e12636630b3f23",
+    "tests/xui/xui_code_search_mark_all_test.c": "4acdb0b17032eb6698cf7792f45b5b2a1f922a43532aab4a26deef0764607ca3",
+    "tools/test/check_code_search_mark_all.py": "21114edefe84e2b1987965ff88ff55c2ea7ea75ec8d9bb832cbcb54d65f44ff5",
+    "tests/xui/xui_code_search_no_regex_test.c": "b4efe54bd5307fc1653772cb813505a3cf87805f22060bfefdef48b8176fac4d",
+    "tools/test/check_code_search_no_regex.py": "fbc90b9a063dece554a8b2848ac269370ddc2d0f8c2b07f7e057bf819b2c014e",
+    "docs/code-search-mark-all.md": "b134d60e7bcc701ad83fd506c67676a36628c08bfb791ccce70d5dec8c64360d"
+  },
+  "platforms": {
+    "win": {
+      "reports": {
+        "native": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-native-win-r1\\results.json",
+          "sha256": "87fa80f0ea2b92bcf419fbfb46f0af3c100ea5ea0f16482b9892ef14bc0433ef",
+          "commands": 18,
+          "refused": 0
+        },
+        "search-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-search-regression-win-r1\\results.json",
+          "sha256": "b445ffbdc8f435e4b0e67967208aabf6ccb08d25063138a004419f63af94a71b",
+          "commands": 36,
+          "refused": 0
+        },
+        "editing-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-editing-regression-win-r1\\results.json",
+          "sha256": "86d805c74b4b1263fdf7b58b5a3a3ca195a45d34530706c0b88bf71320a2cafd",
+          "commands": 24,
+          "refused": 0
+        },
+        "document-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-document-regression-win-r1\\results.json",
+          "sha256": "6147a04376a6c4f2d3456cae5a0575d596fe36eb3b87e990db2986913c8626e7",
+          "commands": 4,
+          "refused": 0
+        },
+        "legacy": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-legacy-win-r3\\results.json",
+          "sha256": "56c79e97df94e8ab370109a689b680303c847945b8faed0a9a71be6036e5ecc6",
+          "commands": 18,
+          "refused": 6
+        },
+        "no-regex": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-no-regex-win-r3\\results.json",
+          "sha256": "e389cd1965d0ac26fc1263414225cf07000079a1e30b2f2bf549ee0436cc6def",
+          "commands": 4,
+          "refused": 0
+        }
+      },
+      "build": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-sdk-win-r1\\results.json",
+        "sha256": "d8399c9be9ab4b3b678f1b711c67ffb0b894262e165d21ff04b2b39de2c8604b"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-annotation-win-freeze-r1.json",
+        "sha256": "cc3e1685f2d84854f0591b4cd630d9a31606ef81e6dff7404542f2a1f6bb9628"
+      },
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-cost-win-r1\\results.json",
+        "sha256": "2dad1ad4cdc40caadb0843afad19a1b9d01ddba7c20c7f20809726d76f33b360",
+        "deltas": {
+          "bytes": 512,
+          "text": 896,
+          "bss": 0
+        }
+      },
+      "work": {
+        "host-O0": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "host-O2": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "static-O0": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 65,
+            "copiedBytes": 16640,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 1,
+            "copiedBytes": 256,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "static-O2": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 65,
+            "copiedBytes": 16640,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 1,
+            "copiedBytes": 256,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        }
+      }
+    },
+    "linux": {
+      "reports": {
+        "native": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-native-linux-r1\\results.json",
+          "sha256": "857550451506fda7f85dcc62a2577571cbdabebfc6fa7887836a1859100add35",
+          "commands": 18,
+          "refused": 0
+        },
+        "search-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-search-regression-linux-r1\\results.json",
+          "sha256": "9c5221c42e6579799e63795a6c2e87e58a661067c1dc5de59b0e007639441b88",
+          "commands": 36,
+          "refused": 0
+        },
+        "editing-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-editing-regression-linux-r1\\results.json",
+          "sha256": "95876b73b4a618be8d3c877e5ea6183f058ac1ab67d570fa9297b47abe4700c5",
+          "commands": 24,
+          "refused": 0
+        },
+        "document-regression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-document-regression-linux-r1\\results.json",
+          "sha256": "e60e5c683d0b6b05d72d2d261dc1f3b67ae5f44fa91c52271d0fae1749c01a12",
+          "commands": 4,
+          "refused": 0
+        },
+        "legacy": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-legacy-linux-r3\\results.json",
+          "sha256": "47cd9503e87191bb5a9a45769b02cba0243c90afa519c2850c053e3b5ea8f8fe",
+          "commands": 18,
+          "refused": 6
+        },
+        "no-regex": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-no-regex-linux-r3\\results.json",
+          "sha256": "269e2c15b5386aef0d5fcb8caf7fa9ff084b5177761225af50744af4824413bb",
+          "commands": 4,
+          "refused": 0
+        }
+      },
+      "build": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-sdk-linux-r1\\results.json",
+        "sha256": "3414815e1e27249e1517a3b4a62e6f0b41e8708b04ab8df03e2435047b38ac02"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-annotation-linux-freeze-r1.json",
+        "sha256": "733e9cdee3a15bd5d56b54a5e706cdabd86b67c067c057097623524a1b8721c2"
+      },
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\annotation-cost-linux-r1\\results.json",
+        "sha256": "1ccca7abdcb1e2e2bd88d8df940484ea2f494070352f34602922806503d5904b",
+        "deltas": {
+          "bytes": -32,
+          "text": 704,
+          "bss": 0
+        }
+      },
+      "work": {
+        "host-O0": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "host-O2": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 0,
+            "copiedBytes": 0,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "static-O0": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 65,
+            "copiedBytes": 16640,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 1,
+            "copiedBytes": 256,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        },
+        "static-O2": {
+          "old": {
+            "count": 64,
+            "compiles": 65,
+            "matchers": 65,
+            "releases": 65,
+            "copies": 65,
+            "copiedBytes": 16640,
+            "alloc": 3825,
+            "free": 3825,
+            "realloc": 1949
+          },
+          "new": {
+            "count": 64,
+            "compiles": 1,
+            "matchers": 1,
+            "releases": 1,
+            "copies": 1,
+            "copiedBytes": 256,
+            "alloc": 68,
+            "free": 68,
+            "realloc": 37
+          }
+        }
+      }
+    }
+  },
+  "actualSdkProcessSteps": 164,
+  "disabledSourceSteps": 8,
+  "baselineControlSteps": 36,
+  "cpuEquivalenceClaim": false,
+  "limits": [
+    "Length boundary uses static test-only GetLength wrapping; not an executed 2 GiB document.",
+    "Disabled source checks compile the frozen search implementation; not a complete disabled-feature SDK.",
+    "No public ABI, whole-engine rebuild, interactive UI, network/security test or final delivery.",
+    "Initial no-regex Win probe lacked libraries for PE unresolved unused sections; qualified r3 pins exact SDK/runtime link on Windows.",
+    "Unrelated UI worktree changes are excluded."
+  ]
+}
