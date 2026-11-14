@@ -332,7 +332,10 @@ int xgeParticleDefinitionGet(xge_particle_definition d, int i, xge_particle_emit
 	return XGE_OK;
 }
 
+#include "xge_particle_owned.inl"
 int xgeParticleWorldCreate(xge_particle_world *out, const xge_particle_world_desc_t *input)
+{return xp_world_create(out,input,false);}
+static int xp_world_create(xge_particle_world *out, const xge_particle_world_desc_t *input,bool owned)
 {
 	xge_particle_world w;
 	xge_particle_world_desc_t d;
@@ -346,10 +349,12 @@ int xgeParticleWorldCreate(xge_particle_world *out, const xge_particle_world_des
 	    d.iMaxEvents > XP_LIMIT || !d.iMaxSpawnPerStep || d.iMaxSpawnPerStep > XP_LIMIT || !d.iMaxSubsteps ||
 	    d.iMaxSubsteps > 4096 || !xp_finite(d.fFixedStep) || d.fFixedStep < .0001f || d.fFixedStep > 1)
 		return XGE_ERROR_INVALID_ARGUMENT;
-	w = (xge_particle_world)xrtCalloc(1, sizeof(*w));
+	w = (xge_particle_world)xrtCalloc(1, owned ? sizeof(xp_world_owned_t):sizeof(*w));
 	if (!w)
 		return XGE_ERROR_OUT_OF_MEMORY;
 	w->desc = d;
+	w->managed=owned;
+	xp_world_lifetime_init(w);
 	xrtPoolInit(&w->pool, sizeof(xp_effect));
 	xrtSlotMapInit(&w->handles);
 	xrtArrayInit(&w->effects, sizeof(xp_effect *));
@@ -364,11 +369,9 @@ int xgeParticleWorldCreate(xge_particle_world *out, const xge_particle_world_des
 	*out = w;
 	return XGE_OK;
 }
-void xgeParticleWorldFree(xge_particle_world w)
+static void xp_world_contents_free(xge_particle_world w)
 {
 	size_t i;
-	if (!w || w->busy)
-		return;
 	for (i = 0; i < w->effects.Count; i++)
 	{
 		xp_effect *f = ((xp_effect **)w->effects.Data)[i];
@@ -380,7 +383,12 @@ void xgeParticleWorldFree(xge_particle_world w)
 	xrtArrayUnit(&w->spawns);
 	xrtSlotMapUnit(&w->handles);
 	xrtPoolUnit(&w->pool);
-	xrtFree(w);
+}
+void xgeParticleWorldFree(xge_particle_world w)
+{
+	bool managed=w && w->managed;
+	int status=xgeParticleWorldFreeChecked(w);
+	if(managed && status<0 && !xrtGetError())xrtSetErrorKind(XERR_STATE);
 }
 static xp_effect *xp_cache(xge_particle_world w, xge_particle_definition d, int forceNew)
 {
@@ -447,12 +455,13 @@ static xp_effect *xp_cache(xge_particle_world w, xge_particle_definition d, int 
 }
 int xgeParticleWorldReserve(xge_particle_world w, xge_particle_definition d, uint32_t count)
 {
+	XP_WORLD_ENTER(w);
 	size_t i;
 	uint32_t available = 0;
 	if (!w || !d || count > w->desc.iMaxEffects)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	for (i = 0; i < w->effects.Count; i++)
 	{
 		xp_effect *f = ((xp_effect **)w->effects.Data)[i];
@@ -462,10 +471,10 @@ int xgeParticleWorldReserve(xge_particle_world w, xge_particle_definition d, uin
 	while (available < count)
 	{
 		if (!xp_cache(w, d, 1))
-			return XGE_ERROR_OUT_OF_MEMORY;
+			XP_WORLD_RETURN(XGE_ERROR_OUT_OF_MEMORY);
 		available++;
 	}
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 static void xp_reset(xge_particle_world w, xp_effect *f, uint64_t seed)
 {
@@ -482,63 +491,67 @@ static void xp_reset(xge_particle_world w, xp_effect *f, uint64_t seed)
 int xgeParticlePlay(xge_particle_world w, xge_particle_definition d, const xge_particle_play_t *input,
                     xge_particle_effect *out)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f;
 	xge_particle_play_t p;
 	if (!out)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	*out = 0;
 	if (!w || !d)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	xgeParticlePlayInit(&p);
 	if (input)
 		p = *input;
 	if (!xp_transform_valid(&p.tTransform) || !xp_parameters_valid(&p.tParameters) || p.iCullPolicy < 0 ||
 	    p.iCullPolicy > 2)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	f = xp_cache(w, d, 0);
 	if (!f)
-		return XGE_ERROR_OUT_OF_MEMORY;
+		XP_WORLD_RETURN(XGE_ERROR_OUT_OF_MEMORY);
 	f->handle = xrtSlotMapInsert(&w->handles, f);
 	if (!f->handle)
-		return XGE_ERROR_OUT_OF_MEMORY;
+		XP_WORLD_RETURN(XGE_ERROR_OUT_OF_MEMORY);
 	f->play = p;
 	f->visible = 1;
 	xp_reset(w, f, p.iSeed);
 	*out = f->handle;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleRelease(xge_particle_world w, xge_particle_effect h)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	w->stats.iLiveParticles -= (uint32_t)f->particles.Count;
 	xrtArrayClear(&f->particles);
 	xrtSlotMapRemove(&w->handles, h, NULL);
 	f->handle = 0;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleRestart(xge_particle_world w, xge_particle_effect h, uint64_t seed)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	xp_reset(w, f, seed);
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticlePause(xge_particle_world w, xge_particle_effect h, int paused)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy || f->state == XGE_PARTICLE_FINISHED)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (paused && f->state != XGE_PARTICLE_PAUSED)
 	{
 		f->resumeState = f->state;
@@ -549,15 +562,16 @@ int xgeParticlePause(xge_particle_world w, xge_particle_effect h, int paused)
 		f->state = f->resumeState;
 		f->previous = f->current = f->play.tTransform;
 	}
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleStop(xge_particle_world w, xge_particle_effect h, int clear)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	f->state = XGE_PARTICLE_DRAINING;
 	if (clear)
 	{
@@ -567,48 +581,52 @@ int xgeParticleStop(xge_particle_world w, xge_particle_effect h, int clear)
 		for (i = 0; i < f->definition->emitters.Count; i++)
 			f->emitters[i].live = 0;
 	}
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleSetTransform(xge_particle_world w, xge_particle_effect h, const xge_particle_transform_t *t)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (!xp_transform_valid(t))
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	f->play.tTransform = *t;
 	if (f->state == XGE_PARTICLE_PAUSED)
 		f->previous = f->current = *t;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleSetParameters(xge_particle_world w, xge_particle_effect h, const xge_particle_parameters_t *p)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (!xp_parameters_valid(p))
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	f->play.tParameters = *p;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleSetVisible(xge_particle_world w, xge_particle_effect h, int visible)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	f->visible = !!visible;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleState(xge_particle_world w, xge_particle_effect h)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
-	return f ? f->state : XGE_ERROR_NOT_FOUND;
+	XP_WORLD_RETURN(f ? f->state : XGE_ERROR_NOT_FOUND);
 }
 
 static uint32_t xp_tint(uint32_t a, uint32_t b)
@@ -796,15 +814,16 @@ static void xp_subemit(xge_particle_world w, xp_effect *f, float dt)
 int xgeParticleEmit(xge_particle_world w, xge_particle_effect h, int emitter, uint32_t count,
                     uint32_t *spawned)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	if (spawned)
 		*spawned = 0;
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy || f->state != XGE_PARTICLE_PLAYING)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (emitter < 0 || (size_t)emitter >= f->definition->emitters.Count)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	w->busy = 1;
 	w->stepSpawned = 0;
 	xrtArrayClear(&w->spawns);
@@ -814,7 +833,7 @@ int xgeParticleEmit(xge_particle_world w, xge_particle_effect h, int emitter, ui
 	w->busy = 0;
 	if (spawned)
 		*spawned = count;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 static uint32_t xp_hash(uint32_t x)
 {
@@ -1153,13 +1172,14 @@ static void xp_step(xge_particle_world w, xp_effect *f, float dt)
 }
 int xgeParticleUpdate(xge_particle_world w, double delta)
 {
+	XP_WORLD_ENTER(w);
 	uint32_t steps, k;
 	size_t i;
 	double total, available, start;
 	if (!w || !isfinite(delta) || delta < 0 || delta > 3600)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	start = xrtTimer();
 	total = w->remainder + delta;
 	available = floor(total / w->desc.fFixedStep + 1e-9);
@@ -1195,18 +1215,19 @@ int xgeParticleUpdate(xge_particle_world w, double delta)
 			xgeParticleRelease(w, f->handle);
 	}
 	w->stats.fLastUpdateSeconds = xrtTimer() - start;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticlePrewarm(xge_particle_world w, xge_particle_effect h, float seconds)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	double time = 0;
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy || f->state != XGE_PARTICLE_PLAYING)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (!xp_finite(seconds) || seconds < 0 || seconds > 60 || seconds / w->desc.fFixedStep > 100000)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	w->busy = 1;
 	w->suppressEvents = 1;
 	f->previous = f->current = f->play.tTransform;
@@ -1220,16 +1241,17 @@ int xgeParticlePrewarm(xge_particle_world w, xge_particle_effect h, float second
 	}
 	w->suppressEvents = 0;
 	w->busy = 0;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *user)
 {
+	XP_WORLD_ENTER(w);
 	size_t i, j;
 	int keep = 1;
 	if (!w || !visit)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	w->busy = 1;
 	for (i = 0; i < w->effects.Count && keep; i++)
 	{
@@ -1244,17 +1266,18 @@ int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *
 		}
 	}
 	w->busy = 0;
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleBounds(xge_particle_world w, xge_particle_effect h, xge_rect_t *bounds)
 {
+	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	size_t i;
 	float left = FLT_MAX, top = FLT_MAX, right = -FLT_MAX, bottom = -FLT_MAX;
 	if (!f)
-		return XGE_ERROR_NOT_FOUND;
+		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (!bounds)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	for (i = 0; i < f->particles.Count; i++)
 	{
 		xge_particle_snapshot_t s;
@@ -1271,29 +1294,38 @@ int xgeParticleBounds(xge_particle_world w, xge_particle_effect h, xge_rect_t *b
 	}
 	*bounds = f->particles.Count ? (xge_rect_t){left, top, right - left, bottom - top}
 	                             : (xge_rect_t){f->current.tPosition.fX, f->current.tPosition.fY, 0, 0};
-	return XGE_OK;
+	XP_WORLD_RETURN(XGE_OK);
 }
 int xgeParticleEventPoll(xge_particle_world w, xge_particle_event_t *event)
 {
+	XP_WORLD_ENTER(w);
 	if (!w || !event)
-		return XGE_ERROR_INVALID_ARGUMENT;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
-		return XGE_ERROR_INVALID_STATE;
+		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
 	if (!w->eventCount)
-		return 0;
+		XP_WORLD_RETURN(0);
 	*event = ((xge_particle_event_t *)w->events.Data)[w->eventHead];
 	w->eventHead = (w->eventHead + 1) % w->desc.iMaxEvents;
 	w->eventCount--;
-	return 1;
+	XP_WORLD_RETURN(1);
 }
 xge_particle_stats_t xgeParticleStats(xge_particle_world w)
 {
 	xge_particle_stats_t s = {0};
-	if (!w)
+	xp_world_frame frame={0};int status=xp_world_enter(w,&frame);
+	if(status!=XGE_OK){if(!xrtGetError())xrtSetErrorKind(XERR_STATE);return s;}
+	if (!w) {
+		(void)xp_world_end(&frame,XGE_OK);
 		return s;
+	}
 	s = w->stats;
 	s.iActiveEffects = (uint32_t)w->handles.Count;
 	s.iCachedEffects = (uint32_t)w->effects.Count - s.iActiveEffects;
 	s.iPendingEvents = w->eventCount;
+	status=xp_world_end(&frame,XGE_OK);
+	if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
 	return s;
 }
+#undef XP_WORLD_ENTER
+#undef XP_WORLD_RETURN

@@ -4005,6 +4005,26 @@ XGE_API int xgeParticleDefinitionLoad(xge_particle_definition* ppDefinition, con
 XGE_API int xgeParticleDefinitionStringify(xge_particle_definition pDefinition, int bXson, char** ppText, size_t* pSize);
 /* 创建粒子仿真世界（纯 CPU 定步长）。 */
 XGE_API int xgeParticleWorldCreate(xge_particle_world* ppWorld, const xge_particle_world_desc_t* pDesc);
+/* Explicit creator-thread/shared ownership over the SAME native world. These
+ * factories currently reject borrowed collision callbacks/users; an owned
+ * callback registration must supply its own lifetime contract. NULL desc uses
+ * native defaults. Code owner Hold/Drop obey xge_callback_owner_t, including
+ * the complete native return tail. The raw Create/Free contract is unchanged. */
+XGE_API int xgeParticleWorldCreateOwned(xge_particle_world* ppWorld, const xge_particle_world_desc_t* pDesc);
+XGE_API int xgeParticleWorldCreateOwnedWithCode(xge_particle_world* ppWorld,
+	const xge_particle_world_desc_t* pDesc, const xge_callback_owner_t* pCodeOwner);
+XGE_API int xgeParticleWorldShareOwned(xge_particle_world pWorld, xge_particle_world* ppWorld);
+/* consumed is authoritative even if cleanup returns a checked failure. Active
+ * calls own independent references, so owner release cannot free their body. */
+XGE_API int xgeParticleWorldReleaseOwnerChecked(xge_particle_world pWorld, bool* pConsumed);
+XGE_API int xgeParticleWorldFreeChecked(xge_particle_world pWorld);
+XGE_API xrtownershipref xgeParticleWorldOwnership(xge_particle_world pWorld);
+XGE_API const xrtownershipadapterv1* xgeParticleWorldOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeParticleWorldOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeParticleWorldOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeParticleWorldOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeParticleWorldOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeParticleWorldOwnershipReadReady(xrtownershipref ref);
 /* 释放世界（不影响定义）。 */
 XGE_API void xgeParticleWorldFree(xge_particle_world pWorld);
 /* Reserve caches inactive instances and their buffers; partial success is retained on OOM. */

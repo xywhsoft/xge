@@ -1,6 +1,7 @@
 #ifndef XGE_PARTICLE_INTERNAL_H
 #define XGE_PARTICLE_INTERNAL_H
 #include "xge.h"
+#include "../core/xge_data_lifetime_internal.h"
 
 struct xge_particle_definition_t
 {
@@ -49,7 +50,17 @@ struct xge_particle_world_t
 	uint32_t eventHead, eventCount, stepSpawned;
 	uint64_t serial;
 	double remainder;
-	int busy, suppressEvents;
+	/* These were two private boolean-valued ints. Their existing eight-byte
+	 * slot also fits the mode flags without growing the raw C world. */
+	bool busy, suppressEvents, managed, destroyed;
 	xge_particle_stats_t stats;
 };
+typedef struct xp_world_owned_t {
+	/* Exact public handle/body at offset zero; only managed Create allocates
+	 * this larger record. There is no second simulation or owning wrapper. */
+	struct xge_particle_world_t world;
+	atomic_uint refs;
+	xge_callback_owner_t codeOwner;
+	xge_data_lifetime_t lifetime;
+} xp_world_owned_t;
 #endif
