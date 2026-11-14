@@ -1034,17 +1034,26 @@ static int __xuiRadioInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->bChecked = (pDesc != NULL) ? (pDesc->bChecked != 0) : 0;
 	pData->bUseBuiltinAtlas = (pDesc != NULL) ? (pDesc->bUseBuiltinAtlas != 0) : 0;
 	iRet = __xuiRadioTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	tPadding = (xui_thickness_t){4.0f, 3.0f, 4.0f, 3.0f};
 	iRet = xuiWidgetSetPadding(pWidget, tPadding);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiRadioInitCacheStates(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiRadioInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiRadioSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiRadioSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* The generic chain destroys completed init stages. Until this stage
+	 * succeeds it must release its own text; Widget still owns cache/events,
+	 * and the Font slot is only borrowed until resource admission. */
+	xrtFree(pData->sText);
+	pData->sText = NULL;
+	pData->iTextCapacity = 0;
+	return iRet;
 }
 
 static void __xuiRadioDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -1167,7 +1176,10 @@ XUI_API xui_widget_type xuiRadioGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "radio";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	/* Borrowed indicator surfaces can change generation without dirtying the
+	 * widget tree. Keep their existing dependency probe in the frame pass. */
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_radio_data_t);
 	tDesc.onInit = __xuiRadioInit;
 	tDesc.onDestroy = __xuiRadioDestroy;

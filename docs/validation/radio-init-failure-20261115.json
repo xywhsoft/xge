@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "qualified-native-fix",
+  "shippingDelivery": false,
+  "scope": "Radio partial initialization text cleanup and borrowed indicator surface generation polling; no public ABI change.",
+  "sourceSha256": {
+    "src/xui/controls/xui_radio.c": "e83443385dd907ce9a98bb9da90ea6e624c9f9345cfaae9d9c1094f202c560e8",
+    "tests/xui/xui_radio_init_failure_test.c": "1d22b17a29c74dee26fb5ff64b4b5b61412724c2e31972db7a7d6711c0d7470a",
+    "tools/test/check_radio_init_failure.py": "1d388dcceb62c35c30e75fa078780a9dbe4d720e8b3db33892a4c15c137ed972"
+  },
+  "qualification": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-native-evidence-win-r3.json",
+      "sha256": "6031d8bbccb82a21ec0785b55ece71f732d8bc7a7f240a519e4f2b5f9dfaa20e",
+      "passed": true,
+      "acceptance": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\radio-native-win-r3\\results.json",
+        "sha256": "d8c3f1780ec3ed7e92c27f13ee991becbde599ebfb7e88a6a018f68d3e2fbce2",
+        "commands": 16,
+        "allocationPrefixesPerRun": 192,
+        "executions": 8
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\radio-option-sdk-win-r3\\results.json",
+        "sha256": "98eb7384a8e4bf2ca12a720a11d550777092d4ef61c508c118b6e63e41157d83"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-radio-option-win-freeze-r3.json",
+        "sha256": "d4815aa263f66a45ab4b45483e203146550eadd3d4656fc5629c686b3942a865"
+      }
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-native-evidence-linux-r3.json",
+      "sha256": "2b2970278804ada0679d57f2b08819f14b5938536f2092da86c0cf87aacbc922",
+      "passed": true,
+      "acceptance": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/radio-native-linux-r3/results.json",
+        "sha256": "e10293c17dbb14851f3c3589b78c0c29aa790665c5f3156419cdfee226f1dfcc",
+        "commands": 16,
+        "allocationPrefixesPerRun": 192,
+        "executions": 8
+      },
+      "sdk": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/radio-option-sdk-linux-r3/results.json",
+        "sha256": "ce37ae00dce145c2b8bf8b818c534dd0e8d05066a6648673fe4debe2fe97506c"
+      },
+      "freeze": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/native-radio-option-linux-freeze-r3.json",
+        "sha256": "84b20958408d87aa119c03809bfbd61b236ab7f222b1e2ba5f67bc12c6f751cd"
+      }
+    }
+  },
+  "oldSdkControls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-native-old-sdk-win-r1\\results.json",
+      "sha256": "eb22d870a57473ca342a73fd44a3ad12babeab2f2313d3614f7bcd8d28460a05"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-legacy-old-sdk-win-r1\\run.log",
+      "sha256": "c198eee73def5656e75f51bfa1d170c0d4f70cdc67f3b53d7340058496af2edc"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-option-native-diagnostic-linux-r1\\run.log",
+      "sha256": "171e8b9b9bc4d99bb59062863d6dac7086e76a87b718cf850126f2f75d923ce5"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\radio-option-native-diagnostic-win-r1\\run.log",
+      "sha256": "2558fee8d9a35139fc345ea36c4a5522e84a0d34043ee874a436026bfd71e543"
+    }
+  ],
+  "rebuild": "O2 hosted relink: 2 compiled,162 reused from original full164/0 SDK. Static: 3 compiled including generated contract,163 reused. No repeated full compiler/native build claim.",
+  "cost": "Radio retains existing frame-dependent surface probes even on clean frames. Unchanged generation still reuses cache. No CPU-equivalence claim.",
+  "limits": [
+    "Only this built-in initializer allocation cleanup qualified; other constructors need separate audit.",
+    "Only Radio resource-generation policy changed; no blanket per-frame traversal policy.",
+    "CPU backend tests; no physical GPU/driver or network tests.",
+    "Historical failed reports preserved. No shipping installation, push or version update."
+  ]
+}
