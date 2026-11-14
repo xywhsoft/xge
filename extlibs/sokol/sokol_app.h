@@ -2275,6 +2275,7 @@ inline void sapp_run(const sapp_desc& desc) { return sapp_run(&desc); }
 #endif
 
 #include <stdlib.h> // malloc, free
+#include <limits.h> // INT_MAX (startup buffer extents)
 #include <string.h> // memset, strncmp
 #include <stddef.h> // size_t
 #include <math.h>   // roundf
@@ -3449,7 +3450,9 @@ _SOKOL_PRIVATE void* _sapp_malloc(size_t size) {
 
 _SOKOL_PRIVATE void* _sapp_malloc_clear(size_t size) {
     void* ptr = _sapp_malloc(size);
-    _sapp_clear(ptr, size);
+    if (ptr) {
+        _sapp_clear(ptr, size);
+    }
     return ptr;
 }
 
@@ -3601,7 +3604,11 @@ _SOKOL_PRIVATE sapp_desc _sapp_desc_defaults(const sapp_desc* desc) {
     return res;
 }
 
-_SOKOL_PRIVATE void _sapp_init_state(const sapp_desc* desc) {
+_SOKOL_PRIVATE void _sapp_discard_state(void);
+
+// XGE's logger returns after recording a panic. Fail before platform setup,
+// balancing any startup buffers without calling application callbacks.
+_SOKOL_PRIVATE bool _sapp_init_state(const sapp_desc* desc) {
     SOKOL_ASSERT(desc);
     SOKOL_ASSERT(desc->width >= 0);
     SOKOL_ASSERT(desc->height >= 0);
@@ -3627,13 +3634,24 @@ _SOKOL_PRIVATE void _sapp_init_state(const sapp_desc* desc) {
     if (_sapp.clipboard.enabled) {
         _sapp.clipboard.buf_size = _sapp.desc.clipboard_size;
         _sapp.clipboard.buffer = (char*) _sapp_malloc_clear((size_t)_sapp.clipboard.buf_size);
+        if (!_sapp.clipboard.buffer) {
+            goto fail;
+        }
     }
     _sapp.drop.enabled = _sapp.desc.enable_dragndrop;
     if (_sapp.drop.enabled) {
         _sapp.drop.max_files = _sapp.desc.max_dropped_files;
         _sapp.drop.max_path_length = _sapp.desc.max_dropped_file_path_length;
+        if ((_sapp.drop.max_files <= 0) || (_sapp.drop.max_path_length <= 0) ||
+            (_sapp.drop.max_files > INT_MAX / _sapp.drop.max_path_length)) {
+            _SAPP_PANIC(MALLOC_FAILED);
+            goto fail;
+        }
         _sapp.drop.buf_size = _sapp.drop.max_files * _sapp.drop.max_path_length;
         _sapp.drop.buffer = (char*) _sapp_malloc_clear((size_t)_sapp.drop.buf_size);
+        if (!_sapp.drop.buffer) {
+            goto fail;
+        }
     }
     _sapp_strcpy(_sapp.desc.window_title, _sapp.window_title, sizeof(_sapp.window_title));
     _sapp.desc.window_title = _sapp.window_title;
@@ -3643,15 +3661,17 @@ _SOKOL_PRIVATE void _sapp_init_state(const sapp_desc* desc) {
     #if defined(_SAPP_USE_FILTERED_FRAME_TIMING)
     _sapp_timing_init(&_sapp.timing);
     #endif
+    return true;
+fail:
+    _sapp_discard_state();
+    return false;
 }
 
 _SOKOL_PRIVATE void _sapp_discard_state(void) {
-    if (_sapp.clipboard.enabled) {
-        SOKOL_ASSERT(_sapp.clipboard.buffer);
+    if (_sapp.clipboard.buffer) {
         _sapp_free((void*)_sapp.clipboard.buffer);
     }
-    if (_sapp.drop.enabled) {
-        SOKOL_ASSERT(_sapp.drop.buffer);
+    if (_sapp.drop.buffer) {
         _sapp_free((void*)_sapp.drop.buffer);
     }
     if (_sapp.default_icon_pixels) {
@@ -5553,7 +5573,9 @@ _SOKOL_PRIVATE void _sapp_macos_init_cursors(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_macos_run(const sapp_desc* desc) {
-    _sapp_init_state(desc);
+    if (!_sapp_init_state(desc)) {
+        return;
+    }
     _sapp_macos_init_keytable();
     [NSApplication sharedApplication];
 
@@ -6628,7 +6650,9 @@ _SOKOL_PRIVATE void _sapp_ios_discard_state(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_ios_run(const sapp_desc* desc) {
-    _sapp_init_state(desc);
+    if (!_sapp_init_state(desc)) {
+        return;
+    }
     static int argc = 1;
     static char* argv[] = { (char*)"sokol_app" };
     UIApplicationMain(argc, argv, nil, NSStringFromClass([_sapp_scene_delegate class]));
@@ -8067,7 +8091,9 @@ _SOKOL_PRIVATE void _sapp_emsc_frame_main_loop(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_emsc_run(const sapp_desc* desc) {
-    _sapp_init_state(desc);
+    if (!_sapp_init_state(desc)) {
+        return;
+    }
     _sapp.fullscreen = false; // override user provided fullscreen state: can't start in fullscreen on the web!
     const char* document_title = desc->html5.update_document_title ? _sapp.window_title : 0;
     sapp_js_init(_sapp.html5_canvas_selector, document_title);
@@ -10172,7 +10198,9 @@ _SOKOL_PRIVATE bool _sapp_win32_is_win10_or_greater(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_win32_run(const sapp_desc* desc) {
-    _sapp_init_state(desc);
+    if (!_sapp_init_state(desc)) {
+        return;
+    }
     _sapp_win32_init_console();
     _sapp.win32.is_win10_or_greater = _sapp_win32_is_win10_or_greater();
     _sapp_win32_init_keytable();
@@ -10945,7 +10973,9 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* saved_state, size
     _sapp_clear(&_sapp, sizeof(_sapp));
     _sapp.android.activity = activity;
     sapp_desc desc = sokol_main(0, NULL);
-    _sapp_init_state(&desc);
+    if (!_sapp_init_state(&desc)) {
+        return;
+    }
     _sapp.android.activity = activity;
 
     int pipe_fd[2];
@@ -13809,7 +13839,9 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     pthread_attr_init(&pthread_attr);
     pthread_attr_destroy(&pthread_attr);
 
-    _sapp_init_state(desc);
+    if (!_sapp_init_state(desc)) {
+        return;
+    }
     _sapp.x11.window_state = NormalState;
 
     XInitThreads();
