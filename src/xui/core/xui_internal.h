@@ -576,6 +576,7 @@ struct xui_context_t {
 	int bReportingError;
 	xui_accessibility_event_proc onAccessibilityEvent;
 	void* pAccessibilityEventUser;
+    xui_callback_record_t* pAccessibilityOwner;
 	xui_widget pAccessibilityHead;
 	xui_widget pAccessibilityTail;
 	uint32_t iAccessibilityFlushEpoch;

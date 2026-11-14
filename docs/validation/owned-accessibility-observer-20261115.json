@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "qualified-native-foundation",
+  "shippingDelivery": false,
+  "sourceSha256": {
+    "include/xui.h": "c5115a6b66e298e8e1891802e4ed0f78d619d7eda62efd04c9e45f73c0cf834b",
+    "src/xui/core/xui_internal.h": "71f3e37203e5da2f6e4c7b97ca194b9e7e7af605f92ed612301b026ea96c9c17",
+    "src/xui/core/xui_core.c": "705e27bbc33865f0b8e69126e94a6a09e5cebf5013ebbf084e3070c59375323f",
+    "src/xui/core/xui_widget.c": "d75ab95509e7089ab158fab6371083e07afcebdb640e69f8115eabab2e4ddff1",
+    "src/xui/accessibility/xui_accessibility.c": "b9faa631aa2fbea3f8fa1b7eb69f58706275e6f0c68b5425bff9832654f3c365",
+    "tests/xui/xui_owned_accessibility_observer_test.c": "75e9499fc718c1d83900228d7d1627bc5c093a28c0b97e53f02270ec19c4fa12",
+    "tools/test/check_owned_accessibility_observer.py": "1ba123dfb68c1c3cf0db46f65a0264c09b23d2f9a298c8e6b724ce85a618cfe4",
+    "docs/owned-accessibility-observer.md": "917ae9ebab07d59fb5ba208521c6ab4d09f0ab251624e63f51bf54c9839c7d30"
+  },
+  "scope": "Owned Context accessibility observer, private registration snapshot pin, graph trace and checked native notifications; raw public API retained.",
+  "qualification": {
+    "win": {
+      "acceptance": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-owner-native-win-r3\\results.json",
+          "sha256": "bdc4678d3fffceedeeacced5dcb480c55fa10edab2bd4c3a29644dec1b86ba81",
+          "commands": 16
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-input-regression-win-r2\\results.json",
+          "sha256": "6c6a1110ee25511a3291ed3d6280055b4932dc029a8759ee5219035f69009385",
+          "commands": 16
+        }
+      ],
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-owner-sdk-win-r3\\results.json",
+        "sha256": "1b886201fbe600ad7c01cc331ef3ac7c76c618c7b3a1c5439070e3d2577d84c5"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-accessibility-owner-win-freeze-r3.json",
+        "sha256": "80ca7f15292a96b6e211cd409a0f2961f62005b77d1b8294c9f47327fb40a283"
+      }
+    },
+    "linux": {
+      "acceptance": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-owner-native-linux-r1\\results.json",
+          "sha256": "d6b92902c83141421543826b90718858cac0609cb3dfada3269e622199d9147d",
+          "commands": 16
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-input-regression-linux-r1\\results.json",
+          "sha256": "f85ec9f00ba94ebe73aaaf8daef3a3c61eea2a2574c4aa8c6fd430d4f7f154ff",
+          "commands": 16
+        }
+      ],
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\accessibility-owner-sdk-linux-r3\\results.json",
+        "sha256": "e95fe73c34da3c83a51cb9b5d581905bafcedffb81932f2518ae630d64a2692b"
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-accessibility-owner-linux-freeze-r3.json",
+        "sha256": "8c02b15e7806a4015cd04c6c6bd90cde2da606194e78ac0c8c8fc0cbfa5808c5"
+      }
+    }
+  },
+  "counts": {
+    "perPlatform": 32,
+    "total": 64
+  },
+  "build": "Hosted r2 is original full164-TU build. Hosted r3 only recompiles accessibility TU against original r2. Static r3 uses matching source/header content cache; no derived-host relink chain.",
+  "cost": "Existing48B record, one Context pointer, one native allocation/Hold per owned publication.1000 prepared notifications0alloc/free/realloc and no additional ownerHold. No observer skips snapshotmutationgate. No CPU equivalence claim.",
+  "history": "r1 Native Windows failed only because legacy wrapper omitted argc/argv. Corrected checker preserves unchanged legacy source. Source-r1 test bootstrap corrected before SDK-r2 qualification; failed historical paths retained.",
+  "remaining": "Language views/package/GUI lesson qualification and final matched delivery separate. Other9dirty native paths and4untracked geometry fixtures preserved. No push/version/install."
+}

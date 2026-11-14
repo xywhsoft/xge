@@ -5,6 +5,7 @@
 #include "xui_native_accessibility_internal.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_A11Y_BIT(type) (1u << ((type) - 1))
@@ -370,33 +371,41 @@ XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget)
 	return __xuiAccessibleValid(pWidget) ? pWidget->iAccessibilityRevision : 0;
 }
 
-XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uint64_t iNodeId)
+XUI_API int xuiWidgetNotifyAccessibility(xui_widget widget,int type,uint64_t nodeId)
 {
-	xui_context pContext;
-	xui_accessibility_event_t tEvent;
-	uint32_t iBit;
-	if ( !__xuiAccessibleValid(pWidget) || iEventType < XUI_ACCESSIBLE_EVENT_TREE_CHANGED ||
-		iEventType > XUI_ACCESSIBLE_EVENT_STATE_CHANGED ) return XUI_ERROR_INVALID_ARGUMENT;
-	iBit = XUI_A11Y_BIT(iEventType);
-	pWidget->iAccessibleMutationGeneration++;
-	if ( (pWidget->iActiveAccessibilityEvents & iBit) != 0 ) return XUI_OK;
-	pContext = pWidget->pContext;
-	xuiInternalOperationEnter(pContext);
-	pWidget->iActiveAccessibilityEvents |= iBit;
-	pWidget->iAccessibilityRevision++;
-	if ( pWidget->iAccessibilityRevision == 0 ) pWidget->iAccessibilityRevision = 1;
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iSize = sizeof(tEvent);
-	tEvent.iType = iEventType;
-	tEvent.iNodeId = iNodeId;
-	tEvent.iRevision = pWidget->iAccessibilityRevision;
-	xuiInternalNativeAccessibilityNotify(pContext, pWidget, &tEvent);
-	if ( pContext->onAccessibilityEvent != NULL ) {
-		pContext->onAccessibilityEvent(pContext, pWidget, &tEvent, pContext->pAccessibilityEventUser);
-	}
-	pWidget->iActiveAccessibilityEvents &= ~iBit;
-	xuiInternalOperationLeave(pContext);
-	return XUI_OK;
+    if(!__xuiAccessibleValid(widget) || type<XUI_ACCESSIBLE_EVENT_TREE_CHANGED ||
+       type>XUI_ACCESSIBLE_EVENT_STATE_CHANGED)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=widget->pContext;xui_call_scope_t scope={0};
+    int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    uint32_t bit=XUI_A11Y_BIT(type);++widget->iAccessibleMutationGeneration;
+    if(widget->iActiveAccessibilityEvents&bit)return xuiCallScopeEnd(&scope);
+    widget->iActiveAccessibilityEvents|=bit;
+    if(++widget->iAccessibilityRevision==0)widget->iAccessibilityRevision=1;
+    const xui_accessibility_event_t event={sizeof(event),type,nodeId,widget->iAccessibilityRevision};
+    xuiInternalNativeAccessibilityNotify(context,widget,&event);
+    xerror* first=xrtTakeError();if(first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    xui_accessibility_event_proc callback=NULL;void* user=NULL;xui_callback_record_t* record=NULL;
+    if(!xuiInternalContextDestroyPending(context) && xuiInternalWidgetIsValid(widget) && context->onAccessibilityEvent){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation)){
+            if(result==XUI_OK)result=XUI_ERROR_INVALID_STATE;
+        }else{
+            callback=context->onAccessibilityEvent;user=context->pAccessibilityEventUser;
+            record=context->pAccessibilityOwner;
+            int pin=xuiInternalCallbackRecordRetain(record);
+            if(pin!=XUI_OK){record=NULL;callback=NULL;if(result==XUI_OK)result=pin;}
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+    }
+    if(callback)callback(context,widget,&event,user);
+    xerror* current=xrtTakeError();
+    if(current){if(!first){first=current;if(result==XUI_OK)result=XUI_ERROR_CALLBACK_FAILED;}else xrtErrorFree(current);}
+    widget->iActiveAccessibilityEvents&=~bit;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    int next=xuiInternalCallbackRecordRelease(context,record,result,first);
+    xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
 
 void xuiInternalAccessibilityQueue(xui_widget pWidget, int iEventType)

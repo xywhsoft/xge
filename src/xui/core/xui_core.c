@@ -1305,14 +1305,28 @@ XUI_API int xuiSetErrorCallbackOwned(xui_context context,xui_error_proc callback
 XUI_API int xuiSetErrorCallback(xui_context context,xui_error_proc callback,void* user)
 {return xuiSetErrorCallbackOwned(context,callback,user,NULL);}
 
-XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext,
-	xui_accessibility_event_proc onEvent, void* pUser)
+XUI_API int xuiSetAccessibilityEventCallbackOwned(xui_context context,xui_accessibility_event_proc callback,void* user,const xui_callback_owner_t* owner)
 {
-	if ( !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pContext->onAccessibilityEvent = onEvent;
-	pContext->pAccessibilityEventUser = onEvent != NULL ? pUser : NULL;
-	return XUI_OK;
+    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
+    xui_callback_record_t* candidate=NULL; xui_callback_record_t* retired=NULL;
+    result=xuiInternalCallbackRecordCreate(context,callback!=NULL,owner,&candidate);
+    if(result==XUI_OK){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation))result=XUI_ERROR_INVALID_STATE;
+        else{
+            retired=context->pAccessibilityOwner;context->pAccessibilityOwner=candidate;candidate=NULL;
+            context->onAccessibilityEvent=callback;context->pAccessibilityEventUser=callback ? user:NULL;
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+    }
+    xerror* first=xrtTakeError();if(result==XUI_OK && first)result=XUI_ERROR_CALLBACK_FAILED;
+    xuiInternalCallScopeRecordOutcome(&scope,result,first);
+    int next=xuiInternalCallbackRecordRelease(context,candidate,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    next=xuiInternalCallbackRecordRelease(context,retired,result,first);xuiInternalContextCleanupOutcome(context,next,&result,&first);
+    result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;
 }
+XUI_API int xuiSetAccessibilityEventCallback(xui_context context,xui_accessibility_event_proc callback,void* user)
+{return xuiSetAccessibilityEventCallbackOwned(context,callback,user,NULL);}
 
 XUI_API int xuiReportError(xui_context context,const xui_error_info_t* error)
 {
@@ -2086,13 +2100,17 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	xuiInternalOperationEnter(pContext);
 	xuiInternalContextInvalidateLifetimes(pContext);
 	xuiInternalOperationLeave(pContext);
-    /* Stop error observation before consuming arbitrary callback owners. */
+    /* Stop both observers before consuming arbitrary callback owners. */
     xrtownershipscope callbackMutation={0};
     if(!xrtOwnershipMutationBegin(&callbackMutation))abort();
     xui_callback_record_t* errorOwner=pContext->pErrorOwner;
     pContext->pErrorOwner=NULL;pContext->onError=NULL;pContext->pErrorUser=NULL;
+    xui_callback_record_t* accessibilityOwner=pContext->pAccessibilityOwner;
+    pContext->pAccessibilityOwner=NULL;pContext->onAccessibilityEvent=NULL;pContext->pAccessibilityEventUser=NULL;
     if(!xrtOwnershipScopeEnd(&callbackMutation))abort();
     int callbackStatus=xuiInternalCallbackRecordRelease(pContext,errorOwner,receipt.iResult,receipt._pFirstError);
+    if(callbackStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,callbackStatus,xrtGetError());
+    callbackStatus=xuiInternalCallbackRecordRelease(pContext,accessibilityOwner,receipt.iResult,receipt._pFirstError);
     if(callbackStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,callbackStatus,xrtGetError());
 	xuiInternalNativeAccessibilityDetach(pContext);
 	pContext->bDestroyPending = 0;

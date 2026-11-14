@@ -6564,6 +6564,7 @@ XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor 
     if(!xuiInternalContextTraceResources(pContext,onVisit,pUser))return false;
     if(!xuiInternalContextTraceManagers(pContext,onVisit,pUser))return false;
     if(pContext->pErrorOwner && !onVisit(pContext->pErrorOwner->tOwner.tReference,pUser))return false;
+    if(pContext->pAccessibilityOwner && !onVisit(pContext->pAccessibilityOwner->tOwner.tReference,pUser))return false;
     for(int i=0;i<pContext->iHotkeyCount;++i)
         if(pContext->pHotkeys[i].pOwned && !onVisit(pContext->pHotkeys[i].pOwned->tOwner.tReference,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {

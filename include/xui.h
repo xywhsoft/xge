@@ -6363,6 +6363,8 @@ XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, vo
 XUI_API int xuiSetErrorCallbackOwned(xui_context pContext, xui_error_proc onError, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册无障碍事件回调（平台桥接消费）。 */
 XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext, xui_accessibility_event_proc onEvent, void* pUser);
+/* Shared owner is held through publication and active notification snapshots. */
+XUI_API int xuiSetAccessibilityEventCallbackOwned(xui_context pContext, xui_accessibility_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 主动上报错误（走上下文错误回调链）。 */
 XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError);
 /* 设置进程级默认语言（新上下文继承）。 */
