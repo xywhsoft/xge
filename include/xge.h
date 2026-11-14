@@ -2724,6 +2724,19 @@ XGE_API int xgeImageLoadMemoryEx(xge_image pImage, const void* pData, int iSize,
 XGE_API int xgeImageInfoMemory(const void* pData, int iSize, int* pWidth, int* pHeight);
 /* 取图像像素首地址（调用方只读）。 */
 XGE_API void* xgeImageGetPixels(xge_image pImage);
+/* Borrow a checked read-only byte span for RGBA8/A8 storage. Nonpositive
+ * stride means tight rows. The span includes inter-row padding but excludes
+ * padding after the last row. Caller-provided C images must supply valid,
+ * initialized backing through that last row and exclusive image access.
+ * No pixel allocation/copy; the borrow ends at image release or mutation.
+ * Failure clears a non-NULL output; another format returns UNSUPPORTED. */
+XGE_API int xgeImageGetPixelView(const xge_image_t* pImage, xbytesview* pView);
+/* Copy that exact span into caller storage; capacity is bytes, not pixels.
+ * A short destination returns BUFFER_TOO_SMALL before any write. Excess
+ * destination bytes and image metadata are unchanged. Valid writable output
+ * may overlap the source (memmove semantics); otherwise pixels are untouched.
+ * No allocation or XRT call. */
+XGE_API int xgeImageCopyPixels(const xge_image_t* pImage, void* pOutput, size_t iCapacity);
 /* Multiply RGBA8 RGB by alpha in place; every call repeats the transform.
  * Positive stride must fit a complete row; nonpositive stride means tight.
  * Row padding is untouched and final-row padding is not required. NULL,

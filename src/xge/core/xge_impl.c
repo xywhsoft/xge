@@ -2410,6 +2410,9 @@ static void __xgeWin32ClipboardOwnerRelease(void);
 #if !defined(XGE_IMAGE_ALPHA_SEPARATE_TU) || !XGE_IMAGE_ALPHA_SEPARATE_TU
 #include "xge_image_alpha.c"
 #endif
+#if !defined(XGE_IMAGE_PIXELS_SEPARATE_TU) || !XGE_IMAGE_PIXELS_SEPARATE_TU
+#include "xge_image_pixels.c"
+#endif
 #include "xge_texture.c"
 #if XGE_ENABLE_2D
 #include "xge_command.c"

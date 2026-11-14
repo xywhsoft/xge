@@ -1,0 +1,147 @@
+{
+  "date": "2026-11-14",
+  "qualified": true,
+  "shippingDelivery": false,
+  "networkTests": false,
+  "parent": "e1089362beebdf46899ad29dfa609fa532530848",
+  "scope": "Checked read-only Image byte view/capacity copy and separate pure static member. No mutable-image API or independently owned zero-copy pixel sequence.",
+  "sources": {
+    "include/xge.h": "9870ecec95da30e090761bb4b30399b88e932dea2ba324aaad844d6b9c41edfa",
+    "src/xge/core/xge_impl.c": "9ac82410df1a189d88e8562508cae64ab9ffd81a0efa0b31f03706f589c96bb0",
+    "src/xge/text/xge_image_pixels.c": "3cd91266a2b0c4f3494293fb6bf4dd00d96cc4c4edce64e624b11fc4ec4f41b8",
+    "tools/build/static.py": "63ea6bcf089fc369d1370e59a6374a5261dfbd1c46aa42f1fc5d672ffa4c9662",
+    "tests/xge/xge_image_pixels_test.c": "808519f3978278bce2621c5f7811fe8a4d2b9bb025f591811e3d939157c09774",
+    "tools/test/check_image_pixels.py": "c17da1570f52957d8fdc6c1a0fd4ccc41f94487df6ee3d9d885f01f4787fe93e",
+    "tools/test/check_image_pixels_sdk.py": "15302c80ad8f68ddf2e888a78ae255fb9a14c8b7863825e175cffd9a4e13ffd6",
+    "docs/image-pixels.md": "2bce3a1e4d58fc1fb14699758c099db4876edf685172cf78ad47b002072d3a2d"
+  },
+  "platforms": {
+    "win": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-win-r1\\results.json",
+        "sha256": "1797404ef7fdccb2da780f3ee1b15446b8bb75f660f4741458a092ae40623314",
+        "commands": 4,
+        "optimization": "O2"
+      },
+      "reports": {
+        "pure": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-native-win-r2\\results.json",
+          "sha256": "337cb13fc4b0e3831682a45f87a6b1e84809865da5ea5b8d427020654984b69f",
+          "commands": 18
+        },
+        "public": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-public-win-r1\\results.json",
+          "sha256": "19a538d070a8fcb1e13e397bd451f1db218ef9a33313e7d220425a7a541beb6c",
+          "commands": 18
+        },
+        "alphaRegression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-alpha-public-win-r1\\results.json",
+          "sha256": "d80107f74cc669da9b7932cab5399578a3dda49173cd1d230a3af2a953853a10",
+          "commands": 18
+        }
+      },
+      "builds": {
+        "host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-win-r1\\host\\build-report.json",
+          "sha256": "00e113f0ec6555bfc2361eacce80b651e9b258f4c42fc565ae462782f0406934",
+          "compiled": 164,
+          "reused": 0
+        },
+        "static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-win-r1\\static\\build-report.json",
+          "sha256": "dd31532f284684582948d6b0c7e4b4289c50cd2e745366681f551968f5e39251",
+          "compiled": 166,
+          "reused": 0
+        }
+      },
+      "pureClientPrograms": [
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-public-win-r1\\host-cpp17-O2.exe",
+          "sha256": "2e9e94d18c6962ea8a5593af22eaa12ff90537cff640137bca4eed6655915d9f",
+          "bytes": 50129,
+          "imports": [
+            "KERNEL32.dll",
+            "msvcrt.dll",
+            "xge3_host.dll"
+          ]
+        },
+        {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-public-win-r1\\static-cpp17-O2.exe",
+          "sha256": "eb30d2efbd29b392c710ca96b2a27a2691795aae82f2c7e5196ba28286f0766b",
+          "bytes": 49789,
+          "imports": [
+            "KERNEL32.dll",
+            "msvcrt.dll"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-linux-r1\\results.json",
+        "sha256": "e8e960a2ea29848793f9f8a692bf936579ceea997f671062510de4d593da4c8f",
+        "commands": 4,
+        "optimization": "O2"
+      },
+      "reports": {
+        "pure": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-native-linux-r2\\results.json",
+          "sha256": "6625ccc661ac5bc53feb474963604cb44b39695206316702c5f4660110075ae7",
+          "commands": 20
+        },
+        "public": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-public-linux-r1\\results.json",
+          "sha256": "fb3e596ce347cc5b141f485365005df4b8de48ed6fe588a6b5132b83d3d5c1e3",
+          "commands": 18
+        },
+        "alphaRegression": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-alpha-public-linux-r1\\results.json",
+          "sha256": "d746825cecf35eb24ada1b31049fc92b83a05bf66237aafe49f55e3ebfd6faee",
+          "commands": 18
+        }
+      },
+      "builds": {
+        "host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-linux-r1\\host\\build-report.json",
+          "sha256": "1cbf5d626f8b3d077cad8167a4ad1ba4ab2200edbd57bfb6d6d0c27fab034359",
+          "compiled": 164,
+          "reused": 0
+        },
+        "static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\image-pixels-sdk-linux-r1\\static\\build-report.json",
+          "sha256": "9702f790f05b9e13aa803b9ee90f3fd38fb76d1bc4ed5fe81770d7a6b9e72e60",
+          "compiled": 166,
+          "reused": 0
+        }
+      },
+      "pureClientPrograms": [
+        {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/image-pixels-public-linux-r1/host-cpp17-O2",
+          "sha256": "152468285a0faa6ecc82fd9c51a577e9c6a65f1dd7a52fdc81dfbefa9edff844",
+          "bytes": 16216,
+          "imports": [
+            "libxge3_host.so",
+            "libc.so.6"
+          ]
+        },
+        {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/image-pixels-public-linux-r1/static-cpp17-O2",
+          "sha256": "2769b3e5bde8c0f277d9a5a6e177e2edea70a40849839d386579552da99bfa6b",
+          "bytes": 16264,
+          "imports": [
+            "libc.so.6"
+          ]
+        }
+      ]
+    }
+  },
+  "nativeCommands": 110,
+  "limits": [
+    "Actual initialized backing capacity of a caller-supplied C pointer remains the C caller responsibility; no allocator provenance is guessed.",
+    "RGBA8/A8 contiguous extent includes inter-row padding and excludes final-row padding; other formats are checked unsupported.",
+    "Pure C component imports only CRT/compiler hooks, no XRT/GL or decoder. Buffer copy moves bytes, while C view only borrows.",
+    "Linux sanitizer covers the pure component/client, not the full engine/runtime/decoder.",
+    "Independent owning zero-copy views await native backing-lifetime design; snapshots do not substitute for that capability.",
+    "No final runtime/SDK/IDE install or whole XGE/XUI/Document completion."
+  ]
+}
