@@ -678,6 +678,8 @@ static int __xuiHyperlinkInitEvents(xui_widget pWidget)
 	return iRet;
 }
 
+static void __xuiHyperlinkDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
 static int __xuiHyperlinkInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_hyperlink_data_t* pData;
@@ -712,20 +714,27 @@ static int __xuiHyperlinkInit(xui_widget pWidget, void* pTypeData, const void* p
 	pData->fFocusWidth = 1.0f;
 	iRet = __xuiHyperlinkTextSet(pData, (pDesc != NULL) ? pDesc->sText : "");
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
 	iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = __xuiHyperlinkInitCacheStates(pWidget);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
 	iRet = __xuiHyperlinkInitEvents(pWidget);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto failed;
 	}
-	return __xuiHyperlinkSyncState(pWidget, pData);
+	iRet = __xuiHyperlinkSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* An unsuccessful stage still owns its partial allocations. Reuse its
+	 * cleanup here; the generic chain only destroys completed stages. */
+	__xuiHyperlinkDestroy(pWidget, pTypeData, pUser);
+	return iRet;
 }
 
 static void __xuiHyperlinkDestroy(xui_widget pWidget, void* pTypeData, void* pUser)

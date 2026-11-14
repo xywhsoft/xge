@@ -3234,6 +3234,8 @@ static int __xuiInputInitMenu(xui_widget pWidget, xui_input_data_t* pData)
 	return __xuiInputUpdateMenu(pWidget, pData);
 }
 
+static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
 static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_input_data_t* pData;
@@ -3275,11 +3277,11 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->iCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0) ? pDesc->iCursorColor : XUI_COLOR_RGBA(33, 94, 170, 255);
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	iRet = __xuiInputAssignTextBytes(pWidget,pData, (pDesc != NULL) ? pDesc->sText : "", -1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	pData->iCursor = pData->iTextLength;
 	(void)__xuiInputClearSelectionData(pData);
 	iRet = __xuiInputStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, (pDesc != NULL) ? pDesc->sPlaceholder : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	tPadding = (xui_thickness_t){XUI_INPUT_PADDING_LEFT, XUI_INPUT_PADDING_TOP, XUI_INPUT_PADDING_RIGHT, XUI_INPUT_PADDING_BOTTOM};
 	(void)xuiWidgetSetPadding(pWidget, tPadding);
 	(void)xuiWidgetSetFocusable(pWidget, 1);
@@ -3292,10 +3294,17 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	tEditBehavior.iEnterBehavior = XUI_EDIT_ENTER_DEFAULT;
 	tEditBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
 	iRet = xuiInternalEditRegister(pWidget, &g_xuiInputEditAdapter, &tEditBehavior);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiInputInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiInputInitMenu(pWidget, pData);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = __xuiInputInitMenu(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* An unsuccessful stage still owns its partial allocations. Reuse its
+	 * cleanup here; the generic chain only destroys completed stages. */
+	__xuiInputDestroy(pWidget, pTypeData, pUser);
+	return iRet;
 }
 
 static void __xuiInputDecorationFree(xui_input_decoration pDecoration)

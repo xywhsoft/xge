@@ -1457,6 +1457,8 @@ static int __xuiTagInputAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
 	return __xuiTagInputRemoveAt(pWidget, pData, iTag, 1);
 }
 
+static void __xuiTagInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
 static int __xuiTagInputInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_tag_input_data_t* pData;
@@ -1476,27 +1478,34 @@ static int __xuiTagInputInit(xui_widget pWidget, void* pTypeData, const void* pC
 		pData->pFont = xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	}
 	pData->sPlaceholder = __xuiTagInputDuplicateRange((pDesc != NULL) ? pDesc->sPlaceholder : "", -1);
-	if ( pData->sPlaceholder == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( pData->sPlaceholder == NULL ) { iRet = XUI_ERROR_OUT_OF_MEMORY; goto failed; }
 	if ( (pDesc != NULL) && (pDesc->ppTags != NULL) ) {
 		for ( i = 0; i < pDesc->iTagCount; i++ ) {
 			iRet = __xuiTagInputCommitTextEx(pWidget, pData, pDesc->ppTags[i], -1, 0);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) goto failed;
 		}
 	}
 	iRet = xuiWidgetSetFocusable(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = __xuiTagInputInitCacheStates(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiTagInputInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiTagInputCreateInputChild(pWidget, pData, pDesc);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = xuiWidgetSetAccessibilityProvider(pWidget,
 		__xuiTagInputAccessibleCount, __xuiTagInputAccessibleGet,
 		__xuiTagInputAccessibleAction, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTagInputSyncState(pWidget, pData);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = __xuiTagInputSyncState(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* An unsuccessful stage still owns its partial allocations. Reuse its
+	 * cleanup here; the generic chain only destroys completed stages. */
+	__xuiTagInputDestroy(pWidget, pTypeData, pUser);
+	return iRet;
 }
 
 static void __xuiTagInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)

@@ -340,6 +340,10 @@ static int __xuiMenuCopyItems(xui_menu_item_t* pTarget, const xui_menu_item_t* p
 	memset(pTarget, 0, sizeof(xui_menu_item_t) * XUI_MENU_ITEM_CAPACITY);
 	for ( i = 0; i < iCount; i++ ) {
 		pTarget[i] = pItems[i];
+		/* The source strings are borrowed until each duplicate succeeds. A
+		 * failed label copy must not free the caller's shortcut in rollback. */
+		pTarget[i].sText = NULL;
+		pTarget[i].sShortcut = NULL;
 		pTarget[i].sText = __xuiMenuDuplicateString(pItems[i].sText);
 		if ( (pItems[i].sText != NULL) && (pTarget[i].sText == NULL) ) goto failed;
 		pTarget[i].sShortcut = __xuiMenuDuplicateString(pItems[i].sShortcut);

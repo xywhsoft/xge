@@ -6380,6 +6380,8 @@ static void __xuiTerminalDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 
+static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
 static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_terminal_data_t* pData;
@@ -6439,16 +6441,16 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	__xuiTerminalResetParser(&pData->tParser);
 	xuiScrollModelInit(&pData->tScroll);
 	iRet = __xuiTerminalAllocScrollback(pData, pData->iScrollbackLimit);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iColumns = (pDesc != NULL && pDesc->iColumns > 0) ? pDesc->iColumns : XUI_TERMINAL_DEFAULT_COLS;
 	iRows = (pDesc != NULL && pDesc->iRows > 0) ? pDesc->iRows : XUI_TERMINAL_DEFAULT_ROWS;
 	iRet = __xuiTerminalResizeBuffers(pData, iColumns, iRows);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = xuiWidgetSetFocusable(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 1);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetImeMode(pWidget, XUI_IME_ENABLED);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	{
 		xui_edit_behavior_t tBehavior;
 		memset(&tBehavior, 0, sizeof(tBehavior));
@@ -6457,13 +6459,20 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 		tBehavior.iEnterBehavior = XUI_EDIT_ENTER_DEFAULT;
 		tBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
 		iRet = xuiInternalEditRegister(pWidget, &g_xuiTerminalEditAdapter, &tBehavior);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto failed;
 	}
 	iRet = xuiWidgetSetImeCandidateRect(pWidget, __xuiTerminalImeRect, NULL);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiTerminalInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTerminalInitMenu(pWidget, pData);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = __xuiTerminalInitMenu(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* An unsuccessful stage still owns its partial allocations. Reuse its
+	 * cleanup here; the generic chain only destroys completed stages. */
+	__xuiTerminalDestroy(pWidget, pTypeData, pUser);
+	return iRet;
 }
 
 static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUser)

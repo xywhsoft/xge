@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "qualified-native-correction",
+  "shippingDelivery": false,
+  "scope": "Five failed initializer self-cleanups and Menu borrowed-string partial-copy rollback; default constructor retirement and nonempty descriptors, not full UI/GPU/callback certification.",
+  "sourceGitCanonicalSha256": {
+    "src/xui/controls/xui_hyperlink.c": "98b9ccf08e17e9d9a2554e9f3b8b91379568f06849cbe0d2c18f8242cbba8b80",
+    "src/xui/core/xui_input_widget.c": "f6e76897eb19ddde3705b44b21f32c45e85762920811a938d1c9806da22b57b3",
+    "src/xui/controls/xui_tag_input.c": "3d18ef93295ba6410a636efdb60437e79fab590fd3b0d29762a60d3aa7940aee",
+    "src/xui/core/xui_text_edit.c": "0a2c5784c1702b4fa3784de658bed82a0c7ed138b1c26cebc8fc44d2377f0608",
+    "src/xui/controls/xui_terminal.c": "8d3c13d31696540a9f6cc8b9372c57f2d25a242a5ca6ad8395f68427680cf56c",
+    "src/xui/controls/xui_menu.c": "c7d952fa45979a1d04c91dbd8d82a26b7c1f75eb336210ff134b0d5ba7c871cc"
+  },
+  "additionalSourceSha256": {
+    "tests/xui/xui_constructor_retirement_test.c": "961ec39306078706b99a4cdd4ec7845e541065ea2eff2039d0465b6c1e0864a2",
+    "tests/xui/xui_menu_copy_failure_test.c": "a830302e66421a9221430415e2f49dbe101f3163e1d5eac7c53dba48bfd90ff6",
+    "tools/test/check_constructor_retirement.py": "26e7870e11041b611112f3955e21f1b0e9e91316c3d56ca26c710cb726704bf6"
+  },
+  "qualification": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\constructor-retirement-native-evidence-win-r1.json",
+      "sha256": "ba409de140a6cd7796a5dacb95ef87b9b5c49971289b21b642b4147e362ab164",
+      "passed": true,
+      "commands": 276,
+      "acceptance": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\constructor-retirement-native-win-r1\\results.json",
+        "sha256": "571c691130d936cd3db0f5772bf97431a2d2ace3e932a89cb2b32f307a773e8e",
+        "verifiedInputs": 27,
+        "calibratedPrefixes": 8388
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\partial-init-sdk-win-r2\\results.json",
+        "sha256": "a2c327f7a96c4ea4d44cb16fb24f4bcad87c5d33ec6727907a96046577dd6fe3",
+        "counts": {
+          "host": {
+            "compiled": 11,
+            "reused": 153
+          },
+          "static": {
+            "compiled": 12,
+            "reused": 154
+          }
+        }
+      },
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-partial-init-win-freeze-r2.json",
+        "sha256": "9717d1e98618354aa3db745251009e78f010faddc134e0a38d516bb978bf6668"
+      }
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\constructor-retirement-native-evidence-linux-r1.json",
+      "sha256": "5a9f0be4286133b5e1c790cd3d887161e346d8a10367f610f1aeec6741ee77ac",
+      "passed": true,
+      "commands": 276,
+      "acceptance": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/constructor-retirement-native-linux-r1/results.json",
+        "sha256": "3aa696207714af74d236377167110ff896bc7ba15062f9f1dc2cf685e82902b1",
+        "verifiedInputs": 26,
+        "calibratedPrefixes": 8388
+      },
+      "sdk": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/partial-init-sdk-linux-r2/results.json",
+        "sha256": "56de62a0290a74b7790c1055cc51dc22242b80e60bf4a8fe30a9dc542282ef31",
+        "counts": {
+          "host": {
+            "compiled": 11,
+            "reused": 153
+          },
+          "static": {
+            "compiled": 12,
+            "reused": 154
+          }
+        }
+      },
+      "freeze": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/native-partial-init-linux-freeze-r2.json",
+        "sha256": "30f727ecdd177514fb14e784bd8db2076ed895af3df280844b0c53864731cccf"
+      }
+    }
+  },
+  "totalExecutedCommands": 552,
+  "prefixesPerPlatform": 8388,
+  "oldControls": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\widget-constructor-retirement-audit-win-r1\\results.json",
+      "sha256": "b7d8dbf97cad1d39cb202194ef4e9723dc21da3c1fb560bf0ddec1a8704eecc1"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\widget-retirement-partial-win-r1\\results.json",
+      "sha256": "bab7b358accfc343ad25309852c9a136520c5fbc829b4a4472585a920331b5cb"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\menu-copy-oom-old-win-r1\\results.json",
+      "sha256": "df9d4684cea9745e909fb9b1500f2210d2f0dbcd45a05916679cdf40e54fb332"
+    }
+  ],
+  "isolation": {
+    "patchManifest": "F:\\xlang-validation\\xge-full-20261110\\partial-init-patches-r1\\manifest.json",
+    "patchManifestSha256": "81f7c18f9685f30373d05f2544ba5a84c957ac6700e2f797c6852490372e52ef",
+    "scope": "Only intended initializer hunks from Input/TextEdit; existing geometry changes excluded from tested candidate, preserved in worktree.",
+    "otherSourceNotes": "Menu string fields become owned individually after successful duplicate. Generic constructor-chain completed-stage-only policy unchanged."
+  },
+  "limits": [
+    "SDK implementation O2; independent clients O0/O2 host/static. No new compiler or language ABI change.",
+    "Budgets calibrated from normal allocation/reallocation counts plus margin; complete Context retired at each budget to avoid retained queue-capacity false positives.",
+    "56 NULL-descriptor constructors, five nonempty descriptors; not every descriptor combination, callback or reentrant state.",
+    "Six menu cases: Set/Add, borrowed menu-source aliases, NULL label/shortcut. Input data and previous menu state preserved on preparation failure.",
+    "Native relink compiled11/reused153 from original full164/0 SDK; static compiled12/reused154 including generated contract. Exact frozen sources and library bytes pinned.",
+    "No network/GPU tests or shipping installation, push or version change. Historical failures preserved."
+  ]
+}

@@ -4229,6 +4229,8 @@ static int __xuiTextEditInitScrollBars(xui_widget pWidget, xui_text_edit_data_t*
 	return iRet;
 }
 
+static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUser);
+
 static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_text_edit_data_t* pData;
@@ -4279,11 +4281,11 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iFindActiveIndex = -1;
 	xuiScrollModelInit(&pData->tScrollModel);
 	iRet = __xuiTextEditAssignTextBytes(pData, (pDesc != NULL) ? pDesc->sText : "", -1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	pData->iCursor = pData->iTextLength;
 	(void)__xuiTextEditClearSelectionData(pData);
 	iRet = __xuiTextEditStringSet(&pData->sPlaceholder, &pData->iPlaceholderCapacity, (pDesc != NULL) ? pDesc->sPlaceholder : "");
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	tPadding = (xui_thickness_t){8.0f, 6.0f, 8.0f, 6.0f};
 	(void)xuiWidgetSetPadding(pWidget, tPadding);
 	(void)xuiWidgetSetFocusable(pWidget, 1);
@@ -4296,12 +4298,19 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	tEditBehavior.iEnterBehavior = XUI_EDIT_ENTER_NEWLINE;
 	tEditBehavior.iEscapeBehavior = XUI_EDIT_ESCAPE_DEFAULT;
 	iRet = xuiInternalEditRegister(pWidget, &g_xuiTextEditAdapter, &tEditBehavior);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiTextEditInitEvents(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto failed;
 	iRet = __xuiTextEditInitScrollBars(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTextEditInitMenu(pWidget, pData);
+	if ( iRet != XUI_OK ) goto failed;
+	iRet = __xuiTextEditInitMenu(pWidget, pData);
+	if ( iRet == XUI_OK ) return XUI_OK;
+
+failed:
+	/* An unsuccessful stage still owns its partial allocations. Reuse its
+	 * cleanup here; the generic chain only destroys completed stages. */
+	__xuiTextEditDestroy(pWidget, pTypeData, pUser);
+	return iRet;
 }
 
 static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
