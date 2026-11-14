@@ -14,13 +14,13 @@ static bool xpWorldObjectReadable(const void* raw)
 static bool xpWorldObjectTrace(const void* raw,xrtownershipvisitor visit,void* user)
 {
  const xp_world_owned_t* world=raw;
- return !world->codeOwner.onDrop || visit(world->codeOwner.tReference,user);
+ if(world->codeOwner.onDrop && !visit(world->codeOwner.tReference,user))return false;
+ return !world->collisionOwner.onDrop || visit(world->collisionOwner.tReference,user);
 }
-static int xpWorldObjectFinalize(void* raw,bool* complete)
-{
- xge_particle_world world=raw;world->destroyed=true;
- xp_world_contents_free(world);*complete=true;return XGE_OK;
-}
+static int xpWorldObjectFinalize(void*,bool*);
+static bool xpWorldOwnerValid(xge_callback_owner_t owner)
+{return (!owner.tReference.Data && !owner.tReference.Ops && !owner.onHold && !owner.onDrop) ||
+ (owner.tReference.Data && owner.tReference.Ops && owner.onHold && owner.onDrop);}
 static int xpWorldOwnerDrop(xge_callback_owner_t owner)
 {
  if(!owner.onDrop)return XGE_OK;
@@ -53,6 +53,19 @@ static const xge_data_lifetime_type_t xpWorldType={
 #undef DO_OBJECT_TYPE
 #undef DO_GENERATION_TYPE
 
+static int xpWorldObjectFinalize(void* raw,bool* complete)
+{
+ xge_particle_world world=raw;xp_world_owned_t* storage=xpWorldStorage(world);
+ xrtownershipscope mutation={0};
+ if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;
+ world->destroyed=true;xge_callback_owner_t owner=storage->collisionOwner;
+ storage->collisionOwner=(xge_callback_owner_t){0};
+ world->desc.pCollision=NULL;world->desc.pCollisionUser=NULL;
+ xpWorldMutationEnd(&mutation);xp_world_contents_free(world);
+ xge_data_outcome_t result={0};xpWorldOutcomeBegin(&result,XGE_OK);
+ xpWorldOutcomeAdd(&result,xpWorldOwnerDrop(owner));*complete=true;
+ xrtSetErrorTake(result.pError);return result.iStatus;
+}
 typedef struct xp_world_frame {
  xge_data_lifetime_t* root;
  xerror* ambient;
@@ -82,6 +95,53 @@ static int xp_world_end(xp_world_frame* frame,int status)
  if(world_admission!=XGE_OK)return world_admission
 #define XP_WORLD_RETURN(value) return xp_world_end(&world_frame,(value))
 
+int xgeParticleWorldSetCollisionOwned(xge_particle_world world,xge_particle_collision_proc proc,
+ void* user,const xge_callback_owner_t* owner)
+{
+ XP_WORLD_ENTER(world);
+ if(!world || !world->managed)XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
+ if(world->busy)XP_WORLD_RETURN(XGE_ERROR_BUSY);
+ xge_callback_owner_t incoming=owner ? *owner:(xge_callback_owner_t){0};
+ if(!xpWorldOwnerValid(incoming) || (!proc && (user || incoming.onHold)))XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
+ world->busy=true;bool held=false;int status=XGE_OK;
+ if(incoming.onHold){held=incoming.onHold(incoming.tReference.Data);if(!held || xrtGetError())status=XGE_ERROR_CALLBACK_FAILED;}
+ xge_data_outcome_t result={0};xpWorldOutcomeBegin(&result,status);
+ if(status==XGE_OK){
+  xrtownershipscope mutation={0};
+  if(!xrtOwnershipMutationBegin(&mutation)){
+   xpWorldOutcomeAdd(&result,XGE_ERROR_INVALID_STATE);
+   if(held)xpWorldOutcomeAdd(&result,xpWorldOwnerDrop(incoming));
+  }else{
+   xp_world_owned_t* storage=xpWorldStorage(world);xge_callback_owner_t old=storage->collisionOwner;
+   storage->collisionOwner=incoming;world->desc.pCollision=proc;world->desc.pCollisionUser=proc ? user:NULL;
+   xpWorldMutationEnd(&mutation);xpWorldOutcomeAdd(&result,xpWorldOwnerDrop(old));
+  }
+ }else if(held)xpWorldOutcomeAdd(&result,xpWorldOwnerDrop(incoming));
+ world->busy=false;status=result.iStatus;xrtSetErrorTake(result.pError);XP_WORLD_RETURN(status);
+}
+/* World activity and busy publication exclusion span this complete call. The
+ * additional owner protects arbitrary callback/Drop code through its return. */
+static int xp_world_collision(xge_particle_world world,xge_vec2_t from,xge_vec2_t to,float radius,
+ xge_particle_hit_t* hit,int* collision)
+{
+ *collision=0;
+ if(xrtGetError())return XGE_ERROR_CALLBACK_FAILED;
+ xge_callback_owner_t owner=xpWorldStorage(world)->collisionOwner;
+ xge_particle_collision_proc proc=world->desc.pCollision;void* user=world->desc.pCollisionUser;
+ bool held=false;int status=XGE_OK,value=0;
+ if(owner.onHold){held=owner.onHold(owner.tReference.Data);if(!held || xrtGetError())status=XGE_ERROR_CALLBACK_FAILED;}
+ xge_data_outcome_t result={0};xpWorldOutcomeBegin(&result,status);
+ if(status==XGE_OK){
+  value=proc(from,to,radius,hit,user);
+  status=value<0 ? value:value>1 ? XGE_ERROR_CALLBACK_FAILED:XGE_OK;
+  if(status==XGE_OK && value==1 && (!xp_vec_valid(hit->tPosition) || !xp_vec_valid(hit->tNormal) ||
+   !isfinite(hit->fFraction) || hit->fFraction<0 || hit->fFraction>1 || xp_length(hit->tNormal)<=1e-6f))status=XGE_ERROR_INVALID_ARGUMENT;
+  xpWorldOutcomeAdd(&result,status);
+ }
+ if(held)xpWorldOutcomeAdd(&result,xpWorldOwnerDrop(owner));
+ if(result.iStatus==XGE_OK)*collision=value;
+ status=result.iStatus;xrtSetErrorTake(result.pError);return status;
+}
 static void xp_world_lifetime_init(xge_particle_world world)
 {
  if(world->managed){
@@ -101,9 +161,7 @@ int xgeParticleWorldCreateOwnedWithCode(xge_particle_world* out,const xge_partic
  xge_particle_world_desc_t snapshot;
  if(desc){snapshot=*desc;desc=&snapshot;}
  xge_callback_owner_t incoming=code ? *code:(xge_callback_owner_t){0};
- if((desc && (desc->pCollision || desc->pCollisionUser)) ||
-  !((!incoming.tReference.Data && !incoming.tReference.Ops && !incoming.onHold && !incoming.onDrop) ||
-   (incoming.tReference.Data && incoming.tReference.Ops && incoming.onHold && incoming.onDrop)))return XGE_ERROR_INVALID_ARGUMENT;
+ if((desc && (desc->pCollision || desc->pCollisionUser)) || !xpWorldOwnerValid(incoming))return XGE_ERROR_INVALID_ARGUMENT;
  xerror* ambient=xrtTakeError();bool held=false;int status=XGE_OK;
  if(incoming.onHold){held=incoming.onHold(incoming.tReference.Data);if(!held || xrtGetError())status=XGE_ERROR_CALLBACK_FAILED;}
  xge_data_outcome_t result={0};xpWorldOutcomeBegin(&result,status);

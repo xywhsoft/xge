@@ -947,7 +947,7 @@ int xgeParticleCollideRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rec
 	hit->tPosition = xp_add(from, xp_mul(xp_sub(to, from), enter));
 	return 1;
 }
-static void xp_integrate(xge_particle_world w, xp_effect *f, float dt)
+static int xp_integrate(xge_particle_world w, xp_effect *f, float dt)
 {
 	size_t i = 0;
 	while (i < f->particles.Count)
@@ -993,9 +993,13 @@ static void xp_integrate(xge_particle_world w, xp_effect *f, float dt)
 				xge_particle_snapshot_t snapshot;
 				xp_snapshot(f, p, &snapshot);
 				memset(&hit, 0, sizeof(hit));
-				if (w->desc.pCollision(from, to,
-				                       e->fCollisionRadius * fmaxf(snapshot.tSize.fX, snapshot.tSize.fY),
-				                       &hit, w->desc.pCollisionUser) &&
+				float radius=e->fCollisionRadius*fmaxf(snapshot.tSize.fX,snapshot.tSize.fY);
+				int collision=0;
+				if(w->managed){
+					int status=xp_world_collision(w,from,to,radius,&hit,&collision);
+					if(status!=XGE_OK)return status;
+				}else collision=w->desc.pCollision(from,to,radius,&hit,w->desc.pCollisionUser);
+				if (collision &&
 				    xp_vec_valid(hit.tPosition) && xp_vec_valid(hit.tNormal) && isfinite(hit.fFraction) &&
 				    hit.fFraction >= 0 && hit.fFraction <= 1 && xp_length(hit.tNormal) > 1e-6f)
 				{
@@ -1031,6 +1035,7 @@ static void xp_integrate(xge_particle_world w, xp_effect *f, float dt)
 		else
 			i++;
 	}
+	return XGE_OK;
 }
 static uint64_t xp_burst_occurrences(double a, double b, double at, double duration, int loop, int first)
 {
@@ -1126,21 +1131,21 @@ static int xp_future(xp_effect *f)
 	}
 	return 0;
 }
-static void xp_step(xge_particle_world w, xp_effect *f, float dt)
+static int xp_step(xge_particle_world w, xp_effect *f, float dt)
 {
 	size_t i;
 	if (f->state == XGE_PARTICLE_PAUSED || f->state == XGE_PARTICLE_FINISHED)
-		return;
+		return XGE_OK;
 	if (f->state == XGE_PARTICLE_DRAINING && !f->particles.Count)
 	{
 		f->state = XGE_PARTICLE_FINISHED;
 		xp_event(w, f, XGE_PARTICLE_EVENT_FINISHED, NULL);
-		return;
+		return XGE_OK;
 	}
 	if (dt <= 0)
-		return;
+		return XGE_OK;
 	if (!f->visible && f->play.iCullPolicy == XGE_PARTICLE_CULL_PAUSE)
-		return;
+		return XGE_OK;
 	if (!f->visible && f->play.iCullPolicy == XGE_PARTICLE_CULL_CLEAR)
 	{
 		w->stats.iLiveParticles -= (uint32_t)f->particles.Count;
@@ -1157,10 +1162,11 @@ static void xp_step(xge_particle_world w, xp_effect *f, float dt)
 			f->state = XGE_PARTICLE_FINISHED;
 			xp_event(w, f, XGE_PARTICLE_EVENT_FINISHED, NULL);
 		}
-		return; /* Discard while offscreen, advance clocks, never catch up missed births. */
+		return XGE_OK; /* Discard while offscreen, advance clocks, never catch up missed births. */
 	}
 	xrtArrayClear(&w->spawns);
-	xp_integrate(w, f, dt);
+	int status=xp_integrate(w,f,dt);
+	if(status!=XGE_OK)return status;
 	for (i = 0; i < f->definition->emitters.Count; i++)
 		xp_emission(w, f, (int)i, dt);
 	xp_subemit(w, f, dt);
@@ -1169,6 +1175,7 @@ static void xp_step(xge_particle_world w, xp_effect *f, float dt)
 		f->state = XGE_PARTICLE_FINISHED;
 		xp_event(w, f, XGE_PARTICLE_EVENT_FINISHED, NULL);
 	}
+	return XGE_OK;
 }
 int xgeParticleUpdate(xge_particle_world w, double delta)
 {
@@ -1176,6 +1183,7 @@ int xgeParticleUpdate(xge_particle_world w, double delta)
 	uint32_t steps, k;
 	size_t i;
 	double total, available, start;
+	int status=XGE_OK;
 	if (!w || !isfinite(delta) || delta < 0 || delta > 3600)
 		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
@@ -1203,25 +1211,33 @@ int xgeParticleUpdate(xge_particle_world w, double delta)
 			f->current.tScale = xp_add(
 			    f->current.tScale, xp_mul(xp_sub(f->play.tTransform.tScale, f->current.tScale), fraction));
 			f->current.fRotation += (f->play.tTransform.fRotation - f->current.fRotation) * fraction;
-			xp_step(w, f, w->desc.fFixedStep * f->play.tParameters.fTimeScale);
+			status=xp_step(w, f, w->desc.fFixedStep * f->play.tParameters.fTimeScale);
+			if(status!=XGE_OK)break;
+		}
+		if(status!=XGE_OK){
+			/* The failed step may already be partial; never replay it. Remaining
+			 * whole scheduled steps were not executed and are counted as dropped. */
+			w->stats.fDroppedTime+=(steps-k-1)*w->desc.fFixedStep;
+			break;
 		}
 		w->stats.iSteps++;
 	}
 	w->busy = 0;
-	for (i = 0; i < w->effects.Count; i++)
+	for (i = 0; status==XGE_OK && i < w->effects.Count; i++)
 	{
 		xp_effect *f = ((xp_effect **)w->effects.Data)[i];
 		if (f->handle && f->state == XGE_PARTICLE_FINISHED && f->play.bAutoRelease)
 			xgeParticleRelease(w, f->handle);
 	}
 	w->stats.fLastUpdateSeconds = xrtTimer() - start;
-	XP_WORLD_RETURN(XGE_OK);
+	XP_WORLD_RETURN(status);
 }
 int xgeParticlePrewarm(xge_particle_world w, xge_particle_effect h, float seconds)
 {
 	XP_WORLD_ENTER(w);
 	xp_effect *f = xp_find(w, h);
 	double time = 0;
+	int status=XGE_OK;
 	if (!f)
 		XP_WORLD_RETURN(XGE_ERROR_NOT_FOUND);
 	if (w->busy || f->state != XGE_PARTICLE_PLAYING)
@@ -1235,13 +1251,14 @@ int xgeParticlePrewarm(xge_particle_world w, xge_particle_effect h, float second
 	{
 		float dt = (float)fmin(w->desc.fFixedStep, seconds - time);
 		w->stepSpawned = 0;
-		xp_step(w, f, dt * f->play.tParameters.fTimeScale);
+		status=xp_step(w, f, dt * f->play.tParameters.fTimeScale);
+		if(status!=XGE_OK)break;
 		time += dt;
 		w->stats.iSteps++;
 	}
 	w->suppressEvents = 0;
 	w->busy = 0;
-	XP_WORLD_RETURN(XGE_OK);
+	XP_WORLD_RETURN(status);
 }
 int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *user)
 {

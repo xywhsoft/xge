@@ -4014,6 +4014,17 @@ XGE_API int xgeParticleWorldCreateOwned(xge_particle_world* ppWorld, const xge_p
 XGE_API int xgeParticleWorldCreateOwnedWithCode(xge_particle_world* ppWorld,
 	const xge_particle_world_desc_t* pDesc, const xge_callback_owner_t* pCodeOwner);
 XGE_API int xgeParticleWorldShareOwned(xge_particle_world pWorld, xge_particle_world* ppWorld);
+/* Creator-thread registration on a managed world; rejected while simulating,
+ * visiting or replacing a callback. Publication owns one owner reference and
+ * each invocation holds an independent return snapshot. NULL owner retains
+ * the explicit resident C callback/user contract; language callers supply a
+ * traced owner. Clear with NULL proc/user/owner. Hold/Drop run outside locks.
+ * Owned callbacks return 0=no hit, 1=valid hit, negative=checked failure; other
+ * values/invalid hits fail. Raw Create's borrowed boolean callback is unchanged.
+ * Update/Prewarm stop at the first failure, keep earlier partial work, reset
+ * busy/event-suppression and do not replay unexecuted steps automatically. */
+XGE_API int xgeParticleWorldSetCollisionOwned(xge_particle_world pWorld,
+	xge_particle_collision_proc proc, void* pUser, const xge_callback_owner_t* pOwner);
 /* consumed is authoritative even if cleanup returns a checked failure. Active
  * calls own independent references, so owner release cannot free their body. */
 XGE_API int xgeParticleWorldReleaseOwnerChecked(xge_particle_world pWorld, bool* pConsumed);

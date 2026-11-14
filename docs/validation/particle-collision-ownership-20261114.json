@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "date": "2026-11-14",
+  "scope": "Native persistent owned collision registration on the actual CPU ParticleWorld, checked propagation and ownership cleanup.",
+  "parentCommit": "11c995bd7a98f3501da3781f442345aed4da09d1",
+  "shippingDelivery": false,
+  "fullGoalComplete": false,
+  "languageWorldQualified": false,
+  "persistentOwnedCollisionQualified": true,
+  "networkTests": false,
+  "publicNativeAbiChanged": true,
+  "sources": {
+    "include/xge.h": "19ded70d5f9fd756332983bc640e717770c0a7b6b25adbd69134b34e0cc1f9c2",
+    "src/xge/particle/xge_particle.c": "357ce8c5320a691aea5d3948a6d52475bb7f1087d92fabccf17c3fb6f2f4ba4a",
+    "src/xge/particle/xge_particle_internal.h": "6e03efec83311284b5e83a969ac3aa37a7f918b3f0e91a37dc1729e94dd5520e",
+    "src/xge/particle/xge_particle_owned.inl": "aa567fdd2e27172ca8906613103270c07280aa9d966922f98b7f148f2bc238bf",
+    "tests/xge/xge_particle_world_owned_test.c": "78d99f7cb400681b4a67def5c1b9151a3db5af6148e8e141fe541ce9fc3b5865",
+    "tests/xge/xge_particle_collision_owned_test.c": "d8d0e79fab0be6c6e3eed4d0dc3cb0d5bdec529f0f426b392c54c472b2dac5d6",
+    "tools/test/check_particle_world_ownership.py": "2fc47f12c7184352c834123c5144140f83821db7496d8338ab67f579e6c7bd66",
+    "docs/particle-world-ownership.md": "3fb08e5589b88fda2b6712606cb633d58960026628edbc3c4e57369d8af3a8b2",
+    "docs/particle-collision-ownership.md": "c3c738b829662354c72baf6adf016d053679d5f07469501f6d0cc846be9a8211"
+  },
+  "platforms": {
+    "win": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-particle-collision-win-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-particle-collision-win-freeze-r1.json",
+        "sha256": "a369e0b85623633aaea50d0b3382cd41e4dbe9eb6d96a4e675cfcf40ffc4ffdf"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-sdk-win-r1\\results.json",
+        "sha256": "952f34bdaf3251ba01cd4cf8a567718c8c7bb73c6af6b79f1cb9a4967212e4b9"
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-native-win-r2\\results.json",
+        "sha256": "1039395dd05afacf55255e1e898d6bfe4ecef3bcc00a733de6e205dc438c0ff6"
+      },
+      "commands": 16,
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-cost-win-r1\\results.json",
+        "sha256": "da40069b5b6e39115cfa44d4c5b975bd1d28f20cf4d373e6497141ff53816022"
+      },
+      "imageDelta": {
+        "file": 2560,
+        "text": 1984,
+        "bss": 0
+      },
+      "note": "Frozen SDK product/test bytes match committed candidates. Gate tool docstring was clarified later; final fixture/tool are explicitly pinned by r2 acceptance."
+    },
+    "linux": {
+      "source": "F:\\xlang-validation\\xge-full-20261110\\native-particle-collision-linux-source-r1",
+      "freeze": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\native-particle-collision-linux-freeze-r1.json",
+        "sha256": "83ea405165ffb10a4464696e0735b770a6720116019b85f56a5ff268965f924b"
+      },
+      "sdk": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-sdk-linux-r1\\results.json",
+        "sha256": "8d9b11d10942cbf6660010a726397d13c302b2b6b7e1ade097896cd3167d3270"
+      },
+      "native": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-native-linux-r2\\results.json",
+        "sha256": "7585ac69eaf57831c5d240cecf18be05332d5eade772b4a5592fd2c0694dd882"
+      },
+      "commands": 16,
+      "cost": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\particle-collision-cost-linux-r1\\results.json",
+        "sha256": "cecc154066a370468a3360c5b27818e6325b38548708ec959405f713d252070e"
+      },
+      "imageDelta": {
+        "file": 4096,
+        "text": 3584,
+        "bss": 0
+      },
+      "note": "Frozen SDK product/test bytes match committed candidates. Gate tool docstring was clarified later; final fixture/tool are explicitly pinned by r2 acceptance."
+    }
+  },
+  "costs": {
+    "rawBytes": 496,
+    "previousManagedBytes": 568,
+    "managedBytes": 600,
+    "callbackOwnerBytes": 32,
+    "smallCreateAllocations": 5,
+    "rawLiveBytes": 1232,
+    "managedLiveBytes": 1336,
+    "perCollision": "One independent owner Hold/Drop snapshot, checked result/geometry and existing call admission; no new per-particle fields.",
+    "nativeHot": {
+      "callbacks": 1000,
+      "alloc": 0,
+      "free": 0,
+      "realloc": 0,
+      "holds": 1001,
+      "drops": 1000
+    },
+    "cold": "Registration snapshots owner and runs Hold/old Drop. Native registration itself allocates no heap; caller hooks may allocate.",
+    "cpuEquivalenceClaim": false
+  },
+  "semantics": {
+    "result": "0 miss; 1 valid hit; negative checked error; other positive/invalid geometry rejected",
+    "failure": "First failure wins including absent diagnostic; partial simulation commit retained; no replay of discarded whole steps",
+    "replacement": "Hold failure keeps old; successful publication remains after old Drop failure",
+    "close": "Active real native ref protects full tail; busy/suppression reset; consumed Drop never retried"
+  },
+  "limitations": [
+    "No language/GPU/rendering qualification in this native receipt.",
+    "No module/global CodeLease cycle solution or final matched shipping installation.",
+    "Unrelated XUI/input/text/geometry work is not included in this commit."
+  ]
+}

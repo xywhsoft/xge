@@ -61,6 +61,7 @@ typedef struct xp_world_owned_t {
 	struct xge_particle_world_t world;
 	atomic_uint refs;
 	xge_callback_owner_t codeOwner;
+	xge_callback_owner_t collisionOwner;
 	xge_data_lifetime_t lifetime;
 } xp_world_owned_t;
 #endif

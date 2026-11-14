@@ -1,5 +1,10 @@
 # Managed CPU particle-world lifetime
 
+This foundation snapshot describes the previous 568-byte managed record.
+The subsequent [owned collision registration](particle-collision-ownership.md)
+adds a traced callback descriptor (current managed size 600 bytes) and checked
+collision dispatch. The raw record and public world ownership protocol remain.
+
 `xgeParticleWorldCreateOwned` and `CreateOwnedWithCode` allocate the same native
 world and preserve its public handle type. They add creator-thread admission,
 actual shared references, active-call pins and ownership-protocol capabilities.

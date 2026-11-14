@@ -204,7 +204,10 @@ static void test_world_hot(void)
   printf("ParticleWorld %s prepared update/stats: 1000 pairs, zero heap operations\n",managed?"managed":"raw");
  }
 }
-int main(int argc,char** argv)
+#ifndef PARTICLE_WORLD_MAIN
+#define PARTICLE_WORLD_MAIN main
+#endif
+int PARTICLE_WORLD_MAIN(int argc,char** argv)
 {
 #if defined(PARTICLE_SDK_HOST)
  const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
