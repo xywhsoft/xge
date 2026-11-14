@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "diagnostic-review-not-full-qualification",
+  "shippingDelivery": false,
+  "supersedesInterpretation": {
+    "path": "docs/validation/choice-init-and-cache-20261115.json",
+    "sha256": "235065b5f12d66513e9c29518dc9bb667b7efdbfa8b9e97f37fa69555ce1c208",
+    "field": "broaderDiagnostic.remaining",
+    "reason": "The earlier same-Context byte delta conflated a retained Window event-queue capacity with an unreachable allocation; it also stopped CodeEdit before its first success boundary."
+  },
+  "evidence": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\widget-constructor-retirement-audit-win-r1\\results.json",
+    "sha256": "b7d8dbf97cad1d39cb202194ef4e9723dc21da3c1fb560bf0ddec1a8704eecc1",
+    "sourceSha256": "b17e4c764819919dafa7c83275ffa9c50cb8850d109e2d65ce97734cebc3f808",
+    "rows": 57
+  },
+  "corrections": {
+    "window": "Passes fresh warmed Context per prefix and full Context retirement; retained event capacity is not an unreachable resource leak.",
+    "queueBytes": "273408 = 64 * sizeof(xui_event_t)4272; exact cleanup after Context retirement confirmed.",
+    "codeEdit": "At budget99, full retirement leaves zero live allocations but increments InvalidFreeCount by1. This is a real invalid-free diagnostic, not just an insufficient96-budget test."
+  },
+  "oldSdkFailures": [
+    "xuiHyperlinkCreate",
+    "xuiCodeEditCreate",
+    "xuiInputCreate",
+    "xuiTagInputCreate",
+    "xuiNumericInputCreate",
+    "xuiTextEditCreate",
+    "xuiCheckBoxCreate",
+    "xuiToggleCreate",
+    "xuiInventoryGridCreate",
+    "xuiTerminalCreate",
+    "xuiTableGridCreate",
+    "xuiPropertyGridCreate",
+    "xuiComboBoxCreate"
+  ],
+  "currentFix": {
+    "revision": "d1104c8e",
+    "qualifiedConstructors": [
+      "xuiCheckBoxCreate",
+      "xuiToggleCreate"
+    ],
+    "qualifiedNativeCommands": 104
+  },
+  "remainingConfirmed": {
+    "leakingConstructors": [
+      "xuiHyperlinkCreate",
+      "xuiInputCreate",
+      "xuiTagInputCreate",
+      "xuiNumericInputCreate",
+      "xuiTextEditCreate",
+      "xuiInventoryGridCreate",
+      "xuiTerminalCreate",
+      "xuiTableGridCreate",
+      "xuiPropertyGridCreate",
+      "xuiComboBoxCreate"
+    ],
+    "invalidFree": [
+      "xuiCodeEditCreate"
+    ]
+  },
+  "limits": [
+    "Windows O2 hosted diagnostic against the older Radio SDK only; not Linux/static/language/default-and-full-descriptor qualification.",
+    "Initial broad reports, original52-step gate reports and corrected diagnostics all preserved without changing their bytes.",
+    "The two choice fixes and isolated cache fixes retain their original qualification; this review corrects only the broader audit classification."
+  ]
+}
