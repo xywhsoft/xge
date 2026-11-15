@@ -13650,11 +13650,18 @@ XUI_API int xuiDebugLayoutSnapshot(xui_context pContext, char* sBuffer, int iCap
 XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, char* sBuffer, int iCapacity);
 #endif
 
-/* 创建空流程图模型（节点/端口/边）。 */
+/* 创建空流程图模型（节点/端口/边）。
+ * Model operations require creator-thread/external serialization. While a
+ * model-owned config Clone/Drop runs, ordinary reentry into that same model
+ * returns XUI_ERROR_BUSY before reading arguments or changing outputs/history.
+ * Independent models remain usable. Count/find/boolean-int queries may thus
+ * return a negative Busy status. Prefer checked variants for void/uint queries. */
 #if XUI_ENABLE_FLOW_GRAPH
 XUI_API int xuiFlowGraphCreate(xui_flow_graph* ppGraph);
 /* 释放流程图模型。 */
 XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph);
+/* Busy leaves the model alive; NULL is a successful no-op. No allocation. */
+XUI_API int xuiFlowGraphDestroyChecked(xui_flow_graph pGraph);
 /* Frozen, read-only owning slots in the uniquely owned native model: current
  * node configs and all undo/redo snapshots, including delete-selection groups.
  * The visitor receives each actual xvalue reference once; repeated targets are
@@ -13687,6 +13694,9 @@ XUI_API int xuiFlowGraphGetEdgeCount(xui_flow_graph pGraph);
 XUI_API int xuiFlowGraphGetNodePortCount(xui_flow_graph pGraph, int iNode);
 /* 读取模型修订号（任何变更自增）。 */
 XUI_API uint32_t xuiFlowGraphGetRevision(xui_flow_graph pGraph);
+/* Checked queries preserve *pRevision on failure and allocate no error object.
+ * Legacy uint queries return zero on Busy and set an XRT execution error. */
+XUI_API int xuiFlowGraphGetRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision);
 /* 按索引输出节点信息。 */
 XUI_API int xuiFlowGraphGetNode(xui_flow_graph pGraph, int iNode, xui_flow_node_info_t* pInfo);
 /* 输出端口信息。 */
@@ -13743,6 +13753,7 @@ XUI_API int xuiFlowGraphMarkClean(xui_flow_graph pGraph);
 XUI_API int xuiFlowGraphIsDirty(xui_flow_graph pGraph);
 /* 读取保存基线修订号。 */
 XUI_API uint32_t xuiFlowGraphGetCleanRevision(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetCleanRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision);
 /* 生成唯一节点 id 写入缓冲。 */
 XUI_API int xuiFlowGraphMakeNodeId(xui_flow_graph pGraph, char* sBuffer, int iCapacity);
 /* 生成唯一连线 id。 */
@@ -13819,7 +13830,12 @@ XUI_API int xuiWorkflowWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_co
 /* 取内部流程图画布控件。 */
 XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
 
-/* 创建空工作流模型（节点类型/变量/诊断，包装流程图）。 */
+/* 创建空工作流模型（节点类型/变量/诊断，包装流程图）。
+ * During this workflow's graph-config Clone/Drop, all existing-workflow int
+ * entrypoints return XUI_ERROR_BUSY before touching inputs/outputs. Staged
+ * graph replacement retains the logical destination's callback identity.
+ * Legacy Destroy/GetGraph refuse reentry and report Busy through XRT without
+ * replacing an existing error. Independent workflows remain usable. */
 XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow);
 /* 释放工作流模型。 */
 XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow);

@@ -1227,7 +1227,10 @@ int xuiInternalCodeDocumentClampOffset(xui_code_document pDocument,
 	int iOffset, int bForward, int* pClamped);
 int xuiInternalCodeLanguageUsesBuiltinC(const xui_code_language_t* pLanguage);
 uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
-void xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
+int xuiInternalFlowGraphGetGeometryRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision);
+int xuiInternalFlowGraphIsValueCallbackActive(xui_flow_graph pGraph);
+int xuiInternalFlowGraphSetCallbackOwner(xui_flow_graph pGraph,xui_flow_graph pOwner);
+int xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 	const char* sNodeId, xvalue* pConfig, const xui_flow_port_desc_t* pPorts,
 	int iPortCount, int bReplaceDynamicPorts, const char* sSummary);

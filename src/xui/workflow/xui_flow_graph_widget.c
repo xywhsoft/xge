@@ -826,6 +826,16 @@ static int __xuiFlowGraphWidgetEdgeBucketIndex(const xui_flow_graph_widget_data_
 	return iRow * pData->iEdgeBucketCols + iCol;
 }
 
+/* Retain checked Busy even when a paint fallback ignores a bucket status. */
+static int __xuiFlowGraphWidgetGeometryRevision(xui_flow_graph graph,uint32_t* revision)
+{
+    int status=xuiInternalFlowGraphGetGeometryRevisionChecked(graph,revision);
+    if(status==XUI_ERROR_BUSY && !xrtGetError())
+        xrtSetErrorInfo(XERR_STATE,"xui.flow_graph",status,
+            "FlowGraph is busy during a configuration value callback");
+    return status;
+}
+
 static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* pData, xui_rect_t tContent)
 {
 	xui_flow_graph_node_bucket_t* pBucket;
@@ -841,19 +851,22 @@ static int __xuiFlowGraphWidgetRebuildNodeBuckets(xui_flow_graph_widget_data_t* 
 	int iCol;
 	int iRow;
 	int iRet;
+	uint32_t iGeometryRevision;
 	uint32_t iPos;
 
 	if ( (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->iNodeBucketRevision == xuiInternalFlowGraphGetGeometryRevision(pData->pGraph) &&
+	iRet=__xuiFlowGraphWidgetGeometryRevision(pData->pGraph,&iGeometryRevision);
+	if(iRet!=XUI_OK)return iRet;
+	if ( pData->iNodeBucketRevision == iGeometryRevision &&
 	     __xuiFlowGraphWidgetRectNear(pData->tNodeBucketContent, tContent) &&
 	     pData->arrNodeBuckets.Count > 0u ) {
 		return XUI_OK;
 	}
 	__xuiFlowGraphWidgetClearNodeBuckets(pData);
 	pData->tNodeBucketContent = tContent;
-	pData->iNodeBucketRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
+	pData->iNodeBucketRevision = iGeometryRevision;
 	pData->iNodeBucketCols = (int)ceilf(tContent.fW / XUI_FLOW_NODE_BUCKET_SIZE);
 	pData->iNodeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iNodeBucketCols < 1 ) pData->iNodeBucketCols = 1;
@@ -925,19 +938,22 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 	int iCol;
 	int iRow;
 	int iRet;
+	uint32_t iGeometryRevision;
 	uint32_t iPos;
 
 	if ( (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pData->iEdgeBucketRevision == xuiInternalFlowGraphGetGeometryRevision(pData->pGraph) &&
+	iRet=__xuiFlowGraphWidgetGeometryRevision(pData->pGraph,&iGeometryRevision);
+	if(iRet!=XUI_OK)return iRet;
+	if ( pData->iEdgeBucketRevision == iGeometryRevision &&
 	     __xuiFlowGraphWidgetRectNear(pData->tEdgeBucketContent, tContent) &&
 	     pData->arrEdgeBuckets.Count > 0u ) {
 		return XUI_OK;
 	}
 	__xuiFlowGraphWidgetClearEdgeBuckets(pData);
 	pData->tEdgeBucketContent = tContent;
-	pData->iEdgeBucketRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
+	pData->iEdgeBucketRevision = iGeometryRevision;
 	pData->iEdgeBucketCols = (int)ceilf(tContent.fW / XUI_FLOW_NODE_BUCKET_SIZE);
 	pData->iEdgeBucketRows = (int)ceilf(tContent.fH / XUI_FLOW_NODE_BUCKET_SIZE);
 	if ( pData->iEdgeBucketCols < 1 ) pData->iEdgeBucketCols = 1;
@@ -1611,7 +1627,8 @@ static void __xuiFlowGraphWidgetSyncAccessibility(xui_widget pWidget,
 	int iEdgeCount;
 
 	if ( pWidget == NULL || pData == NULL ) return;
-	iGeometryRevision = xuiInternalFlowGraphGetGeometryRevision(pData->pGraph);
+	iGeometryRevision = 0;
+	if(pData->pGraph && __xuiFlowGraphWidgetGeometryRevision(pData->pGraph,&iGeometryRevision)!=XUI_OK)return;
 	iSelectionFingerprint = __xuiFlowGraphWidgetSelectionFingerprint(pData->pGraph);
 	iNodeCount = xuiFlowGraphGetNodeCount(pData->pGraph);
 	iEdgeCount = xuiFlowGraphGetEdgeCount(pData->pGraph);
