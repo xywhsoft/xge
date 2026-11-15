@@ -121,7 +121,7 @@ typedef struct xui_code_edit_data_t {
 	int iDiagnosticScratchCapacity;
 	xui_code_provider_set pProviders;
 	xui_code_margin_model pMargins;
-	xui_code_margin_info_t* pMarginLayout;
+	xui_code_margin_entry_t* pMarginLayout;
 	int iMarginLayoutCapacity;
 	xui_code_command_map pCommandMap;
 	xui_code_language_registry pLanguages;
@@ -465,12 +465,12 @@ static int __xuiCodeEditFindResultReserve(xui_code_edit_data_t* pData, int iCapa
 
 static int __xuiCodeEditMarginLayoutReserve(xui_code_edit_data_t* pData, int iCapacity)
 {
-	xui_code_margin_info_t* pNew;
+	xui_code_margin_entry_t* pNew;
 
 	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iCapacity <= pData->iMarginLayoutCapacity ) return XUI_OK;
 	if ( (size_t)iCapacity > SIZE_MAX / sizeof(*pNew) ) return XUI_ERROR_LIMIT_EXCEEDED;
-	pNew = (xui_code_margin_info_t*)xrtRealloc(pData->pMarginLayout,
+	pNew = (xui_code_margin_entry_t*)xrtRealloc(pData->pMarginLayout,
 		sizeof(*pNew) * (size_t)iCapacity);
 	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	pData->pMarginLayout = pNew;
@@ -4751,7 +4751,7 @@ static int __xuiCodeEditDispatchMarginEvent(xui_widget pWidget, xui_code_edit_da
 	const xui_event_t* pEvent, int* pDispatched, xui_code_margin_hit_t* pMarginHit)
 {
 	xui_code_margin_hit_t tHit;
-	xui_code_margin_info_t tInfo;
+	xui_code_margin_state_t tInfo;
 	xui_rect_t tLineRect;
 	float fLineHeight;
 	int iRet;
@@ -4765,16 +4765,16 @@ static int __xuiCodeEditDispatchMarginEvent(xui_widget pWidget, xui_code_edit_da
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pMarginHit != NULL ) *pMarginHit = tHit;
 	memset(&tInfo, 0, sizeof(tInfo));
-	iRet = xuiCodeMarginModelGet(pData->pMargins, tHit.iIndex, &tInfo);
+	iRet = xuiCodeMarginModelGetState(pData->pMargins, tHit.iIndex, &tInfo);
 	if ( iRet != XUI_OK ) return iRet;
 	tLineRect = tHit.tRect;
 	tLineRect.fY = xuiWidgetGetWorldRect(pWidget).fY + 4.0f +
 		(float)__xuiCodeEditLineToVisibleRow(pData, tHit.iLine) * fLineHeight - pData->fScrollY;
 	tLineRect.fH = fLineHeight;
-	if ( tInfo.onEvent != NULL ) {
-		iRet = tInfo.onEvent(pWidget, tInfo.iId, tHit.iLine, pEvent->iType, tLineRect, tInfo.pUser);
-		if ( iRet != XUI_OK ) return iRet;
-	} else if ( pEvent->iType == XUI_EVENT_POINTER_DOWN && tInfo.iKind == XUI_CODE_MARGIN_FOLD ) {
+    bool called=false;
+    iRet=xuiInternalCodeMarginInvokeEvent(pData->pMargins,tHit.iIndex,pWidget,tHit.iLine,pEvent->iType,tLineRect,&called);
+    if(iRet!=XUI_OK)return iRet;
+    if(!called && pEvent->iType == XUI_EVENT_POINTER_DOWN && tInfo.iKind == XUI_CODE_MARGIN_FOLD ) {
 		iRet = xuiCodeFoldStateToggleLine(pData->pFoldState, tHit.iLine);
 		if ( iRet != XUI_OK && iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
 		if ( iRet == XUI_OK ) {
@@ -6343,7 +6343,7 @@ static int __xuiCodeEditLineHasFoldHeader(xui_code_edit_data_t* pData, int iLine
 	return 0;
 }
 
-static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData, xui_rect_t tContent, const xui_code_margin_info_t* pMargins, int iMarginCount, int iLine, int iActiveLine, int iLineStart, int iLineEnd, float fY, float fLineHeight)
+static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, xui_code_edit_data_t* pData, xui_rect_t tContent, xui_code_margin_snapshot_t* frame, int iMarginCount, int iLine, int iActiveLine, int iLineStart, int iLineEnd, float fY, float fLineHeight)
 {
 	xui_code_marker_t arrMarkers[8];
 	xui_code_diagnostic_t arrDiagnostics[8];
@@ -6353,16 +6353,19 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 	int iCount;
 	int iRet;
 
-	if ( pMargins == NULL || iMarginCount <= 0 ) return XUI_OK;
+	if ( frame == NULL || iMarginCount <= 0 ) return XUI_OK;
 	for ( i = 0; i < iMarginCount; i++ ) {
-		tLineRect = (xui_rect_t){pMargins[i].tRect.fX, fY, pMargins[i].tRect.fW, fLineHeight};
+		tLineRect = (xui_rect_t){frame->entries[i].info.tRect.fX, fY, frame->entries[i].info.tRect.fW, fLineHeight};
 		if ( tLineRect.fX + tLineRect.fW > tContent.fW ) continue;
-		if ( pMargins[i].onRender != NULL ) {
-			iRet = pMargins[i].onRender(pWidget, pMargins[i].iId, iLine, pDraw, tLineRect, pMargins[i].pUser);
-			if ( iRet != XUI_OK ) return iRet;
-			continue;
-		}
-		if ( pMargins[i].iKind == XUI_CODE_MARGIN_LINE_NUMBER ) {
+        /* Built-in margins keep their direct fast path. Only custom callbacks
+         * enter invocation protection; the frame already pins its layout. */
+        if(frame->entries[i].render || frame->entries[i].info.onRender){
+            bool called=false;
+            iRet=xuiInternalCodeMarginSnapshotRender(frame,i,pWidget,iLine,pDraw,tLineRect,&called);
+            if(iRet!=XUI_OK)return iRet;
+            if(called)continue;
+        }
+		if ( frame->entries[i].info.iKind == XUI_CODE_MARGIN_LINE_NUMBER ) {
 			if ( iLine == iActiveLine ) {
 				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tLineRect,
 					__xuiCodeEditColor(pWidget, "codeedit.line_number.active_background_color", XUI_COLOR_RGBA(226,232,240,255)));
@@ -6374,7 +6377,7 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 				(iLine == iActiveLine) ? __xuiCodeEditColor(pWidget, "codeedit.line_number.active_color", XUI_COLOR_RGBA(15,23,42,255)) :
 				__xuiCodeEditColor(pWidget, "codeedit.line_number.color", XUI_COLOR_RGBA(100,116,139,255)));
 			if ( iRet != XUI_OK ) return iRet;
-		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_MARKER ) {
+		} else if ( frame->entries[i].info.iKind == XUI_CODE_MARGIN_MARKER ) {
 			iCount = 0;
 			iRet = xuiCodeAnnotationGetMarkers(pData->pAnnotations, iLine, arrMarkers, (int)(sizeof(arrMarkers) / sizeof(arrMarkers[0])), &iCount);
 			if ( iRet != XUI_OK ) return iRet;
@@ -6383,13 +6386,13 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 					__xuiCodeEditColor(pWidget, "codeedit.marker.color", XUI_COLOR_RGBA(37,99,235,255)));
 				if ( iRet != XUI_OK ) return iRet;
 			}
-		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_FOLD ) {
+		} else if ( frame->entries[i].info.iKind == XUI_CODE_MARGIN_FOLD ) {
 			if ( __xuiCodeEditLineHasFoldHeader(pData, iLine) ) {
 				iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, "-", 0, 1, (xui_rect_t){tLineRect.fX + 4.0f, tLineRect.fY, 8.0f, tLineRect.fH},
 					__xuiCodeEditColor(pWidget, "codeedit.fold.color", XUI_COLOR_RGBA(71,85,105,255)));
 				if ( iRet != XUI_OK ) return iRet;
 			}
-		} else if ( pMargins[i].iKind == XUI_CODE_MARGIN_DIAGNOSTIC ) {
+		} else if ( frame->entries[i].info.iKind == XUI_CODE_MARGIN_DIAGNOSTIC ) {
 			iCount = 0;
 			iRet = xuiCodeAnnotationGetDiagnosticsAt(pData->pAnnotations, iLineStart, arrDiagnostics, (int)(sizeof(arrDiagnostics) / sizeof(arrDiagnostics[0])), &iCount);
 			if ( iRet != XUI_OK ) return iRet;
@@ -6514,7 +6517,7 @@ static int __xuiCodeEditRenderMinimap(xui_widget pWidget, xui_proxy pProxy,
 	return XUI_OK;
 }
 
-static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser,xui_code_margin_snapshot_t* frame)
 {
 	xui_code_edit_data_t* pData;
 	xui_context pContext;
@@ -6525,7 +6528,6 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 	xui_rect_t tTextContent;
 	xui_rect_t tCaret;
 	xui_rect_t tIme;
-	xui_code_margin_info_t* pMargins;
 	xui_code_selection_t tSelection;
 	const char* sText;
 	uint32_t iBackgroundColor;
@@ -6596,11 +6598,10 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 	iMarginCapacity = xuiCodeMarginModelGetCount(pData->pMargins);
 	iRet = __xuiCodeEditMarginLayoutReserve(pData, iMarginCapacity);
 	if ( iRet != XUI_OK ) return iRet;
-	pMargins = pData->pMarginLayout;
 	iMarginCount = 0;
 	tTextContent = tContent;
-	iRet = xuiCodeMarginModelLayout(pData->pMargins, tContent, pMargins,
-		iMarginCapacity, &iMarginCount, &tTextContent);
+    iRet=xuiInternalCodeMarginSnapshotBegin(pData->pMargins,tContent,pData->pMarginLayout,iMarginCapacity,frame,&tTextContent);
+    iMarginCount=frame->count;
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iMarginCount > iMarginCapacity ) return XUI_ERROR_LIMIT_EXCEEDED;
 	iBackgroundColor = pData->bReadonly ?
@@ -6716,7 +6717,7 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 		}
 		iRet = (iWrapSegment == 0) ?
 			__xuiCodeEditRenderMargins(pWidget, pProxy, pDraw, pFont, pData,
-				tContent, pMargins, iMarginCount, iLine, iActiveLine,
+				tContent, frame, iMarginCount, iLine, iActiveLine,
 				iStart, iEnd, fY, fLineHeight) : XUI_OK;
 		if ( iRet != XUI_OK ) return iRet;
 		{
@@ -6913,7 +6914,9 @@ static int __xuiCodeEditCacheRender(xui_widget widget,xui_draw_context draw,uint
     xui_context context=widget->pContext;xui_call_scope_t scope={0};
     int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
     data->iCacheActivity=2;
-    status=__xuiCodeEditCacheRenderImpl(widget,draw,state,user);
+    xui_code_margin_snapshot_t frame={0};
+    status=__xuiCodeEditCacheRenderImpl(widget,draw,state,user,&frame);
+    if(frame.self)status=xuiInternalCodeMarginSnapshotEnd(&frame,status);
     data->iCacheActivity=0;
     if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
     xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;
@@ -7197,14 +7200,14 @@ XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget)
 
 static int __xuiCodeEditDefaultMarginVisible(xui_code_edit_data_t* pData, int iKind)
 {
-	xui_code_margin_info_t tInfo;
+	xui_code_margin_state_t tInfo;
 	int iCount;
 	int i;
 
 	if ( pData == NULL || pData->pMargins == NULL ) return 0;
 	iCount = xuiCodeMarginModelGetCount(pData->pMargins);
 	for ( i = 0; i < iCount; i++ ) {
-		if ( xuiCodeMarginModelGet(pData->pMargins, i, &tInfo) != XUI_OK ) continue;
+		if ( xuiCodeMarginModelGetState(pData->pMargins, i, &tInfo) != XUI_OK ) continue;
 		if ( tInfo.iKind == iKind ) return ((tInfo.iFlags & XUI_CODE_MARGIN_VISIBLE) != 0) ? 1 : 0;
 	}
 	return 0;

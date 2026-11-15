@@ -1,0 +1,112 @@
+{
+  "date": "2026-11-15",
+  "complete": true,
+  "passed": true,
+  "scope": "Native owned Margin slots, independent frame/event pins and numeric state; no language or full release completion",
+  "nativeBase": "488d01264cdfc9399c0f6af6bac00579880ba2b4",
+  "shippingDelivery": false,
+  "networkTests": false,
+  "commands": 92,
+  "constructorPrefixes": 1040,
+  "evidence": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-owned-native-verified-win-r1.json",
+      "sha256": "9cddb46e2fa2873efa8fb7c45129390e94505e75e7da551c3ca796da8508825a",
+      "commands": 46,
+      "constructorPrefixes": 520,
+      "builds": [
+        {
+          "kind": "host",
+          "version": "r1",
+          "compiled": 164,
+          "reused": 0,
+          "fullBuild": true
+        },
+        {
+          "kind": "static",
+          "version": "r1",
+          "compiled": 166,
+          "reused": 0,
+          "fullBuild": true
+        },
+        {
+          "kind": "host",
+          "version": "r2",
+          "compiled": 1,
+          "reused": 163,
+          "fullBuild": false
+        },
+        {
+          "kind": "static",
+          "version": "r2",
+          "compiled": 2,
+          "reused": 164,
+          "fullBuild": false
+        }
+      ]
+    },
+    {
+      "platform": "linux",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-owned-native-verified-linux-r1.json",
+      "sha256": "07cc471c0e92c911e8f379124f6331d841203ee274a84c2001a2661e11a803b4",
+      "commands": 46,
+      "constructorPrefixes": 520,
+      "builds": [
+        {
+          "kind": "host",
+          "version": "r1",
+          "compiled": 164,
+          "reused": 0,
+          "fullBuild": true
+        },
+        {
+          "kind": "static",
+          "version": "r1",
+          "compiled": 166,
+          "reused": 0,
+          "fullBuild": true
+        },
+        {
+          "kind": "host",
+          "version": "r2",
+          "compiled": 1,
+          "reused": 163,
+          "fullBuild": false
+        },
+        {
+          "kind": "static",
+          "version": "r2",
+          "compiled": 2,
+          "reused": 164,
+          "fullBuild": false
+        }
+      ]
+    }
+  ],
+  "geometry": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\margin-owned-work-r1\\geometry-preserved.json",
+    "sha256": "406aba56a344d578e5fb1587ede26c7ce61f799d26d5510e9ca732e1727187c4"
+  },
+  "cost": {
+    "modelBytes": 64,
+    "previousModelBytes": 56,
+    "slotBytes": 72,
+    "layoutEntryBytes": 72,
+    "previousEntryBytes": 64,
+    "frameBytes": 96,
+    "scopeBytes": 72,
+    "modelAllocations": 1,
+    "slotAllocations": 1,
+    "hotRoundsPerStaticMode": 1000,
+    "hotHeapOperations": 0,
+    "hotExternalHoldDrop": 0,
+    "cpuEquivalenceClaim": false
+  },
+  "open": [
+    "CodeEdit long-lived language alias",
+    "Writable layout/output-array contract",
+    "Language callback execution and full UI examples",
+    "Complete IDE/release delivery"
+  ]
+}

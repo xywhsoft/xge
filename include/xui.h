@@ -2925,6 +2925,14 @@ struct xui_code_margin_hit_t {
 	xui_rect_t tRect;
 };
 
+/* Pointer-free metadata; safe to copy independently of callback storage. */
+typedef struct xui_code_margin_state_t {
+	uint32_t iSize;
+	int iId, iKind;
+	float fWidth;
+	uint32_t iFlags;
+} xui_code_margin_state_t;
+
 struct xui_code_style_t {
 	uint32_t iSize;
 	uint32_t iForeground;
@@ -8169,6 +8177,13 @@ XUI_API int xuiCodeMarginModelCallBegin(xui_code_margin_model pModel,xui_code_ma
 XUI_API int xuiCodeMarginModelCallEnd(xui_code_margin_scope_t* pScope);
 XUI_API bool xuiCodeMarginModelTraceOwnership(xui_code_margin_model pModel,xrtownershipvisitor onVisit,void* pUser);
 XUI_API int xuiCodeMarginModelClearChecked(xui_code_margin_model pModel);
+/* Each non-NULL callback owns one independent owner reference. Replacement,
+ * removal and clear detach before Drop; in-flight native snapshots retain the
+ * old slot until its final invocation/frame returns. NULL clears that role.
+ * Legacy Get/Layout refuse owned slots rather than export borrowed closures. */
+XUI_API int xuiCodeMarginModelSetRenderCallbackOwned(xui_code_margin_model pModel,int iId,xui_code_margin_render_proc onRender,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeMarginModelSetEventCallbackOwned(xui_code_margin_model pModel,int iId,xui_code_margin_event_proc onEvent,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeMarginModelGetState(xui_code_margin_model pModel,int iIndex,xui_code_margin_state_t* pState);
 
 /* 移除全部边栏。 */
 XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
