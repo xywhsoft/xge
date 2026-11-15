@@ -1973,6 +1973,8 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 {
 	xui_flow_node_model_t* pNode;
 	xvalue* pCopy;
+	xvalue* pPrevious;
+	uint32_t iRevision;
 	int iNode;
 	int iRet;
 
@@ -1983,16 +1985,25 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 	if ( iNode < 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRevision = pGraph->iRevision;
 	iRet = __xuiFlowCopyValue(pConfig, &pCopy);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
-	if ( pNode->pConfig != NULL ) {
-		xrtValueRelease(pNode->pConfig);
+	/* A custom xvalue Clone can run user code. Never reuse a node index
+	 * after that callback changed the model (including remove/recreate of
+	 * the same id). Roll back only this newly copied configuration. */
+	if ( pGraph->iRevision != iRevision ) {
+		if ( pCopy != NULL ) xrtValueRelease(pCopy);
+		return XUI_ERROR_INVALID_STATE;
 	}
+	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
+	pPrevious = pNode->pConfig;
 	pNode->pConfig = pCopy;
 	__xuiFlowBumpRevision(pGraph);
+	/* Detach before Drop: releasing the old configuration can remove or
+	 * relocate this node. Do not access the node or graph after that call. */
+	if ( pPrevious != NULL ) xrtValueRelease(pPrevious);
 	return XUI_OK;
 }
 
