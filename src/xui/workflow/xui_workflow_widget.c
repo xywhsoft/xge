@@ -1,12 +1,14 @@
 #include "xui_config.h"
 #if XUI_ENABLE_WORKFLOW
 #include "xui_internal.h"
+#include "xui_flow_graph_widget_internal.h"
 
 #include <string.h>
 
 typedef struct xui_workflow_widget_data_t {
 	xui_workflow pWorkflow;
 	int bOwnWorkflow;
+	int bWorkflowMutationActive;
 	xui_widget pCanvas;
 	xui_flow_context_proc onContext;
 	void* pContextUser;
@@ -29,6 +31,14 @@ static int __xuiOwnedInvoke_xuiWorkflowWidgetSetContextMenu(xui_widget widget,xu
 
 
 static xui_workflow_widget_data_t* __xuiWorkflowWidgetGetData(xui_widget pWidget);
+
+static int __xuiWorkflowWidgetDestroyReady(xui_widget widget,const void* raw)
+{
+    (void)widget;
+    const xui_workflow_widget_data_t* data=raw;
+    return data && (data->bWorkflowMutationActive ||
+        (data->pWorkflow && xuiWorkflowGetNodeCount(data->pWorkflow)==XUI_ERROR_BUSY)) ? XUI_ERROR_BUSY:XUI_OK;
+}
 
 static int __xuiWorkflowWidgetContext(xui_widget pCanvas, const xui_flow_hit_t* pHit,
 	float fX, float fY, void* pUser)
@@ -98,6 +108,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	}
 	pData = (xui_workflow_widget_data_t*)pTypeData;
 	pDesc = (const xui_workflow_desc_t*)pCreateData;
+	if(pDesc && pDesc->pWorkflow && xuiWorkflowGetNodeCount(pDesc->pWorkflow)==XUI_ERROR_BUSY)return XUI_ERROR_BUSY;
 	memset(pData, 0, sizeof(*pData));
 	bCreatedWorkflow = 0;
 	if ( pDesc != NULL ) {
@@ -194,7 +205,10 @@ XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiWorkflowWidgetDestroy;
 	__xuiWorkflowWidgetDefaultLayout(&tDesc.tLayout);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
-	if ( iRet == XUI_OK ) pType->onTraceOwnership = __xuiWorkflowWidgetTraceOwnership;
+	if ( iRet == XUI_OK ) {
+		pType->onTraceOwnership = __xuiWorkflowWidgetTraceOwnership;
+		pType->onDestroyReady = __xuiWorkflowWidgetDestroyReady;
+	}
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 
@@ -205,6 +219,7 @@ XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, 
 	if ( (ppWidget == NULL) || !__xuiWorkflowWidgetDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if(pDesc && pDesc->pWorkflow && xuiWorkflowGetNodeCount(pDesc->pWorkflow)==XUI_ERROR_BUSY)return XUI_ERROR_BUSY;
 	*ppWidget = NULL;
 	pType = xuiWorkflowGetType(pContext);
 	if ( pType == NULL ) {
@@ -218,6 +233,10 @@ XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget)
 	xui_workflow_widget_data_t* pData;
 
 	pData = __xuiWorkflowWidgetGetData(pWidget);
+	if(pData && __xuiWorkflowWidgetDestroyReady(pWidget,pData)!=XUI_OK){
+		if(!xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui.flow_graph",XUI_ERROR_BUSY,"Workflow widget model is busy");
+		return NULL;
+	}
 	return (pData != NULL) ? pData->pWorkflow : NULL;
 }
 
@@ -227,19 +246,32 @@ XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkf
 	int iRet;
 
 	pData = __xuiWorkflowWidgetGetData(pWidget);
-	if ( (pData == NULL) || (pWorkflow == NULL) || (xuiWorkflowGetGraph(pWorkflow) == NULL) ) {
+	if ( (pData == NULL) || (pWorkflow == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xuiFlowGraphWidgetSetGraph(pData->pCanvas, xuiWorkflowGetGraph(pWorkflow), 0);
+	if(__xuiWorkflowWidgetDestroyReady(pWidget,pData)!=XUI_OK ||
+	   xuiWorkflowGetNodeCount(pWorkflow)==XUI_ERROR_BUSY)return XUI_ERROR_BUSY;
+	xui_flow_graph graph=xuiWorkflowGetGraph(pWorkflow);
+	if(!graph)return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope={0};iRet=xuiCallScopeBegin(pWidget->pContext,&scope);
+	if(iRet!=XUI_OK)return iRet;
+	pData->bWorkflowMutationActive=1;
+	iRet = xuiInternalFlowGraphWidgetSetGraph(pData->pCanvas, graph, 0,pWidget);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto finish;
 	}
+	if(!xuiInternalWidgetIsValid(pWidget)){iRet=XUI_ERROR_INVALID_STATE;goto finish;}
 	if ( pData->bOwnWorkflow && pData->pWorkflow != NULL && pData->pWorkflow != pWorkflow ) {
 		xuiWorkflowDestroy(pData->pWorkflow);
 	}
 	pData->pWorkflow = pWorkflow;
 	pData->bOwnWorkflow = bOwnWorkflow ? 1 : 0;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet=xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+finish:
+	pData->bWorkflowMutationActive=0;
+	xerror* first=iRet!=XUI_OK ? xrtTakeError():NULL;
+	iRet=xuiInternalCallScopeEndOutcome(&scope,iRet,&first);
+	xrtSetErrorTake(first);return iRet;
 }
 
 XUI_API int xuiWorkflowWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)

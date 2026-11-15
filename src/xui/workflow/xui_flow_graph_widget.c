@@ -2,6 +2,7 @@
 #if XUI_ENABLE_FLOW_GRAPH
 #include "xui_internal.h"
 #include "xui_pointer_press_internal.h"
+#include "xui_flow_graph_widget_internal.h"
 
 #include <limits.h>
 #include <math.h>
@@ -121,6 +122,7 @@ typedef struct xui_flow_graph_edge_bucket_t {
 typedef struct xui_flow_graph_widget_data_t {
 	xui_flow_graph pGraph;
 	int bOwnGraph;
+	int bGraphMutationActive;
 	xui_flow_context_proc onContext;
 	void* pContextUser;
 	uint32_t iBackgroundColor;
@@ -1843,6 +1845,16 @@ static int __xuiFlowGraphWidgetAccessibleAction(xui_widget pWidget, uint64_t iNo
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+/* Pure readiness participates in both widget and whole-Context retirement.
+ * A config callback must not make its model lose the owning widget slot. */
+static int __xuiFlowGraphWidgetDestroyReady(xui_widget widget,const void* raw)
+{
+    (void)widget;
+    const xui_flow_graph_widget_data_t* data=raw;
+    return data && (data->bGraphMutationActive ||
+        xuiInternalFlowGraphIsValueCallbackActive(data->pGraph)) ? XUI_ERROR_BUSY:XUI_OK;
+}
+
 static void __xuiFlowGraphWidgetReleaseData(xui_flow_graph_widget_data_t* pData, int bDestroyGraph)
 {
 	if ( pData == NULL ) return;
@@ -1877,6 +1889,7 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 	}
 	pData = (xui_flow_graph_widget_data_t*)pTypeData;
 	pDesc = (const xui_flow_graph_desc_t*)pCreateData;
+	if(pDesc && xuiInternalFlowGraphIsValueCallbackActive(pDesc->pGraph))return XUI_ERROR_BUSY;
 	bCreatedGraph = 0;
 	memset(pData, 0, sizeof(*pData));
 	xuiXrtArrayInit(&pData->arrNodeBuckets, sizeof(xui_flow_graph_node_bucket_t));
@@ -2071,6 +2084,7 @@ XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet == XUI_OK ) {
 		pType->onTraceOwnership = __xuiFlowGraphWidgetTraceOwnership;
+		pType->onDestroyReady = __xuiFlowGraphWidgetDestroyReady;
 		__xuiFlowGraphWidgetRegisterStyleProperties(pContext, pType);
 	}
 	return (iRet == XUI_OK) ? pType : NULL;
@@ -2083,6 +2097,7 @@ XUI_API int xuiFlowGraphWidgetCreate(xui_context pContext, xui_widget* ppWidget,
 	if ( (ppWidget == NULL) || !__xuiFlowGraphWidgetDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if(pDesc && xuiInternalFlowGraphIsValueCallbackActive(pDesc->pGraph))return XUI_ERROR_BUSY;
 	*ppWidget = NULL;
 	pType = xuiFlowGraphGetType(pContext);
 	if ( pType == NULL ) {
@@ -2096,10 +2111,14 @@ XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget)
 	xui_flow_graph_widget_data_t* pData;
 
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
+	if(pData && __xuiFlowGraphWidgetDestroyReady(pWidget,pData)!=XUI_OK){
+		if(!xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui.flow_graph",XUI_ERROR_BUSY,"FlowGraph widget model is busy");
+		return NULL;
+	}
 	return (pData != NULL) ? pData->pGraph : NULL;
 }
 
-XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph)
+int xuiInternalFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph,xui_widget authority)
 {
 	xui_flow_graph_widget_data_t* pData;
 	int iRet;
@@ -2108,21 +2127,30 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	if ( pData == NULL || pGraph == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if(pWidget->pInternalOwner && pWidget->pInternalOwner!=authority)return XUI_ERROR_INVALID_STATE;
+	if(__xuiFlowGraphWidgetDestroyReady(pWidget,pData)!=XUI_OK ||
+	   xuiInternalFlowGraphIsValueCallbackActive(pGraph))return XUI_ERROR_BUSY;
+	xui_call_scope_t scope={0};
+	iRet=xuiCallScopeBegin(pWidget->pContext,&scope);
+	if(iRet!=XUI_OK)return iRet;
+	pData->bGraphMutationActive=1;
 	iRet = __xuiFlowGraphWidgetRestoreDraggedNodes(pData);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto finish;
 	}
 	__xuiFlowGraphWidgetClearDrag(pData);
 	iRet = xuiInternalPointerOwnerCancel(xuiWidgetGetContext(pWidget), pWidget,
 		&pData->tPointerOwner);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		goto finish;
 	}
+	if(!xuiInternalWidgetIsValid(pWidget)){iRet=XUI_ERROR_INVALID_STATE;goto finish;}
 	__xuiFlowGraphWidgetClearNodeBuckets(pData);
 	__xuiFlowGraphWidgetClearEdgeBuckets(pData);
 	__xuiFlowGraphWidgetClearGridCache(pData);
 	__xuiFlowGraphWidgetClearNodeCardStates(pData);
 	__xuiFlowGraphWidgetClearEdgeLayerStates(pData);
+	if(!xuiInternalWidgetIsValid(pWidget)){iRet=XUI_ERROR_INVALID_STATE;goto finish;}
 	if ( pData->bOwnGraph && (pData->pGraph != NULL) && (pData->pGraph != pGraph) ) {
 		xuiFlowGraphDestroy(pData->pGraph);
 	}
@@ -2136,8 +2164,16 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	__xuiFlowGraphWidgetSyncAccessibility(pWidget, pData, 0);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet=xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+finish:
+	pData->bGraphMutationActive=0;
+	xerror* first=iRet!=XUI_OK ? xrtTakeError():NULL;
+	iRet=xuiInternalCallScopeEndOutcome(&scope,iRet,&first);
+	xrtSetErrorTake(first);return iRet;
 }
+
+XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget widget,xui_flow_graph graph,int ownGraph)
+{return xuiInternalFlowGraphWidgetSetGraph(widget,graph,ownGraph,NULL);}
 
 XUI_API int xuiFlowGraphWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
 {
@@ -2193,11 +2229,12 @@ static int __xuiFlowGraphWidgetHitTestLocal(xui_widget pWidget, float fX, float 
 	if ( (pHit == NULL) || !xuiInternalWidgetIsValid(pWidget) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	__xuiFlowGraphWidgetSetHit(pHit, XUI_FLOW_HIT_NONE, -1, -1, -1, (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f}, fX, fY);
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
 	if ( (pData == NULL) || (pData->pGraph == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if(__xuiFlowGraphWidgetDestroyReady(pWidget,pData)!=XUI_OK)return XUI_ERROR_BUSY;
+	__xuiFlowGraphWidgetSetHit(pHit, XUI_FLOW_HIT_NONE, -1, -1, -1, (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f}, fX, fY);
 	pGraph = pData->pGraph;
 	tContent = xuiWidgetGetContentRect(pWidget);
 	if ( !__xuiFlowGraphWidgetPointInRect(tContent, fX, fY) ) {
@@ -2290,6 +2327,7 @@ XUI_API int xuiFlowGraphWidgetGetHoverHit(xui_widget pWidget, xui_flow_hit_t* pH
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if(__xuiFlowGraphWidgetDestroyReady(pWidget,pData)!=XUI_OK)return XUI_ERROR_BUSY;
 	memset(pHit, 0, sizeof(*pHit));
 	pHit->iSize = sizeof(*pHit);
 	pHit->iType = pData->iHoverType;
