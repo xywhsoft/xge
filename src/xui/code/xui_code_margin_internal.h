@@ -1,0 +1,6 @@
+#ifndef XUI_CODE_MARGIN_LIFETIME_INTERNAL_H
+#define XUI_CODE_MARGIN_LIFETIME_INTERNAL_H
+#include "xui_internal.h"
+int xuiInternalCodeMarginClaimOwner(xui_code_margin_model,xui_widget);
+int xuiInternalCodeMarginDestroyOwned(xui_widget,xui_code_margin_model);
+#endif

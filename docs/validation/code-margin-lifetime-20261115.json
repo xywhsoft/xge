@@ -1,0 +1,323 @@
+{
+  "schema": 1,
+  "date": "2026-11-15",
+  "status": "qualified-unique-margin-lifetime-foundation",
+  "shippingDelivery": false,
+  "nativeParent": "fee86e5df73d414e49286c1b54cd0c0d7f4885be",
+  "canonicalSourceSha256": {
+    "docs/code-margin-lifetime.md": "3db0b44a9821481ea4075b3ef8ad9e3857a2d08b2e034d879c7bee61823de465",
+    "include/xui.h": "3f61d10bbf5fd798849415ed17d6c005f603fc640a91c4876b785f8940c79578",
+    "src/xui/code/xui_code_edit.c": "5b5c0bcdce0cfef14bb50e7e71f905301dd8983c9b49644d17d0f9638433be6a",
+    "src/xui/code/xui_code_margin.c": "78d763742322772697853a2719c8161d5717dd618211e72bc659e24f86bcff09",
+    "src/xui/code/xui_code_margin_internal.h": "1797d861b9f68994da2f8bc4d18e92f1d0b1d0b5588b5fffb19670764f221ff6",
+    "tests/xui/xui_code_margin_host.h": "75b5d46b19f798e5440a77076f9954d6b10d20bea70b40e12e66f7666dfd8896",
+    "tests/xui/xui_code_margin_lifetime_test.c": "853643cb8b8b2f8b630b6769de5bdf7fb89c0d670b125cb4dccbbd8aa8a3cbed",
+    "tests/xui/xui_code_margin_test.c": "018a5a5458ae1dc18c5dda33b5b1f0cb83344f67bd7958b1da1292af8b53c019",
+    "tools/test/check_code_margin_lifetime.py": "662ead6d2a9af483e635d7340676f6974461309480b77ec60f5018fafbacf050"
+  },
+  "canonicalPatch": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-patches-r7\\manifest.json",
+    "sha256": "4ee316fcac3baf66ee05d6184605a9798ed48dfacefdcb9df7f3eca298e89ea5"
+  },
+  "scope": "Unique Margin model owner, CodeEdit claim, checked consumed destruction, watches, creator-thread reads and address-stable native call scopes. Owned render/event callbacks and snapshot graph remain a later phase.",
+  "qualification": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-native-evidence-win-r1.json",
+      "sha256": "19c3a2d769b52a64f6bfc6d1ff5d5e4104eb55c0c690acf98e7e2f197a56780f",
+      "complete": true,
+      "passed": true,
+      "shippingDelivery": false,
+      "scope": "Platform-native rehash of native acceptance, original full/reused object builds and independent size clients; not another execution.",
+      "acceptance": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-native-win-r4\\results.json",
+        "sha256": "fa935ddd4e4ec77a1c4aa7166b37206545b22f6a2499423934b8db0620af1024",
+        "commands": 30
+      },
+      "storage": {
+        "path": "F:\\xlang-validation\\xge-full-20261110\\margin-storage-win-r2\\results.json",
+        "sha256": "3e594c48505c7d849d0eed213cfbfabe71e3f034ea133bfabe270ca914b691cc",
+        "commands": 6,
+        "bytesBefore": 16,
+        "bytesInitialCandidate": 64,
+        "bytesFinal": 56,
+        "bytesSavedByPacking": 8
+      },
+      "totalCommands": 36,
+      "calibration": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "prefixes": 130,
+          "completeContextHeap": true
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        }
+      ],
+      "builds": {
+        "r1-host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r1\\host\\build-report.json",
+          "sha256": "129181a5616062033c23d8401879bc8ca687905fc9b154106e6115668e4d2460",
+          "compiled": 164,
+          "reused": 0,
+          "image": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r1\\host\\xge3_host.dll",
+            "sha256": "393036ce985e28f1e2d624c38999fadbbb320079a714cf15ae82d35e716fe37c"
+          }
+        },
+        "r1-static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r1\\static\\build-report.json",
+          "sha256": "8d773559a475ccd0c3037ccbe2338f97b44d4043388331179c6f20e1b95ec4cb",
+          "compiled": 166,
+          "reused": 0,
+          "image": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r1\\static\\libxge3_static.a",
+            "sha256": "e4b7814a02af4abeb938e1add75bd7a240d937c00999d94c6f65d410052f8bc0"
+          }
+        },
+        "r2-host": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r2\\host\\build-report.json",
+          "sha256": "a68f50c67cc57da77d4ede801e767498a5818e3de6dd015bf3179fc10d848b2c",
+          "compiled": 1,
+          "reused": 163,
+          "image": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r2\\host\\xge3_host.dll",
+            "sha256": "9584c2cadccf28e40614101024b541c1b098d8865504146d3533b73318bdb2f5"
+          }
+        },
+        "r2-static": {
+          "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r2\\static\\build-report.json",
+          "sha256": "41f10d9a62eb5013469311a1283ea57136236531e9b76bb38df01bc3385eabf1",
+          "compiled": 2,
+          "reused": 164,
+          "image": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-sdk-win-r2\\static\\libxge3_static.a",
+            "sha256": "a72b30ee4ce1350862855feff5c600624df48eed2cdc9b5d65c1f641dfe7d4fa"
+          }
+        }
+      },
+      "ownedCallbacks": false,
+      "languageModel": false
+    },
+    "linux": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-native-evidence-linux-r1.json",
+      "sha256": "ce36e559eb981e20e88a3ef277d240f587900da8c2ca5a7c6d46bbebeaa0c943",
+      "complete": true,
+      "passed": true,
+      "shippingDelivery": false,
+      "scope": "Platform-native rehash of native acceptance, original full/reused object builds and independent size clients; not another execution.",
+      "acceptance": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-native-linux-r4/results.json",
+        "sha256": "3f75a7e16e9dcd9f5ee8950645f5ad21c876246e4987e00b80003864a1fe3412",
+        "commands": 30
+      },
+      "storage": {
+        "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-storage-linux-r2/results.json",
+        "sha256": "0fcdaad09c56f851049c4455fe73183fc82d7a7bf063ac09c400d44619aa3b86",
+        "commands": 6,
+        "bytesBefore": 16,
+        "bytesInitialCandidate": 64,
+        "bytesFinal": 56,
+        "bytesSavedByPacking": 8
+      },
+      "totalCommands": 36,
+      "calibration": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "prefixes": 130,
+          "completeContextHeap": true
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "prefixes": 130,
+          "completeContextHeap": true
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "cpuEquivalenceClaim": false
+        }
+      ],
+      "builds": {
+        "r1-host": {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r1/host/build-report.json",
+          "sha256": "f2a6aadfc4b3e9f17920ffe8c1675a3399e0422e4356ddccb6951bc74cf4b965",
+          "compiled": 164,
+          "reused": 0,
+          "image": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r1/host/libxge3_host.so",
+            "sha256": "c59b1834416bbe474c58ecc61936abdb838e4bdfa2066d7dc3139547ad6a5665"
+          }
+        },
+        "r1-static": {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r1/static/build-report.json",
+          "sha256": "aadec46f6be9a5cb782c7927b7e265b9929936366836491f8a43ad3be7ebc4a3",
+          "compiled": 166,
+          "reused": 0,
+          "image": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r1/static/libxge3_static.a",
+            "sha256": "7d527e21cb450eb37cdf717a26d8fd2abbd2290ecff53c0e3b73d9c431fef7d1"
+          }
+        },
+        "r2-host": {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r2/host/build-report.json",
+          "sha256": "99de298a16663eeb7e9473f32bd3e3dc3d2fd93cdb26deb968dd04db04d8d09f",
+          "compiled": 1,
+          "reused": 163,
+          "image": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r2/host/libxge3_host.so",
+            "sha256": "9b19b572d3352f019b7cd4ead2e5a3d9e6d3e53cb2177c691af1d8feeb2e290a"
+          }
+        },
+        "r2-static": {
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r2/static/build-report.json",
+          "sha256": "69e6685e92029ea3e01625867bfc86099059bb4ec51ab52463beccbfc3e4bc9a",
+          "compiled": 2,
+          "reused": 164,
+          "image": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/margin-lifetime-sdk-linux-r2/static/libxge3_static.a",
+            "sha256": "6d310a7bc369e53b45105f01f828f04fd74b0fc9840ad83f243d7b3cd16d00da"
+          }
+        }
+      },
+      "ownedCallbacks": false,
+      "languageModel": false
+    }
+  },
+  "totalQualificationCommands": 72,
+  "nativeConstructorBudgetPrefixes": 1040,
+  "contracts": {
+    "consumption": "Failure and consumed are independent. Public destroy refuses the CodeEdit-owned borrow. Owner consumed immediately, physical free after final scope. Invalidator error may consume; never retry consumed owner.",
+    "tails": "Widget close tail consumes its unique model while model scope pins storage; End reports invalid state. Context close may return DEFERRED before owner consumption; end scope and explicitly retry after quiescence.",
+    "scope": "Zero/address-stable caller scope, nested pins, copy/reuse/wrong-thread refusal, pure quiescent trace, native model thread/state admission. XRT same-thread mutation nesting during freeze preserved.",
+    "callbacks": "Existing descriptor render/event/user fields remain borrowed C contracts. No language leaf policy or owned callback/margin completeness claim."
+  },
+  "costs": {
+    "oldModelRequestedBytes": 16,
+    "initialCandidateRequestedBytes": 64,
+    "finalModelRequestedBytes": 56,
+    "packingSavedPerModel": 8,
+    "incrementAgainstOldModel": 40,
+    "modelAllocationCount": 1,
+    "publicScopeBytes": 72,
+    "hot": "1000 prepared native scope/width loops: zero alloc/free/realloc at O0/O2 host/static on both platforms.",
+    "other": "Creator-thread checks, graph mutation admission, Context operations, lifetime list and checked cleanup remain. No CPU equivalence claim."
+  },
+  "diagnostics": {
+    "initialFreezeAssumption": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-host-probe-win-r1\\results.json",
+      "sha256": "863e95e315a1a208faeee48c67f1c69295d90a74cd47565ab3f52a56a8f7e318"
+    },
+    "deferredStatus": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-host-probe-win-r3\\results.json",
+      "sha256": "66fa5160ed1dafe1af10b3aa242192527e759def75538d35f56f354572039372"
+    },
+    "deferredRetry": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-host-probe-win-r5\\results.json",
+      "sha256": "efe655ed75481caa5d720bfc4e5cd0c90b36f52c97be586cb1661a1800fe5418"
+    },
+    "missingTestIncludes": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\margin-lifetime-native-win-r2\\results.json",
+      "sha256": "fe47a6ab6551b645714ceb736b3d782638576a1fcb0f4a2a1f98d7f7dc9e531e"
+    }
+  },
+  "limits": [
+    "SDK source freezes immutable; corrected final QA is separately pinned. Production/headers exactly match final canonical files; no geometry edits synchronized.",
+    "First complete O2 SDK:164 hosted/166 static compiled,0 reused each platform. Packing-only successor:1 hosted+163 reused;2 static+164 reused including generated contract, from those original full builds.",
+    "Original geometry/default/overflow/OOM regression migrated from including model implementation to real public library and XRT allocation budget; independent CodeEdit constructor calibrated130 prefixes per mode.",
+    "Borrowed render/event closure ownership, layout invocation snapshots, native graph callback edges, output-array and internal alias language contracts and full XGE integration remain open.",
+    "Native-only CPU receipt: no language, graphics/device/network or release/IDE install claim. No version bump or push."
+  ]
+}

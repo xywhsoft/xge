@@ -1,6 +1,8 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_code_geometry_internal.h"
+#include "xui_code_margin_internal.h"
+#include <stdlib.h>
 
 #include <float.h>
 #include <string.h>
@@ -9,7 +11,98 @@ struct xui_code_margin_model_t {
 	xui_code_margin_desc_t* pMargins;
 	int iCount;
 	int iCapacity;
+    uint32_t iMagic;
+    bool bDestroyPending,bDestroying;
+    uint64_t iCreatorThread;
+    size_t iActiveCalls;
+    xui_lifetime_link_t* pLifetimeLinks;
+    xui_widget pInternalOwner;
 };
+
+#define XUI_CODE_MARGIN_MAGIC UINT32_C(0x58434d47)
+static int __xuiCodeMarginReadStatus(xui_code_margin_model model)
+{
+    if(!model)return XUI_ERROR_INVALID_ARGUMENT;
+    if(model->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(model->iMagic!=XUI_CODE_MARGIN_MAGIC || model->bDestroyPending || model->bDestroying ||
+        (model->pInternalOwner && !xuiInternalWidgetIsValid(model->pInternalOwner)))return XUI_ERROR_INVALID_STATE;
+    return XUI_OK;
+}
+static int __xuiCodeMarginDestroyNow(xui_code_margin_model model)
+{
+    model->bDestroying=true;xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    xuiInternalLifetimeInvalidateAll(&model->pLifetimeLinks);xuiInternalCleanupAdd(&receipt,XUI_OK);
+    xrtFree(model->pMargins);model->iMagic=0;xrtFree(model);
+    return xuiInternalCleanupEnd(NULL,&receipt);
+}
+static int __xuiCodeMarginDestroyOwnerChecked(xui_code_margin_model model,xui_widget owner,bool* consumed)
+{
+    if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!model || model->iMagic!=XUI_CODE_MARGIN_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
+    if(model->iCreatorThread!=xrtThreadCurrentId() || model->bDestroying)return XUI_ERROR_BUSY;
+    if(model->bDestroyPending || model->pInternalOwner!=owner)return XUI_ERROR_INVALID_STATE;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    model->bDestroyPending=true;*consumed=true;if(!xrtOwnershipScopeEnd(&mutation))abort();
+    return model->iActiveCalls ? XUI_OK:__xuiCodeMarginDestroyNow(model);
+}
+XUI_API int xuiCodeMarginModelDestroyOwnerChecked(xui_code_margin_model model,bool* consumed)
+{return __xuiCodeMarginDestroyOwnerChecked(model,NULL,consumed);}
+XUI_API int xuiCodeMarginModelDestroyChecked(xui_code_margin_model model)
+{bool consumed=false;return xuiCodeMarginModelDestroyOwnerChecked(model,&consumed);}
+int xuiInternalCodeMarginClaimOwner(xui_code_margin_model model,xui_widget owner)
+{
+    if(!model || model->iMagic!=XUI_CODE_MARGIN_MAGIC || !xuiInternalWidgetIsValid(owner))return XUI_ERROR_INVALID_ARGUMENT;
+    if(model->iCreatorThread!=xrtThreadCurrentId() || model->iActiveCalls)return XUI_ERROR_BUSY;
+    if(model->pInternalOwner || model->bDestroyPending)return XUI_ERROR_INVALID_STATE;
+    model->pInternalOwner=owner;return XUI_OK;
+}
+int xuiInternalCodeMarginDestroyOwned(xui_widget owner,xui_code_margin_model model)
+{bool consumed=false;return __xuiCodeMarginDestroyOwnerChecked(model,model && model->pInternalOwner ? owner:NULL,&consumed);}
+XUI_API bool xuiCodeMarginModelOwnershipBusy(xui_code_margin_model model)
+{return !model || model->iCreatorThread!=xrtThreadCurrentId() || model->iMagic!=XUI_CODE_MARGIN_MAGIC || model->iActiveCalls || model->bDestroying;}
+XUI_API int xuiCodeMarginModelLifetimeWatch(xui_code_margin_model model,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidated,void* user)
+{
+    int status=__xuiCodeMarginReadStatus(model);if(status!=XUI_OK)return status;
+    if(!link || !invalidated)return XUI_ERROR_INVALID_ARGUMENT;
+    if(link->pNext || link->ppPrevious || link->onInvalidate || link->pUser)return XUI_ERROR_INVALID_STATE;
+    link->pNext=model->pLifetimeLinks;link->ppPrevious=&model->pLifetimeLinks;link->onInvalidate=invalidated;link->pUser=user;
+    if(link->pNext)link->pNext->ppPrevious=&link->pNext;
+    model->pLifetimeLinks=link;return XUI_OK;
+}
+XUI_API int xuiCodeMarginModelCallBegin(xui_code_margin_model model,xui_code_margin_scope_t* scope)
+{
+    if(!scope || scope->pSelf || scope->pModel || scope->pContext || scope->tContext.pSelf)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=__xuiCodeMarginReadStatus(model);if(status!=XUI_OK)return status;
+    if(model->iActiveCalls==SIZE_MAX)return XUI_ERROR_INVALID_STATE;
+    xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    xui_context context=model->pInternalOwner ? model->pInternalOwner->pContext:NULL;
+    if(context)status=xuiCallScopeBegin(context,&scope->tContext);
+    if(status==XUI_OK){++model->iActiveCalls;scope->pSelf=scope;scope->pModel=model;scope->pContext=context;}
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    return status;
+}
+XUI_API int xuiCodeMarginModelCallEnd(xui_code_margin_scope_t* scope)
+{
+    if(!scope || scope->pSelf!=scope || !scope->pModel)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_margin_model model=scope->pModel;
+    if(model->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    int status=model->bDestroyPending ? XUI_ERROR_INVALID_STATE:XUI_OK;
+    xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    receipt.status=xuiInternalCallScopeEndOutcome(&scope->tContext,receipt.status,&receipt.error);
+    /* Context tail cleanup can consume the unique child after entry above. */
+    if(model->bDestroyPending)xuiInternalCleanupAdd(&receipt,XUI_ERROR_INVALID_STATE);
+    scope->pSelf=NULL;scope->pModel=NULL;scope->pContext=NULL;
+    if(!model->iActiveCalls)abort();
+    --model->iActiveCalls;
+    if(model->bDestroyPending && !model->iActiveCalls)xuiInternalCleanupAdd(&receipt,__xuiCodeMarginDestroyNow(model));
+    return xuiInternalCleanupEnd(NULL,&receipt);
+}
+XUI_API bool xuiCodeMarginModelTraceOwnership(xui_code_margin_model model,xrtownershipvisitor visit,void* user)
+{
+    (void)user;return visit && __xuiCodeMarginReadStatus(model)==XUI_OK && !model->iActiveCalls;
+}
+
 
 static int __xuiCodeMarginReserve(xui_code_margin_model pModel, int iCapacity)
 {
@@ -94,22 +187,20 @@ XUI_API int xuiCodeMarginModelCreate(xui_code_margin_model* ppModel)
 	pModel = (xui_code_margin_model)xrtMalloc(sizeof(*pModel));
 	if ( pModel == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memset(pModel, 0, sizeof(*pModel));
+    pModel->iMagic=XUI_CODE_MARGIN_MAGIC;pModel->iCreatorThread=xrtThreadCurrentId();
 	*ppModel = pModel;
 	return XUI_OK;
 }
 
 XUI_API void xuiCodeMarginModelDestroy(xui_code_margin_model pModel)
+{if(pModel)(void)xuiCodeMarginModelDestroyChecked(pModel);}
+XUI_API int xuiCodeMarginModelClearChecked(xui_code_margin_model pModel)
 {
-	if ( pModel == NULL ) return;
-	xrtFree(pModel->pMargins);
-	xrtFree(pModel);
+    int status=__xuiCodeMarginReadStatus(pModel);if(status!=XUI_OK)return status;
+    pModel->iCount=0;return XUI_OK;
 }
-
 XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel)
-{
-	if ( pModel == NULL ) return;
-	pModel->iCount = 0;
-}
+{if(pModel)(void)xuiCodeMarginModelClearChecked(pModel);}
 
 XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic)
 {
@@ -117,8 +208,10 @@ XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLi
 	xui_code_margin_desc_t tDesc;
 	int iRet;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tNew, 0, sizeof(tNew));
+    tNew.iMagic=XUI_CODE_MARGIN_MAGIC;tNew.iCreatorThread=pModel->iCreatorThread;
 	tDesc = __xuiCodeMarginDefault(1, XUI_CODE_MARGIN_CHANGE, 4.0f, 0);
 	iRet = xuiCodeMarginModelAdd(&tNew, &tDesc);
 	if ( iRet != XUI_OK ) goto cleanup;
@@ -158,6 +251,7 @@ XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_m
 	int iIndex;
 	int iRet;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (pDesc == NULL) ||
 	     (pDesc->iSize < sizeof(*pDesc)) || (pDesc->iId <= 0) ||
 	     (pDesc->iKind <= 0) || !isfinite((double)pDesc->fWidth) ||
@@ -181,6 +275,7 @@ XUI_API int xuiCodeMarginModelRemove(xui_code_margin_model pModel, int iId)
 {
 	int iIndex;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
@@ -193,6 +288,7 @@ XUI_API int xuiCodeMarginModelSetWidth(xui_code_margin_model pModel, int iId, fl
 {
 	int iIndex;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (iId <= 0) || !isfinite((double)fWidth) ||
 	     (fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
@@ -205,6 +301,7 @@ XUI_API int xuiCodeMarginModelSetVisible(xui_code_margin_model pModel, int iId, 
 {
 	int iIndex;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
@@ -215,13 +312,14 @@ XUI_API int xuiCodeMarginModelSetVisible(xui_code_margin_model pModel, int iId, 
 
 XUI_API int xuiCodeMarginModelGetCount(xui_code_margin_model pModel)
 {
-	return (pModel != NULL) ? pModel->iCount : 0;
+	return (__xuiCodeMarginReadStatus(pModel)==XUI_OK) ? pModel->iCount : 0;
 }
 
 XUI_API int xuiCodeMarginModelGet(xui_code_margin_model pModel, int iIndex, xui_code_margin_info_t* pInfo)
 {
 	xui_rect_t tRect;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (pInfo == NULL) || (iIndex < 0) || (iIndex >= pModel->iCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tRect, 0, sizeof(tRect));
 	__xuiCodeMarginCopyInfo(pInfo, &pModel->pMargins[iIndex], tRect);
@@ -233,6 +331,7 @@ XUI_API int xuiCodeMarginModelGetTotalWidth(xui_code_margin_model pModel, float*
 	double fWidth;
 	int i;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (pWidth == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fWidth = 0.0f;
 	for ( i = 0; i < pModel->iCount; i++ ) {
@@ -253,6 +352,7 @@ XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui
 	int i;
 	int iRet;
 
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (iId <= 0) || (pRect == NULL) ||
 	     !xuiCodeInternalRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fCurrentX = tViewport.fX;
@@ -285,6 +385,7 @@ XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tV
 	int iRet;
 
 	if ( pInfoCount != NULL ) *pInfoCount = 0;
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (pInfoCount == NULL) || (iInfoCapacity < 0) ||
 	     (pInfos == NULL && iInfoCapacity > 0) ||
 	     !xuiCodeInternalRectValid(tViewport) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -338,6 +439,7 @@ XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t t
 		memset(pHit, 0, sizeof(*pHit));
 		pHit->iSize = sizeof(*pHit);
 	}
+	int modelStatus=__xuiCodeMarginReadStatus(pModel);if(modelStatus!=XUI_OK)return modelStatus;
 	if ( (pModel == NULL) || (pHit == NULL) ||
 	     !xuiCodeInternalRectValid(tViewport) ||
 	     !isfinite((double)fX) || !isfinite((double)fY) ||

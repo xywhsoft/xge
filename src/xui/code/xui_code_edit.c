@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 #include "xui_code_document_internal.h"
+#include "xui_code_margin_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_code_provider_internal.h"
@@ -2488,7 +2489,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	pData->iReadBufferCapacity = 0;
 	pData->iImeCompositionCapacity = 0;
 	xuiCodeCommandMapDestroy(pData->pCommandMap);
-	xuiCodeMarginModelDestroy(pData->pMargins);
+	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
 	xuiCodeProviderSetDestroy(pData->pProviders);
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
 	xuiCodeLanguageRegistryDestroy(pData->pLanguages);
@@ -2990,6 +2991,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiCodeTokenBufferCreate(&pData->pTokenBuffer);
 	if ( iRet == XUI_OK ) iRet = xuiCodeProviderSetCreate(&pData->pProviders);
 	if ( iRet == XUI_OK ) iRet = xuiCodeMarginModelCreate(&pData->pMargins);
+    if(iRet==XUI_OK)iRet=xuiInternalCodeMarginClaimOwner(pData->pMargins,pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeCommandMapCreate(&pData->pCommandMap);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryCreate(&pData->pLanguages);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryLoadDefaults(pData->pLanguages);
@@ -7020,6 +7022,7 @@ static bool __xuiCodeEditTraceOwnership(xui_widget widget,const void* raw,xrtown
 {
     const xui_code_edit_data_t* data=raw;if(data->iCacheActivity)return false;
     if(data->pDocument && !xuiCodeDocumentTraceOwnership(data->pDocument,visit,user))return false;
+    if(data->pMargins && !xuiCodeMarginModelTraceOwnership(data->pMargins,visit,user))return false;
     for(int i=0;i<data->iLineLayoutCount;++i){
         const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
         if(widget->pContext->pOwnedProxy && line->pFont && !visit(xuiFontOwnership(line->pFont),user))return false;

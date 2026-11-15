@@ -8152,6 +8152,24 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_
 XUI_API int xuiCodeMarginModelCreate(xui_code_margin_model* ppModel);
 /* 释放边栏模型。 */
 XUI_API void xuiCodeMarginModelDestroy(xui_code_margin_model pModel);
+/* Unique model owner; GetMargins is a borrow, not a second destroy right.
+ * Owner consumption invalidates reads immediately; physical free waits for
+ * address-stable native scopes. No shared/Attach ownership is introduced. */
+XUI_API int xuiCodeMarginModelDestroyOwnerChecked(xui_code_margin_model pModel,bool* pConsumed);
+XUI_API int xuiCodeMarginModelDestroyChecked(xui_code_margin_model pModel);
+XUI_API bool xuiCodeMarginModelOwnershipBusy(xui_code_margin_model pModel);
+XUI_API int xuiCodeMarginModelLifetimeWatch(xui_code_margin_model pModel,xui_lifetime_link_t* pLink,xui_lifetime_invalidate_proc onInvalidate,void* pUser);
+typedef struct xui_code_margin_scope_t {
+    struct xui_code_margin_scope_t* pSelf;
+    xui_code_margin_model pModel;
+    xui_context pContext;
+    xui_call_scope_t tContext;
+} xui_code_margin_scope_t;
+XUI_API int xuiCodeMarginModelCallBegin(xui_code_margin_model pModel,xui_code_margin_scope_t* pScope);
+XUI_API int xuiCodeMarginModelCallEnd(xui_code_margin_scope_t* pScope);
+XUI_API bool xuiCodeMarginModelTraceOwnership(xui_code_margin_model pModel,xrtownershipvisitor onVisit,void* pUser);
+XUI_API int xuiCodeMarginModelClearChecked(xui_code_margin_model pModel);
+
 /* 移除全部边栏。 */
 XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
 /* 按开关组合装入默认边栏（行号/标记/折叠/诊断）。 */
