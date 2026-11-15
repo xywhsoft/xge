@@ -3,8 +3,9 @@
 Full immutable O2 SDK; O0/O2 hosted/static clients, original raw callbacks,
 all-five request reentry/close/error handling, Context tails, constructor
 allocation prefixes and existing owned Margin rendering/event regression.
-Legacy callback userdata/results remain borrowed. No language closure, owning
-output, GUI/device/network or final shipping qualification.
+Use --owned for immutable owner slots, result-scope generation guards and
+consumer copying. Legacy callback userdata/results remain borrowed. No language
+closure, owning output marshalling, GUI/device/network or final shipping qualification.
 """
 from pathlib import Path
 import argparse,hashlib,json,os,re,shutil,subprocess,time
@@ -15,6 +16,7 @@ def main():
     for n in ('root','freeze','engine','static','runtime','out'):
         p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--fixtures',type=Path,help='Separately pinned QA sources; native SDK source freeze remains immutable.')
+    p.add_argument('--owned',action='store_true',help='Also qualify all five owned callback roles and scoped result consumers.')
     a=p.parse_args();root,freeze,engine,static,runtime,out=[v.resolve()for v in
         (a.root,a.freeze,a.engine,a.static,a.runtime,a.out)]
     sha=lambda v:hashlib.sha256(Path(v).read_bytes()).hexdigest();win=os.name=='nt'
@@ -25,7 +27,7 @@ def main():
     assert host['linked']and host['xrt_mode']=='host'
     qualified=[]
     if host['reused']:
-        assert host['compiled']==['src/xui/code/xui_code_provider.c']and len(host['reused'])==163
+        assert host['compiled'] in (['src/xui/code/xui_code_provider.c'],['src/xui/code/xui_code_edit.c'])and len(host['reused'])==163
         parent=host['qualified_object_build'];old=Path(parent['report'])
         assert parent['inputs_unchanged']and sha(old)==parent['report_sha256']
         original=json.loads(old.read_text(encoding='utf-8'))
@@ -44,7 +46,7 @@ def main():
     assert st['passed']and st['sourceUnchanged']and st['xrt_mode']=='direct-external'
     if st['reused']:
         assert len(st['compiled'])==2 and len(st['reused'])==164
-        assert any(str(v).replace('\\','/')=='src/xui/code/xui_code_provider.c'for v in st['compiled'])
+        assert any(str(v).replace('\\','/')in ('src/xui/code/xui_code_provider.c','src/xui/code/xui_code_edit.c')for v in st['compiled'])
         old=Path(st['reuse_parent']);original=json.loads(old.read_text(encoding='utf-8'))
         assert original['passed']and len(original['compiled'])==166 and not original['reused'];qualified.append(old)
     else:assert len(st['compiled'])==166
@@ -55,6 +57,7 @@ def main():
     archive=static/st['archive'];tools={n:Path(shutil.which(n)).resolve()for n in ('gcc','g++')}
     fixtures=a.fixtures.resolve()if a.fixtures else root
     cases=[fixtures/'tests/xui'/n for n in ('xui_code_provider_lifetime_test.c','xui_code_provider_host_test.c','xui_constructor_retirement_test.c','xui_code_margin_owned_test.c')]
+    if a.owned:cases.append(fixtures/'tests/xui/xui_code_provider_owned_test.c')
     files=[Path(__file__).resolve(),freeze,*qualified,*tools.values(),*cases,fixtures/'tests/xui/xui_code_margin_host.h',fixtures/'tests/xui/xui_code_provider_test.c',
         image,library,archive,runtime,engine/'build-report.json',static/'build-report.json',
         engine/'xge_build_config.h',static/'xge_build_config.h',static/'xge_static_xrt_contract.h',
@@ -63,7 +66,7 @@ def main():
     snapshot=out/'input-snapshots';snapshot.mkdir()
     for v in (*cases,fixtures/'tests/xui/xui_code_margin_host.h',Path(__file__).resolve()):shutil.copy2(v,snapshot/v.name)
     r=dict(complete=False,passed=False,scope=__doc__,shippingDelivery=False,languageQualified=False,
-        ownedProviderCallbacksImplemented=False,networkTests=False,inputs=inputs,rows=[],calibration=[],hot=[])
+        ownedProviderCallbacksImplemented=a.owned,networkTests=False,inputs=inputs,rows=[],calibration=[],hot=[],ownedHot=[])
     def save():(out/'results.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8')
     env=os.environ.copy();key='PATH'if win else'LD_LIBRARY_PATH'
     env[key]=os.pathsep.join((str(engine),str(runtime.parent),env.get(key,'')))
@@ -80,6 +83,10 @@ def main():
         save();print(name,z.returncode,flush=True);assert not z.returncode,log;return z.stdout+z.stderr
     header=out/'header.c'
     header.write_text('#include <xui.h>\nint (*providerOwner)(xui_code_provider_set,bool*)=&xuiCodeProviderSetDestroyOwnerChecked;\nint (*providerBegin)(xui_code_provider_set,xui_code_provider_scope_t*)=&xuiCodeProviderSetCallBegin;\nint (*providerEnd)(xui_code_provider_scope_t*)=&xuiCodeProviderSetCallEnd;\nint (*providerClear)(xui_code_provider_set)=&xuiCodeProviderSetClearChecked;\nbool (*providerBusy)(xui_code_provider_set)=&xuiCodeProviderSetOwnershipBusy;\nbool (*providerTrace)(xui_code_provider_set,xrtownershipvisitor,void*)=&xuiCodeProviderSetTraceOwnership;\nint (*providerWatch)(xui_code_provider_set,xui_lifetime_link_t*,xui_lifetime_invalidate_proc,void*)=&xuiCodeProviderSetLifetimeWatch;\n',encoding='utf-8')
+    if a.owned:
+        with header.open('a',encoding='utf-8')as h:
+            for role,proc in (('Completion','completion'),('Hover','hover'),('Signature','signature'),('Command','command'),('CommandEnabled','command_enabled')):
+                h.write(f'int (*owned{role})(xui_code_provider_set,xui_code_{proc}_proc,void*,const xui_callback_owner_t*)=&xuiCodeProviderSet{role}Owned;\n')
     try:
         for kind,folder,lib in (('host',engine,library),('static',static,archive)):
             flags=['-Wall','-Wextra','-Werror','-Wno-cast-function-type','-Wno-unused-function',
@@ -91,7 +98,7 @@ def main():
             for standard,tool,language in (('c11','gcc','c'),('c++11','g++','c++'),('c++17','g++','c++')):
                 run(kind+'-header-'+standard,[tools[tool],'-std='+standard,*flags,'-x',language,'-fsyntax-only',header])
             for opt in ('O0','O2'):
-                for label,case in zip(('lifetime','original','constructor','margin-owned'),cases):
+                for label,case in zip(('lifetime','original','constructor','margin-owned','provider-owned'),cases):
                     name=kind+'-'+opt+'-'+label;binary=out/(name+('.exe'if win else''))
                     run(name+'-build',[tools['gcc'],'-std=c11',*flags,'-'+opt,case,lib,runtime,*systems,'-o',binary])
                     data=run(name,[binary,'10']if label=='constructor'else[binary])
@@ -103,8 +110,15 @@ def main():
                         match=re.search(rb'Provider model:alloc=(\d+) bytes=(\d+); scope=(\d+)',data);assert match and int(match[1])==1
                         r['hot'].append(dict(kind=kind,opt=opt,rounds=1000,heapOperations=0,scopeBytes=int(match[3]),modelBytes=int(match[2]),modelAllocations=int(match[1]),cpuEquivalenceClaim=False))
                     elif label=='original':assert b'xui_code_provider_test passed'in data
-                    else:assert b'owned Margin passed'in data
-        assert len(r['rows'])==38 and len(r['calibration'])==len(r['hot'])==4
+                    elif label=='margin-owned':assert b'owned Margin passed'in data
+                    else:
+                        assert b'Owned Provider: all5 roles'in data and b'5000 requests,0 heap and no per-call owner Hold'in data
+                        match=re.search(rb'Owned Provider model: alloc=(\d+) bytes=(\d+) scope=(\d+)',data);assert match and int(match[1])==1
+                        slot=re.search(rb'Owned Provider slot: alloc=1 bytes=(\d+)',data);assert slot
+                        prefixes=re.search(rb'consumer allocation prefixes=(\d+), complete heaps balanced',data);assert prefixes and int(prefixes[1])>0
+                        r['ownedHot'].append(dict(kind=kind,opt=opt,requests=5000,heapOperations=0,perRequestOwnerHolds=0,scopeBytes=int(match[3]),modelBytes=int(match[2]),slotAllocations=1,slotBytes=int(slot[1]),consumerAllocationPrefixes=int(prefixes[1]),cpuEquivalenceClaim=False))
+        assert len(r['rows'])==(46 if a.owned else 38) and len(r['calibration'])==len(r['hot'])==4
+        assert len(r['ownedHot'])==(4 if a.owned else 0)
         r.update(complete=True,inputsUnchanged=all(sha(v)==h for v,h in inputs.items()),
             frozenSourcesUnchanged=all(sha(root/n)==h for n,h in frozen['files'].items()))
         r['passed']=r['inputsUnchanged']and r['frozenSourcesUnchanged'];assert r['passed']

@@ -23,6 +23,12 @@ static int __xuiCodeProviderDestroyNow(xui_code_provider_set providers)
     providers->bDestroying=true;
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
     xuiInternalLifetimeInvalidateAll(&providers->pLifetimeLinks);xuiInternalCleanupAdd(&receipt,XUI_OK);
+    xui_code_provider_slot_t* old[XUI_PROVIDER_ROLES]={0};xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))abort();
+    for(int i=0;i<XUI_PROVIDER_ROLES;++i){old[i]=providers->slots[i];providers->slots[i]=NULL;}
+    memset(&providers->callbacks,0,sizeof(providers->callbacks));
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    for(int i=0;i<XUI_PROVIDER_ROLES;++i)__xuiCodeProviderRelease(NULL,old[i],&receipt);
     providers->iMagic=0;xrtFree(providers);
     return xuiInternalCleanupEnd(NULL,&receipt);
 }
@@ -59,8 +65,12 @@ XUI_API bool xuiCodeProviderSetOwnershipBusy(xui_code_provider_set providers)
 {return !providers || providers->iMagic!=XUI_CODE_PROVIDER_MAGIC || providers->bDestroying || providers->iActiveCalls!=0;}
 XUI_API bool xuiCodeProviderSetTraceOwnership(xui_code_provider_set providers,xrtownershipvisitor visit,void* user)
 {
-    (void)user;
-    return visit && __xuiCodeProviderReadStatus(providers)==XUI_OK && providers->iActiveCalls==0;
+    if(!visit || __xuiCodeProviderReadStatus(providers)!=XUI_OK || providers->iActiveCalls)return false;
+    for(int i=0;i<XUI_PROVIDER_ROLES;++i){
+        const xui_code_provider_slot_t* node=providers->slots[i];
+        if(node && node->owner.onHold && !visit(node->owner.tReference,user))return false;
+    }
+    return true;
 }
 XUI_API int xuiCodeProviderSetLifetimeWatch(xui_code_provider_set providers,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidated,void* user)
 {
@@ -73,16 +83,37 @@ XUI_API int xuiCodeProviderSetLifetimeWatch(xui_code_provider_set providers,xui_
 }
 XUI_API int xuiCodeProviderSetCallBegin(xui_code_provider_set providers,xui_code_provider_scope_t* scope)
 {
-    if(!scope || scope->pSelf || scope->pProviders || scope->pContext || scope->tContext.pSelf)return XUI_ERROR_INVALID_ARGUMENT;
+    if(!scope || scope->pSelf || scope->pProviders || scope->pContext || scope->tContext.pSelf ||
+       scope->_pPrevious || scope->_pNext || scope->_iGeneration)return XUI_ERROR_INVALID_ARGUMENT;
+    for(int i=0;i<XUI_PROVIDER_ROLES;++i)if(scope->_pSlots[i])return XUI_ERROR_INVALID_ARGUMENT;
     int status=__xuiCodeProviderReadStatus(providers);if(status!=XUI_OK)return status;
-    if(providers->iActiveCalls==SIZE_MAX)return XUI_ERROR_INVALID_STATE;
+    if(providers->iActiveCalls==SIZE_MAX || providers->nextScopeGeneration==UINT64_MAX)return XUI_ERROR_LIMIT_EXCEEDED;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+    int pinned=0;
+    for(;pinned<XUI_PROVIDER_ROLES;++pinned){
+        status=__xuiCodeProviderRetain(providers->slots[pinned]);
+        if(status!=XUI_OK)break;
+        scope->_pSlots[pinned]=providers->slots[pinned];
+    }
     xui_context context=providers->pInternalOwner ? providers->pInternalOwner->pContext:NULL;
-    if(context)status=xuiCallScopeBegin(context,&scope->tContext);
-    else scope->tContext._pFirstError=xrtTakeError();
+    if(status==XUI_OK){
+        if(context)status=xuiCallScopeBegin(context,&scope->tContext);
+        else scope->tContext._pFirstError=xrtTakeError();
+    }
     if(status==XUI_OK){
         ++providers->iActiveCalls;providers->iActiveThread=xrtThreadCurrentId();
         scope->pSelf=scope;scope->pProviders=providers;scope->pContext=context;
+        scope->_iGeneration=++providers->nextScopeGeneration;
+        scope->_pNext=providers->scopes;
+        if(scope->_pNext)scope->_pNext->_pPrevious=scope;
+        providers->scopes=scope;
+    }else {
+        /* Published slots still own a reference; this rollback cannot Drop. */
+        for(int i=0;i<pinned;++i){
+            xui_code_provider_slot_t* node=scope->_pSlots[i];
+            if(node)--node->refs;
+            scope->_pSlots[i]=NULL;
+        }
     }
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     return status;
@@ -95,6 +126,15 @@ static int __xuiCodeProviderFinish(xui_code_provider_scope_t* scope,int primary)
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,primary);
     xerror* ambient=scope->pContext ? NULL:scope->tContext._pFirstError;
     if(!scope->pContext)scope->tContext._pFirstError=NULL;
+    scope->pSelf=NULL;scope->_iGeneration=0;
+    if(scope->_pPrevious)scope->_pPrevious->_pNext=scope->_pNext;
+    else providers->scopes=scope->_pNext;
+    if(scope->_pNext)scope->_pNext->_pPrevious=scope->_pPrevious;
+    scope->_pPrevious=NULL;scope->_pNext=NULL;
+    for(int i=0;i<XUI_PROVIDER_ROLES;++i){
+        xui_code_provider_slot_t* node=scope->_pSlots[i];scope->_pSlots[i]=NULL;
+        __xuiCodeProviderRelease(scope->pContext,node,&receipt);
+    }
     if(providers->bDestroyPending && receipt.status==XUI_OK)receipt.status=XUI_ERROR_INVALID_STATE;
     if(scope->pContext)receipt.status=xuiInternalCallScopeEndOutcome(&scope->tContext,receipt.status,&receipt.error);
     if(providers->bDestroyPending)xuiInternalCleanupAdd(&receipt,XUI_ERROR_INVALID_STATE);
@@ -111,6 +151,8 @@ static int __xuiCodeProviderFinish(xui_code_provider_scope_t* scope,int primary)
 }
 XUI_API int xuiCodeProviderSetCallEnd(xui_code_provider_scope_t* scope)
 {return __xuiCodeProviderFinish(scope,XUI_OK);}
+int xuiInternalCodeProviderCallEndRestored(xui_code_provider_scope_t* scope,int status,xerror* error)
+{xrtSetErrorTake(error);return __xuiCodeProviderFinish(scope,status);}
 static void __xuiCodeProviderCallbackBegin(xui_code_provider_scope_t* scope)
 {xrtSetErrorTake(xrtErrorRef(scope->tContext._pFirstError));}
 static void __xuiCodeProviderCallbackEnd(xui_code_provider_scope_t* scope)

@@ -1,0 +1,267 @@
+{
+  "date": "2026-11-15",
+  "complete": true,
+  "passed": true,
+  "scope": "Five owned native Provider callbacks and consumer result lifetime; no language output marshalling",
+  "nativeBase": "57bbfbcdc8b22e6e7d95b77745893124605c26d7",
+  "shippingDelivery": false,
+  "networkTests": false,
+  "commands": 92,
+  "constructorPrefixes": 1040,
+  "consumerPrefixes": 192,
+  "evidence": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-native-verified-win-r1.json",
+      "sha256": "b33ce5c10e3a354d6ff31a7e1707ed7905b05b459a418266f0b57a77d09f2d63",
+      "commands": 46,
+      "constructorPrefixes": 520,
+      "consumerPrefixes": 96,
+      "builds": [
+        {
+          "revision": "r1",
+          "kind": "host",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-sdk-win-r1\\host\\build-report.json",
+          "sha256": "3fa9938875611b5aba5c7fe2ba16822a9f51665d7867281696bd8a829fc1892e",
+          "compiled": 164,
+          "reused": 0,
+          "sourceFreeze": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-provider-owned-win-freeze-r1.json",
+            "sha256": "db75b97d6cd6266db29a417ee6324146134afcb7df072871c54f1338607b1965"
+          }
+        },
+        {
+          "revision": "r1",
+          "kind": "static",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-sdk-win-r1\\static\\build-report.json",
+          "sha256": "71b29dbf8fa83bf24badc515db698001774224c03a3761a4d8018ec1ac2aed3d",
+          "compiled": 166,
+          "reused": 0,
+          "sourceFreeze": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-provider-owned-win-freeze-r1.json",
+            "sha256": "db75b97d6cd6266db29a417ee6324146134afcb7df072871c54f1338607b1965"
+          }
+        },
+        {
+          "revision": "r2",
+          "kind": "host",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-sdk-win-r2\\host\\build-report.json",
+          "sha256": "88c221d94aea1e6ec740e9654b73eb9ba198370ee6891a75fb7d5c963d8550cd",
+          "compiled": 1,
+          "reused": 163,
+          "sourceFreeze": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-provider-owned-win-freeze-r2.json",
+            "sha256": "56f182e33f5c888f45e43c860ec090b1db603ed7f71e1cb5122a9661282dcd94"
+          }
+        },
+        {
+          "revision": "r2",
+          "kind": "static",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-sdk-win-r2\\static\\build-report.json",
+          "sha256": "d1e8cfd3b73fe04ab448025819483d96a28b74d48e656a0ba81c813828d87fb0",
+          "compiled": 2,
+          "reused": 164,
+          "sourceFreeze": {
+            "path": "F:\\xlang-validation\\xge-full-20261110\\native-provider-owned-win-freeze-r2.json",
+            "sha256": "56f182e33f5c888f45e43c860ec090b1db603ed7f71e1cb5122a9661282dcd94"
+          }
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        }
+      ]
+    },
+    {
+      "platform": "linux",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-owned-native-verified-linux-r1.json",
+      "sha256": "dcb7ab7a2f034c87bdaf4cbfde7a38ac2b5a2f40a762083024f239d0e4663e61",
+      "commands": 46,
+      "constructorPrefixes": 520,
+      "consumerPrefixes": 96,
+      "builds": [
+        {
+          "revision": "r1",
+          "kind": "host",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-owned-sdk-linux-r1/host/build-report.json",
+          "sha256": "8e81e814f6ca649ab90bb65c44b959493330d96405db38820489796630be9ca6",
+          "compiled": 164,
+          "reused": 0,
+          "sourceFreeze": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/native-provider-owned-linux-freeze-r1.json",
+            "sha256": "93ca8f9e1bdd1bac6e781fce6d710e6e2c66e435814d58e4528d281f5da4e3a8"
+          }
+        },
+        {
+          "revision": "r1",
+          "kind": "static",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-owned-sdk-linux-r1/static/build-report.json",
+          "sha256": "6eeb1f2879420ab73d086b3b426200631ca0a22eedd54e8c21d5fd495c64f292",
+          "compiled": 166,
+          "reused": 0,
+          "sourceFreeze": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/native-provider-owned-linux-freeze-r1.json",
+            "sha256": "93ca8f9e1bdd1bac6e781fce6d710e6e2c66e435814d58e4528d281f5da4e3a8"
+          }
+        },
+        {
+          "revision": "r2",
+          "kind": "host",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-owned-sdk-linux-r2/host/build-report.json",
+          "sha256": "0f5ac55bf15410ab54281a2dddeb3e3146a722ba02b08a0eec52740af3284f49",
+          "compiled": 1,
+          "reused": 163,
+          "sourceFreeze": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/native-provider-owned-linux-freeze-r2.json",
+            "sha256": "4f88c46dfb5bb78d482e5ae350b5056d5b975a1d34f36dbb328ee3537c60bf04"
+          }
+        },
+        {
+          "revision": "r2",
+          "kind": "static",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-owned-sdk-linux-r2/static/build-report.json",
+          "sha256": "c989be2565e89824d41431d5218e84046a30fba28184cdd3daa968210bbdb200",
+          "compiled": 2,
+          "reused": 164,
+          "sourceFreeze": {
+            "path": "/mnt/f/xlang-validation/xge-full-20261110/native-provider-owned-linux-freeze-r2.json",
+            "sha256": "4f88c46dfb5bb78d482e5ae350b5056d5b975a1d34f36dbb328ee3537c60bf04"
+          }
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "requests": 5000,
+          "heapOperations": 0,
+          "perRequestOwnerHolds": 0,
+          "scopeBytes": 136,
+          "modelBytes": 176,
+          "slotAllocations": 1,
+          "slotBytes": 56,
+          "consumerAllocationPrefixes": 24,
+          "cpuEquivalenceClaim": false
+        }
+      ]
+    }
+  ],
+  "docSha256": "cf49cb00ae03710b9726139c4e4192d0dc3d1f2f4d8ee6d98e8b7624464252f4",
+  "userGeometryPreserved": "187f2b8b35e315590bc46c2ee57c3df839984ada214c8ebbd39e2a1a8c3b0686",
+  "productionNormalizedSha256": {
+    "include/xui.h": "827b97a8b44e72ac9337986f98e0ead6c32a8d0cf122473d77d571e28ab5501d",
+    "src/xui/code/xui_code_provider.c": "61774455f1fb8746a4528645b070115adecd6bda09687bc530a1c7ad51704590",
+    "src/xui/code/xui_code_provider_internal.h": "e103a11abb3a7e33ebf458beb84fabc2a1109a16aa72ecc361ffb536cf73e15d",
+    "src/xui/code/xui_code_provider_lifetime.inl": "27c042353500420363c04b6061a3ce7f07b20e6ff4e22440f9bec86cc8dbed80",
+    "src/xui/code/xui_code_provider_owned.inl": "082c65aad29b54d5431e3df460874ac7cb005f3b5711aee166c5c8d7a993c1a8",
+    "src/xui/code/xui_code_edit.c": "20227820caa4f97b9acf3978aa026fd725b2d7a6dbba9d942b6ec590e309b8f7"
+  },
+  "costs": {
+    "modelBytes": 176,
+    "previousModelBytes": 120,
+    "modelAllocations": 1,
+    "scopeBytes": 136,
+    "previousScopeBytes": 72,
+    "ownedSlotBytes": 56,
+    "ownedSlotAllocations": 1,
+    "ownerHoldsPerRegistration": 1,
+    "warmRequestsPerRun": 5000,
+    "warmHeapOperations": 0,
+    "perRequestOwnerHolds": 0,
+    "cpuEquivalenceClaim": false
+  },
+  "limitations": [
+    "Owning language callback outputs and long-lived internal aliases remain pending",
+    "No graphics/device/network or shipping IDE installation",
+    "Public scope ABI requires matching rebuilt header and library"
+  ]
+}

@@ -4409,7 +4409,7 @@ cleanup:
 
 static int __xuiCodeEditShowCompletionInternal(xui_widget pWidget, xui_code_edit_data_t* pData, int bManual)
 {
-	xui_code_completion_item_t* pItems;
+	xui_code_completion_item_t* pItems=NULL;
 	char sPrefix[256];
 	int iStart;
 	int iCaret;
@@ -4417,18 +4417,21 @@ static int __xuiCodeEditShowCompletionInternal(xui_widget pWidget, xui_code_edit
 	int iRet;
 
 	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_provider_scope_t providerScope={0};
+	iRet=xuiCodeProviderSetCallBegin(pData->pProviders,&providerScope);
+	if(iRet!=XUI_OK)return iRet;
 	iRet = __xuiCodeEditCompletionPrefix(pData, &iStart, &iCaret, sPrefix, (int)sizeof(sPrefix));
 	if ( iRet != XUI_OK ) {
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
-		return iRet;
+		goto provider_cleanup;
 	}
 	if ( !bManual && (int)strlen(sPrefix) < pData->iCompletionMinPrefix ) {
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
-		return XUI_ERROR_UNSUPPORTED;
+		iRet=XUI_ERROR_UNSUPPORTED;goto provider_cleanup;
 	}
 	pItems = (xui_code_completion_item_t*)xrtMalloc(
 		sizeof(*pItems) * (size_t)pData->iCompletionMaxItems);
-	if ( pItems == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( pItems == NULL ){iRet=XUI_ERROR_OUT_OF_MEMORY;goto provider_cleanup;}
 	memset(pItems, 0, sizeof(*pItems) * (size_t)pData->iCompletionMaxItems);
 	iCount = 0;
 	iRet = xuiCodeProviderRequestCompletion(pData->pProviders, pWidget, iCaret, sPrefix,
@@ -4440,8 +4443,10 @@ static int __xuiCodeEditShowCompletionInternal(xui_widget pWidget, xui_code_edit
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
 		if ( iRet == XUI_OK ) iRet = XUI_ERROR_UNSUPPORTED;
 	}
+provider_cleanup:
 	xrtFree(pItems);
-	return iRet;
+	xerror* error=xrtTakeError();
+	return xuiInternalCodeProviderCallEndRestored(&providerScope,iRet,error);
 }
 
 static int __xuiCodeEditCommitCompletionCharacter(xui_widget pWidget,
@@ -7838,15 +7843,8 @@ XUI_API int xuiCodeEditClearVirtualText(xui_widget pWidget, int iKind)
 
 XUI_API int xuiCodeEditShowCompletion(xui_widget pWidget)
 {
-    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-    /* Keep the editor alive until borrowed provider results are consumed. */
-    xui_call_scope_t scope={0};
-    int status=xuiCallScopeBegin(pWidget->pContext,&scope);
-    if(status!=XUI_OK)return status;
-    status=__xuiCodeEditShowCompletionInternal(pWidget, pData, 1);
-    xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndRestored(&scope,status,error);
+    xui_code_edit_data_t* pData=__xuiCodeEditGetData(pWidget);
+    return pData ? __xuiCodeEditShowCompletionInternal(pWidget,pData,1):XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiCodeEditCancelCompletion(xui_widget pWidget)
@@ -8240,26 +8238,27 @@ static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_ed
 	int iRet;
 
 	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_provider_scope_t providerScope={0};
+	iRet=xuiCodeProviderSetCallBegin(pData->pProviders,&providerScope);
+	if(iRet!=XUI_OK)return iRet;
 	memset(&tSelection, 0, sizeof(tSelection));
-	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ){iRet=XUI_ERROR_UNSUPPORTED;goto provider_cleanup;}
 	memset(&tHelp, 0, sizeof(tHelp));
 	iRet = xuiCodeProviderRequestSignature(pData->pProviders, pWidget,
 		tSelection.iCaretOffset, &tHelp);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiCodeEditShowSignatureHelp(pWidget, &tHelp);
+	if ( iRet != XUI_OK ) goto provider_cleanup;
+	iRet=xuiCodeEditShowSignatureHelp(pWidget,&tHelp);
+provider_cleanup:
+	{
+		xerror* error=xrtTakeError();
+		return xuiInternalCodeProviderCallEndRestored(&providerScope,iRet,error);
+	}
 }
 
 XUI_API int xuiCodeEditRequestSignatureHelp(xui_widget pWidget)
 {
-    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-    /* Keep the editor alive until borrowed provider results are consumed. */
-    xui_call_scope_t scope={0};
-    int status=xuiCallScopeBegin(pWidget->pContext,&scope);
-    if(status!=XUI_OK)return status;
-    status=__xuiCodeEditRequestSignatureInternal(pWidget, pData);
-    xerror* error=xrtTakeError();
-    return xuiInternalCallScopeEndRestored(&scope,status,error);
+    xui_code_edit_data_t* pData=__xuiCodeEditGetData(pWidget);
+    return pData ? __xuiCodeEditRequestSignatureInternal(pWidget,pData):XUI_ERROR_INVALID_ARGUMENT;
 }
 
 XUI_API int xuiCodeEditCloseSignatureHelp(xui_widget pWidget)

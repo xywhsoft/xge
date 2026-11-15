@@ -8146,11 +8146,15 @@ typedef struct xui_code_provider_scope_t {
     xui_code_provider_set pProviders;
     xui_context pContext;
     xui_call_scope_t tContext;
+    struct xui_code_provider_scope_t* _pPrevious;
+    struct xui_code_provider_scope_t* _pNext;
+    void* _pSlots[5];
+    uint64_t _iGeneration;
 } xui_code_provider_scope_t;
 XUI_API int xuiCodeProviderSetCallBegin(xui_code_provider_set pProviders,xui_code_provider_scope_t* pScope);
 XUI_API int xuiCodeProviderSetCallEnd(xui_code_provider_scope_t* pScope);
-/* Current legacy callbacks/user pointers remain externally owned. No language
- * closure registration or owning result publication is implied by this API. */
+/* Trace exactly the declared owned callback references when quiescent.
+ * Legacy callbacks/user pointers remain externally owned. */
 XUI_API bool xuiCodeProviderSetTraceOwnership(xui_code_provider_set pProviders,xrtownershipvisitor onVisit,void* pUser);
 /* 释放提供者集合。 */
 XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set pProviders);
@@ -8166,6 +8170,20 @@ XUI_API int xuiCodeProviderSetSignature(xui_code_provider_set pProviders, xui_co
 XUI_API int xuiCodeProviderSetCommand(xui_code_provider_set pProviders, xui_code_command_proc onCommand, void* pUser);
 /* 注册命令可用性查询回调。 */
 XUI_API int xuiCodeProviderSetCommandEnabled(xui_code_provider_set pProviders, xui_code_command_enabled_proc onEnabled, void* pUser);
+/* Independent immutable slots. Non-NULL callbacks hold one owner reference;
+ * replacement, clear and destroy detach before Drop. Active scopes pin exact
+ * slots without per-invocation owner Hold. NULL clears that role, including a
+ * legacy raw callback. The owner must support the requesting/cleanup thread.
+ * Strings/arrays remain the C provider's responsibility, not deep-copied here.
+ * Owned completion/hover/signature requests require an enclosing CallBegin
+ * scope; their selected owner remains pinned there until the next request of
+ * that role or CallEnd. Consumers must copy/use borrowed data before that end.
+ * Scalar command/enabled requests need no additional caller scope. */
+XUI_API int xuiCodeProviderSetCompletionOwned(xui_code_provider_set pProviders,xui_code_completion_proc onComplete,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeProviderSetHoverOwned(xui_code_provider_set pProviders,xui_code_hover_proc onHover,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeProviderSetSignatureOwned(xui_code_provider_set pProviders,xui_code_signature_proc onSignature,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeProviderSetCommandOwned(xui_code_provider_set pProviders,xui_code_command_proc onCommand,void* pUser,const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeProviderSetCommandEnabledOwned(xui_code_provider_set pProviders,xui_code_command_enabled_proc onEnabled,void* pUser,const xui_callback_owner_t* pOwner);
 /* 请求指定前缀的补全项（同步调用注册的提供者）。pItems 在回调前清零，
  * 每个槽位的 iSize 会预置为当前结构大小。 */
 XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount);

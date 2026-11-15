@@ -1,5 +1,9 @@
 # CodeProviderSet lifetime foundation
 
+This records the lifetime-only baseline. The successor
+`code-provider-owned-callbacks.md` adds owned registrations, graph edges,
+borrow-result pinning and a larger public scope; use its matched SDK sizes.
+
 `xuiCodeProviderSetCreate` grants one destroy right. CodeEdit claims its own
 set; `xuiCodeEditGetProviders` returns a borrow, and public checked destruction
 of that borrow returns INVALID_STATE with `consumed=false`. This adds neither

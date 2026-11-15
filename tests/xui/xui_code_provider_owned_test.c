@@ -1,0 +1,230 @@
+/* Own typed callbacks, not their arbitrary returned storage or a language ABI. */
+#include "xui_code_margin_host.h"
+#include "tests/xui/xui_test_proxy.c"
+#include <stdio.h>
+typedef struct Owner {
+    size_t refs;unsigned holds,drops,calls;
+    bool holdFalse,holdError,dropFalse,dropError;
+    int holdAction,dropAction,callAction;
+    xui_code_provider_set model;
+    xui_code_provider_scope_t* caller;
+    char label[16];xui_code_signature_parameter_t parameter;
+} Owner;
+static void action(Owner* owner,int code)
+{
+    if(code==1)assert(xuiCodeProviderSetClearChecked(owner->model)==XUI_OK);
+    if(code==2){bool consumed=false;assert(xuiCodeProviderSetDestroyOwnerChecked(owner->model,&consumed)==XUI_OK&&consumed);}
+    if(code==3){assert(xuiCodeProviderSetCallEnd(owner->caller)==XUI_OK);assert(xuiCodeProviderSetCallBegin(owner->model,owner->caller)==XUI_OK);}
+}
+static bool hold(const void* raw)
+{
+    Owner* owner=(Owner*)raw;++owner->holds;
+    if(owner->holdFalse)return false;
+    ++owner->refs;int code=owner->holdAction;owner->holdAction=0;action(owner,code);
+    if(owner->holdError)xrtSetErrorKind(XERR_IO);
+    return true;
+}
+static bool drop(const void* raw)
+{
+    Owner* owner=(Owner*)raw;assert(owner->refs>1);--owner->refs;++owner->drops;
+    if(owner->refs==1)strcpy(owner->label,"expired");
+    int code=owner->dropAction;owner->dropAction=0;action(owner,code);
+    if(owner->dropError)xrtSetErrorKind(XERR_IO);
+    return !owner->dropFalse;
+}
+static bool count(const void* raw,size_t* n){*n=((const Owner*)raw)->refs;return true;}
+static bool trace(const void* raw,xrtownershipvisitor visit,void* user){(void)raw;(void)visit;(void)user;return true;}
+static const xrtownershipops ops={count,trace};
+static xui_callback_owner_t capability(Owner* owner){return (xui_callback_owner_t){{owner,&ops},hold,drop};}
+static void init(Owner* owner,xui_code_provider_set model)
+{
+    memset(owner,0,sizeof(*owner));owner->refs=1;owner->model=model;strcpy(owner->label,"owned");
+    owner->parameter.iSize=sizeof(owner->parameter);owner->parameter.tLabelRange=(xui_code_range_t){0,1};
+}
+static void invoked(Owner* owner)
+{
+    assert(owner->refs>1);++owner->calls;
+    int code=owner->callAction;owner->callAction=0;
+    if(code==4)xrtSetErrorKind(XERR_IO);else action(owner,code);
+    assert(owner->refs>1);
+}
+static int complete(xui_widget widget,int offset,const char* prefix,xui_code_completion_item_t* items,int capacity,int* n,void* raw)
+{
+    (void)widget;assert(offset==0&&prefix&&capacity>0);Owner* owner=raw;invoked(owner);
+    items[0].sLabel=owner->label;items[0].sInsertText=owner->label;items[0].sDetail=owner->label;*n=1;return XUI_OK;
+}
+static int hover(xui_widget widget,int offset,xui_code_hover_t* result,void* raw)
+{(void)widget;assert(offset==0);Owner* owner=raw;invoked(owner);result->sText=owner->label;return XUI_OK;}
+static int signature(xui_widget widget,int offset,xui_code_signature_help_t* result,void* raw)
+{
+    (void)widget;assert(offset==0);Owner* owner=raw;invoked(owner);result->sLabel=owner->label;
+    result->sDocumentation=owner->label;result->pParameters=&owner->parameter;result->iParameterCount=1;result->iActiveParameter=0;return XUI_OK;
+}
+static int command(xui_widget widget,int id,const void* data,int* result,void* raw)
+{(void)widget;(void)data;assert(id>0);invoked(raw);*result=7;return XUI_OK;}
+static int enabled(xui_widget widget,int id,int* result,void* raw)
+{return command(widget,id,NULL,result,raw);}
+static int install(Owner* owner,int role)
+{
+    xui_callback_owner_t cap=capability(owner);
+    if(role==0)return xuiCodeProviderSetCompletionOwned(owner->model,complete,owner,&cap);
+    if(role==1)return xuiCodeProviderSetHoverOwned(owner->model,hover,owner,&cap);
+    if(role==2)return xuiCodeProviderSetSignatureOwned(owner->model,signature,owner,&cap);
+    if(role==3)return xuiCodeProviderSetCommandOwned(owner->model,command,owner,&cap);
+    return xuiCodeProviderSetCommandEnabledOwned(owner->model,enabled,owner,&cap);
+}
+static int invoke(Owner* owner,int role)
+{
+    if(role==0){xui_code_completion_item_t items[2];int n=77;
+        int status=xuiCodeProviderRequestCompletion(owner->model,NULL,0,NULL,items,2,&n);
+        assert(status==XUI_OK ? n==1&&!strcmp(items[0].sLabel,"owned"):n==0&&!items[0].sLabel);return status;}
+    if(role==1){xui_code_hover_t value;
+        int status=xuiCodeProviderRequestHover(owner->model,NULL,0,&value);
+        assert(status==XUI_OK ? value.sText&&!strcmp(value.sText,"owned"):!value.sText);return status;}
+    if(role==2){xui_code_signature_help_t value;
+        int status=xuiCodeProviderRequestSignature(owner->model,NULL,0,&value);
+        assert(status==XUI_OK ? value.sLabel&&!strcmp(value.sLabel,"owned")&&value.pParameters==&owner->parameter:!value.sLabel&&!value.pParameters);return status;}
+    int value=77;int status=role==3 ? xuiCodeProviderExecuteCommand(owner->model,NULL,1,NULL,&value):xuiCodeProviderCanExecuteCommand(owner->model,NULL,1,&value);
+    assert(value==(status==XUI_OK?1:0));return status;
+}
+static bool edge(xrtownershipref ref,void* raw){assert(ref.Data&&ref.Ops==&ops);++*(unsigned*)raw;return true;}
+static void balanced(const xmemdebugsnapshot* a)
+{
+    xmemdebugsnapshot b;xrtMemDebugSnapshot(&b);
+    assert(b.LiveCount==a->LiveCount&&b.LiveBytes==a->LiveBytes&&b.InvalidFreeCount==a->InvalidFreeCount&&b.DoubleFreeCount==a->DoubleFreeCount);
+}
+static void roles(void)
+{
+    for(int role=0;role<5;++role)for(int mode=0;mode<4;++mode){
+        xui_code_provider_set model=NULL;assert(xuiCodeProviderSetCreate(&model)==XUI_OK);Owner owner;init(&owner,model);
+        assert(install(&owner,role)==XUI_OK&&owner.refs==2&&owner.holds==1);
+        if(role<3)assert(invoke(&owner,role)==XUI_ERROR_INVALID_STATE&&!owner.calls);
+        xui_code_provider_scope_t caller={0};assert(xuiCodeProviderSetCallBegin(model,&caller)==XUI_OK);
+        owner.callAction=mode==3?4:mode;
+        int status=invoke(&owner,role);assert(status==(mode==2?XUI_ERROR_INVALID_STATE:mode==3?XUI_ERROR_CALLBACK_FAILED:XUI_OK));
+        assert(owner.calls==1&&owner.refs==2&&!owner.drops);
+        xrtClearError();status=xuiCodeProviderSetCallEnd(&caller);
+        if(mode==2){assert(status==XUI_ERROR_INVALID_STATE&&owner.refs==1&&owner.drops==1);}
+        else {assert(status==XUI_OK);xrtClearError();assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK&&owner.refs==1&&owner.drops==1);}
+        xrtClearError();
+    }
+}
+static void publication(void)
+{
+    xui_code_provider_set model=NULL;assert(xuiCodeProviderSetCreate(&model)==XUI_OK);Owner a,b;init(&a,model);init(&b,model);
+    assert(install(&a,3)==XUI_OK);
+    assert(xrtMemDebugFailAfter(0));assert(install(&b,3)==XUI_ERROR_OUT_OF_MEMORY);xrtMemDebugFailClear();xrtClearError();assert(!b.holds&&a.refs==2);
+    b.holdFalse=true;assert(install(&b,3)==XUI_ERROR_CALLBACK_FAILED&&b.refs==1&&!b.drops);xrtClearError();b.holdFalse=false;
+    b.holdError=true;assert(install(&b,3)==XUI_ERROR_CALLBACK_FAILED&&b.refs==1&&b.drops==1);xrtClearError();b.holdError=false;strcpy(b.label,"owned");
+    a.dropFalse=true;assert(install(&b,3)==XUI_ERROR_CALLBACK_FAILED&&a.refs==1&&b.refs==2);xrtClearError();
+    assert(invoke(&b,3)==XUI_OK&&b.calls==1);assert(xuiCodeProviderSetClearChecked(model)==XUI_OK&&b.refs==1);
+    init(&b,model);b.holdAction=1;assert(install(&b,3)==XUI_OK&&b.refs==2);assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK&&b.refs==1);
+    assert(xuiCodeProviderSetCreate(&model)==XUI_OK);init(&b,model);b.holdAction=2;
+    assert(install(&b,3)==XUI_ERROR_INVALID_STATE&&b.refs==1&&b.drops==1);xrtClearError();
+}
+static void callerGeneration(void)
+{
+    xui_code_provider_set model=NULL;assert(xuiCodeProviderSetCreate(&model)==XUI_OK);Owner a,b;init(&a,model);init(&b,model);
+    assert(install(&a,0)==XUI_OK);xui_code_provider_scope_t caller={0};assert(xuiCodeProviderSetCallBegin(model,&caller)==XUI_OK);
+    uint64_t before=caller._iGeneration;assert(install(&b,0)==XUI_OK&&a.refs==2);
+    a.caller=&caller;a.dropAction=3;
+    assert(invoke(&b,0)==XUI_ERROR_INVALID_STATE&&!b.calls&&caller._iGeneration!=before);
+    assert(xuiCodeProviderSetCallEnd(&caller)==XUI_OK);
+    assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK&&a.refs==1&&b.refs==1);
+}
+static void diagnostics(void)
+{
+    xui_code_provider_set model=NULL;assert(xuiCodeProviderSetCreate(&model)==XUI_OK);Owner owner;init(&owner,model);
+    assert(install(&owner,3)==XUI_OK);
+    xrtSetErrorInfo(XERR_IO,"provider-owned-test",9,"prior diagnostic");const xerror* prior=xrtGetError();assert(prior);
+    assert(invoke(&owner,3)==XUI_OK&&xrtGetError()==prior);
+    owner.callAction=4;assert(invoke(&owner,3)==XUI_ERROR_CALLBACK_FAILED&&xrtGetError()==prior);
+    xrtClearError();owner.dropError=true;
+    assert(xuiCodeProviderSetClearChecked(model)==XUI_ERROR_CALLBACK_FAILED&&owner.refs==1&&owner.drops==1&&xrtGetError());
+    xrtClearError();assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK);
+}
+static void graphAndHot(void)
+{
+    xmemdebugsnapshot a,b;xrtMemDebugSnapshot(&a);xui_code_provider_set model=NULL;
+    assert(xuiCodeProviderSetCreate(&model)==XUI_OK);xrtMemDebugSnapshot(&b);
+    printf("Owned Provider model: alloc=%llu bytes=%llu scope=%zu\n",(unsigned long long)(b.AllocCount-a.AllocCount),(unsigned long long)(b.LiveBytes-a.LiveBytes),sizeof(xui_code_provider_scope_t));
+    Owner owners[5];for(int role=0;role<5;++role){
+        init(&owners[role],model);xrtMemDebugSnapshot(&a);assert(install(&owners[role],role)==XUI_OK);xrtMemDebugSnapshot(&b);
+        assert(b.AllocCount==a.AllocCount+1&&b.LiveCount==a.LiveCount+1);
+        if(!role)printf("Owned Provider slot: alloc=1 bytes=%llu\n",(unsigned long long)(b.LiveBytes-a.LiveBytes));
+    }
+    unsigned edges=0;xrtownershipscope frozen={0};assert(xrtOwnershipFreezeTryBegin(&frozen));
+    assert(xuiCodeProviderSetTraceOwnership(model,edge,&edges)&&edges==5&&xrtOwnershipScopeEnd(&frozen));
+    xui_code_provider_scope_t caller={0};assert(xuiCodeProviderSetCallBegin(model,&caller)==XUI_OK);
+    edges=0;assert(!xuiCodeProviderSetTraceOwnership(model,edge,&edges)&&!edges);
+    xrtMemDebugSnapshot(&a);assert(xrtMemDebugFailAfter(0));
+    for(int i=0;i<1000;++i)for(int role=0;role<5;++role)assert(invoke(&owners[role],role)==XUI_OK);
+    assert(!xrtMemDebugFailTriggered());xrtMemDebugFailClear();xrtMemDebugSnapshot(&b);
+    assert(a.AllocCount==b.AllocCount&&a.FreeCount==b.FreeCount&&a.ReallocCount==b.ReallocCount);
+    puts("Owned Provider hot: 5000 requests,0 heap and no per-call owner Hold");
+    for(int role=0;role<5;++role)assert(owners[role].holds==1&&!owners[role].drops&&owners[role].calls==1000);
+    assert(xuiCodeProviderSetCallEnd(&caller)==XUI_OK&&xuiCodeProviderSetClearChecked(model)==XUI_OK);
+    for(int role=0;role<5;++role)assert(owners[role].refs==1&&owners[role].drops==1);
+    edges=0;assert(xuiCodeProviderSetTraceOwnership(model,edge,&edges)&&!edges);
+    assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK);
+}
+static size_t backendRefs=1;
+static bool backendHold(const void* p){assert(p==&backendRefs);++backendRefs;return true;}
+static bool backendDrop(const void* p){assert(p==&backendRefs&&backendRefs>1);--backendRefs;return true;}
+static bool backendCount(const void* p,size_t* n){assert(p==&backendRefs);*n=backendRefs;return true;}
+static const xrtownershipops backendOps={backendCount,trace};
+static void consumers(void)
+{
+    xui_test_proxy_state_t backend;xuiTestProxyInit(&backend);
+    for(int role=0;role<3;role+=2){
+        xui_proxy proxy=NULL;xui_context context=NULL;xui_widget editor=NULL;
+        const xui_callback_owner_t cap={{&backendRefs,&backendOps},backendHold,backendDrop};
+        const xui_context_desc_t desc={sizeof(desc),XUI_SYSTEM_FONT_DISABLED,0,0};
+        assert(xuiProxyCreateOwned(&backend.tProxy,&cap,&proxy)==XUI_OK&&xuiCreateOwnedEx(proxy,&desc,&context)==XUI_OK);
+        assert(xuiCodeEditCreate(context,&editor,NULL)==XUI_OK);Owner owner;init(&owner,xuiCodeEditGetProviders(editor));
+        assert(install(&owner,role)==XUI_OK);owner.callAction=1;
+        int status=role==0?xuiCodeEditShowCompletion(editor):xuiCodeEditRequestSignatureHelp(editor);
+        assert(status==XUI_OK&&owner.refs==1&&owner.drops==1&&!strcmp(owner.label,"expired"));
+        if(role==0){
+            assert(xuiCodeEditGetCompletionCount(editor)==1&&xuiCodeEditIsCompletionOpen(editor));
+            xui_widget list=xuiWidgetGetFirstChild(xuiPopupGetContentWidget(xuiCodeEditGetCompletionPopupWidget(editor)));
+            assert(list&&!strcmp(xuiListViewGetItemText(list,0),"owned"));
+        }
+        else assert(xuiCodeEditIsSignatureHelpOpen(editor));
+        assert(xuiDestroyChecked(context)==XUI_OK&&xuiProxyReleaseChecked(proxy)==XUI_OK&&backendRefs==1);
+    }
+}
+static void consumerAllocationPrefixes(void)
+{
+    xui_test_proxy_state_t backend;xuiTestProxyInit(&backend);
+    unsigned total=0;
+    for(int role=0;role<3;role+=2){bool success=false;
+        for(int budget=0;budget<160;++budget){
+            xmemdebugsnapshot initial;xrtMemDebugSnapshot(&initial);
+            xui_proxy proxy=NULL;xui_context context=NULL;xui_widget editor=NULL;
+            const xui_callback_owner_t cap={{&backendRefs,&backendOps},backendHold,backendDrop};
+            const xui_context_desc_t desc={sizeof(desc),XUI_SYSTEM_FONT_DISABLED,0,0};
+            assert(xuiProxyCreateOwned(&backend.tProxy,&cap,&proxy)==XUI_OK&&xuiCreateOwnedEx(proxy,&desc,&context)==XUI_OK);
+            assert(xuiCodeEditCreate(context,&editor,NULL)==XUI_OK);Owner owner;init(&owner,xuiCodeEditGetProviders(editor));
+            assert(install(&owner,role)==XUI_OK);owner.callAction=1;assert(xrtMemDebugFailAfter(budget));
+            int status=role==0?xuiCodeEditShowCompletion(editor):xuiCodeEditRequestSignatureHelp(editor);
+            bool failed=xrtMemDebugFailTriggered();bool memoryError=xrtErrorKind(xrtGetError())==XERR_MEMORY;
+            xrtMemDebugFailClear();xrtClearError();++total;
+            if(status!=XUI_OK&&status!=XUI_ERROR_OUT_OF_MEMORY&&!(status==XUI_ERROR_CALLBACK_FAILED&&memoryError))
+                fprintf(stderr,"consumer role=%d budget=%d status=%d failed=%d memory=%d calls=%u\n",role,budget,status,failed,memoryError,owner.calls);
+            assert(status==XUI_OK||status==XUI_ERROR_OUT_OF_MEMORY||(status==XUI_ERROR_CALLBACK_FAILED&&memoryError));
+            assert(xuiDestroyChecked(context)==XUI_OK&&xuiProxyReleaseChecked(proxy)==XUI_OK&&backendRefs==1);
+            assert(owner.refs==1&&owner.holds==1&&owner.drops==1);balanced(&initial);
+            if(!failed){assert(status==XUI_OK);success=true;break;}
+        }
+        assert(success);
+    }
+    printf("Owned Provider consumer allocation prefixes=%u, complete heaps balanced\n",total);
+}
+int main(void)
+{
+    marginBind();xmemdebugsnapshot initial;xrtMemDebugSnapshot(&initial);
+    roles();balanced(&initial);publication();balanced(&initial);callerGeneration();balanced(&initial);diagnostics();balanced(&initial);
+    graphAndHot();balanced(&initial);consumers();balanced(&initial);consumerAllocationPrefixes();balanced(&initial);
+    puts("Owned Provider: all5 roles, immutable pins, scoped borrows, generation, graph, reentry, errors and consumers passed");return 0;
+}
