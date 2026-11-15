@@ -2,11 +2,13 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
 #include "xui_code_provider_internal.h"
+#include "../core/xui_internal.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
-struct xui_code_provider_set_t {
+typedef struct xui_code_provider_callbacks_t {
 	xui_code_completion_proc onComplete;
 	void* pCompleteUser;
 	xui_code_hover_proc onHover;
@@ -17,7 +19,18 @@ struct xui_code_provider_set_t {
 	void* pCommandUser;
 	xui_code_command_enabled_proc onCommandEnabled;
 	void* pCommandEnabledUser;
+} xui_code_provider_callbacks_t;
+struct xui_code_provider_set_t {
+    xui_code_provider_callbacks_t callbacks;
+    uint32_t iMagic;
+    bool bDestroyPending,bDestroying;
+    uint64_t iActiveThread;
+    size_t iActiveCalls;
+    xui_lifetime_link_t* pLifetimeLinks;
+    xui_widget pInternalOwner;
 };
+#define XUI_CODE_PROVIDER_MAGIC UINT32_C(0x58435052)
+#include "xui_code_provider_lifetime.inl"
 
 static void __xuiCodeProviderCompletionItemsReset(
 	xui_code_completion_item_t* pItems, int iItemCapacity)
@@ -49,166 +62,151 @@ static int __xuiCodeProviderCompletionItemsValid(
 
 XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders)
 {
-	xui_code_provider_set pProviders;
-
-	if ( ppProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	*ppProviders = NULL;
-	pProviders = (xui_code_provider_set)xrtMalloc(sizeof(*pProviders));
-	if ( pProviders == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memset(pProviders, 0, sizeof(*pProviders));
-	*ppProviders = pProviders;
-	return XUI_OK;
+    if(!ppProviders)return XUI_ERROR_INVALID_ARGUMENT;
+    *ppProviders=NULL;
+    xui_code_provider_set providers=xrtCalloc(1,sizeof(*providers));
+    if(!providers)return XUI_ERROR_OUT_OF_MEMORY;
+    providers->iMagic=XUI_CODE_PROVIDER_MAGIC;*ppProviders=providers;return XUI_OK;
 }
-
-XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set pProviders)
+XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set providers)
+{if(providers)(void)xuiCodeProviderSetDestroyChecked(providers);}
+XUI_API int xuiCodeProviderSetClearChecked(xui_code_provider_set providers)
 {
-	xrtFree(pProviders);
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {memset(&providers->callbacks,0,sizeof(providers->callbacks));if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API void xuiCodeProviderSetClear(xui_code_provider_set pProviders)
+XUI_API void xuiCodeProviderSetClear(xui_code_provider_set providers)
+{if(providers)(void)xuiCodeProviderSetClearChecked(providers);}
+XUI_API int xuiCodeProviderSetCompletion(xui_code_provider_set providers,xui_code_completion_proc callback,void* user)
 {
-	if ( pProviders == NULL ) return;
-	memset(pProviders, 0, sizeof(*pProviders));
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {providers->callbacks.onComplete=callback;providers->callbacks.pCompleteUser=user;if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API int xuiCodeProviderSetCompletion(xui_code_provider_set pProviders, xui_code_completion_proc onComplete, void* pUser)
+XUI_API int xuiCodeProviderSetHover(xui_code_provider_set providers,xui_code_hover_proc callback,void* user)
 {
-	if ( pProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pProviders->onComplete = onComplete;
-	pProviders->pCompleteUser = pUser;
-	return XUI_OK;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {providers->callbacks.onHover=callback;providers->callbacks.pHoverUser=user;if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API int xuiCodeProviderSetHover(xui_code_provider_set pProviders, xui_code_hover_proc onHover, void* pUser)
+XUI_API int xuiCodeProviderSetSignature(xui_code_provider_set providers,xui_code_signature_proc callback,void* user)
 {
-	if ( pProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pProviders->onHover = onHover;
-	pProviders->pHoverUser = pUser;
-	return XUI_OK;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {providers->callbacks.onSignature=callback;providers->callbacks.pSignatureUser=user;if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API int xuiCodeProviderSetSignature(xui_code_provider_set pProviders, xui_code_signature_proc onSignature, void* pUser)
+XUI_API int xuiCodeProviderSetCommand(xui_code_provider_set providers,xui_code_command_proc callback,void* user)
 {
-	if ( pProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pProviders->onSignature = onSignature;
-	pProviders->pSignatureUser = pUser;
-	return XUI_OK;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {providers->callbacks.onCommand=callback;providers->callbacks.pCommandUser=user;if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API int xuiCodeProviderSetCommand(xui_code_provider_set pProviders, xui_code_command_proc onCommand, void* pUser)
+XUI_API int xuiCodeProviderSetCommandEnabled(xui_code_provider_set providers,xui_code_command_enabled_proc callback,void* user)
 {
-	if ( pProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pProviders->onCommand = onCommand;
-	pProviders->pCommandUser = pUser;
-	return XUI_OK;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+    else {providers->callbacks.onCommandEnabled=callback;providers->callbacks.pCommandEnabledUser=user;if(!xrtOwnershipScopeEnd(&mutation))abort();}
+    return __xuiCodeProviderFinish(&scope,status);
 }
-
-XUI_API int xuiCodeProviderSetCommandEnabled(xui_code_provider_set pProviders, xui_code_command_enabled_proc onEnabled, void* pUser)
+XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set providers,xui_widget widget,int offset,const char* prefix,xui_code_completion_item_t* items,int capacity,int* count)
 {
-	if ( pProviders == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pProviders->onCommandEnabled = onEnabled;
-	pProviders->pCommandEnabledUser = pUser;
-	return XUI_OK;
+    if(!providers || !count || offset<0 || capacity<0 || (!items && capacity))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    *count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);
+    xui_code_completion_proc callback=providers->callbacks.onComplete;void* user=providers->callbacks.pCompleteUser;
+    if(!callback)status=XUI_ERROR_UNSUPPORTED;
+    else {
+        __xuiCodeProviderCallbackBegin(&scope);
+        status=callback(widget,offset,prefix?prefix:"",items,capacity,count,user);
+        __xuiCodeProviderCallbackEnd(&scope);
+        if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
+        if(status==XUI_OK && (*count<0 || *count>capacity || !__xuiCodeProviderCompletionItemsValid(items,*count)))status=XUI_ERROR_INVALID_STATE;
+    }
+    status=__xuiCodeProviderFinish(&scope,status);
+    if(status!=XUI_OK){*count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);}
+    return status;
 }
-
-XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount)
+XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set providers,xui_widget widget,int offset,xui_code_hover_t* output)
 {
-	int iRet;
-
-	if ( (pProviders == NULL) || (pItemCount == NULL) || (iOffset < 0) ||
-	     (iItemCapacity < 0) || (pItems == NULL && iItemCapacity > 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	*pItemCount = 0;
-	__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
-	if ( pProviders->onComplete == NULL ) return XUI_ERROR_UNSUPPORTED;
-	iRet = pProviders->onComplete((xui_widget_t*)pWidget, iOffset,
-		(sPrefix != NULL) ? sPrefix : "", pItems, iItemCapacity,
-		pItemCount, pProviders->pCompleteUser);
-	if ( iRet != XUI_OK ) {
-		*pItemCount = 0;
-		__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
-		return iRet;
-	}
-	if ( *pItemCount < 0 || *pItemCount > iItemCapacity ||
-	     !__xuiCodeProviderCompletionItemsValid(pItems, *pItemCount) ) {
-		*pItemCount = 0;
-		__xuiCodeProviderCompletionItemsReset(pItems, iItemCapacity);
-		return XUI_ERROR_INVALID_STATE;
-	}
-	return XUI_OK;
+    if(!providers || !output || offset<0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    memset(output,0,sizeof(*output));output->iSize=sizeof(*output);
+    xui_code_hover_t value={0};value.iSize=sizeof(value);
+    xui_code_hover_proc callback=providers->callbacks.onHover;void* user=providers->callbacks.pHoverUser;
+    if(!callback)status=XUI_ERROR_UNSUPPORTED;
+    else {
+        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,offset,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
+        if(status==XUI_OK && !xuiInternalCodeProviderHoverValid(&value))status=XUI_ERROR_INVALID_STATE;
+    }
+    status=__xuiCodeProviderFinish(&scope,status);
+    if(status==XUI_OK){value.iSize=sizeof(value);*output=value;}
+    return status;
 }
-
-XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, xui_code_hover_t* pHover)
+XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_widget widget,int offset,xui_code_signature_help_t* output)
 {
-	xui_code_hover_t tHover;
-	int iRet;
-
-	if ( (pProviders == NULL) || (pHover == NULL) || (iOffset < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(pHover, 0, sizeof(*pHover));
-	pHover->iSize = sizeof(*pHover);
-	if ( pProviders->onHover == NULL ) return XUI_ERROR_UNSUPPORTED;
-	memset(&tHover, 0, sizeof(tHover));
-	tHover.iSize = sizeof(tHover);
-	iRet = pProviders->onHover((xui_widget_t*)pWidget, iOffset,
-		&tHover, pProviders->pHoverUser);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( !xuiInternalCodeProviderHoverValid(&tHover) ) return XUI_ERROR_INVALID_STATE;
-	tHover.iSize = sizeof(tHover);
-	*pHover = tHover;
-	return XUI_OK;
+    if(!providers || !output || offset<0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    memset(output,0,sizeof(*output));output->iSize=sizeof(*output);output->iActiveParameter=-1;
+    xui_code_signature_help_t value={0};value.iSize=sizeof(value);value.iActiveParameter=-1;
+    xui_code_signature_proc callback=providers->callbacks.onSignature;void* user=providers->callbacks.pSignatureUser;
+    if(!callback)status=XUI_ERROR_UNSUPPORTED;
+    else {
+        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,offset,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
+        if(status==XUI_OK && !xuiInternalCodeProviderSignatureValid(&value))status=XUI_ERROR_INVALID_STATE;
+    }
+    status=__xuiCodeProviderFinish(&scope,status);
+    if(status==XUI_OK){value.iSize=sizeof(value);*output=value;}
+    return status;
 }
-
-XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, xui_code_signature_help_t* pHelp)
+XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,const void* data,int* handled)
 {
-	xui_code_signature_help_t tHelp;
-	int iRet;
-
-	if ( (pProviders == NULL) || (pHelp == NULL) || (iOffset < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(pHelp, 0, sizeof(*pHelp));
-	pHelp->iSize = sizeof(*pHelp);
-	pHelp->iActiveParameter = -1;
-	if ( pProviders->onSignature == NULL ) return XUI_ERROR_UNSUPPORTED;
-	memset(&tHelp, 0, sizeof(tHelp));
-	tHelp.iSize = sizeof(tHelp);
-	tHelp.iActiveParameter = -1;
-	iRet = pProviders->onSignature((xui_widget_t*)pWidget, iOffset,
-		&tHelp, pProviders->pSignatureUser);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( !xuiInternalCodeProviderSignatureValid(&tHelp) ) return XUI_ERROR_INVALID_STATE;
-	tHelp.iSize = sizeof(tHelp);
-	*pHelp = tHelp;
-	return XUI_OK;
+    if(!providers || !handled || command<=0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    *handled=0;int value=0;
+    xui_code_command_proc callback=providers->callbacks.onCommand;void* user=providers->callbacks.pCommandUser;
+    if(!callback)status=XUI_ERROR_UNSUPPORTED;
+    else {
+        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,command,data,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
+    }
+    status=__xuiCodeProviderFinish(&scope,status);if(status==XUI_OK)*handled=value?1:0;return status;
 }
-
-XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, const void* pCommandData, int* pHandled)
+XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,int* enabled)
 {
-	int bHandled;
-	int iRet;
-
-	if ( (pProviders == NULL) || (pHandled == NULL) || (iCommand <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	*pHandled = 0;
-	if ( pProviders->onCommand == NULL ) return XUI_ERROR_UNSUPPORTED;
-	bHandled = 0;
-	iRet = pProviders->onCommand((xui_widget_t*)pWidget, iCommand,
-		pCommandData, &bHandled, pProviders->pCommandUser);
-	if ( iRet == XUI_OK ) *pHandled = bHandled ? 1 : 0;
-	return iRet;
+    if(!providers || !enabled || command<=0)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
+    if(status!=XUI_OK)return status;
+    *enabled=0;int value=0;
+    xui_code_command_enabled_proc callback=providers->callbacks.onCommandEnabled;void* user=providers->callbacks.pCommandEnabledUser;
+    if(!callback)status=XUI_ERROR_UNSUPPORTED;
+    else {
+        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,command,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
+    }
+    status=__xuiCodeProviderFinish(&scope,status);if(status==XUI_OK)*enabled=value?1:0;return status;
 }
-
-XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, int* pEnabled)
-{
-	int bEnabled;
-	int iRet;
-
-	if ( (pProviders == NULL) || (pEnabled == NULL) || (iCommand <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	*pEnabled = 0;
-	if ( pProviders->onCommandEnabled == NULL ) return XUI_ERROR_UNSUPPORTED;
-	bEnabled = 0;
-	iRet = pProviders->onCommandEnabled((xui_widget_t*)pWidget, iCommand,
-		&bEnabled, pProviders->pCommandEnabledUser);
-	if ( iRet == XUI_OK ) *pEnabled = bEnabled ? 1 : 0;
-	return iRet;
-}
-
 #endif

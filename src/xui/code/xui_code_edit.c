@@ -2490,7 +2490,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	pData->iImeCompositionCapacity = 0;
 	xuiCodeCommandMapDestroy(pData->pCommandMap);
 	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
-	xuiCodeProviderSetDestroy(pData->pProviders);
+	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
 	xuiCodeLanguageRegistryDestroy(pData->pLanguages);
 	xuiCodeAnnotationStoreDestroy(pData->pAnnotations);
@@ -2613,17 +2613,13 @@ static void __xuiCodeEditMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 	(void)__xuiCodeEditExecuteCommand(pWidget, pData, iCommand, NULL, &bHandled);
 }
 
-static uint32_t __xuiCodeEditProviderCommandState(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand, uint32_t iDefaultState)
+static int __xuiCodeEditProviderCommandState(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand, uint32_t iDefaultState, uint32_t* pState)
 {
-	int bEnabled;
-	int iRet;
-
-	if ( pWidget == NULL || pData == NULL ) return 0u;
-	bEnabled = 0;
-	iRet = xuiCodeProviderCanExecuteCommand(pData->pProviders, pWidget, iCommand, &bEnabled);
-	if ( iRet == XUI_OK ) return bEnabled ? XUI_MENU_ITEM_ENABLED : 0u;
-	if ( iRet == XUI_ERROR_UNSUPPORTED ) return iDefaultState;
-	return 0u;
+    int enabled=0;
+    int status=xuiCodeProviderCanExecuteCommand(pData->pProviders,pWidget,iCommand,&enabled);
+    if(status==XUI_OK)*pState=enabled ? XUI_MENU_ITEM_ENABLED:0u;
+    else if(status==XUI_ERROR_UNSUPPORTED){*pState=iDefaultState;status=XUI_OK;}
+    return status;
 }
 
 static int __xuiCodeEditUpdateMenu(xui_widget pWidget, xui_code_edit_data_t* pData)
@@ -2697,7 +2693,8 @@ static int __xuiCodeEditUpdateMenu(xui_widget pWidget, xui_code_edit_data_t* pDa
 	arrItems[12].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_GOTO_LINE);
 	arrItems[12].sShortcut = "Ctrl+G";
 	arrItems[12].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[12].iState = __xuiCodeEditProviderCommandState(pWidget, pData, XUI_CODE_COMMAND_GOTO_LINE, 0u);
+	int providerStatus=__xuiCodeEditProviderCommandState(pWidget,pData,XUI_CODE_COMMAND_GOTO_LINE,0u,&arrItems[12].iState);
+	if(providerStatus!=XUI_OK)return providerStatus;
 	arrItems[12].iValue = 10;
 	arrItems[13].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT);
 	arrItems[13].sShortcut = "Ctrl+/";
@@ -2992,6 +2989,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiCodeProviderSetCreate(&pData->pProviders);
 	if ( iRet == XUI_OK ) iRet = xuiCodeMarginModelCreate(&pData->pMargins);
     if(iRet==XUI_OK)iRet=xuiInternalCodeMarginClaimOwner(pData->pMargins,pWidget);
+    if(iRet==XUI_OK)iRet=xuiInternalCodeProviderClaimOwner(pData->pProviders,pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeCommandMapCreate(&pData->pCommandMap);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryCreate(&pData->pLanguages);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryLoadDefaults(pData->pLanguages);
@@ -7026,6 +7024,7 @@ static bool __xuiCodeEditTraceOwnership(xui_widget widget,const void* raw,xrtown
     const xui_code_edit_data_t* data=raw;if(data->iCacheActivity)return false;
     if(data->pDocument && !xuiCodeDocumentTraceOwnership(data->pDocument,visit,user))return false;
     if(data->pMargins && !xuiCodeMarginModelTraceOwnership(data->pMargins,visit,user))return false;
+    if(data->pProviders && !xuiCodeProviderSetTraceOwnership(data->pProviders,visit,user))return false;
     for(int i=0;i<data->iLineLayoutCount;++i){
         const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
         if(widget->pContext->pOwnedProxy && line->pFont && !visit(xuiFontOwnership(line->pFont),user))return false;
@@ -7291,26 +7290,25 @@ XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget)
 
 XUI_API int xuiCodeEditSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
 {
-	xui_code_edit_data_t* pData;
-	char* sNew;
-	int iIndex;
-
-	pData = __xuiCodeEditGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iIndex = __xuiCodeEditMenuTitleIndexForCommand(iCommand);
-	if ( iIndex < 0 || iIndex >= XUI_CODE_EDIT_MENU_TITLE_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( sTitle == NULL || sTitle[0] == '\0' ) {
-		xrtFree(pData->arrMenuTitle[iIndex]);
-		pData->arrMenuTitle[iIndex] = NULL;
-		if ( pData->pMenu != NULL ) (void)__xuiCodeEditUpdateMenu(pWidget, pData);
-		return XUI_OK;
-	}
-	sNew = __xuiCodeEditStringDup(sTitle);
-	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	xrtFree(pData->arrMenuTitle[iIndex]);
-	pData->arrMenuTitle[iIndex] = sNew;
-	if ( pData->pMenu != NULL ) (void)__xuiCodeEditUpdateMenu(pWidget, pData);
-	return XUI_OK;
+    xui_code_edit_data_t* pData=__xuiCodeEditGetData(pWidget);
+    if(!pData)return XUI_ERROR_INVALID_ARGUMENT;
+    int iIndex=__xuiCodeEditMenuTitleIndexForCommand(iCommand);
+    if(iIndex<0 || iIndex>=XUI_CODE_EDIT_MENU_TITLE_COUNT)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(pWidget->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    char* sNew=NULL;
+    if(sTitle && sTitle[0]) {
+        sNew=__xuiCodeEditStringDup(sTitle);
+        if(!sNew){status=XUI_ERROR_OUT_OF_MEMORY;goto provider_consumer_end;}
+    }
+    xrtFree(pData->arrMenuTitle[iIndex]);
+    pData->arrMenuTitle[iIndex]=sNew;
+    /* The title is committed; a provider/menu failure remains observable. */
+    if(pData->pMenu)status=__xuiCodeEditUpdateMenu(pWidget,pData);
+provider_consumer_end:;
+    xerror* error=xrtTakeError();
+    return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 XUI_API const char* xuiCodeEditGetMenuTitle(xui_widget pWidget, int iCommand)
@@ -7840,9 +7838,15 @@ XUI_API int xuiCodeEditClearVirtualText(xui_widget pWidget, int iKind)
 
 XUI_API int xuiCodeEditShowCompletion(xui_widget pWidget)
 {
-	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiCodeEditShowCompletionInternal(pWidget, pData, 1);
+    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    /* Keep the editor alive until borrowed provider results are consumed. */
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(pWidget->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiCodeEditShowCompletionInternal(pWidget, pData, 1);
+    xerror* error=xrtTakeError();
+    return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 XUI_API int xuiCodeEditCancelCompletion(xui_widget pWidget)
@@ -8247,8 +8251,15 @@ static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_ed
 
 XUI_API int xuiCodeEditRequestSignatureHelp(xui_widget pWidget)
 {
-	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-	return (pData != NULL) ? __xuiCodeEditRequestSignatureInternal(pWidget, pData) : XUI_ERROR_INVALID_ARGUMENT;
+    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    /* Keep the editor alive until borrowed provider results are consumed. */
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(pWidget->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    status=__xuiCodeEditRequestSignatureInternal(pWidget, pData);
+    xerror* error=xrtTakeError();
+    return xuiInternalCallScopeEndRestored(&scope,status,error);
 }
 
 XUI_API int xuiCodeEditCloseSignatureHelp(xui_widget pWidget)

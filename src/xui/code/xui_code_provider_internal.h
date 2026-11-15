@@ -5,6 +5,9 @@
 
 #include <string.h>
 
+int xuiInternalCodeProviderClaimOwner(xui_code_provider_set,xui_widget);
+int xuiInternalCodeProviderDestroyOwned(xui_widget,xui_code_provider_set);
+
 static inline int xuiInternalCodeProviderHoverValid(
 	const xui_code_hover_t* pHover)
 {

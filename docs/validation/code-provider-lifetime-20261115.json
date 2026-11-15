@@ -1,0 +1,232 @@
+{
+  "date": "2026-11-15",
+  "complete": true,
+  "passed": true,
+  "scope": "Native unique CodeProviderSet lifetime and whole CodeEdit provider consumer call protection; no owning provider callbacks/results or language alias",
+  "nativeBase": "076964b2067b9fa7cf48af11228cf032083f45b2",
+  "shippingDelivery": false,
+  "networkTests": false,
+  "commands": 76,
+  "constructorPrefixes": 1040,
+  "evidence": [
+    {
+      "platform": "win",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-native-verified-win-r1.json",
+      "sha256": "38cffa9ab8127262b2d2d506bc776ed2da38b3c6c68cb8dcb6a1a069cf40a1ee",
+      "commands": 38,
+      "constructorPrefixes": 520,
+      "builds": [
+        {
+          "revision": "r2",
+          "kind": "host",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-sdk-win-r2\\host\\build-report.json",
+          "sha256": "ff864ec210e9a110e7297578656fd27855487323e5ef6a2348afa06d49da26de",
+          "compiled": 164,
+          "reused": 0
+        },
+        {
+          "revision": "r2",
+          "kind": "static",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-sdk-win-r2\\static\\build-report.json",
+          "sha256": "7355a90f0225e6d4ee3501fd0d89bcad15b3255983d8e7c9daa0a6653778e01b",
+          "compiled": 166,
+          "reused": 0
+        },
+        {
+          "revision": "r4",
+          "kind": "host",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-sdk-win-r4\\host\\build-report.json",
+          "sha256": "d2c2a368075fff9941d36087f434a5607496d11a707c0b79acbde9f9d23c752a",
+          "compiled": 1,
+          "reused": 163
+        },
+        {
+          "revision": "r4",
+          "kind": "static",
+          "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-sdk-win-r4\\static\\build-report.json",
+          "sha256": "1fe12412be7c3a3beec25e7d06cb5bd4c3aa8d3b9c8a5b35d737cf8508be658c",
+          "compiled": 2,
+          "reused": 164
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        }
+      ]
+    },
+    {
+      "platform": "linux",
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-native-verified-linux-r1.json",
+      "sha256": "596b08c022887ae6e9201a643ea3155ca48cab1c9c3eb32cc3c9a3fdaf0a7b95",
+      "commands": 38,
+      "constructorPrefixes": 520,
+      "builds": [
+        {
+          "revision": "r2",
+          "kind": "host",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-lifetime-sdk-linux-r2/host/build-report.json",
+          "sha256": "7d4316bbded74b034b825da9099da1f1e973773e07fbb7bd2a0150a05d8dd650",
+          "compiled": 164,
+          "reused": 0
+        },
+        {
+          "revision": "r2",
+          "kind": "static",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-lifetime-sdk-linux-r2/static/build-report.json",
+          "sha256": "365b3c18eecd80bcb7167e96a6c07dd54b6e38cb04c5cd310b239bfa1125846f",
+          "compiled": 166,
+          "reused": 0
+        },
+        {
+          "revision": "r4",
+          "kind": "host",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-lifetime-sdk-linux-r4/host/build-report.json",
+          "sha256": "f643e5a62696dcfd4e707e888fbed0912c7f58c422e69c76a1a03fb3230cd7d2",
+          "compiled": 1,
+          "reused": 163
+        },
+        {
+          "revision": "r4",
+          "kind": "static",
+          "path": "/mnt/f/xlang-validation/xge-full-20261110/provider-lifetime-sdk-linux-r4/static/build-report.json",
+          "sha256": "f93f6a23c59d6d2de0ffe05d24539e097fe3b820c48a15a18ca2c0fba42a4bda",
+          "compiled": 2,
+          "reused": 164
+        }
+      ],
+      "hot": [
+        {
+          "kind": "host",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "host",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O0",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        },
+        {
+          "kind": "static",
+          "opt": "O2",
+          "rounds": 1000,
+          "heapOperations": 0,
+          "scopeBytes": 72,
+          "modelBytes": 120,
+          "modelAllocations": 1,
+          "cpuEquivalenceClaim": false
+        }
+      ]
+    }
+  ],
+  "sourceNormalizedLfSha256": {
+    "include/xui.h": "ddad408b01e51c39f71998d9f66751c1302ba2d26d0b6136c216a0a8c613dd38",
+    "src/xui/code/xui_code_provider.c": "05d01e73eca879d405f752a9ca2ae369d56c7678fa8bc8e85ced1bbe85bd6054",
+    "src/xui/code/xui_code_provider_internal.h": "3c53026e108e84ec34bdf5cfeaa931aedb3b2260ebe6437d827d756f5607ed55",
+    "src/xui/code/xui_code_provider_lifetime.inl": "081cb88b64398ad25e3aa402439292448d405fc0be0e34e871d7637af51f9a0f",
+    "src/xui/code/xui_code_edit.c": "b7d0d1b8a6d566ba6ae88962898c559c6cb45ac6214f139cf94c6b143d0d13b9",
+    "docs/code-provider-lifetime.md": "a9aa6b46606e2469f99d647510cd46ea0fc104f209b2db047ebda8dc58d4d277",
+    "tests/xui/xui_code_provider_lifetime_test.c": "4a9f69db508aaf544896fcf7e288daadaadc5a9acf4cb5e7a449d8f7a9c064d9",
+    "tests/xui/xui_code_provider_host_test.c": "a6f8ef9dc83f6816247945327c2ca461b39ab828e9d160e39d16a6190efc4b1f",
+    "tools/test/check_code_provider_lifetime.py": "7192fd99908d03779097fbd8b3d472006443d41f26676e5fd905c4c4db2c8bc6"
+  },
+  "isolation": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-isolation-r2.json",
+    "sha256": "bc0d23d02bcf1d725227c9fcb1810b477609944c014e5514796551555bc18053",
+    "userGeometryPreserved": true,
+    "patch": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-codeedit-only-r2.patch",
+    "patchSha256": "eee015a8d75bfe3f1d2353db03d04a98fa9e7a2f38072e1a46ba286bf342084e"
+  },
+  "costs": {
+    "modelBytes": 120,
+    "baselineWindowsBytes": 80,
+    "modelAllocations": 1,
+    "scopeBytes": 72,
+    "warm1000ScopesAndRequestsHeapOperations": 0,
+    "cpuEquivalenceClaim": false,
+    "baselineEvidence": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-storage-win-r1\\results.json",
+      "sha256": "6b8d2176d0e2c800f36f9804225d3d955439c1501ef20241902c0af9d5da9c1c"
+    }
+  },
+  "diagnostics": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-r1-build-cache-audit.json",
+      "sha256": "198ee82300e43ef822d5054d944f44f1809bf382b7cf607bfcc6b4a261318d8a",
+      "qualification": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-probe-win-r3\\run.log",
+      "sha256": "d162f96c5a01ac040162836d1e65f2b459b8b51d24831a97365eea2572199a8d",
+      "qualification": false
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\provider-lifetime-native-win-r1\\results.json",
+      "sha256": "98aa799a9ae8264da468df9a54c3211aec11a957f98f9b5a66730bd955bcbabb",
+      "qualification": false
+    }
+  ],
+  "remaining": [
+    "Owned typed provider slots/invocation pins",
+    "Owning returned strings/parameter arrays",
+    "Safe long-lived internal model language alias",
+    "Matched final release/IDE delivery"
+  ]
+}

@@ -8131,6 +8131,27 @@ XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iL
  * 补全回调返回的数量不得超过 iItemCapacity；每个返回描述必须设置有效 iSize。 */
 /* 创建语言服务提供者集合（补全/悬停/签名/命令）。 */
 XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders);
+/* Unique owner. CodeEditGetProviders returns a borrow, not a second destroy
+ * right. Active, address-stable scopes delay physical free after consumption.
+ * A standalone set can be handed to another thread under external
+ * synchronization; overlapping calls on different threads return BUSY.
+ * Embedded sets additionally follow their editor's Context call scope. */
+XUI_API int xuiCodeProviderSetDestroyOwnerChecked(xui_code_provider_set pProviders,bool* pConsumed);
+XUI_API int xuiCodeProviderSetDestroyChecked(xui_code_provider_set pProviders);
+XUI_API int xuiCodeProviderSetClearChecked(xui_code_provider_set pProviders);
+XUI_API bool xuiCodeProviderSetOwnershipBusy(xui_code_provider_set pProviders);
+XUI_API int xuiCodeProviderSetLifetimeWatch(xui_code_provider_set pProviders,xui_lifetime_link_t* pLink,xui_lifetime_invalidate_proc onInvalidate,void* pUser);
+typedef struct xui_code_provider_scope_t {
+    struct xui_code_provider_scope_t* pSelf;
+    xui_code_provider_set pProviders;
+    xui_context pContext;
+    xui_call_scope_t tContext;
+} xui_code_provider_scope_t;
+XUI_API int xuiCodeProviderSetCallBegin(xui_code_provider_set pProviders,xui_code_provider_scope_t* pScope);
+XUI_API int xuiCodeProviderSetCallEnd(xui_code_provider_scope_t* pScope);
+/* Current legacy callbacks/user pointers remain externally owned. No language
+ * closure registration or owning result publication is implied by this API. */
+XUI_API bool xuiCodeProviderSetTraceOwnership(xui_code_provider_set pProviders,xrtownershipvisitor onVisit,void* pUser);
 /* 释放提供者集合。 */
 XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set pProviders);
 /* 移除全部提供者回调。 */
