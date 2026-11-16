@@ -81,6 +81,24 @@ static bool __xgeContextTrace(const void* data,xrtownershipvisitor visitor,void*
     const struct xge_graphics_context_t* context=data;
     return !context->code.onDrop || visitor(context->code.tReference,user);
 }
+/* Shared cold retirement for EGL and explicit backend hosts. Call only after
+ * children and uploads have released while the native context is current. */
+static void __xgeContextRendererStop(void)
+{
+    g_xge.bGraphicsRunning=0;
+#if XGE_ENABLE_3D
+    xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
+#endif
+#if XGE_ENABLE_2D
+    __xgeRenderCommandReset();__xgeShapeAutoBatchReset();
+#endif
+#if XGE_ENABLE_SHAPE_EX
+    __xgeShapeExRendererUnit();
+#endif
+    __xgeBuiltinRenderersReset();
+    xrtFree(g_xge.pShapeAutoVertices);g_xge.pShapeAutoVertices=NULL;g_xge.iShapeAutoVertexCapacity=0;
+    xrtFree(g_xge.pShapeAutoIndices);g_xge.pShapeAutoIndices=NULL;g_xge.iShapeAutoIndexCapacity=0;
+}
 static int __xgeContextFinalize(void* data,bool* complete)
 {
     xge_graphics_context context=data;*complete=false;
@@ -111,21 +129,7 @@ static int __xgeContextFinalize(void* data,bool* complete)
         if(__xgeGraphicsOwnerCount(&g_xgeGraphicsLifetime)>1)return XGE_STATUS_DEFERRED;
         context->nativeCleanupStarted=true;
     }
-    if(context->attached){
-        g_xge.bGraphicsRunning=0;
-#if XGE_ENABLE_3D
-        xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
-#endif
-#if XGE_ENABLE_2D
-        __xgeRenderCommandReset();__xgeShapeAutoBatchReset();
-#endif
-#if XGE_ENABLE_SHAPE_EX
-        __xgeShapeExRendererUnit();
-#endif
-        __xgeBuiltinRenderersReset();
-        xrtFree(g_xge.pShapeAutoVertices);g_xge.pShapeAutoVertices=NULL;g_xge.iShapeAutoVertexCapacity=0;
-        xrtFree(g_xge.pShapeAutoIndices);g_xge.pShapeAutoIndices=NULL;g_xge.iShapeAutoIndexCapacity=0;
-    }
+    if(context->attached)__xgeContextRendererStop();
     if(context->tableLoaded){xge_gl_unload();context->tableLoaded=false;}
     int status=xgeEGLUnitChecked(&context->egl);
     if(status!=XGE_OK)return status;
@@ -276,7 +280,7 @@ int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int hei
             xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
             xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
 #endif
-            __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime);__xgePlatformRuntimeUpdate();
+            __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime,false);__xgePlatformRuntimeUpdate();
             __xgeBlendApply(g_xge.iBlend);__xgeDepthTestApply();
         }
     }

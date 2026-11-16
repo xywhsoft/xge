@@ -105,7 +105,7 @@ int main(int argc,char** argv)
         __xgeGraphicsCloseAbort(&g_xgeGraphicsLifetime);
         assert(__xgeGraphicsContextBegin(&g_xgeGraphicsLifetime)==XGE_OK);
         assert(xgeSoundFallbackSet("blocked.wav")==XGE_ERROR_BUSY);xgeSoundFallbackClear();
-        __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime);__xgeGraphicsContextFinish(&g_xgeGraphicsLifetime,false);
+        __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime,false);__xgeGraphicsContextFinish(&g_xgeGraphicsLifetime,false);
         assert(xgeSoundFallbackSet(filename)==XGE_OK);owned();finish();
     }else if(mode==6){
         begin();assert(xgeSoundFallbackSet(NULL)==XGE_ERROR_INVALID_ARGUMENT);

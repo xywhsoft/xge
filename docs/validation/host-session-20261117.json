@@ -1,0 +1,91 @@
+{
+  "format": 1,
+  "sourceParent": "38363a6b0358e8be90948fa7c1005e6167538071",
+  "completeBatch": true,
+  "fullXlangIntegration": false,
+  "shippingDelivery": false,
+  "networkTests": false,
+  "hardwarePerformance": false,
+  "sourceHashes": {
+    "include/xge.h": "5cd9d0e04bc8a5e138ab17b0e3a1678e97165809e7dba1e7b4856ccf0d987e59",
+    "src/xge/core/xge_impl.c": "49402128dc9e7b99f2a7eaa6e3b189c79c9d455026171752ebf74bcc773e5c8b",
+    "src/xge/core/xge_core.c": "8072f5f7db92f657d4728bb2e297203c9641162f85a24f634b28596dc17fe8bc",
+    "src/xge/core/xge_graphics_lifetime.h": "d92bba7c5d2353a960bf5918745d1b5b481e5879d18decaeb3c36570a478dd0a",
+    "src/xge/core/xge_graphics_context.c": "f610a1f40564d9e445964f78b0ad4fc1a617fdfac794cec49395287e27c43921",
+    "src/xge/core/xge_host_session.c": "b8e8876145fe90f74ce6fa30bdf69df477cabe38b3728aca22e509aa6a0f2dc5",
+    "src/xge/render/xge_gl.h": "90275548183c8498e45afec8fcf3780810eec1b06b9d5b5e466bf5f5066ff19d",
+    "tests/xge/xge_host_session_test.c": "11948683a9bb7f6e1ed1afddd57c2d8c5b27d95692cce0d588b6796e7ede107b",
+    "tests/xge/xge_graphics_lifetime_test.c": "ecd9f543cc00f00f207d21b6420d1b9154bc4a21446d7d8ceec2efe436372408",
+    "tests/xge/xge_audio_lifetime_test.c": "40b80451cebcb134a1187bcbb186f12ef6a2e5d4c66e1058feb3d4e2b79d10ab",
+    "tests/xge/xge_audio_fallback_test.c": "3f5f689e23e811bdeb51b8947fbd46950bd6be34800327f8241bcec9a4d062dd",
+    "tools/test/check_host_session.py": "db2a30b535e9c5a5dca209d63de0cbb1713a220f1a6b0eab159c00da05dd0604",
+    "docs/host-session.md": "29fd0ad8e8501d89b7111b8db5e5753c2d29a93173e35ccc2b92bbe914baa0f6"
+  },
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-tests-win-r6\\results.json",
+      "sha256": "5504228a06baf7a9216d0262ecf796c43a806ab1d2ff73d9cfcef9b839eccb91",
+      "commands": 123,
+      "scope": "Qualify explicit owning host sessions against real local WGL/EGL contexts.\n\nNo network, attack, hardware-performance or runtime installation tests. Graph\nprotocol stepping uses instrumented C owners, not a claimed language-cycle or\nphysical module-unload qualification.\n"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-lifetime-win-r2\\results.json",
+      "sha256": "d82d65edd2d0e2cf93ffa206cc4c024eccf00be7c9af4961e50ecdfd31300fb1",
+      "commands": 4,
+      "scope": "Production graphics ownership admission: phases, rollback and concurrent close."
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-full-profile-syntax-win-r3\\results.json",
+      "sha256": "acc19d79b9621397030a18f340bf63c8dc4b2df792ab53fb75d76e2d6067baf9",
+      "commands": 3,
+      "scope": "full-profile syntax-only integration"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-linux-evidence-r2\\host-session-egl-fault-regression-r3.json",
+      "sha256": "3c2f1337d063da16925ac654cb408b81e9789745ab000326a07b4d920298622a",
+      "commands": 77,
+      "scope": "Matched owning EGL/XGE renderer and graph/lifetime tests, shared and static.\n\nEnabled Linux executes the actual XGE renderer, not just raw GLES FBO calls.\nDefault SDKs prove explicit unsupported admission with no native allocation.\nNo network or hardware-performance tests are performed.\n"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-linux-evidence-r2\\host-session-egl-regression-r3.json",
+      "sha256": "683d3b006436d2bb58087f8f286025c897960e0059f85a232602eeeac4b95c54",
+      "commands": 60,
+      "scope": "Matched owning EGL/XGE renderer and graph/lifetime tests, shared and static.\n\nEnabled Linux executes the actual XGE renderer, not just raw GLES FBO calls.\nDefault SDKs prove explicit unsupported admission with no native allocation.\nNo network or hardware-performance tests are performed.\n"
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-linux-evidence-r2\\host-session-lifetime-linux-r2.json",
+      "sha256": "e7c59407c400465f9d3b5eb7d1e08256901563d42ccd0579b2b3d05ead3c6d28",
+      "commands": 4,
+      "scope": "Production graphics ownership admission: phases, rollback and concurrent close."
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\host-session-linux-evidence-r2\\host-session-tests-linux-r6.json",
+      "sha256": "6a575758bbed1bb81990ddc8180d91d7ae43d5c2fbad0dd1570cd4a6e306ee92",
+      "commands": 123,
+      "scope": "Qualify explicit owning host sessions against real local WGL/EGL contexts.\n\nNo network, attack, hardware-performance or runtime installation tests. Graph\nprotocol stepping uses instrumented C owners, not a claimed language-cycle or\nphysical module-unload qualification.\n"
+    }
+  ],
+  "commands": 394,
+  "nativeSdk": {
+    "windows": "F:\\xlang-validation\\xge-full-20261110\\host-session-native-win-r5",
+    "linux": "/var/tmp/xlang-validation/xge-full-20261110/host-session-native-linux-r5",
+    "profile": "2d plus XGE_ENABLE_3D=1; additional Linux XGE_ENABLE_EGL=1 pair",
+    "xrtCanonicalSha256": "4c1dd0e450c20d2ab887e7552cd038e5b394d8659fd1ae6f66211f76d4625c36",
+    "xrtRevision": "09d543a3e29f3113d258b1f58718345de867e06e",
+    "xrtSnapshotNote": "Qualified prior baseline; final latest-XRT/compiler/SDK/IDE convergence remains pending"
+  },
+  "actualHostSourceDependenciesChecked": 94,
+  "unrelatedNativeWorkingFilesPreserved": 13,
+  "warmFrames": 1000,
+  "warmXrtAllocations": 0,
+  "warmXrtFrees": 0,
+  "warmXrtReallocations": 0,
+  "limits": [
+    "Native graph protocol uses instrumented C owners, not a collectible language-cycle proof",
+    "No physical code/DLL unload or cold OS TLS allocation-failure proof",
+    "No CPU equivalence or driver allocation claim",
+    "No actual audio runtime regression: changed private kernel call sites are syntax-checked in full profile",
+    "xlang declarative host candidate and creator-thread busy CLI exit remain separate work",
+    "Runtime releases and user IDE unchanged"
+  ]
+}

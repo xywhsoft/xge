@@ -2334,6 +2334,7 @@ static void __xgeWin32ClipboardOwnerRelease(void);
 #include "xge_owned_graphics.c"
 #include "xge_graphics_context.c"
 #include "xge_backend_owned.c"
+#include "xge_host_session.c"
 #if XGE_ENABLE_PARTICLES
 #include "xge_particle.c"
 #include "xge_particle_io.c"

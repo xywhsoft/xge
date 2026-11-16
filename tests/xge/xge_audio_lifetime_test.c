@@ -379,7 +379,7 @@ int main(int argc,char** argv)
         assert(testAudioOwners==1);
 #endif
         assert(__xgeGraphicsContextBegin(&g_xgeGraphicsLifetime)==XGE_OK);
-        __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime);
+        __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime,false);
         __xgeGraphicsContextFinish(&g_xgeGraphicsLifetime,false);
         assert(xgeUnitChecked()==XGE_ERROR_BUSY && g_xge.bInitialized);
         xgeAudioGroupFree(&group);

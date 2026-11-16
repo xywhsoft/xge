@@ -1301,6 +1301,35 @@ typedef struct xge_graphics_context_info_t {
     uint64_t otherResources;
 } xge_graphics_context_info_t;
 
+/* Explicit creator-thread frame driver over immutable owned backend snapshots.
+ * Cleanup reports consumption independently of status: false preserves the
+ * exact obligation for retry; true consumes it even when status reports error.
+ * A release callback must handle partial backend initialization as well. */
+typedef struct xge_host_session_t* xge_host_session;
+typedef struct xge_host_release_result_t {int status;bool consumed;} xge_host_release_result_t;
+typedef struct xge_host_context_hooks_t {
+    int (*makeCurrent)(void* pUser);
+    /* 1=current, 0=displaced; negative values report an error. */
+    int (*isCurrent)(void* pUser);
+    /* Optional custom resolver, borrowed name for this call only. NULL uses
+     * the native system GL/GLES library, owned by the session. */
+    void* (*getProcAddress)(const char* name,void* pUser);
+    xge_host_release_result_t (*release)(void* pUser);
+    void* pUser;
+} xge_host_context_hooks_t;
+typedef struct xge_host_session_desc_t {
+    uint32_t size;
+    int width,height; /* framebuffer pixels; camera uses these dimensions */
+    float dpiScale;
+    uint32_t framebuffer;
+} xge_host_session_desc_t;
+typedef struct xge_host_session_info_t {
+    uint32_t size;
+    int width,height,backend;
+    bool graphicsReady,frameOpen,presentPending,running,closing;
+    uint64_t otherResources;
+} xge_host_session_info_t;
+
 typedef struct xge_offscreen_t {
 	int iWidth;
 	int iHeight;
@@ -2354,6 +2383,37 @@ XGE_API const xrtownershipquiescencev1* xgeGraphicsContextOwnershipQuiescenceV1(
 XGE_API const xrtownershipfinishv2* xgeGraphicsContextOwnershipCompletionV2(xrtownershipref ref);
 XGE_API const xrtownershipfinalizationv1* xgeGraphicsContextOwnershipFinalizationV1(xrtownershipref ref);
 XGE_API bool xgeGraphicsContextOwnershipReadReady(xrtownershipref ref);
+/* A manual renderer over immutable backend snapshots. init/begin/end return
+ * OK or a negative error; poll preserves all nonnegative native results.
+ * hooks owns the native context even after partial init. On failed creation a
+ * non-NULL output retains a checked cleanup duty. Hooks and backend owners must
+ * keep their complete callback return tails valid, including reentrant release. */
+XGE_API int xgeHostSessionCreateOwned(xge_host_session* out,const xge_host_session_desc_t* desc,
+    xge_platform_backend_ref platform,xge_graphics_backend_ref graphics,
+    const xge_host_context_hooks_t* hooks,const xge_callback_owner_t* hooksOwner);
+XGE_API int xgeHostSessionShareOwned(xge_host_session host,xge_host_session* out);
+/* Open frames/passes/callbacks defer without consuming. Last release otherwise
+ * retires the renderer; retained GPU children delay physical context cleanup.
+ * Successful individual cleanup steps are never repeated. */
+XGE_API int xgeHostSessionReleaseOwnerChecked(xge_host_session host,bool* consumed);
+XGE_API int xgeHostSessionReleaseChecked(xge_host_session host);
+XGE_API int xgeHostSessionInfoGet(xge_host_session host,xge_host_session_info_t* out);
+XGE_API int xgeHostSessionIsCurrent(xge_host_session host,bool* current);
+XGE_API int xgeHostSessionMakeCurrent(xge_host_session host);
+/* CPU-only queued resize; safe inside poll. Applied/validated by next begin. */
+XGE_API int xgeHostSessionResize(xge_host_session host,int width,int height,float dpiScale,uint32_t framebuffer);
+XGE_API int xgeHostSessionPoll(xge_host_session host);
+XGE_API int xgeHostSessionBegin(xge_host_session host);
+XGE_API int xgeHostSessionEnd(xge_host_session host);
+XGE_API int xgeHostSessionPresent(xge_host_session host);
+XGE_API int xgeHostSessionDiscardFrame(xge_host_session host);
+XGE_API xrtownershipref xgeHostSessionOwnership(xge_host_session host);
+XGE_API const xrtownershipadapterv1* xgeHostSessionOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeHostSessionOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeHostSessionOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeHostSessionOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeHostSessionOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeHostSessionOwnershipReadReady(xrtownershipref ref);
 /* 初始化离屏渲染上下文（自带目标尺寸）。 */
 XGE_API int xgeOffscreenInit(xge_offscreen pOffscreen, int iWidth, int iHeight);
 /* 释放离屏渲染上下文。 */

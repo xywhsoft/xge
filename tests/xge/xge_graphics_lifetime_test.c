@@ -48,7 +48,8 @@ int main(void)
     assert(__xgeGraphicsOwnerCount(&state)==0);
     assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
     assert(__xgeGraphicsContextBegin(&state)==XGE_OK);
-    __xgeGraphicsContextCommit(&state);__xgeGraphicsContextFinish(&state,false);
+    __xgeGraphicsContextCommit(&state,false);assert(__xgeGraphicsManualFrameAccess(&state)==XGE_OK);
+    __xgeGraphicsContextFinish(&state,false);
     assert(!state.owners && state.audioOwners==1 && state.phase==XGE_GRAPHICS_READY);
     state.audioOwners=UINT64_MAX;
     assert(__xgeAudioOwnerAcquire(&state)==XGE_ERROR_OUT_OF_MEMORY && state.audioOwners==UINT64_MAX);
@@ -84,9 +85,11 @@ int main(void)
     assert(__xgeGraphicsWindowAccess(&state)==XGE_ERROR_BUSY);
     assert(__xgeGraphicsContextBegin(&state)==XGE_ERROR_BUSY);
     assert(__xgeGraphicsCloseBegin(&state)==XGE_ERROR_BUSY);
-    __xgeGraphicsContextCommit(&state);assert(state.phase==XGE_GRAPHICS_RUNNING && !state.initializing);
+    __xgeGraphicsContextCommit(&state,true);assert(state.phase==XGE_GRAPHICS_RUNNING && !state.initializing);
+    assert(__xgeGraphicsWindowAccess(&state)==XGE_OK && __xgeGraphicsManualFrameAccess(&state)==XGE_ERROR_BUSY);
     __xgeGraphicsBackendEnding(&state);__xgeGraphicsContextFinish(&state,false);
     assert(state.phase==XGE_GRAPHICS_READY && state.owners==1 && !state.initializing && !state.closing);
+    assert(__xgeGraphicsManualFrameAccess(&state)==XGE_OK && !state.explicitHost);
     assert(__xgeGraphicsOwnerRelease(&state)==XGE_OK);
     assert(__xgeGraphicsContextBegin(&state)==XGE_OK);
     __xgeGraphicsContextFinish(&state,false); /* Failed attachment restores READY. */

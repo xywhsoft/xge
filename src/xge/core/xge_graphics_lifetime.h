@@ -18,8 +18,9 @@ typedef struct xge_graphics_lifetime {
     xge_graphics_phase phase;
     bool closing;
     bool initializing;
+    bool explicitHost;
 } xge_graphics_lifetime;
-#define XGE_GRAPHICS_LIFETIME_INIT {XRT_SPIN_INIT,0,0,0,XGE_GRAPHICS_COLD,false,false}
+#define XGE_GRAPHICS_LIFETIME_INIT {XRT_SPIN_INIT,0,0,0,XGE_GRAPHICS_COLD,false,false,false}
 
 static int __xgeAudioOwnerAcquire(xge_graphics_lifetime* state)
 {
@@ -142,6 +143,15 @@ static int __xgeGraphicsWindowAccess(xge_graphics_lifetime* state)
     if(state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
     (void)xrtSpinUnlock(&state->lock);return result;
 }
+static int __xgeGraphicsManualFrameAccess(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);
+    int result=state->initializing || state->closing || state->explicitHost ? XGE_ERROR_BUSY:
+        state->phase==XGE_GRAPHICS_COLD ? XGE_ERROR_NOT_INITIALIZED:
+        state->phase==XGE_GRAPHICS_READY || state->phase==XGE_GRAPHICS_RUNNING ? XGE_OK:XGE_ERROR_BUSY;
+    if(state->creatorThread && state->creatorThread!=xrtThreadCurrentId())result=XGE_ERROR_INVALID_STATE;
+    (void)xrtSpinUnlock(&state->lock);return result;
+}
 static void __xgeGraphicsBackendEnding(xge_graphics_lifetime* state)
 {
     (void)xrtSpinLock(&state->lock);state->closing=true;
@@ -166,18 +176,18 @@ static int __xgeGraphicsContextBegin(xge_graphics_lifetime* state)
     else {++state->owners;state->phase=XGE_GRAPHICS_ATTACHING;state->initializing=true;}
     (void)xrtSpinUnlock(&state->lock);return result;
 }
-static void __xgeGraphicsContextCommit(xge_graphics_lifetime* state)
+static void __xgeGraphicsContextCommit(xge_graphics_lifetime* state,bool explicitHost)
 {
     (void)xrtSpinLock(&state->lock);
     assert(state->phase==XGE_GRAPHICS_ATTACHING && state->initializing && state->owners);
-    state->phase=XGE_GRAPHICS_RUNNING;state->initializing=false;
+    state->phase=XGE_GRAPHICS_RUNNING;state->initializing=false;state->explicitHost=explicitHost;
     (void)xrtSpinUnlock(&state->lock);
 }
 static void __xgeGraphicsContextFinish(xge_graphics_lifetime* state,bool ended)
 {
     (void)xrtSpinLock(&state->lock);
     assert(state->owners && state->creatorThread==xrtThreadCurrentId());
-    --state->owners;state->phase=ended ? XGE_GRAPHICS_ENDED:XGE_GRAPHICS_READY;state->initializing=state->closing=false;
+    --state->owners;state->phase=ended ? XGE_GRAPHICS_ENDED:XGE_GRAPHICS_READY;state->initializing=state->closing=state->explicitHost=false;
     (void)xrtSpinUnlock(&state->lock);
 }
 #endif
