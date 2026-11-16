@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
+#include <limits.h>
+#include <stdlib.h>
+#include "xge_data_lifetime_internal.h"
 
 #define XUI_FLOW_COMMAND_HISTORY_DEFAULT_LIMIT 256
 
@@ -93,6 +97,20 @@ typedef struct xui_flow_command_model_t {
 	xvalue* pNewConfig;
 } xui_flow_command_model_t;
 
+/* Allocated only for a shared origin. Its stable RC node is separate from
+ * movable graph contents; legacy callers keep their single allocation. */
+typedef struct xui_flow_owned_t {
+    xui_flow_graph pGraph;
+    atomic_uint iRefs;
+    unsigned iDepth;
+} xui_flow_owned_t;
+
+typedef struct xui_flow_operation_t {
+    xui_flow_owned_t* pOwner;
+    xerror* pAmbient;
+    bool bOuter;
+} xui_flow_operation_t;
+
 struct xui_flow_graph_t {
 	xarray arrNodes;
 	xarray arrEdges;
@@ -114,12 +132,32 @@ struct xui_flow_graph_t {
 	int iCommandHistoryLimit;
 	int iValueCallbackDepth; /* Creator-thread/external-serialization contract. */
 	xui_flow_graph pCallbackOwner; /* Borrowed logical owner of a temporary replacement graph. */
+    xui_flow_owned_t* pOwned;
 };
+
+static int __xuiFlowOwnedOperationBegin(xui_flow_owned_t*,xui_flow_operation_t*);
+static int __xuiFlowOwnedOperationEnd(xui_flow_operation_t*,int,int);
+static xge_data_lifetime_t* __xuiFlowOwnerRoot(xui_flow_owned_t* owner)
+{return owner ? (xge_data_lifetime_t*)(owner+1):NULL;}
+static inline int __xuiFlowOperationBegin(xui_flow_graph graph,xui_flow_operation_t* operation)
+{
+    operation->pOwner=graph ? graph->pOwned:NULL;
+    return operation->pOwner ? __xuiFlowOwnedOperationBegin(operation->pOwner,operation):XUI_OK;
+}
+static inline int __xuiFlowOperationEnd(xui_flow_operation_t* operation,int result,int minimum)
+{
+    return operation->pOwner ? __xuiFlowOwnedOperationEnd(operation,result,minimum):result;
+}
 
 static int __xuiFlowBusy(xui_flow_graph pGraph)
 {
-    return pGraph != NULL && (pGraph->iValueCallbackDepth != 0 ||
-        (pGraph->pCallbackOwner && pGraph->pCallbackOwner->iValueCallbackDepth != 0));
+    if(!pGraph)return 0;
+    /* The managed identity is immutable after publication. Reject another
+     * thread before reading any mutable graph/callback state. */
+    if(pGraph->pOwned && __xuiFlowOwnerRoot(pGraph->pOwned)->iCreator!=xrtThreadCurrentId())return 1;
+    return pGraph->iValueCallbackDepth!=0 || (pGraph->pCallbackOwner &&
+        ((pGraph->pCallbackOwner->pOwned && __xuiFlowOwnerRoot(pGraph->pCallbackOwner->pOwned)->iCreator!=xrtThreadCurrentId()) ||
+         pGraph->pCallbackOwner->iValueCallbackDepth!=0));
 }
 
 int xuiInternalFlowGraphIsValueCallbackActive(xui_flow_graph pGraph)
@@ -129,6 +167,7 @@ int xuiInternalFlowGraphSetCallbackOwner(xui_flow_graph pGraph,xui_flow_graph pO
 {
     if(__xuiFlowBusy(pGraph) || __xuiFlowBusy(pOwner))return XUI_ERROR_BUSY;
     if(!pGraph || pGraph==pOwner || (pOwner && pOwner->pCallbackOwner))return XUI_ERROR_INVALID_ARGUMENT;
+    if(pGraph->pOwned && pOwner)return XUI_ERROR_INVALID_STATE;
     pGraph->pCallbackOwner=pOwner;
     return XUI_OK;
 }
@@ -154,7 +193,10 @@ static void __xuiFlowReleaseValue(xui_flow_graph pGraph, xvalue* pValue)
 {
     if (!pValue) return;
     __xuiFlowValueEnter(pGraph);
+    bool owned=pGraph->pOwned || (pGraph->pCallbackOwner && pGraph->pCallbackOwner->pOwned);
+    xerror* first=owned ? xrtTakeError():NULL;
     xrtValueRelease(pValue);
+    if(first){xrtClearError();xrtSetErrorTake(first);}
     __xuiFlowValueLeave(pGraph);
 }
 
@@ -196,8 +238,11 @@ int xuiInternalFlowGraphGetGeometryRevisionChecked(xui_flow_graph pGraph, uint32
 {
     if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
     if (!pGraph || !pRevision) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_flow_operation_t operation={0};
+    int status=__xuiFlowOperationBegin(pGraph,&operation);
+    if(status!=XUI_OK)return status;
     *pRevision=pGraph->iGeometryRevision;
-    return XUI_OK;
+    return __xuiFlowOperationEnd(&operation,XUI_OK,0);
 }
 
 uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph)
@@ -216,16 +261,25 @@ int xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSeco
 	if ( pFirst == NULL || pSecond == NULL || pFirst == pSecond ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+    xui_flow_operation_t first={0},second={0};
+    int status=__xuiFlowOperationBegin(pFirst,&first);
+    if(status!=XUI_OK)return status;
+    status=__xuiFlowOperationBegin(pSecond,&second);
+    if(status!=XUI_OK)return __xuiFlowOperationEnd(&first,status,0);
 	pFirstOwner=pFirst->pCallbackOwner;pSecondOwner=pSecond->pCallbackOwner;
-	tGraph = *pFirst;
-	*pFirst = *pSecond;
-	*pSecond = tGraph;
-	/* Callback affinity belongs to each handle/operation, not swapped data. */
+    /* pOwned is the immutable identity tail, also read by rejected callers on
+     * other threads. Never transiently overwrite it with another model's root. */
+    const size_t contentsBytes=offsetof(struct xui_flow_graph_t,pOwned);
+    memcpy(&tGraph,pFirst,contentsBytes);
+    memcpy(pFirst,pSecond,contentsBytes);
+    memcpy(pSecond,&tGraph,contentsBytes);
+	/* Callback affinity and shared identity belong to each handle, not data. */
 	pFirst->pCallbackOwner=pFirstOwner;pSecond->pCallbackOwner=pSecondOwner;
 	pFirst->iRevision = tGraph.iRevision;
 	pFirst->iGeometryRevision = tGraph.iGeometryRevision;
 	__xuiFlowBumpGeometryRevision(pFirst);
-	return XUI_OK;
+    status=__xuiFlowOperationEnd(&second,XUI_OK,0);
+    return __xuiFlowOperationEnd(&first,status,0);
 }
 
 static char* __xuiFlowCopyString(const char* sText)
@@ -1191,14 +1245,9 @@ XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph)
     if (xuiFlowGraphDestroyChecked(pGraph) != XUI_OK) __xuiFlowReportBusy();
 }
 
-XUI_API int xuiFlowGraphDestroyChecked(xui_flow_graph pGraph)
+static void __xuiFlowDestroyContents(xui_flow_graph pGraph)
 {
-    if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
 	uint32_t i;
-
-	if ( pGraph == NULL ) {
-		return XUI_OK;
-	}
 	for ( i = 1u; i <= pGraph->arrNodes.Count; ++i ) {
 		__xuiFlowFreeNode(pGraph, (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, i));
 	}
@@ -1216,7 +1265,16 @@ XUI_API int xuiFlowGraphDestroyChecked(xui_flow_graph pGraph)
 	__xuiFlowFreeDiagnostics(pGraph);
 	__xuiFlowFreeCommandArray(pGraph, &pGraph->arrUndo);
 	__xuiFlowFreeCommandArray(pGraph, &pGraph->arrRedo);
-	xrtFree(pGraph);
+    memset(pGraph,0,offsetof(struct xui_flow_graph_t,pOwned));
+}
+
+XUI_API int xuiFlowGraphDestroyChecked(xui_flow_graph pGraph)
+{
+    if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    if(!pGraph)return XUI_OK;
+    if(pGraph->pOwned){bool consumed=false;return xuiFlowGraphReleaseOwnerChecked(pGraph,&consumed);}
+    __xuiFlowDestroyContents(pGraph);
+    xrtFree(pGraph);
 	return XUI_OK;
 }
 
@@ -1246,9 +1304,8 @@ static bool __xuiFlowTraceHistory(const xarray* pHistory, xrtownershipvisitor on
 	return true;
 }
 
-XUI_API bool xuiFlowGraphTraceOwnedValues(xui_flow_graph pGraph, xrtownershipvisitor onVisit, void* pUser)
+static bool __xuiFlowTraceValues(xui_flow_graph pGraph, xrtownershipvisitor onVisit, void* pUser)
 {
-	if (__xuiFlowBusy(pGraph)) { __xuiFlowReportBusy(); return false; }
 	if ( pGraph == NULL || onVisit == NULL ) return false;
 	for ( size_t i = 0; i < pGraph->arrNodes.Count; ++i ) {
 		const xui_flow_node_model_t* pNode = xrtArrayGet(&pGraph->arrNodes, i);
@@ -1258,9 +1315,19 @@ XUI_API bool xuiFlowGraphTraceOwnedValues(xui_flow_graph pGraph, xrtownershipvis
 		__xuiFlowTraceHistory(&pGraph->arrRedo, onVisit, pUser);
 }
 
+XUI_API bool xuiFlowGraphTraceOwnedValues(xui_flow_graph graph,xrtownershipvisitor visit,void* user)
+{
+    if(__xuiFlowBusy(graph)){__xuiFlowReportBusy();return false;}
+    if(graph && graph->pOwned && !xuiFlowGraphOwnershipReadReady(xuiFlowGraphOwnership(graph)))return false;
+    return __xuiFlowTraceValues(graph,visit,user);
+}
+
 XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	uint32_t iPos;
 	int iIndex;
@@ -1273,14 +1340,14 @@ XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_
 	     !__xuiFlowFinite(pDesc->fX) || !__xuiFlowFinite(pDesc->fY) ||
 	     !__xuiFlowFinite(pDesc->fW) || !__xuiFlowFinite(pDesc->fH) ||
 	     pDesc->fW < 0.0f || pDesc->fH < 0.0f ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( xuiFlowGraphFindNode(pGraph, pDesc->sId) >= 0 ) {
-		return XUI_ERROR_ALREADY_INITIALIZED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_ALREADY_INITIALIZED), 0);
 	}
 	iPos = xuiXrtArrayAppendSpace(&pGraph->arrNodes, 1u);
 	if ( iPos == 0u ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iIndex = (int)iPos - 1;
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, iPos);
@@ -1301,24 +1368,27 @@ XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_
 	     (pDesc->sSummary != NULL && pNode->sSummary == NULL) ) {
 		__xuiFlowFreeNode(pGraph, pNode);
 		xuiXrtArrayRemove(&pGraph->arrNodes, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iRet = __xuiFlowDictSetIndex(&pGraph->mapNodes, pNode->sId, iIndex);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeNode(pGraph, pNode);
 		xuiXrtArrayRemove(&pGraph->arrNodes, iPos, 1u);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( pIndex != NULL ) {
 		*pIndex = iIndex;
 	}
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphRemoveNode(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	xui_flow_edge_model_t* pEdge;
 	uint32_t iPos;
@@ -1327,18 +1397,18 @@ XUI_API int xuiFlowGraphRemoveNode(xui_flow_graph pGraph, const char* sId)
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	for ( i = (int)pGraph->arrEdges.Count - 1; i >= 0; --i ) {
 		pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, (uint32_t)i + 1u);
 		if ( strcmp(pEdge->sFromNode, sId) == 0 || strcmp(pEdge->sToNode, sId) == 0 ) {
 			iRet = __xuiFlowRemoveEdgeAt(pGraph, i);
 			if ( iRet != XUI_OK ) {
-				return iRet;
+				return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 			}
 		}
 	}
@@ -1353,26 +1423,29 @@ XUI_API int xuiFlowGraphRemoveNode(xui_flow_graph pGraph, const char* sId)
 		offsetof(xui_flow_node_model_t, sId));
 	__xuiFlowRefreshEdgeRefs(pGraph);
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphRemoveEdge(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	int iEdge;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iEdge = xuiFlowGraphFindEdge(pGraph, sId);
 	if ( iEdge < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iEdge = __xuiFlowRemoveEdgeAt(pGraph, iEdge);
 	if ( iEdge == XUI_OK ) {
 		__xuiFlowBumpGeometryRevision(pGraph);
 	}
-	return iEdge;
+	return __xuiFlowOperationEnd(&__ownedCall, (iEdge), 0);
 }
 
 static int __xuiFlowAppendPortModel(xarray* pPorts, xmap* pPortMap,
@@ -1475,6 +1548,9 @@ failed:
 XUI_API int xuiFlowGraphAddPort(xui_flow_graph pGraph, int iNode, const xui_flow_port_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	int iRet;
 
@@ -1482,20 +1558,23 @@ XUI_API int xuiFlowGraphAddPort(xui_flow_graph pGraph, int iNode, const xui_flow
 		*pIndex = -1;
 	}
 	if ( (pGraph == NULL) || !__xuiFlowPortDescValid(pDesc) || (iNode < 0) || ((uint32_t)iNode >= pGraph->arrNodes.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	iRet = __xuiFlowAppendPortModel(&pNode->arrPorts, &pNode->mapPorts, pDesc, pDesc->bDynamic, pIndex);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphRebuildNodeDynamicPorts(xui_flow_graph pGraph, const char* sNodeId, const xui_flow_port_desc_t* pPorts, int iPortCount)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	xarray arrPorts;
 	xmap mapPorts;
@@ -1503,23 +1582,23 @@ XUI_API int xuiFlowGraphRebuildNodeDynamicPorts(xui_flow_graph pGraph, const cha
 	int iRet;
 
 	if ( (pGraph == NULL) || (sNodeId == NULL) || (sNodeId[0] == 0) || (iPortCount < 0) || (iPortCount > 0 && pPorts == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sNodeId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	iRet = __xuiFlowBuildReplacedDynamicPorts(pNode, pPorts, iPortCount,
 		&arrPorts, &mapPorts);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	__xuiFlowFreePortArray(&pNode->arrPorts);
 	xrtMapUnit(&pNode->mapPorts);
 	pNode->arrPorts = arrPorts;
 	pNode->mapPorts = mapPorts;
 	__xuiFlowRefreshEdgeRefs(pGraph);
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
@@ -1535,12 +1614,15 @@ int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 	int iRet;
 
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL || sNodeId == NULL || sNodeId[0] == 0 ||
 	     (bReplaceDynamicPorts && (iPortCount < 0 || (iPortCount > 0 && pPorts == NULL))) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall,XUI_ERROR_INVALID_ARGUMENT,0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sNodeId);
-	if ( iNode < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iNode < 0 ) return __xuiFlowOperationEnd(&__ownedCall,XUI_ERROR_INVALID_ARGUMENT,0);
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	pConfigCopy = NULL;
 	sSummaryCopy = NULL;
@@ -1577,19 +1659,22 @@ int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 		__xuiFlowBumpRevision(pGraph);
 	}
 	__xuiFlowReleaseValue(pGraph, pPreviousConfig);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall,XUI_OK,0);
 
 failed:
 	if ( pConfigCopy != NULL ) __xuiFlowReleaseValue(pGraph, pConfigCopy);
 	xrtFree(sSummaryCopy);
 	__xuiFlowFreePortArray(&arrPorts);
 	xrtMapUnit(&mapPorts);
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall,iRet,0);
 }
 
 XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_edge_model_t* pEdge;
 	xui_flow_node_model_t* pFromNode;
 	xui_flow_node_model_t* pToNode;
@@ -1614,35 +1699,35 @@ XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_
 	     (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ||
 	     (pDesc->sFromNode == NULL) || (pDesc->sFromPort == NULL) ||
 	     (pDesc->sToNode == NULL) || (pDesc->sToPort == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( (pDesc->iKind != XUI_FLOW_PORT_CONTROL) && (pDesc->iKind != XUI_FLOW_PORT_DATA) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( !__xuiFlowRouteStyleValid(pDesc->iRouteStyle) || !__xuiFlowFinite(pDesc->fRouteBias) ||
 	     !__xuiFlowFinite(pDesc->fRouteSourceOffset) || !__xuiFlowFinite(pDesc->fRouteTargetOffset) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( xuiFlowGraphFindEdge(pGraph, pDesc->sId) >= 0 ) {
-		return XUI_ERROR_ALREADY_INITIALIZED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_ALREADY_INITIALIZED), 0);
 	}
 	iFromNode = xuiFlowGraphFindNode(pGraph, pDesc->sFromNode);
 	iToNode = xuiFlowGraphFindNode(pGraph, pDesc->sToNode);
 	if ( (iFromNode < 0) || (iToNode < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pFromNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iFromNode + 1u);
 	pToNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iToNode + 1u);
 	iFromPort = __xuiFlowPortFind(pFromNode, pDesc->sFromPort);
 	iToPort = __xuiFlowPortFind(pToNode, pDesc->sToPort);
 	if ( (iFromPort < 0) || (iToPort < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pFromPort = (xui_flow_port_model_t*)xuiXrtArrayGet(&pFromNode->arrPorts, (uint32_t)iFromPort + 1u);
 	pToPort = (xui_flow_port_model_t*)xuiXrtArrayGet(&pToNode->arrPorts, (uint32_t)iToPort + 1u);
 	if ( (pFromPort->iDirection != XUI_FLOW_PORT_OUTPUT) || (pToPort->iDirection != XUI_FLOW_PORT_INPUT) ||
 	     (pFromPort->iKind != pDesc->iKind) || (pToPort->iKind != pDesc->iKind) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( !pToPort->bMulti ) {
 		for ( i = 1u; i <= pGraph->arrEdges.Count; ++i ) {
@@ -1654,13 +1739,13 @@ XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_
 			if ( pExistingEdge->iFromPort < 0 || (uint32_t)pExistingEdge->iFromPort >= pExistingFromNode->arrPorts.Count ) continue;
 			pExistingFromPort = (xui_flow_port_model_t*)xuiXrtArrayGet(&pExistingFromNode->arrPorts, (uint32_t)pExistingEdge->iFromPort + 1u);
 			if ( pExistingFromPort->iDirection == XUI_FLOW_PORT_OUTPUT && pExistingFromPort->iKind == pExistingEdge->iKind ) {
-				return XUI_ERROR_INVALID_ARGUMENT;
+				return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 			}
 		}
 	}
 	iPos = xuiXrtArrayAppendSpace(&pGraph->arrEdges, 1u);
 	if ( iPos == 0u ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iIndex = (int)iPos - 1;
 	pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, iPos);
@@ -1682,24 +1767,27 @@ XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_
 	if ( pEdge->sId == NULL || pEdge->sFromNode == NULL || pEdge->sFromPort == NULL || pEdge->sToNode == NULL || pEdge->sToPort == NULL ) {
 		__xuiFlowFreeEdge(pEdge);
 		xuiXrtArrayRemove(&pGraph->arrEdges, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iRet = __xuiFlowDictSetIndex(&pGraph->mapEdges, pEdge->sId, iIndex);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeEdge(pEdge);
 		xuiXrtArrayRemove(&pGraph->arrEdges, iPos, 1u);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( pIndex != NULL ) {
 		*pIndex = iIndex;
 	}
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphAddEdgePreserveInvalid(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_edge_model_t* pEdge;
 	uint32_t iPos;
 	int iIndex;
@@ -1712,21 +1800,21 @@ XUI_API int xuiFlowGraphAddEdgePreserveInvalid(xui_flow_graph pGraph, const xui_
 	     (pDesc->sId == NULL) || (pDesc->sId[0] == 0) ||
 	     (pDesc->sFromNode == NULL) || (pDesc->sFromPort == NULL) ||
 	     (pDesc->sToNode == NULL) || (pDesc->sToPort == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( (pDesc->iKind != XUI_FLOW_PORT_CONTROL) && (pDesc->iKind != XUI_FLOW_PORT_DATA) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( !__xuiFlowRouteStyleValid(pDesc->iRouteStyle) || !__xuiFlowFinite(pDesc->fRouteBias) ||
 	     !__xuiFlowFinite(pDesc->fRouteSourceOffset) || !__xuiFlowFinite(pDesc->fRouteTargetOffset) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( xuiFlowGraphFindEdge(pGraph, pDesc->sId) >= 0 ) {
-		return XUI_ERROR_ALREADY_INITIALIZED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_ALREADY_INITIALIZED), 0);
 	}
 	iPos = xuiXrtArrayAppendSpace(&pGraph->arrEdges, 1u);
 	if ( iPos == 0u ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iIndex = (int)iPos - 1;
 	pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, iPos);
@@ -1744,70 +1832,88 @@ XUI_API int xuiFlowGraphAddEdgePreserveInvalid(xui_flow_graph pGraph, const xui_
 	if ( pEdge->sId == NULL || pEdge->sFromNode == NULL || pEdge->sFromPort == NULL || pEdge->sToNode == NULL || pEdge->sToPort == NULL ) {
 		__xuiFlowFreeEdge(pEdge);
 		xuiXrtArrayRemove(&pGraph->arrEdges, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iRet = __xuiFlowDictSetIndex(&pGraph->mapEdges, pEdge->sId, iIndex);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeEdge(pEdge);
 		xuiXrtArrayRemove(&pGraph->arrEdges, iPos, 1u);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowRefreshEdgeRef(pGraph, pEdge);
 	if ( pIndex != NULL ) {
 		*pIndex = iIndex;
 	}
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphFindNode(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL ) {
-		return -1;
+		return __xuiFlowOperationEnd(&__ownedCall, (-1), -1);
 	}
-	return __xuiFlowDictFindIndex(&pGraph->mapNodes, sId);
+	return __xuiFlowOperationEnd(&__ownedCall, (__xuiFlowDictFindIndex(&pGraph->mapNodes, sId)), -1);
 }
 
 XUI_API int xuiFlowGraphFindEdge(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL ) {
-		return -1;
+		return __xuiFlowOperationEnd(&__ownedCall, (-1), -1);
 	}
-	return __xuiFlowDictFindIndex(&pGraph->mapEdges, sId);
+	return __xuiFlowOperationEnd(&__ownedCall, (__xuiFlowDictFindIndex(&pGraph->mapEdges, sId)), -1);
 }
 
 XUI_API int xuiFlowGraphGetNodeCount(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? (int)pGraph->arrNodes.Count : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? (int)pGraph->arrNodes.Count : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetEdgeCount(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? (int)pGraph->arrEdges.Count : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? (int)pGraph->arrEdges.Count : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetNodePortCount(xui_flow_graph pGraph, int iNode)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 
 	if ( (pGraph == NULL) || (iNode < 0) || ((uint32_t)iNode >= pGraph->arrNodes.Count) ) {
-		return 0;
+		return __xuiFlowOperationEnd(&__ownedCall, (0), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
-	return (int)pNode->arrPorts.Count;
+	return __xuiFlowOperationEnd(&__ownedCall, ((int)pNode->arrPorts.Count), 0);
 }
 
 XUI_API int xuiFlowGraphGetRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision)
 {
     if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-    if (!pGraph || !pRevision) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    if (!pGraph || !pRevision) return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
     *pRevision=pGraph->iRevision;
-    return XUI_OK;
+    return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API uint32_t xuiFlowGraphGetRevision(xui_flow_graph pGraph)
@@ -1820,10 +1926,13 @@ XUI_API uint32_t xuiFlowGraphGetRevision(xui_flow_graph pGraph)
 XUI_API int xuiFlowGraphGetNode(xui_flow_graph pGraph, int iNode, xui_flow_node_info_t* pInfo)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 
 	if ( (pGraph == NULL) || (pInfo == NULL) || (iNode < 0) || ((uint32_t)iNode >= pGraph->arrNodes.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	memset(pInfo, 0, sizeof(*pInfo));
@@ -1838,21 +1947,24 @@ XUI_API int xuiFlowGraphGetNode(xui_flow_graph pGraph, int iNode, xui_flow_node_
 	pInfo->fH = pNode->fH;
 	pInfo->iRunState = pNode->iRunState;
 	pInfo->sRunPreview = pNode->sRunPreview;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetPort(xui_flow_graph pGraph, int iNode, int iPort, xui_flow_port_info_t* pInfo)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	xui_flow_port_model_t* pPort;
 
 	if ( (pGraph == NULL) || (pInfo == NULL) || (iNode < 0) || ((uint32_t)iNode >= pGraph->arrNodes.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	if ( (iPort < 0) || ((uint32_t)iPort >= pNode->arrPorts.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pPort = (xui_flow_port_model_t*)xuiXrtArrayGet(&pNode->arrPorts, (uint32_t)iPort + 1u);
 	memset(pInfo, 0, sizeof(*pInfo));
@@ -1865,16 +1977,19 @@ XUI_API int xuiFlowGraphGetPort(xui_flow_graph pGraph, int iNode, int iPort, xui
 	pInfo->bRequired = pPort->bRequired;
 	pInfo->bMulti = pPort->bMulti;
 	pInfo->bDynamic = pPort->bDynamic;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetEdge(xui_flow_graph pGraph, int iEdge, xui_flow_edge_info_t* pInfo)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_edge_model_t* pEdge;
 
 	if ( (pGraph == NULL) || (pInfo == NULL) || (iEdge < 0) || ((uint32_t)iEdge >= pGraph->arrEdges.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, (uint32_t)iEdge + 1u);
 	memset(pInfo, 0, sizeof(*pInfo));
@@ -1896,86 +2011,95 @@ XUI_API int xuiFlowGraphGetEdge(xui_flow_graph pGraph, int iEdge, xui_flow_edge_
 	pInfo->fRouteBias = pEdge->fRouteBias;
 	pInfo->fRouteSourceOffset = pEdge->fRouteSourceOffset;
 	pInfo->fRouteTargetOffset = pEdge->fRouteTargetOffset;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetNodePosition(xui_flow_graph pGraph, const char* sId, float fX, float fY)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	int iNode;
 
 	if ( (pGraph == NULL) || (sId == NULL) || !__xuiFlowFinite(fX) || !__xuiFlowFinite(fY) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	if ( (pNode->fX == fX) && (pNode->fY == fY) ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	pNode->fX = fX;
 	pNode->fY = fY;
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetNodeBounds(xui_flow_graph pGraph, const char* sId, float fX, float fY, float fW, float fH)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	int iNode;
 
 	if ( (pGraph == NULL) || (sId == NULL) || !__xuiFlowFinite(fX) || !__xuiFlowFinite(fY) ||
 	     !__xuiFlowFinite(fW) || !__xuiFlowFinite(fH) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( fW < 24.0f ) fW = 24.0f;
 	if ( fH < 24.0f ) fH = 24.0f;
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	if ( pNode->fX == fX && pNode->fY == fY && pNode->fW == fW && pNode->fH == fH ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	pNode->fX = fX;
 	pNode->fY = fY;
 	pNode->fW = fW;
 	pNode->fH = fH;
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetNodeSummary(xui_flow_graph pGraph, const char* sId, const char* sSummary)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	char* sCopy;
 	int iNode;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	if ( __xuiFlowStringEqual(pNode->sSummary, sSummary) ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	sCopy = __xuiFlowCopyString(sSummary);
 	if ( sSummary != NULL && sCopy == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	xrtFree(pNode->sSummary);
 	pNode->sSummary = sCopy;
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 static int __xuiFlowRunStateValid(int iState, int bEdge)
@@ -1989,91 +2113,103 @@ static int __xuiFlowRunStateValid(int iState, int bEdge)
 XUI_API int xuiFlowGraphSetNodeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	char* sCopy;
 	int iNode;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || !__xuiFlowRunStateValid(iState, 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	if ( pNode->iRunState == iState && __xuiFlowStringEqual(pNode->sRunPreview, sPreview) ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	sCopy = __xuiFlowCopyString(sPreview);
 	if ( sPreview != NULL && sCopy == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	xrtFree(pNode->sRunPreview);
 	pNode->sRunPreview = sCopy;
 	pNode->iRunState = iState;
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetEdgeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_edge_model_t* pEdge;
 	char* sCopy;
 	int iEdge;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || !__xuiFlowRunStateValid(iState, 1) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iEdge = xuiFlowGraphFindEdge(pGraph, sId);
 	if ( iEdge < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, (uint32_t)iEdge + 1u);
 	if ( pEdge->iRunState == iState && __xuiFlowStringEqual(pEdge->sRunPreview, sPreview) ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	sCopy = __xuiFlowCopyString(sPreview);
 	if ( sPreview != NULL && sCopy == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	xrtFree(pEdge->sRunPreview);
 	pEdge->sRunPreview = sCopy;
 	pEdge->iRunState = iState;
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetEdgeRoute(xui_flow_graph pGraph, const char* sId, int iRouteStyle, float fRouteBias, float fSourceOffset, float fTargetOffset)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_edge_model_t* pEdge;
 	int iEdge;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || !__xuiFlowRouteStyleValid(iRouteStyle) ||
 	     !__xuiFlowFinite(fRouteBias) || !__xuiFlowFinite(fSourceOffset) || !__xuiFlowFinite(fTargetOffset) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iEdge = xuiFlowGraphFindEdge(pGraph, sId);
 	if ( iEdge < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pEdge = (xui_flow_edge_model_t*)xuiXrtArrayGet(&pGraph->arrEdges, (uint32_t)iEdge + 1u);
 	if ( pEdge->iRouteStyle == iRouteStyle && pEdge->fRouteBias == fRouteBias &&
 	     pEdge->fRouteSourceOffset == fSourceOffset && pEdge->fRouteTargetOffset == fTargetOffset ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	pEdge->iRouteStyle = iRouteStyle;
 	pEdge->fRouteBias = fRouteBias;
 	pEdge->fRouteSourceOffset = fSourceOffset;
 	pEdge->fRouteTargetOffset = fTargetOffset;
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	xvalue* pCopy;
 	xvalue* pPrevious;
@@ -2082,23 +2218,23 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iRevision = pGraph->iRevision;
 	iRet = __xuiFlowCopyValue(pGraph, pConfig, &pCopy);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	/* A custom xvalue Clone can run user code. Never reuse a node index
 	 * after that callback changed the model (including remove/recreate of
 	 * the same id). Roll back only this newly copied configuration. */
 	if ( pGraph->iRevision != iRevision ) {
 		if ( pCopy != NULL ) __xuiFlowReleaseValue(pGraph, pCopy);
-		return XUI_ERROR_INVALID_STATE;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_STATE), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	pPrevious = pNode->pConfig;
@@ -2107,30 +2243,36 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 	/* Publish before Drop. Same-model ordinary reentry is Busy; no owning
 	 * slot points at the retiring value during its callback. */
 	if ( pPrevious != NULL ) __xuiFlowReleaseValue(pGraph, pPrevious);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	int iNode;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || (ppConfig == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	*ppConfig = NULL;
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
-	return __xuiFlowCopyValue(pGraph, pNode->pConfig, ppConfig);
+	return __xuiFlowOperationEnd(&__ownedCall, (__xuiFlowCopyValue(pGraph, pNode->pConfig, ppConfig)), 0);
 }
 
 XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	uint32_t iUndoPos;
 	int iRet;
@@ -2139,64 +2281,70 @@ XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_nod
 		*pIndex = -1;
 	}
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	tCommand.iType = XUI_FLOW_COMMAND_ADD_NODE;
 	iRet = __xuiFlowCopyNodeDesc(&tCommand.tNode, pDesc);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphAddNode(pGraph, pDesc, pIndex);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandRemoveNode(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	uint32_t iUndoPos;
 	int iRet;
 
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	iRet = __xuiFlowCommandSnapshotRemoveNode(pGraph, sId, &tCommand);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphRemoveNode(pGraph, sId);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandMoveNode(xui_flow_graph pGraph, const xui_flow_move_node_desc_t* pDesc)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	xui_flow_node_info_t tNode;
 	uint32_t iUndoPos;
@@ -2205,26 +2353,26 @@ XUI_API int xuiFlowGraphCommandMoveNode(xui_flow_graph pGraph, const xui_flow_mo
 
 	if ( (pGraph == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) || (pDesc->sId == NULL) ||
 	     !__xuiFlowFinite(pDesc->fX) || !__xuiFlowFinite(pDesc->fY) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, pDesc->sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	memset(&tNode, 0, sizeof(tNode));
 	tNode.iSize = sizeof(tNode);
 	iRet = xuiFlowGraphGetNode(pGraph, iNode, &tNode);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( (tNode.fX == pDesc->fX) && (tNode.fY == pDesc->fY) ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	tCommand.iType = XUI_FLOW_COMMAND_MOVE_NODE;
 	tCommand.sNodeId = __xuiFlowCopyString(pDesc->sId);
 	if ( tCommand.sNodeId == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	tCommand.fOldX = tNode.fX;
 	tCommand.fOldY = tNode.fY;
@@ -2233,21 +2381,24 @@ XUI_API int xuiFlowGraphCommandMoveNode(xui_flow_graph pGraph, const xui_flow_mo
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphSetNodePosition(pGraph, pDesc->sId, pDesc->fX, pDesc->fY);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandRecordMoveNode(xui_flow_graph pGraph, const char* sId, float fOldX, float fOldY, float fNewX, float fNewY)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_move_node_record_t tRecord;
 
 	memset(&tRecord, 0, sizeof(tRecord));
@@ -2257,12 +2408,15 @@ XUI_API int xuiFlowGraphCommandRecordMoveNode(xui_flow_graph pGraph, const char*
 	tRecord.fOldY = fOldY;
 	tRecord.fNewX = fNewX;
 	tRecord.fNewY = fNewY;
-	return xuiFlowGraphCommandRecordMoveNodes(pGraph, &tRecord, 1);
+	return __xuiFlowOperationEnd(&__ownedCall, (xuiFlowGraphCommandRecordMoveNodes(pGraph, &tRecord, 1)), 0);
 }
 
 XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_flow_move_node_record_t* pRecords, int iRecordCount)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	xui_flow_move_node_record_t* pExisting;
 	xui_flow_node_model_t* pNode;
@@ -2272,7 +2426,7 @@ XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_
 	int iRet;
 
 	if ( (pGraph == NULL) || (pRecords == NULL) || (iRecordCount <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	tCommand.iType = XUI_FLOW_COMMAND_MOVE_NODE;
@@ -2281,17 +2435,17 @@ XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_
 		     !__xuiFlowFinite(pRecords[i].fOldX) || !__xuiFlowFinite(pRecords[i].fOldY) ||
 		     !__xuiFlowFinite(pRecords[i].fNewX) || !__xuiFlowFinite(pRecords[i].fNewY) ) {
 			__xuiFlowFreeCommand(pGraph, &tCommand);
-			return XUI_ERROR_INVALID_ARGUMENT;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 		}
 		iNode = xuiFlowGraphFindNode(pGraph, pRecords[i].sId);
 		if ( iNode < 0 ) {
 			__xuiFlowFreeCommand(pGraph, &tCommand);
-			return XUI_ERROR_INVALID_ARGUMENT;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 		}
 		pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 		if ( pNode->fX != pRecords[i].fNewX || pNode->fY != pRecords[i].fNewY ) {
 			__xuiFlowFreeCommand(pGraph, &tCommand);
-			return XUI_ERROR_INVALID_ARGUMENT;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 		}
 		if ( pRecords[i].fOldX == pRecords[i].fNewX && pRecords[i].fOldY == pRecords[i].fNewY ) {
 			continue;
@@ -2300,32 +2454,35 @@ XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_
 			pExisting = (xui_flow_move_node_record_t*)xuiXrtArrayGet(&tCommand.arrMoves, (uint32_t)j);
 			if ( strcmp(pExisting->sId, pRecords[i].sId) == 0 ) {
 				__xuiFlowFreeCommand(pGraph, &tCommand);
-				return XUI_ERROR_INVALID_ARGUMENT;
+				return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 			}
 		}
 		iRet = __xuiFlowCommandAppendMove(&tCommand, &pRecords[i]);
 		if ( iRet != XUI_OK ) {
 			__xuiFlowFreeCommand(pGraph, &tCommand);
-			return iRet;
+			return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 		}
 	}
 	if ( tCommand.arrMoves.Count == 0u ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	if ( __xuiFlowPushCommand(&pGraph->arrUndo, &tCommand) != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	__xuiFlowTrimHistory(pGraph);
 	memset(&tCommand, 0, sizeof(tCommand));
 	__xuiFlowClearRedo(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	xui_flow_node_model_t* pNode;
 	uint32_t iUndoPos;
@@ -2333,11 +2490,11 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	__xuiFlowInitCommand(&tCommand);
@@ -2345,7 +2502,7 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	tCommand.sNodeId = __xuiFlowCopyString(sId);
 	if ( tCommand.sNodeId == NULL ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	iRet = __xuiFlowCopyValue(pGraph, pNode->pConfig, &tCommand.pOldConfig);
 	if ( iRet == XUI_OK ) {
@@ -2353,26 +2510,29 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphSetNodeConfig(pGraph, sId, pConfig);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	uint32_t iUndoPos;
 	int iRet;
@@ -2381,59 +2541,62 @@ XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edg
 		*pIndex = -1;
 	}
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	tCommand.iType = XUI_FLOW_COMMAND_ADD_EDGE;
 	iRet = __xuiFlowCopyEdgeDesc(&tCommand.tEdge, pDesc);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphAddEdge(pGraph, pDesc, pIndex);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphCommandRemoveEdge(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	uint32_t iUndoPos;
 	int iRet;
 
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	iRet = __xuiFlowCommandSnapshotRemoveEdge(pGraph, sId, &tCommand);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphRemoveEdge(pGraph, sId);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 static xui_flow_command_model_t* __xuiFlowAppendChildCommand(xui_flow_command_model_t* pCommand)
@@ -2620,29 +2783,38 @@ static int __xuiFlowApplyCommandMove(xui_flow_graph pGraph,
 XUI_API int xuiFlowGraphCanUndo(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL && pGraph->arrUndo.Count > 0u) ? 1 : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL && pGraph->arrUndo.Count > 0u) ? 1 : 0), 0);
 }
 
 XUI_API int xuiFlowGraphCanRedo(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL && pGraph->arrRedo.Count > 0u) ? 1 : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL && pGraph->arrRedo.Count > 0u) ? 1 : 0), 0);
 }
 
 XUI_API int xuiFlowGraphUndo(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t* pCommand;
 	uint32_t iDestinationPos;
 	int iRet;
 
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iRet = __xuiFlowPrepareCommandTransfer(&pGraph->arrUndo, &pGraph->arrRedo,
 		&pCommand, &iDestinationPos);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( pCommand->iType == XUI_FLOW_COMMAND_ADD_NODE ) {
 		iRet = xuiFlowGraphRemoveNode(pGraph, pCommand->tNode.sId);
@@ -2664,27 +2836,30 @@ XUI_API int xuiFlowGraphUndo(xui_flow_graph pGraph)
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelCommandTransfer(&pGraph->arrRedo, iDestinationPos);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitCommandTransfer(&pGraph->arrUndo, &pGraph->arrRedo, iDestinationPos);
 	__xuiFlowTrimHistory(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphRedo(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t* pCommand;
 	uint32_t iDestinationPos;
 	int iRet;
 
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iRet = __xuiFlowPrepareCommandTransfer(&pGraph->arrRedo, &pGraph->arrUndo,
 		&pCommand, &iDestinationPos);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( pCommand->iType == XUI_FLOW_COMMAND_ADD_NODE ) {
 		iRet = xuiFlowGraphAddNode(pGraph, &pCommand->tNode, NULL);
@@ -2705,52 +2880,67 @@ XUI_API int xuiFlowGraphRedo(xui_flow_graph pGraph)
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelCommandTransfer(&pGraph->arrUndo, iDestinationPos);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitCommandTransfer(&pGraph->arrRedo, &pGraph->arrUndo, iDestinationPos);
 	__xuiFlowTrimHistory(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetCommandHistoryLimit(xui_flow_graph pGraph, int iLimit)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( (pGraph == NULL) || (iLimit < 1) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pGraph->iCommandHistoryLimit = iLimit;
 	__xuiFlowTrimHistory(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetCommandHistoryLimit(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? pGraph->iCommandHistoryLimit : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? pGraph->iCommandHistoryLimit : 0), 0);
 }
 
 XUI_API int xuiFlowGraphMarkClean(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pGraph->iCleanRevision = pGraph->iRevision;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphIsDirty(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL && pGraph->iRevision != pGraph->iCleanRevision) ? 1 : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL && pGraph->iRevision != pGraph->iCleanRevision) ? 1 : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetCleanRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision)
 {
     if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-    if (!pGraph || !pRevision) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    if (!pGraph || !pRevision) return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
     *pRevision=pGraph->iCleanRevision;
-    return XUI_OK;
+    return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API uint32_t xuiFlowGraphGetCleanRevision(xui_flow_graph pGraph)
@@ -2780,19 +2970,22 @@ static int __xuiFlowCopyGeneratedId(char* sBuffer, int iCapacity, const char* sP
 XUI_API int xuiFlowGraphMakeNodeId(xui_flow_graph pGraph, char* sBuffer, int iCapacity)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	char sId[64];
 	uint32_t iNext;
 	int iRet;
 
 	if ( (pGraph == NULL) || (sBuffer == NULL) || (iCapacity <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNext = pGraph->iNextNodeId;
 	do {
 		iNext++;
 		if ( iNext == 0u ) {
 			sBuffer[0] = 0;
-			return XUI_ERROR_LIMIT_EXCEEDED;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 		}
 		(void)snprintf(sId, sizeof(sId), "node_%u", iNext);
 	} while ( xuiFlowGraphFindNode(pGraph, sId) >= 0 );
@@ -2800,25 +2993,28 @@ XUI_API int xuiFlowGraphMakeNodeId(xui_flow_graph pGraph, char* sBuffer, int iCa
 	if ( iRet == XUI_OK ) {
 		pGraph->iNextNodeId = iNext;
 	}
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 }
 
 XUI_API int xuiFlowGraphMakeEdgeId(xui_flow_graph pGraph, char* sBuffer, int iCapacity)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	char sId[64];
 	uint32_t iNext;
 	int iRet;
 
 	if ( (pGraph == NULL) || (sBuffer == NULL) || (iCapacity <= 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iNext = pGraph->iNextEdgeId;
 	do {
 		iNext++;
 		if ( iNext == 0u ) {
 			sBuffer[0] = 0;
-			return XUI_ERROR_LIMIT_EXCEEDED;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 		}
 		(void)snprintf(sId, sizeof(sId), "edge_%u", iNext);
 	} while ( xuiFlowGraphFindEdge(pGraph, sId) >= 0 );
@@ -2826,25 +3022,28 @@ XUI_API int xuiFlowGraphMakeEdgeId(xui_flow_graph pGraph, char* sBuffer, int iCa
 	if ( iRet == XUI_OK ) {
 		pGraph->iNextEdgeId = iNext;
 	}
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 }
 
 XUI_API int xuiFlowGraphMakePortId(xui_flow_graph pGraph, int iNode, char* sBuffer, int iCapacity)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	uint32_t iNext;
 	char sId[64];
 	int iRet;
 
 	if ( (pGraph == NULL) || (sBuffer == NULL) || (iCapacity <= 0) || (iNode < 0) || ((uint32_t)iNode >= pGraph->arrNodes.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	iNext = pNode->arrPorts.Count + 1u;
 	if ( iNext == 0u ) {
 		sBuffer[0] = 0;
-		return XUI_ERROR_LIMIT_EXCEEDED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 	}
 	do {
 		(void)snprintf(sId, sizeof(sId), "port_%u", iNext);
@@ -2854,21 +3053,24 @@ XUI_API int xuiFlowGraphMakePortId(xui_flow_graph pGraph, int iNode, char* sBuff
 		iNext++;
 		if ( iNext == 0u ) {
 			sBuffer[0] = 0;
-			return XUI_ERROR_LIMIT_EXCEEDED;
+			return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 		}
 	} while ( 1 );
 	iRet = __xuiFlowCopyGeneratedId(sBuffer, iCapacity, "port_", iNext);
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 }
 
 XUI_API int xuiFlowGraphClearSelection(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( pGraph->arrSelectedNodes.Count == 0u && pGraph->arrSelectedEdges.Count == 0u ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	__xuiFlowFreeSelectionArray(&pGraph->arrSelectedNodes);
 	__xuiFlowFreeSelectionArray(&pGraph->arrSelectedEdges);
@@ -2879,108 +3081,132 @@ XUI_API int xuiFlowGraphClearSelection(xui_flow_graph pGraph)
 	xuiXrtMapInit(&pGraph->mapSelectedNodes, sizeof(int));
 	xuiXrtMapInit(&pGraph->mapSelectedEdges, sizeof(int));
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSelectNode(xui_flow_graph pGraph, const char* sId, int bSelected)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	int bChanged;
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (xuiFlowGraphFindNode(pGraph, sId) < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iRet = __xuiFlowSelectionSet(&pGraph->arrSelectedNodes, &pGraph->mapSelectedNodes,
 		sId, bSelected, &bChanged);
 	if ( iRet == XUI_OK && bChanged ) {
 		__xuiFlowBumpRevision(pGraph);
 	}
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 }
 
 XUI_API int xuiFlowGraphSelectEdge(xui_flow_graph pGraph, const char* sId, int bSelected)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	int bChanged;
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (xuiFlowGraphFindEdge(pGraph, sId) < 0) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iRet = __xuiFlowSelectionSet(&pGraph->arrSelectedEdges, &pGraph->mapSelectedEdges,
 		sId, bSelected, &bChanged);
 	if ( iRet == XUI_OK && bChanged ) {
 		__xuiFlowBumpRevision(pGraph);
 	}
-	return iRet;
+	return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 }
 
 XUI_API int xuiFlowGraphIsNodeSelected(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL && __xuiFlowSelectionFind(&pGraph->mapSelectedNodes, sId) >= 0) ? 1 : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL && __xuiFlowSelectionFind(&pGraph->mapSelectedNodes, sId) >= 0) ? 1 : 0), 0);
 }
 
 XUI_API int xuiFlowGraphIsEdgeSelected(xui_flow_graph pGraph, const char* sId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL && __xuiFlowSelectionFind(&pGraph->mapSelectedEdges, sId) >= 0) ? 1 : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL && __xuiFlowSelectionFind(&pGraph->mapSelectedEdges, sId) >= 0) ? 1 : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetSelectedNodeCount(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? (int)pGraph->arrSelectedNodes.Count : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? (int)pGraph->arrSelectedNodes.Count : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetSelectedEdgeCount(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? (int)pGraph->arrSelectedEdges.Count : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? (int)pGraph->arrSelectedEdges.Count : 0), 0);
 }
 
 XUI_API int xuiFlowGraphDeleteSelection(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	uint32_t iUndoPos;
 	int iRet;
 
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( pGraph->arrSelectedNodes.Count == 0u && pGraph->arrSelectedEdges.Count == 0u ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	__xuiFlowInitCommand(&tCommand);
 	iRet = __xuiFlowSnapshotDeleteSelection(pGraph, &tCommand);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	if ( tCommand.arrCommands.Count == 0u ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return xuiFlowGraphClearSelection(pGraph);
+		return __xuiFlowOperationEnd(&__ownedCall, (xuiFlowGraphClearSelection(pGraph)), 0);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = __xuiFlowApplyDeleteSelectionCommand(pGraph, &tCommand, 1);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return iRet;
+		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphSetViewport(xui_flow_graph pGraph, const xui_flow_viewport_t* pViewport)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_viewport_t tViewport;
 
 	if ( (pGraph == NULL) || (pViewport == NULL) || (pViewport->iSize < sizeof(*pViewport)) ||
@@ -2988,7 +3214,7 @@ XUI_API int xuiFlowGraphSetViewport(xui_flow_graph pGraph, const xui_flow_viewpo
 	     !__xuiFlowFinite(pViewport->fZoom) || !__xuiFlowFinite(pViewport->fWidth) ||
 	     !__xuiFlowFinite(pViewport->fHeight) || pViewport->fWidth < 0.0f ||
 	     pViewport->fHeight < 0.0f ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	tViewport = *pViewport;
 	tViewport.iSize = sizeof(tViewport);
@@ -2996,54 +3222,63 @@ XUI_API int xuiFlowGraphSetViewport(xui_flow_graph pGraph, const xui_flow_viewpo
 		tViewport.fZoom = 0.001f;
 	}
 	if ( memcmp(&pGraph->tViewport, &tViewport, sizeof(tViewport)) == 0 ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	pGraph->tViewport = tViewport;
 	__xuiFlowBumpGeometryRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetViewport(xui_flow_graph pGraph, xui_flow_viewport_t* pViewport)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( (pGraph == NULL) || (pViewport == NULL) || (pViewport->iSize < sizeof(*pViewport)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	*pViewport = pGraph->tViewport;
 	pViewport->iSize = sizeof(*pViewport);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphWorldToScreen(xui_flow_graph pGraph, float fWorldX, float fWorldY, float* pScreenX, float* pScreenY)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	float fResultX;
 	float fResultY;
 
 	if ( (pGraph == NULL) || (pScreenX == NULL) || (pScreenY == NULL) ||
 	     !__xuiFlowFinite(fWorldX) || !__xuiFlowFinite(fWorldY) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	fResultX = (fWorldX + pGraph->tViewport.fPanX) * pGraph->tViewport.fZoom;
 	fResultY = (fWorldY + pGraph->tViewport.fPanY) * pGraph->tViewport.fZoom;
 	if ( !__xuiFlowFinite(fResultX) || !__xuiFlowFinite(fResultY) ) {
-		return XUI_ERROR_LIMIT_EXCEEDED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 	}
 	*pScreenX = fResultX;
 	*pScreenY = fResultY;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, float fScreenY, float* pWorldX, float* pWorldY)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	float fZoom;
 	float fResultX;
 	float fResultY;
 
 	if ( (pGraph == NULL) || (pWorldX == NULL) || (pWorldY == NULL) ||
 	     !__xuiFlowFinite(fScreenX) || !__xuiFlowFinite(fScreenY) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	fZoom = pGraph->tViewport.fZoom;
 	if ( fZoom <= 0.001f ) {
@@ -3052,16 +3287,19 @@ XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, flo
 	fResultX = (fScreenX / fZoom) - pGraph->tViewport.fPanX;
 	fResultY = (fScreenY / fZoom) - pGraph->tViewport.fPanY;
 	if ( !__xuiFlowFinite(fResultX) || !__xuiFlowFinite(fResultY) ) {
-		return XUI_ERROR_LIMIT_EXCEEDED;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_LIMIT_EXCEEDED), 0);
 	}
 	*pWorldX = fResultX;
 	*pWorldY = fResultY;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphAddDiagnostic(xui_flow_graph pGraph, const xui_flow_diagnostic_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_diagnostic_model_t* pDiagnostic;
 	uint32_t iPos;
 
@@ -3070,11 +3308,11 @@ XUI_API int xuiFlowGraphAddDiagnostic(xui_flow_graph pGraph, const xui_flow_diag
 	}
 	if ( (pGraph == NULL) || (pDesc == NULL) || (pDesc->iSize < sizeof(*pDesc)) ||
 	     (pDesc->iSeverity < XUI_CODE_DIAGNOSTIC_ERROR) || (pDesc->iSeverity > XUI_CODE_DIAGNOSTIC_HINT) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	iPos = xuiXrtArrayAppendSpace(&pGraph->arrDiagnostics, 1u);
 	if ( iPos == 0u ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	pDiagnostic = (xui_flow_diagnostic_model_t*)xuiXrtArrayGet(&pGraph->arrDiagnostics, iPos);
 	memset(pDiagnostic, 0, sizeof(*pDiagnostic));
@@ -3091,47 +3329,56 @@ XUI_API int xuiFlowGraphAddDiagnostic(xui_flow_graph pGraph, const xui_flow_diag
 	     (pDesc->sPath != NULL && pDiagnostic->sPath == NULL) ) {
 		__xuiFlowFreeDiagnostic(pDiagnostic);
 		xuiXrtArrayRemove(&pGraph->arrDiagnostics, iPos, 1u);
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
 	}
 	if ( pIndex != NULL ) {
 		*pIndex = (int)iPos - 1;
 	}
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphClearDiagnostics(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	if ( pGraph == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	if ( pGraph->arrDiagnostics.Count == 0u ) {
-		return XUI_OK;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 	}
 	__xuiFlowFreeDiagnostics(pGraph);
 	xuiXrtArrayInit(&pGraph->arrDiagnostics, sizeof(xui_flow_diagnostic_model_t));
 	__xuiFlowBumpRevision(pGraph);
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetDiagnosticCount(xui_flow_graph pGraph)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-	return (pGraph != NULL) ? (int)pGraph->arrDiagnostics.Count : 0;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	return __xuiFlowOperationEnd(&__ownedCall, ((pGraph != NULL) ? (int)pGraph->arrDiagnostics.Count : 0), 0);
 }
 
 XUI_API int xuiFlowGraphGetDiagnostic(xui_flow_graph pGraph, int iIndex, xui_flow_diagnostic_desc_t* pDesc)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_diagnostic_model_t* pDiagnostic;
 
 	if ( (pGraph == NULL) || (pDesc == NULL) || (iIndex < 0) || ((uint32_t)iIndex >= pGraph->arrDiagnostics.Count) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	pDiagnostic = (xui_flow_diagnostic_model_t*)xuiXrtArrayGet(&pGraph->arrDiagnostics, (uint32_t)iIndex + 1u);
 	if ( pDiagnostic == NULL ) {
-		return XUI_ERROR_INVALID_STATE;
+		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_STATE), 0);
 	}
 	memset(pDesc, 0, sizeof(*pDesc));
 	pDesc->iSize = sizeof(*pDesc);
@@ -3141,18 +3388,21 @@ XUI_API int xuiFlowGraphGetDiagnostic(xui_flow_graph pGraph, int iIndex, xui_flo
 	pDesc->sNode = pDiagnostic->sNode;
 	pDesc->sEdge = pDiagnostic->sEdge;
 	pDesc->sPath = pDiagnostic->sPath;
-	return XUI_OK;
+	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
 XUI_API int xuiFlowGraphGetNodeDiagnosticCount(xui_flow_graph pGraph, const char* sNodeId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_diagnostic_model_t* pDiagnostic;
 	uint32_t i;
 	int iCount;
 
 	if ( (pGraph == NULL) || (sNodeId == NULL) ) {
-		return 0;
+		return __xuiFlowOperationEnd(&__ownedCall, (0), 0);
 	}
 	iCount = 0;
 	for ( i = 1u; i <= pGraph->arrDiagnostics.Count; ++i ) {
@@ -3161,18 +3411,21 @@ XUI_API int xuiFlowGraphGetNodeDiagnosticCount(xui_flow_graph pGraph, const char
 			iCount++;
 		}
 	}
-	return iCount;
+	return __xuiFlowOperationEnd(&__ownedCall, (iCount), 0);
 }
 
 XUI_API int xuiFlowGraphGetEdgeDiagnosticCount(xui_flow_graph pGraph, const char* sEdgeId)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_diagnostic_model_t* pDiagnostic;
 	uint32_t i;
 	int iCount;
 
 	if ( (pGraph == NULL) || (sEdgeId == NULL) ) {
-		return 0;
+		return __xuiFlowOperationEnd(&__ownedCall, (0), 0);
 	}
 	iCount = 0;
 	for ( i = 1u; i <= pGraph->arrDiagnostics.Count; ++i ) {
@@ -3181,7 +3434,9 @@ XUI_API int xuiFlowGraphGetEdgeDiagnosticCount(xui_flow_graph pGraph, const char
 			iCount++;
 		}
 	}
-	return iCount;
+	return __xuiFlowOperationEnd(&__ownedCall, (iCount), 0);
 }
+
+#include "xui_flow_graph_owned.inl"
 
 #endif

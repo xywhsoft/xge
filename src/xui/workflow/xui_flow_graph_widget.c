@@ -1988,8 +1988,13 @@ static bool __xuiFlowGraphWidgetTraceOwnership(xui_widget pWidget, const void* p
 {
 	(void)pWidget;
 	const xui_flow_graph_widget_data_t* pData = pTypeData;
-	return !pData || !pData->bOwnGraph || !pData->pGraph ||
-		xuiFlowGraphTraceOwnedValues(pData->pGraph, onVisit, pUser);
+    if(!pData || !pData->bOwnGraph || !pData->pGraph)return true;
+    if(xuiFlowGraphIsOwned(pData->pGraph)){
+        /* This slot owns one model reference, not each of its value edges. */
+        xrtownershipref ref=xuiFlowGraphOwnership(pData->pGraph);
+        return ref.Data && onVisit && onVisit(ref,pUser);
+    }
+    return xuiFlowGraphTraceOwnedValues(pData->pGraph,onVisit,pUser);
 }
 
 static void __xuiFlowGraphWidgetDefaultLayout(xui_layout_t* pLayout)

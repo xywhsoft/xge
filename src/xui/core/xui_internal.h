@@ -1230,6 +1230,7 @@ uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
 int xuiInternalFlowGraphGetGeometryRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision);
 int xuiInternalFlowGraphIsValueCallbackActive(xui_flow_graph pGraph);
 int xuiInternalFlowGraphSetCallbackOwner(xui_flow_graph pGraph,xui_flow_graph pOwner);
+int xuiInternalFlowGraphPromoteOwned(xui_flow_graph pGraph);
 int xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSecond);
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 	const char* sNodeId, xvalue* pConfig, const xui_flow_port_desc_t* pPorts,

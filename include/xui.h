@@ -13658,6 +13658,23 @@ XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, 
  * return a negative Busy status. Prefer checked variants for void/uint queries. */
 #if XUI_ENABLE_FLOW_GRAPH
 XUI_API int xuiFlowGraphCreate(xui_flow_graph* ppGraph);
+/* Shared origins have creator-affine operations and explicit owning refs.
+ * Share writes its output only on success. Releasing one owner never
+ * invalidates another. Callbacks keep the model busy; cleanup consumption is
+ * independent of a reported callback failure. The last reference frees it.
+ * Legacy Create remains a unique, externally serialized C origin. */
+XUI_API int xuiFlowGraphCreateOwned(xui_flow_graph* output);
+XUI_API int xuiFlowGraphShareOwned(xui_flow_graph source,xui_flow_graph* output);
+XUI_API bool xuiFlowGraphIsOwned(xui_flow_graph graph);
+XUI_API int xuiFlowGraphReleaseOwnerChecked(xui_flow_graph graph,bool* consumed);
+XUI_API int xuiFlowGraphReleaseChecked(xui_flow_graph graph);
+XUI_API xrtownershipref xuiFlowGraphOwnership(xui_flow_graph graph);
+XUI_API const xrtownershipadapterv1* xuiFlowGraphOwnershipAdapterV1(xrtownershipref ref);
+XUI_API const xrtownershippreparationv1* xuiFlowGraphOwnershipPreparationV1(xrtownershipref ref);
+XUI_API const xrtownershipquiescencev1* xuiFlowGraphOwnershipQuiescenceV1(xrtownershipref ref);
+XUI_API const xrtownershipfinishv2* xuiFlowGraphOwnershipCompletionV2(xrtownershipref ref);
+XUI_API const xrtownershipfinalizationv1* xuiFlowGraphOwnershipFinalizationV1(xrtownershipref ref);
+XUI_API bool xuiFlowGraphOwnershipReadReady(xrtownershipref ref);
 /* 释放流程图模型。 */
 XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph);
 /* Busy leaves the model alive; NULL is a successful no-op. No allocation. */

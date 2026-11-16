@@ -2,6 +2,18 @@
  * lifetime/ownership mechanics are shared; there is no operation dispatcher or
  * incompatible callback cast. DO_FN/DO_PUBLIC/DO_STATUS/DO_API/DO_ROOT are
  * provided by that family and are undefined by its including source. */
+#ifndef DO_EXTRA_READY
+#define DO_EXTRA_READY(root) DO_STATUS(OK)
+#define DO_LOCAL_EXTRA_READY
+#endif
+#ifndef DO_READ_READY
+#define DO_READ_READY(root) true
+#define DO_LOCAL_READ_READY
+#endif
+#ifndef DO_FREE_BODY
+#define DO_FREE_BODY(root) xrtFree(DO_FN(Body)(root))
+#define DO_LOCAL_FREE_BODY
+#endif
 static const xrtownershipops DO_FN(Ops);
 static const xrtownershipadapterv1 DO_FN(Adapter);
 static bool DO_FN(Known)(const xge_data_lifetime_t* root)
@@ -82,7 +94,7 @@ static int DO_FN(Ready)(const xge_data_lifetime_t* root)
     unsigned state=DO_FN(State)(root);if(state&XGE_DATA_FINISHED)return DO_STATUS(OK);
     if(root->iCreator!=xrtThreadCurrentId())return DO_STATUS(ERROR_BUSY);
     if(atomic_load_explicit(&root->iActivity,memory_order_acquire) || (state&(XGE_DATA_FINALIZING|XGE_DATA_FINISHING)))return DO_STATUS(ERROR_BUSY);
-    return DO_STATUS(OK);
+    return DO_EXTRA_READY(root);
 }
 static int DO_FN(Finalize)(xge_data_lifetime_t* root,bool* complete)
 {
@@ -146,7 +158,7 @@ static int DO_FN(Release)(xge_data_lifetime_t* root,bool* consumed)
     DO_FN(OutcomeAdd)(&result,DO_FN(Finish)(root));
     if(!xrtOwnershipMutationBegin(&mutation))abort();
     refs=atomic_fetch_sub_explicit(DO_FN(Refs)(root),1u,memory_order_acq_rel);assert(refs);
-    *consumed=true;DO_FN(MutationEnd)(&mutation);if(refs==1u)xrtFree(DO_FN(Body)(root));
+    *consumed=true;DO_FN(MutationEnd)(&mutation);if(refs==1u)DO_FREE_BODY(root);
     return DO_FN(OutcomeEnd)(&result,ambient);
 }
 static int DO_FN(ActivityEnd)(xge_data_lifetime_t* root)
@@ -227,4 +239,16 @@ DO_API const xrtownershipquiescencev1* DO_PUBLIC(OwnershipQuiescenceV1)(xrtowner
 DO_API const xrtownershipfinishv2* DO_PUBLIC(OwnershipCompletionV2)(xrtownershipref ref){return DO_FN(RefKnown)(ref) ? &DO_FN(Completion):NULL;}
 DO_API const xrtownershipfinalizationv1* DO_PUBLIC(OwnershipFinalizationV1)(xrtownershipref ref){return DO_FN(RefKnown)(ref) ? &DO_FN(Finalization):NULL;}
 DO_API bool DO_PUBLIC(OwnershipReadReady)(xrtownershipref ref)
-{return DO_FN(RefKnown)(ref) && !(DO_FN(State)(ref.Data)&(XGE_DATA_FINALIZING|XGE_DATA_FINALIZED|XGE_DATA_CLEARED|XGE_DATA_FINISHING|XGE_DATA_FINISHED));}
+{return DO_FN(RefKnown)(ref) && !(DO_FN(State)(ref.Data)&(XGE_DATA_FINALIZING|XGE_DATA_FINALIZED|XGE_DATA_CLEARED|XGE_DATA_FINISHING|XGE_DATA_FINISHED)) && DO_READ_READY(ref.Data);}
+#ifdef DO_LOCAL_EXTRA_READY
+#undef DO_EXTRA_READY
+#undef DO_LOCAL_EXTRA_READY
+#endif
+#ifdef DO_LOCAL_READ_READY
+#undef DO_READ_READY
+#undef DO_LOCAL_READ_READY
+#endif
+#ifdef DO_LOCAL_FREE_BODY
+#undef DO_FREE_BODY
+#undef DO_LOCAL_FREE_BODY
+#endif
