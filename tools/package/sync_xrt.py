@@ -17,6 +17,46 @@ EXTENSIONS = ("xllm", "xllm-session", "xwork")
 LF_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".inl", ".inc", ".py", ".sh", ".json", ".md", ".yml", ".yaml"}
 
 
+def extension_closure(read_manifest, requested=EXTENSIONS):
+    """Freeze each declared extension dependency before generating consumers.
+
+    dependency_manifests are repository-relative paths in XRT's format. Use
+    the selected commit's manifests when exporting a ref, never live worktree
+    dependencies from a potentially different revision.
+    """
+    ordered, states = [], {}
+
+    def visit(name):
+        if not isinstance(name, str) or not name or name in (".", "..") or any(
+            not (c.isascii() and (c.isalnum() or c in "_.-")) for c in name
+        ):
+            raise ValueError("Invalid extension directory: " + str(name))
+        if states.get(name) == 2:
+            return
+        if states.get(name) == 1:
+            raise ValueError("Extension dependency cycle at: " + name)
+        states[name] = 1
+        manifest = read_manifest(f"extlibs/{name}/config/modules.json")
+        dependencies = manifest.get("dependency_manifests", [])
+        if not isinstance(dependencies, list):
+            raise ValueError("dependency_manifests must be an array: " + name)
+        for dependency in dependencies:
+            if not isinstance(dependency, str):
+                raise ValueError("Invalid dependency manifest: " + name)
+            path = PurePosixPath(dependency)
+            if (path.is_absolute() or "\\" in dependency or ":" in dependency or
+                len(path.parts) != 4 or path.parts[0] != "extlibs" or
+                path.parts[2:] != ("config", "modules.json")):
+                raise ValueError("Expected an extension dependency manifest: " + dependency)
+            visit(path.parts[1])
+        states[name] = 2
+        ordered.append(name)
+
+    for name in requested:
+        visit(name)
+    return tuple(ordered)
+
+
 def canonical_bytes(path: Path) -> bytes:
     data = path.read_bytes()
     return data.replace(b"\r\n", b"\n") if path.suffix.lower() in LF_SUFFIXES else data
@@ -38,9 +78,25 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="xge-xrt-sync-") as directory:
         snapshot = Path(directory)
         commit = subprocess.check_output(["git", "rev-parse", f"{args.base_ref or 'HEAD'}^{{commit}}"], cwd=source, text=True).strip()
+        manifest_overlays = {}
+        def read_manifest(name):
+            if args.base_ref and name not in args.overlay:
+                data = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=source)
+            else:
+                path = (source / name).resolve()
+                if source not in path.parents or not path.is_file():
+                    raise ValueError("Invalid manifest source: " + name)
+                data = path.read_bytes()
+                if args.base_ref:
+                    manifest_overlays[name] = data
+            result = json.loads(data.decode("utf-8-sig"))
+            if not isinstance(result, dict):
+                raise ValueError("Extension manifest must be an object: " + name)
+            return result
+        extensions = extension_closure(read_manifest)
         overlays = {}
         if args.base_ref:
-            roots = ["include", "src", "tools", "config", "LICENSE", *[f"extlibs/{p}" for p in EXTENSIONS]]
+            roots = ["include", "src", "tools", "config", "LICENSE", *[f"extlibs/{p}" for p in extensions]]
             archive = subprocess.check_output(["git", "archive", "--format=zip", commit, "--", *roots], cwd=source)
             with zipfile.ZipFile(io.BytesIO(archive)) as files:
                 for item in files.infolist():
@@ -56,6 +112,8 @@ def main() -> int:
                 if name not in roots and not any(name.startswith(root + "/") for root in roots):
                     raise RuntimeError(f"Overlay outside source roots: {name}")
                 data = path.read_bytes()
+                if name in manifest_overlays and data != manifest_overlays[name]:
+                    raise RuntimeError(f"Manifest overlay changed during dependency resolution: {name}")
                 dest = snapshot / name
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(data)
@@ -67,7 +125,7 @@ def main() -> int:
                 shutil.copytree(source / name, snapshot / name,
                                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
             shutil.copy2(source / "LICENSE", snapshot / "LICENSE")
-            for product in EXTENSIONS:
+            for product in extensions:
                 shutil.copytree(source / "extlibs" / product, snapshot / "extlibs" / product,
                                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "build"))
         digest = hashlib.sha256()
@@ -79,7 +137,7 @@ def main() -> int:
             digest.update(relative.as_posix().encode() + b"\0" + hashlib.sha256(content).digest())
         subprocess.run([sys.executable, "tools/amalgamate.py"], cwd=snapshot, check=True)
         subprocess.run([sys.executable, "tools/amalgamate.py", "--check"], cwd=snapshot, check=True)
-        for product in EXTENSIONS:
+        for product in extensions:
             manifest = f"extlibs/{product}/config/modules.json"
             subprocess.run([sys.executable, "tools/amalgamate.py", "--manifest", manifest], cwd=snapshot, check=True)
             subprocess.run([sys.executable, "tools/amalgamate.py", "--manifest", manifest, "--check"], cwd=snapshot, check=True)
@@ -90,12 +148,12 @@ def main() -> int:
         copied = {}
         trees = [(snapshot / "include", target / "include")]
         trees += [(snapshot / "extlibs" / product / name, target / "extlibs" / product / name)
-                  for product in EXTENSIONS for name in ("include", "src", "config")]
+                  for product in extensions for name in ("include", "src", "config")]
         for origin, destination in trees:
             for path in sorted(p for p in origin.rglob("*") if p.is_file()):
                 copied[destination / path.relative_to(origin)] = canonical_bytes(path)
         dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "include", "src", "tools", "config", "LICENSE",
-                                         *[f"extlibs/{p}" for p in EXTENSIONS]], cwd=source, text=True)
+                                         *[f"extlibs/{p}" for p in extensions]], cwd=source, text=True)
         branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=source, text=True).strip()
         record = {"source_repository": str(source), "source_branch": branch,
                   "source_commit": commit, "source_worktree_dirty": bool(dirty),
@@ -107,7 +165,8 @@ def main() -> int:
         if args.base_ref:
             record["snapshot_mode"] = "immutable_base_with_explicit_overlays"
             record["overlay_files"] = overlays
-        record["extensions"] = list(EXTENSIONS)
+        record["requested_extensions"] = list(EXTENSIONS)
+        record["extensions"] = list(extensions)
         if args.check:
             if content != (target / "xrt.h").read_bytes() or declarations != (target / "xrt_decl.h").read_bytes():
                 import difflib
