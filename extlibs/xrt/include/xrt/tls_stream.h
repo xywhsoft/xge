@@ -17,6 +17,10 @@
 
 
 
+#if defined(XRT_FEATURE_TLS_STREAM_EVENT_EXCHANGE) && !defined(XRT_FEATURE_TLS_STREAM)
+	#error "TLS event exchange requires TLS Stream"
+#endif
+
 #if defined(XRT_FEATURE_TLS_STREAM) && \
 	(!defined(XRT_FEATURE_NET_TCP) || \
 	 !defined(XRT_FEATURE_TLS_CLIENT) || \
@@ -39,6 +43,11 @@
 #if defined(XRT_FEATURE_TLS_STREAM_FUTURE) && \
 	(!defined(XRT_FEATURE_TLS_STREAM) || !defined(XRT_FEATURE_FUTURE))
 	#error "XRT TLS Stream Future support requires TLS Stream and Future"
+#endif
+
+#if defined(XRT_FEATURE_TLS_STREAM_WRITE_PROGRESS) && \
+	(!defined(XRT_FEATURE_TLS_STREAM) || !defined(XRT_FEATURE_NET_TCP_WRITE_PROGRESS))
+	#error "XRT TLS write progress requires TLS Stream and native write progress"
 #endif
 
 #if defined(XRT_FEATURE_TLS_STREAM_DIAL_FUTURE) && \
@@ -187,6 +196,16 @@ typedef struct xtlsstreamevents {
 	void (*Ticket)(xtlsstream* pStream, ptr pData);
 } xtlsstreamevents;
 
+/* Ciphertext byte cursors in one Stream-local epoch, not plaintext delivery
+ * acknowledgements. Compare a saved Produced cursor with a later Completed
+ * cursor while the stream is live. Later output does not extend the saved cut. */
+typedef struct xtlswriteprogress {
+	size_t Size;
+	uint64 Produced;
+	uint64 Completed;
+} xtlswriteprogress;
+typedef void (*xtlsstreamwriteproc)(xtlsstream* pStream, ptr pData);
+
 /* One real owner for event data AND every borrowed callback/configuration
  * context used by this session. The descriptor/code stays resident; Ops must
  * enumerate actual references, including shared owner records (never flatten
@@ -200,6 +219,15 @@ typedef struct xtlsstreamownershipv1 {
 	void (*Drop)(const void* pData);
 	const xrtownershipops* Ops;
 } xtlsstreamownershipv1;
+
+/* Borrowed identities when used as Expected; one actual event-data credit when
+ * returned as Previous by Exchange. The session/configuration owner is separate.
+ * A returned owner must be released exactly once through Policy->Drop(Data),
+ * outside ownership claims/mutations after the composite handoff has returned. */
+typedef struct xtlsstreambindingv1 {
+	ptr Data;
+	const xtlsstreamownershipv1* Policy;
+} xtlsstreambindingv1;
 
 #if defined(XRT_FEATURE_TLS_STREAM_DIAL)
 /* One aggregate owner for Done, final Stream events and every borrowed TLS
@@ -291,6 +319,30 @@ typedef struct xtlslistenerstats {
 
 
 XRT_EXTERN_C_BEGIN
+
+#if defined(XRT_FEATURE_TLS_STREAM_WRITE_PROGRESS)
+/* Owning Worker only, after TCP opens. First success starts a permanent cursor
+ * epoch covering all currently pending output, including handshake/control
+ * records. Registration does not replay earlier progress: query immediately.
+ * No allocation or per-write watch node. Replacing/removing the callback
+ * preserves the epoch. NULL polls without notifications. Data is the current
+ * event Data; the same owner/code lifetime contract applies through destruction.
+ * Notifications coalesce and are deferred outside Send/SendVec and native write
+ * completion; no callback acknowledges peer receipt. Closing or replacing TLS events clears
+ * the callback; replacing native events invalidates the epoch. An observer is
+ * opaque to ownership graph admission: remove it before certified collection.
+ * Never write directly to the borrowed TCP transport while TLS owns it. */
+XRT_API bool xrtTlsStreamSetWriteProgress(xtlsstream* pStream,
+	xtlsstreamwriteproc pProgress);
+/* Owning Worker snapshot. Size must match; all outputs stay unchanged on error.
+ * Requires an enabled epoch and a live, non-aborting transport. Produced includes
+ * the TLS ciphertext queue plus TCP accepted output. Pending async plaintext is
+ * outside the cut: first observe its successful write result. Failure/abort/close invalidates
+ * success comparisons: settle the enclosing protocol operation with that outcome.
+ * Counter overflow is a range error, never wraparound or false completion. */
+XRT_API bool xrtTlsStreamWriteProgress(xtlsstream* pStream,
+	xtlswriteprogress* pProgress);
+#endif
 
 
 
@@ -616,6 +668,26 @@ XRT_API xtlsstream* xrtTlsStreamRef(xtlsstream* pStream);
 /* 释放 TLS Stream 引用；关闭必须另行请求。 */
 XRT_API void xrtTlsStreamDestroy(xtlsstream* pStream);
 
+#if defined(XRT_FEATURE_TLS_STREAM_RETIRE)
+#if !defined(XRT_FEATURE_TLS_STREAM) || !defined(XRT_FEATURE_NET_TCP_RETIRE)
+#error "TLS retirement requires TLS stream and native TCP retirement"
+#endif
+/* Nonblocking try-lock query: terminal TLS, exactly the caller's sole TLS
+ * reference and fully retired native TCP. CLOSED/FAILED alone is insufficient.
+ * No ownership Count/Trace/Busy policy is used as a lifecycle shortcut.
+ * Keep one stable caller owner, stop new entries/aliases before treating OK as
+ * final, and retain callback code/configuration through Destroy. Session/event
+ * context ownership remains until Destroy; destructor callbacks are separate.
+ * Poll is allowed on Workers, allocates nothing and preserves ambient error
+ * on OK/TIMEOUT. The Stream is not consumed. NULL is ERROR. */
+XRT_API xwaitresult xrtTlsStreamPollRetired(xtlsstream* pStream);
+/* One monotonic timeout covers TLS references and native TCP callback tails.
+ * Reject every Worker of the same Engine, including zero-timeout calls.
+ * Other host threads may wait concurrently while the sole caller owner is
+ * stable. Does not close, drive IO, cancel, destroy or release the caller. */
+XRT_API xwaitresult xrtTlsStreamWaitRetired(xtlsstream* pStream, int64 Timeout);
+#endif
+
 /* Owned counterparts preserve ordinary constructor/transfer/time contracts.
  * Only the explicit Data credit is additional. Attach still requires exclusive
  * session/transport IO access; the descriptor covers all session callbacks. */
@@ -640,6 +712,20 @@ XRT_API xrtownershipref xrtTlsStreamOwnership(const xtlsstream* pStream);
  * or pending read may overlap. Both exact policies participate in tracing. */
 XRT_API bool xrtTlsStreamBindEventsOwnedV1(xtlsstream* pStream, ptr pData,
 	const xtlsstreamownershipv1* pPolicy);
+#if defined(XRT_FEATURE_TLS_STREAM_EVENT_EXCHANGE)
+/* Exclusive idle OPEN Worker transaction. Expected must match the current
+ * additional event binding exactly; original session/configuration Data stays
+ * unchanged. No active callback/drive/send/incremental or async read. Consumes
+ * one NewData credit and returns the previous credit only on success; false
+ * changes neither binding nor Previous and consumes no new credit. Does not
+ * call Drop/Retain, replay buffered data, allocate, or reset a caller quota.
+ * Previous storage must be separate from Expected/Stream/descriptors/contexts.
+ * Retain the returned owner through completion of the higher protocol factory;
+ * its later Drop can reenter this stream. Both descriptors/code stay resident. */
+XRT_API bool xrtTlsStreamExchangeEventsOwnedV1(xtlsstream* pStream,
+	const xtlsstreambindingv1* pExpected, ptr pNewData,
+	const xtlsstreamownershipv1* pPolicy, xtlsstreambindingv1* pPrevious);
+#endif
 XRT_API const xnetruntimeownershipv1* xrtTlsStreamRuntimeOwnershipV1Get(void);
 XRT_API const xnetstreameventsownershipv1* xrtTlsStreamTransportOwnershipV1Get(void);
 XRT_API const xrtownershipquiescencev1* xrtTlsStreamOwnershipQuiescenceV1Get(void);

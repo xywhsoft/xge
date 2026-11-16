@@ -8,6 +8,7 @@
 #endif
 
 #if defined(XRT_FEATURE_NET_TCP_FUTURE) || \
+	defined(XRT_FEATURE_NET_DIAL_FUTURE_COMMON) || \
 	defined(XRT_FEATURE_NET_TCP_DIAL_FUTURE) || \
 	defined(XRT_FEATURE_NET_TCP_SYNC) || \
 	defined(XRT_FEATURE_NET_TCP_DIAL_SYNC)
@@ -18,6 +19,11 @@
 
 #if defined(XRT_FEATURE_NET_TCP) && !defined(XRT_FEATURE_NET_ENGINE)
 	#error "XRT TCP support requires network engine support"
+#endif
+
+#if defined(XRT_FEATURE_NET_TCP_RETIRE) && \
+	(!defined(XRT_FEATURE_NET_TCP) || !defined(XRT_FEATURE_COND))
+	#error "XRT TCP retirement waiting requires TCP and condition variables"
 #endif
 
 #if defined(XRT_FEATURE_NET_TCP_FILE) && \
@@ -36,6 +42,11 @@
 #if defined(XRT_FEATURE_NET_TCP_DIAL) && \
 	(!defined(XRT_FEATURE_NET_TCP) || !defined(XRT_FEATURE_NET_RESOLVER))
 	#error "XRT TCP Dial support requires TCP and Resolver support"
+#endif
+
+#if defined(XRT_FEATURE_NET_DIAL_FUTURE_COMMON) && \
+	(!defined(XRT_FEATURE_NET_TCP) || !defined(XRT_FEATURE_FUTURE))
+	#error "XRT Dial Future common support requires TCP and Future support"
 #endif
 
 #if defined(XRT_FEATURE_NET_TCP_DIAL_FUTURE) && \
@@ -456,6 +467,26 @@ XRT_API xnetstream* xrtNetStreamRef(xnetstream* pStream);
 
 /* 释放 Stream 引用；空指针视为空操作。 */
 XRT_API void xrtNetStreamDestroy(xnetstream* pStream);
+
+#if defined(XRT_FEATURE_NET_TCP_RETIRE)
+/* Wait for CLOSED and exactly the caller's one remaining strong Stream reference.
+ * Unlike WAIT_CLOSE this includes native/control/send/owned-event callback tails.
+ * Does not request close, retain the Stream or consume the caller owner. Keep that
+ * owner alive through all concurrent waits; stop other API/ref entries before
+ * treating success as final retirement or destroying it. Extra caller aliases
+ * also keep the result pending. Any worker of the same Engine is rejected.
+ * No polling, allocation, cancellation or graph freeze; timeout preserves owner. */
+XRT_API xwaitresult xrtNetStreamWaitRetired(xnetstream* pStream,int64 iTimeout);
+/* Immediate physical-retirement query, including from Engine workers. Returns
+ * OK for CLOSED with exactly the caller's one strong reference, TIMEOUT while
+ * references/state or the predicate lock are busy, ERROR on invalid input or
+ * synchronization failure. It does not close/retain/consume the Stream, wait for
+ * progress, allocate a waiter, read the Engine or freeze ownership. A try-lock
+ * observes the final reference-notification tail; normal ready/pending preserves
+ * ambient error without invoking its handler. Keep the caller owner stable and
+ * stop other API/ref entries before interpreting OK as final retirement. */
+XRT_API xwaitresult xrtNetStreamPollRetired(xnetstream* pStream);
+#endif
 
 
 

@@ -2,6 +2,81 @@
 #ifndef XRT_FEATURES_H
 #define XRT_FEATURES_H
 
+/* websocket_stream_tls_write_progress 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_WEBSOCKET_STREAM_TLS_WRITE_PROGRESS)
+#ifndef XRT_FEATURE_WEBSOCKET_STREAM_TLS_WRITE_PROGRESS
+#define XRT_FEATURE_WEBSOCKET_STREAM_TLS_WRITE_PROGRESS
+#endif
+#ifndef XRT_MODULE_WEBSOCKET_STREAM_WRITE_PROGRESS
+#define XRT_MODULE_WEBSOCKET_STREAM_WRITE_PROGRESS
+#endif
+#ifndef XRT_MODULE_WEBSOCKET_STREAM_TLS
+#define XRT_MODULE_WEBSOCKET_STREAM_TLS
+#endif
+#ifndef XRT_MODULE_TLS_STREAM_WRITE_PROGRESS
+#define XRT_MODULE_TLS_STREAM_WRITE_PROGRESS
+#endif
+#endif
+
+/* websocket_stream_write_progress 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_WEBSOCKET_STREAM_WRITE_PROGRESS)
+#ifndef XRT_FEATURE_WEBSOCKET_STREAM_WRITE_PROGRESS
+#define XRT_FEATURE_WEBSOCKET_STREAM_WRITE_PROGRESS
+#endif
+#ifndef XRT_MODULE_WEBSOCKET_STREAM
+#define XRT_MODULE_WEBSOCKET_STREAM
+#endif
+#ifndef XRT_MODULE_NET_TCP_WRITE_PROGRESS
+#define XRT_MODULE_NET_TCP_WRITE_PROGRESS
+#endif
+#endif
+
+/* websocket_stream_tls_exchange 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_WEBSOCKET_STREAM_TLS_EXCHANGE)
+#ifndef XRT_FEATURE_WEBSOCKET_STREAM_TLS_EXCHANGE
+#define XRT_FEATURE_WEBSOCKET_STREAM_TLS_EXCHANGE
+#endif
+#ifndef XRT_MODULE_WEBSOCKET_STREAM_TLS
+#define XRT_MODULE_WEBSOCKET_STREAM_TLS
+#endif
+#ifndef XRT_MODULE_TLS_STREAM_EVENT_EXCHANGE
+#define XRT_MODULE_TLS_STREAM_EVENT_EXCHANGE
+#endif
+#endif
+
+/* tls_stream_event_exchange 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_TLS_STREAM_EVENT_EXCHANGE)
+#ifndef XRT_FEATURE_TLS_STREAM_EVENT_EXCHANGE
+#define XRT_FEATURE_TLS_STREAM_EVENT_EXCHANGE
+#endif
+#ifndef XRT_MODULE_TLS_STREAM
+#define XRT_MODULE_TLS_STREAM
+#endif
+#endif
+
+/* websocket_stream_retire 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_WEBSOCKET_STREAM_RETIRE)
+#ifndef XRT_FEATURE_WEBSOCKET_STREAM_RETIRE
+#define XRT_FEATURE_WEBSOCKET_STREAM_RETIRE
+#endif
+#ifndef XRT_MODULE_WEBSOCKET_STREAM
+#define XRT_MODULE_WEBSOCKET_STREAM
+#endif
+#ifndef XRT_MODULE_NET_TCP_RETIRE
+#define XRT_MODULE_NET_TCP_RETIRE
+#endif
+#endif
+
+/* event_waiter 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_EVENT_WAITER)
+#ifndef XRT_FEATURE_EVENT_WAITER
+#define XRT_FEATURE_EVENT_WAITER
+#endif
+#ifndef XRT_MODULE_EVENT
+#define XRT_MODULE_EVENT
+#endif
+#endif
+
 /* regex 及其直接依赖。 */
 #if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_REGEX)
 #ifndef XRT_FEATURE_REGEX
@@ -1438,6 +1513,19 @@
 #endif
 #endif
 
+/* tls_stream_write_progress 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_TLS_STREAM_WRITE_PROGRESS)
+#ifndef XRT_FEATURE_TLS_STREAM_WRITE_PROGRESS
+#define XRT_FEATURE_TLS_STREAM_WRITE_PROGRESS
+#endif
+#ifndef XRT_MODULE_TLS_STREAM
+#define XRT_MODULE_TLS_STREAM
+#endif
+#ifndef XRT_MODULE_NET_TCP_WRITE_PROGRESS
+#define XRT_MODULE_NET_TCP_WRITE_PROGRESS
+#endif
+#endif
+
 /* tls_stream_future 及其直接依赖。 */
 #if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_TLS_STREAM_FUTURE)
 #ifndef XRT_FEATURE_TLS_STREAM_FUTURE
@@ -1451,6 +1539,19 @@
 #endif
 #ifndef XRT_MODULE_NET_BUFFER
 #define XRT_MODULE_NET_BUFFER
+#endif
+#endif
+
+/* tls_stream_retire 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_TLS_STREAM_RETIRE)
+#ifndef XRT_FEATURE_TLS_STREAM_RETIRE
+#define XRT_FEATURE_TLS_STREAM_RETIRE
+#endif
+#ifndef XRT_MODULE_TLS_STREAM
+#define XRT_MODULE_TLS_STREAM
+#endif
+#ifndef XRT_MODULE_NET_TCP_RETIRE
+#define XRT_MODULE_NET_TCP_RETIRE
 #endif
 #endif
 
@@ -1513,6 +1614,29 @@
 #endif
 #ifndef XRT_MODULE_FILE
 #define XRT_MODULE_FILE
+#endif
+#endif
+
+/* net_tcp_retire 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_NET_TCP_RETIRE)
+#ifndef XRT_FEATURE_NET_TCP_RETIRE
+#define XRT_FEATURE_NET_TCP_RETIRE
+#endif
+#ifndef XRT_MODULE_NET_TCP
+#define XRT_MODULE_NET_TCP
+#endif
+#ifndef XRT_MODULE_COND
+#define XRT_MODULE_COND
+#endif
+#endif
+
+/* net_tcp_write_progress 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_NET_TCP_WRITE_PROGRESS)
+#ifndef XRT_FEATURE_NET_TCP_WRITE_PROGRESS
+#define XRT_FEATURE_NET_TCP_WRITE_PROGRESS
+#endif
+#ifndef XRT_MODULE_NET_TCP
+#define XRT_MODULE_NET_TCP
 #endif
 #endif
 
@@ -1592,6 +1716,28 @@
 #ifndef XRT_MODULE_NET_PORT_URING
 #define XRT_MODULE_NET_PORT_URING
 #endif
+#endif
+#endif
+
+/* tls_client_auth 及其直接依赖。 */
+#if defined(XRT_MODULE_ALL) || defined(XRT_MODULE_TLS_CLIENT_AUTH)
+#ifndef XRT_FEATURE_TLS_CLIENT_AUTH
+#define XRT_FEATURE_TLS_CLIENT_AUTH
+#endif
+#ifndef XRT_MODULE_TLS_CLIENT_VERIFY
+#define XRT_MODULE_TLS_CLIENT_VERIFY
+#endif
+#ifndef XRT_MODULE_TLS_IDENTITY
+#define XRT_MODULE_TLS_IDENTITY
+#endif
+#ifndef XRT_MODULE_TLS_MESSAGES_WRITE
+#define XRT_MODULE_TLS_MESSAGES_WRITE
+#endif
+#ifndef XRT_MODULE_X509_PROFILE
+#define XRT_MODULE_X509_PROFILE
+#endif
+#ifndef XRT_MODULE_X509_NAME
+#define XRT_MODULE_X509_NAME
 #endif
 #endif
 

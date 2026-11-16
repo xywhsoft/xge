@@ -37,7 +37,18 @@ they are not successful acceptance evidence. In particular the first Linux
 generation used the Windows-mounted temporary volume and timed out; the
 successful regeneration uses Linux-local temporary storage.
 
-This qualifies the snapshot tooling and CPU source cases. It does not install
-the new dependency, rebuild/certify a complete SDK, update an IDE, or complete
-the full xlang integration. The unrelated text/geometry working-tree changes
-were excluded from these source candidates.
+The subsequent vendored-source update pins commit
+6305aa546828d40a0b081d8d68d21718cc317d51. Its consumed roots are unchanged from
+a8e51e86; the canonical source fingerprint is
+`70e0bad91666f3d127f055a68050e75af074b2dba7aeb9faccea25d7491b4650`.
+Every copied source/header is identical to the independently rebuilt Windows
+and Linux default+3D host/static SDK candidates in `latest-native-sdk-*-r2`.
+Their actual complete O2 xlang runtimes pass the host binding, shared allocation
+and cleanup, and embedded TCC native-call gate: 213 host symbols on Windows and
+211 on Linux, without missing symbols. Both xl and xlc runtime images are tested
+in independent processes. See `latest-native-vendor-verified-r1.json` and
+`latest-xrt-host-{xl,xlc}-{win-r3,linux-r2}/results.json` in the evidence root.
+
+This source update does not install the candidate SDKs or update an IDE, and
+does not complete the full xlang integration. The unrelated text/geometry
+working-tree changes were excluded from the qualified source candidates.

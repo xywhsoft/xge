@@ -28,6 +28,12 @@
 	#error "XRT WebSocket TLS Stream requires WebSocket Stream and TLS Stream"
 #endif
 
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_TLS_EXCHANGE) && \
+	(!defined(XRT_FEATURE_WEBSOCKET_STREAM_TLS) || \
+	 !defined(XRT_FEATURE_TLS_STREAM_EVENT_EXCHANGE))
+	#error "WebSocket TLS exchange requires TLS Stream and owned event exchange"
+#endif
+
 #if defined(XRT_FEATURE_WEBSOCKET_STREAM_DEFLATE) && \
 	(!defined(XRT_FEATURE_WEBSOCKET_STREAM) || \
 	 !defined(XRT_FEATURE_WEBSOCKET_INFLATER) || \
@@ -169,6 +175,19 @@ typedef struct xwsstreamevents {
 	);
 } xwsstreamevents;
 
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_WRITE_PROGRESS)
+#if !defined(XRT_FEATURE_NET_TCP_WRITE_PROGRESS)
+#error "WebSocket write progress requires native TCP write progress"
+#endif
+/* Native TCP byte cursors, ciphertext for WSS. They certify local physical
+ * write retirement only, never peer receipt or application effects. */
+typedef struct xwswriteprogress {size_t Size;uint64 Produced,Completed;bool Staged;} xwswriteprogress;
+typedef void (*xwsstreamwriteproc)(xwsstream*,ptr);
+#endif
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_TLS_WRITE_PROGRESS) && (!defined(XRT_FEATURE_WEBSOCKET_STREAM_WRITE_PROGRESS) || !defined(XRT_FEATURE_TLS_STREAM_WRITE_PROGRESS) || !defined(XRT_FEATURE_WEBSOCKET_STREAM_TLS))
+#error "WSS write progress requires WS progress and native TLS write progress"
+#endif
+
 /* Permanent native descriptor. Success of an owned Attach consumes exactly
  * one Data credit; failures consume none. Ops traces every actual Data edge.
  * Retire, if present, only disables application callbacks through atomic
@@ -266,6 +285,20 @@ XRT_API xwsstream* xrtWsStreamAttachOwnedV1(xnetstream* pTransport,
 XRT_API xwsstream* xrtWsStreamAttachTlsOwnedV1(xtlsstream* pTransport,
 	xnetbuf* pInitial, const xwsstreamconfig* pConfig,
 	ptr pData, const xwsstreamownershipv1* pPolicy);
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_TLS_EXCHANGE)
+/* As AttachTlsOwnedV1, but replace an exact existing owned event binding
+ * (e.g. HTTP Upgrade). Success takes transport/Initial/new Data and returns
+ * the previous event owner; false preserves all inputs and Previous. Expected
+ * is borrowed; Previous storage must be separate from inputs and contexts.
+ * No old Drop is called inside this composite factory. Publish the returned
+ * WS in its facade before calling Previous.Policy->Drop(Previous.Data), outside
+ * claims/mutations. Session/configuration owner and buffered suffix stay intact.
+ * Existing attach APIs retain their one-time binding rule. */
+XRT_API xwsstream* xrtWsStreamAttachTlsExchangeOwnedV1(xtlsstream* pTransport,
+	xnetbuf* pInitial, const xwsstreamconfig* pConfig, ptr pData,
+	const xwsstreamownershipv1* pPolicy, const xtlsstreambindingv1* pExpected,
+	xtlsstreambindingv1* pPrevious);
+#endif
 XRT_API const xtlsstreamownershipv1* xrtWsStreamTlsEventsOwnershipV1Get(void);
 #endif
 XRT_API xrtownershipref xrtWsStreamOwnership(const xwsstream* pStream);
@@ -352,7 +385,8 @@ XRT_API bool xrtWsStreamSendSize(const xwsstream* pStream, size_t iPayload,
 
 
 
-/* 在当前消息分块结束后暂停应用数据事件。 */
+/* 在当前消息分块结束后暂停应用数据事件。正常输入 EOF 等待已缓冲分块及
+ * MessageEnd 交付；暂停时由 Resume 继续，放弃读取时调用 Close/Abort。 */
 XRT_API void xrtWsStreamPause(xwsstream* pStream);
 
 
@@ -361,6 +395,31 @@ XRT_API void xrtWsStreamPause(xwsstream* pStream);
 XRT_API bool xrtWsStreamResume(xwsstream* pStream);
 
 
+
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_WRITE_PROGRESS)
+/* Owning Worker, live OPEN only. First success establishes a permanent cursor
+ * epoch including output already pending in its native transport. NULL enables
+ * polling/removes notification without resetting the epoch. Notifications
+ * coalesce outside Send/native completion and use the existing event Data;
+ * callback/code/context obey its owner lifetime. No allocation or per-write
+ * watch. Opaque observers prevent owned-graph admission until removed.
+ * Never write directly to the borrowed TCP/TLS transport. WSS requires the
+ * separate websocket_stream_tls_write_progress selection. */
+XRT_API bool xrtWsStreamSetWriteProgress(xwsstream*,xwsstreamwriteproc);
+/* Checked Size, owning Worker, enabled epoch. OK always snapshots current
+ * native Produced/Completed. Staged means WSS still owns an unsent local frame
+ * suffix, not included in Produced: previous saved cuts remain comparable,
+ * but do not take Produced as the complete cut for a new message until Staged
+ * clears. Pause further ordinary writes while obtaining such a cut. Async
+ * submission alone is outside a cut: first observe its successful native write
+ * result. Handshake/control bytes may conservatively extend the cut taken then.
+ * Later output does not extend an already saved cut. CLOSED invalidates success
+ * comparisons after close/abort; ERROR includes invalid output/owner, unsupported
+ * selection, replaced binding or overflow. All non-OK results preserve every
+ * output byte; normal OK/CLOSED preserve ambient error. Native completion may
+ * certify a batch at once, not every message separately. Not payload counters. */
+XRT_API xnetresult xrtWsStreamWriteProgress(xwsstream*,xwswriteprogress* Output);
+#endif
 
 /* 返回接收侧当前是否被应用暂停。 */
 XRT_API bool xrtWsStreamPaused(const xwsstream* pStream);
@@ -519,6 +578,26 @@ XRT_API const xerror* xrtWsStreamError(const xwsstream* pStream);
 #endif
 
 
+
+#if defined(XRT_FEATURE_WEBSOCKET_STREAM_RETIRE)
+#if !defined(XRT_FEATURE_WEBSOCKET_STREAM) || !defined(XRT_FEATURE_NET_TCP_RETIRE)
+#error "WebSocket physical retirement requires Stream and TCP retirement"
+#endif
+/* Nonblocking physical barrier. Keep the sole caller owner stable, stop new
+ * entries/Ref acquisition before treating OK as final. CLOSED is not enough:
+ * actual owned operations, drive/timer/callback references and retained native
+ * TCP duties must retire. Owned TLS event binding references keep WS alive through
+ * native TLS session/binding destruction; no extra TLS alias is retained.
+ * Extra WS/TLS/TCP aliases can delay retirement. Does not close or consume WS,
+ * does not release the owned application Data, allocate or wait for its mutex.
+ * Native host Engine/storage, external callers and code unload join separately.
+ * Normal TIMEOUT/OK preserve the ambient error. NULL is invalid. */
+XRT_API xwaitresult xrtWsStreamPollRetired(xwsstream* Stream);
+/* One original monotonic millisecond budget (-1 forever,0 poll). Rejects every
+ * Worker of the same Engine, including zero timeout. Concurrent waiters borrow
+ * the stable sole owner; join them before Destroy. No timer/runtime is created. */
+XRT_API xwaitresult xrtWsStreamWaitRetired(xwsstream* Stream,int64 Timeout);
+#endif
 
 XRT_EXTERN_C_END
 
