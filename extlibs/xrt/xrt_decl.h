@@ -8208,6 +8208,19 @@ XRT_API const xerror* xrtGetError(void);
 /* 取走当前执行上下文的错误对象。 */
 XRT_API xerror* xrtTakeError(void);
 
+/* Quiet owning-reference exchange in the current serialized execution context.
+ * Unlike SetError/SetErrorTake, never notifies the configured error handler.
+ * Success takes Error (NULL allowed), transfers the previous slot owner through
+ * Previous, and neither retains nor frees either object. Caller must free or
+ * transfer Previous afterwards. Previous is valid independent caller storage,
+ * disjoint from error/context storage; never pass a borrowed GetError pointer
+ * as Error without first acquiring an owning reference. False leaves the slot,
+ * input ownership and Previous unchanged (invalid output/native TLS failure).
+ * No new diagnostic, XRT allocation or user callback. This is not a diagnostic
+ * suppression scope: errors published during an isolated operation may still
+ * notify their handler before a later quiet restoration. */
+XRT_API bool xrtTrySwapErrorTake(xerror* Error,xerror** Previous);
+
 
 
 /* 将错误对象设置到当前执行上下文，函数会增加引用。 */
@@ -12213,6 +12226,13 @@ XRT_API bool xrtNetAddrLoopback(xnetaddr* pAddr, xnetfamily Family, uint16 iPort
 
 /* 严格解析数字 IPv4 或 IPv6；接口模块启用时 IPv6 Scope 也接受接口名称。 */
 XRT_API bool xrtNetAddrParse(xnetaddr* pAddr, cstr sIP, uint16 iPort);
+
+
+
+/* Quiet counted numeric IPv4/IPv6 parsing; numeric scopes only, no OS lookup.
+ * No allocation, error-slot access or handler notification on any result.
+ * Input/output spans must be valid and disjoint; false leaves output intact. */
+XRT_API bool xrtNetAddrTryParse(xnetaddr* pAddr, xstrview IP, uint16 iPort);
 
 
 
@@ -29302,6 +29322,9 @@ XRT_EXTERN_C_END
 #define XRT_TLS_H
 
 
+/* Shared opaque identity used by both client and server configurations. */
+typedef struct xtlsresume xtlsresume;
+
 
 
 #if defined(XRT_FEATURE_TLS_RECORD) && !defined(XRT_FEATURE_TLS)
@@ -34086,7 +34109,6 @@ XRT_EXTERN_C_END
 
 #if defined(XRT_FEATURE_TLS_RESUME)
 
-typedef struct xtlsresume xtlsresume;
 
 
 
@@ -34210,9 +34232,6 @@ XRT_EXTERN_C_END
 typedef struct xtlsverifier xtlsverifier;
 #endif
 
-#if !defined(XRT_FEATURE_TLS_CLIENT_RESUME)
-typedef struct xtlsresume xtlsresume;
-#endif
 
 
 
@@ -34356,6 +34375,14 @@ XRT_API size_t xrtTlsResumePeerCertificateCountV1(const xtlsresume* pResume);
 XRT_API const xx509cert* xrtTlsResumePeerCertificateV1(
 	const xtlsresume* pResume, size_t iIndex
 );
+
+/* Immutable configured native queue capacity, independent of its current
+ * Count. Zero means capture was disabled (including native ClientAuth policy).
+ * A capacity does not attest handshake readiness/version or promise a ticket.
+ * Borrow a live client Session under its normal synchronization. No allocation,
+ * queue mutation, copy or error change on valid input; invalid role/session
+ * follows the checked Count/Take diagnostics and returns zero. */
+XRT_API size_t xrtTlsClientResumeCapacity(const xtlssession* pSession);
 
 /* 返回等待调用方接管的恢复对象数量。 */
 XRT_API size_t xrtTlsClientResumeCount(const xtlssession* pSession);
@@ -34655,10 +34682,6 @@ XRT_EXTERN_C_END
 
 
 
-/* 关闭会话恢复实现时仍保留公开配置使用的不透明类型。 */
-#if !defined(XRT_FEATURE_TLS_SERVER_RESUME)
-typedef struct xtlsresume xtlsresume;
-#endif
 
 
 

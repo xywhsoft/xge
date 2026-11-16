@@ -1,0 +1,90 @@
+{
+  "format": 1,
+  "sourceParent": "df7d97caa9011ef0a918647b8b35295188df702b",
+  "completeBatch": true,
+  "goalComplete": false,
+  "shippingDelivery": false,
+  "xrtCommit": "4641cd2e4da09d8b1a66872cabe085c263d8b5ba",
+  "xlangCandidateCoreSha256": "369f884c1c1fdc9621f654c81bb86850e85d992dc56b9cebf395e20ea03dfe7b",
+  "sourceHashes": {
+    "extlibs/xrt/upstream.json": "b291d9af1f395cac1de15a0b68552e5a4b74836a928f9811c91610dc1f9ba5e8",
+    "extlibs/xrt/xrt.h": "369f884c1c1fdc9621f654c81bb86850e85d992dc56b9cebf395e20ea03dfe7b",
+    "extlibs/xrt/xrt_decl.h": "ae46070e111a172c5482cdaf46196386549e0a3e62c793664924ccc3ed6806ff",
+    "extlibs/xrt/include/xrt/error.h": "948223fa3614c2ee91a090bd2299abd5f3a5475963853f94d9867b7eb9555c20",
+    "extlibs/xrt/include/xrt/net.h": "e48686e4d5bf249731fd96d85f02b0c93bbf9ff776eccbdcf16056b73cfe71d2",
+    "extlibs/xrt/include/xrt/tls.h": "c08cb59f484ca5841c21f49d53abad1a39691ba3b6ea1b6f50c297702fd5f7a0",
+    "extlibs/xrt/include/xrt/tls_client.h": "0e36fee7fa94797b140ad3f76774bd680131afc551989e49c85f53238842f6d3",
+    "extlibs/xrt/include/xrt/tls_resume.h": "6537440f734669f53395b5a527c8b82d7a4869a4181ac60313ccb2d5778d2571",
+    "extlibs/xrt/include/xrt/tls_server.h": "f8c9bf7a2747fbb519a72f8ba8bfe78a598a169cdaa65a0d80b5209c3d722f6e",
+    "docs/xrt-update-4641.md": "90b183637750c21d25cc6abafda14bea3e8e07ea0ffb4594692c681e542f6c6a"
+  },
+  "reports": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-host-native-win-r1\\results.json",
+      "sha256": "424b3edb1b923c2c79662ea1f761d1e3f54e91030b1708668467705331967e8b",
+      "commands": 123
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-host-public-win-r1\\results.json",
+      "sha256": "76f703cce8d85ac9e1ac3aa5d53d2fb2e3f1e1fb9a03adf51ba8a1efe8a74e21",
+      "commands": 26
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-debug-live-win-r1\\results.json",
+      "sha256": "5b9d78070a91542215c88349a750e86701d7fa262d114e82fa5447a909f41e70",
+      "commands": 18
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-linux-evidence-r1\\xrt4641-host-native-linux-r1--results.json",
+      "sha256": "7a0741f6c1a07319444cd0dc285bc27e5bebeafb1897f9b8792ff0acfd5d84e1",
+      "commands": 123
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-linux-evidence-r1\\xrt4641-host-public-linux-r1--results.json",
+      "sha256": "7b10eab4240230766f02ce9a1544b6b33e8b2d6f21f30f9483102e837a942621",
+      "commands": 40
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-linux-evidence-r1\\xrt4641-debug-live-linux-r1--results.json",
+      "sha256": "38d4911d6a59d111cc7c1b458e08f7b00c4809a7519692d85fd91258495f4781",
+      "commands": 18
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\compiler-xrt4641-win-full-r3\\build.json",
+      "sha256": "e12f46ed2714c8c34a4e63967d515a5babf76301bd7f173db0442c1b35f7a760",
+      "commands": 0
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt4641-linux-evidence-r1\\compiler-xrt4641-linux-full-r3--build.json",
+      "sha256": "3b6fb7759d8a2867fa408a2472d8711aea1ecde2a1e66f62b4dc6958a1a439de",
+      "commands": 0
+    },
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt-4641-additive-audit-r1.json",
+      "sha256": "7f8fd09e03c49a722d6eec22d6285a0282c183a6d1a028a06982de4912630ae3",
+      "commands": 0
+    }
+  ],
+  "networkTests": false,
+  "scope": "Native XRT producer update with matching isolated full compiler/default/debug/EGL SDK candidates; canonical xlang assets and final runtime installation are separate",
+  "limits": [
+    "Module-global GraphicsContext plus language global engine initialization retains the module; owned Engine controller decision requested separately",
+    "Existing raw/manual init/unit contract remains unchanged",
+    "Claimed language callback finalization still awaits a separate contract",
+    "Full latest-XRT SDK/compiler/IDE delivery not installed; no release files added"
+  ],
+  "sourceQualification": [
+    {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\native-xrt4641-win-r1\\source-input-qualification-r2.json",
+      "sha256": "3f2661a7da898ef5b616290b8ae11d20367f5883a0e4867501afbdac5a9464c3"
+    }
+  ],
+  "producerValidation": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\xrt-latest-committed-4641-r1\\results.json",
+    "sha256": "fb003a7e09d2860dfb7f8d8786bc66c42f9a42f7decc63a7c2fc35acfe9a649d"
+  },
+  "repositorySyncCheck": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\native-xrt4641-repository-sync-check-r1.log",
+    "sha256": "fbe4f13aa76172bfb15471d0c69aefa9a11d22b34fcc5817c86bab0903f164c5"
+  }
+}
