@@ -754,6 +754,39 @@ typedef struct xge_graphics_backend_t {
 	void* pUser;
 } xge_graphics_backend_t;
 
+/* Immutable creator-thread snapshots. A snapshot copies the descriptor/name
+ * and retains one independent owner for its callback payload/code. It does
+ * not initialize/install a backend or dispatch its callbacks. The owner has
+ * the ordinary Hold/Drop contract and must protect the complete return tail.
+ * NULL/empty owners are reserved for externally guaranteed static C payloads.
+ * Describe borrows its const result until the last real reference is released. */
+typedef struct xge_platform_backend_ref_t* xge_platform_backend_ref;
+typedef struct xge_graphics_backend_ref_t* xge_graphics_backend_ref;
+XGE_API int xgePlatformBackendCreateOwned(xge_platform_backend_ref* output,const xge_platform_backend_t* descriptor,const xge_callback_owner_t* owner);
+XGE_API int xgePlatformBackendShareOwned(xge_platform_backend_ref backend,xge_platform_backend_ref* output);
+XGE_API int xgePlatformBackendDescribe(xge_platform_backend_ref backend,const xge_platform_backend_t** output);
+XGE_API int xgePlatformBackendReleaseOwnerChecked(xge_platform_backend_ref backend,bool* consumed);
+XGE_API int xgePlatformBackendReleaseChecked(xge_platform_backend_ref backend);
+XGE_API xrtownershipref xgePlatformBackendOwnership(xge_platform_backend_ref backend);
+XGE_API const xrtownershipadapterv1* xgePlatformBackendOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgePlatformBackendOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgePlatformBackendOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgePlatformBackendOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgePlatformBackendOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgePlatformBackendOwnershipReadReady(xrtownershipref ref);
+XGE_API int xgeGraphicsBackendCreateOwned(xge_graphics_backend_ref* output,const xge_graphics_backend_t* descriptor,const xge_callback_owner_t* owner);
+XGE_API int xgeGraphicsBackendShareOwned(xge_graphics_backend_ref backend,xge_graphics_backend_ref* output);
+XGE_API int xgeGraphicsBackendDescribe(xge_graphics_backend_ref backend,const xge_graphics_backend_t** output);
+XGE_API int xgeGraphicsBackendReleaseOwnerChecked(xge_graphics_backend_ref backend,bool* consumed);
+XGE_API int xgeGraphicsBackendReleaseChecked(xge_graphics_backend_ref backend);
+XGE_API xrtownershipref xgeGraphicsBackendOwnership(xge_graphics_backend_ref backend);
+XGE_API const xrtownershipadapterv1* xgeGraphicsBackendOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xgeGraphicsBackendOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xgeGraphicsBackendOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xgeGraphicsBackendOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xgeGraphicsBackendOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xgeGraphicsBackendOwnershipReadReady(xrtownershipref ref);
+
 typedef struct xge_gpu_caps_t {
 	int iBackend;
 	int iMajorVersion;
