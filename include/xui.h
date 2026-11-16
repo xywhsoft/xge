@@ -13821,6 +13821,12 @@ XUI_API int xuiFlowGraphWidgetCreate(xui_context pContext, xui_widget* ppWidget,
 XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget);
 /* 绑定非 NULL 模型；bOwnGraph 为真时模型由控件接管销毁。切换前会取消并回滚活动拖拽。 */
 XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph);
+/* Share one independent model reference. A uniquely owned widget slot can be
+ * promoted by GetGraphOwned; a borrowed legacy slot cannot be promoted here.
+ * SetGraphShared retains its own reference and never consumes the caller's.
+ * Cleanup failure may be reported after the new slot has been installed. */
+XUI_API int xuiFlowGraphWidgetGetGraphOwned(xui_widget widget,xui_flow_graph* output);
+XUI_API int xuiFlowGraphWidgetSetGraphShared(xui_widget widget,xui_flow_graph graph);
 /* 注册画布右键回调。 */
 XUI_API int xuiFlowGraphWidgetSetContextMenu(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser);
 XUI_API int xuiFlowGraphWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);

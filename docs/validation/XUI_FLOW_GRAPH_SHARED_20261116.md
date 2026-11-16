@@ -50,6 +50,40 @@ compiler/runtime/config and new-output-directory arguments. Earlier r1/r2 gate
 failures were test-host setup issues (a full-engine helper in a direct-XRT CPU
 fixture); their reports and logs remain preserved.
 
-This is a native CPU foundation, not a rebuilt SDK/host, complete Workflow
-sharing, shared canvas handoff, safe xlang surface, or final IDE/runtime delivery.
-No graphics device, desktop or network test was run in this gate.
+This foundation does not qualify a rebuilt SDK/host, complete Workflow sharing,
+safe xlang surface, or final IDE/runtime delivery. No graphics device, desktop
+or network test was run in this gate.
+
+## Canvas sharing follow-up
+
+`xuiFlowGraphWidgetGetGraphOwned` returns an independent native reference and
+promotes a uniquely owned native slot once. An unowned legacy borrowed slot is
+rejected; an already shared borrowed model can supply a new reference without
+making that slot an owner. The output is unchanged on failure. Promotion and
+output delivery use the existing Context call scope, and a failed output tail
+releases its temporary reference.
+
+`xuiFlowGraphWidgetSetGraphShared` acquires the canvas's own reference and never
+consumes the caller's. Repeating the same owning assignment does not add another
+reference. The internal handoff records installation before callbacks or scope
+retirement can release it; a failed uninstalled prefix drops only its temporary
+hold. Replacement preserves an old-model cleanup error independently from whether
+that model reference was consumed. Cleanup failure can therefore accompany an
+installed new model, as documented on the native declaration.
+
+The CPU tests link the exact latest-XRT static archive with three replacement
+production translation units and the frozen test proxy. They do not rebuild or
+claim a new SDK. Both Windows and Linux pass eight O0/O2 build/run steps covering
+new sharing behavior and the original full canvas interaction fixture:
+
+- `F:/xlang-validation/xge-full-20261110/flow-shared-canvas-win-r2/results.json`
+- `F:/xlang-validation/xge-full-20261110/flow-shared-canvas-linux-r1/results.json`
+
+The new cases cover promotion OOM, unchanged outputs, one real model edge per
+owning canvas, borrowed slots, multiple aliases/canvases, independent close,
+ambient diagnostic preservation, consumed Drop failure and a Drop callback that
+logically closes the canvas. Its physical retirement tail consumes the installed
+reference exactly once while the caller's model remains alive. Live bytes/counts
+balance and invalid/double free/use-after-free counters remain zero. Earlier
+canvas r1 asserted physical Busy for a logical close, contrary to XUI's existing
+deferred-retirement contract; that failed fixture and log are preserved.

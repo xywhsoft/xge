@@ -1851,8 +1851,14 @@ static int __xuiFlowGraphWidgetDestroyReady(xui_widget widget,const void* raw)
 {
     (void)widget;
     const xui_flow_graph_widget_data_t* data=raw;
-    return data && (data->bGraphMutationActive ||
-        xuiInternalFlowGraphIsValueCallbackActive(data->pGraph)) ? XUI_ERROR_BUSY:XUI_OK;
+    if(!data)return XUI_OK;
+    if(data->bGraphMutationActive || xuiInternalFlowGraphIsValueCallbackActive(data->pGraph))return XUI_ERROR_BUSY;
+    if(xuiFlowGraphIsOwned(data->pGraph)){
+        xrtownershipref ref=xuiFlowGraphOwnership(data->pGraph);
+        const xrtownershipquiescencev1* quiet=xuiFlowGraphOwnershipQuiescenceV1(ref);
+        if(!quiet || quiet->Busy(ref.Data))return XUI_ERROR_BUSY;
+    }
+    return XUI_OK;
 }
 
 static void __xuiFlowGraphWidgetReleaseData(xui_flow_graph_widget_data_t* pData, int bDestroyGraph)
@@ -2123,10 +2129,12 @@ XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget)
 	return (pData != NULL) ? pData->pGraph : NULL;
 }
 
-int xuiInternalFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph,xui_widget authority)
+static int __xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph,xui_widget authority,bool* installed)
 {
 	xui_flow_graph_widget_data_t* pData;
 	int iRet;
+    int cleanupStatus=XUI_OK;xerror* cleanupError=NULL;
+    if(installed)*installed=false;
 
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
 	if ( pData == NULL || pGraph == NULL ) {
@@ -2135,6 +2143,7 @@ int xuiInternalFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	if(pWidget->pInternalOwner && pWidget->pInternalOwner!=authority)return XUI_ERROR_INVALID_STATE;
 	if(__xuiFlowGraphWidgetDestroyReady(pWidget,pData)!=XUI_OK ||
 	   xuiInternalFlowGraphIsValueCallbackActive(pGraph))return XUI_ERROR_BUSY;
+    if(xuiFlowGraphIsOwned(pGraph) && !xuiFlowGraphOwnershipReadReady(xuiFlowGraphOwnership(pGraph)))return XUI_ERROR_INVALID_STATE;
 	xui_call_scope_t scope={0};
 	iRet=xuiCallScopeBegin(pWidget->pContext,&scope);
 	if(iRet!=XUI_OK)return iRet;
@@ -2157,8 +2166,15 @@ int xuiInternalFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	__xuiFlowGraphWidgetClearEdgeLayerStates(pData);
 	if(!xuiInternalWidgetIsValid(pWidget)){iRet=XUI_ERROR_INVALID_STATE;goto finish;}
 	if ( pData->bOwnGraph && (pData->pGraph != NULL) && (pData->pGraph != pGraph) ) {
-		xuiFlowGraphDestroy(pData->pGraph);
+        bool consumed=false;
+        if(xuiFlowGraphIsOwned(pData->pGraph))cleanupStatus=xuiFlowGraphReleaseOwnerChecked(pData->pGraph,&consumed);
+        else{cleanupStatus=xuiFlowGraphDestroyChecked(pData->pGraph);consumed=cleanupStatus==XUI_OK;}
+        cleanupError=xrtTakeError();
+        if(cleanupStatus==XUI_OK && cleanupError)cleanupStatus=XUI_ERROR_CALLBACK_FAILED;
+        if(!consumed){iRet=cleanupStatus;goto finish;}
+        pData->pGraph=NULL;pData->bOwnGraph=0;
 	}
+    if(installed && bOwnGraph && (pData->pGraph!=pGraph || !pData->bOwnGraph))*installed=true;
 	pData->pGraph = pGraph;
 	pData->bOwnGraph = bOwnGraph ? 1 : 0;
 	pData->iHoverType = XUI_FLOW_HIT_NONE;
@@ -2172,13 +2188,65 @@ int xuiInternalFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	iRet=xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 finish:
 	pData->bGraphMutationActive=0;
-	xerror* first=iRet!=XUI_OK ? xrtTakeError():NULL;
+    xerror* first=NULL;
+    if(cleanupStatus!=XUI_OK){iRet=cleanupStatus;xrtClearError();first=cleanupError;cleanupError=NULL;}
+    else if(iRet!=XUI_OK)first=xrtTakeError();
+    xrtErrorFree(cleanupError);
 	iRet=xuiInternalCallScopeEndOutcome(&scope,iRet,&first);
 	xrtSetErrorTake(first);return iRet;
 }
 
+int xuiInternalFlowGraphWidgetSetGraph(xui_widget widget,xui_flow_graph graph,int ownGraph,xui_widget authority)
+{return __xuiFlowGraphWidgetSetGraph(widget,graph,ownGraph,authority,NULL);}
+
 XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget widget,xui_flow_graph graph,int ownGraph)
 {return xuiInternalFlowGraphWidgetSetGraph(widget,graph,ownGraph,NULL);}
+
+XUI_API int xuiFlowGraphWidgetGetGraphOwned(xui_widget widget,xui_flow_graph* output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_flow_graph_widget_data_t* data=__xuiFlowGraphWidgetGetData(widget);
+    if(!data || !data->pGraph)return XUI_ERROR_INVALID_ARGUMENT;
+    if(__xuiFlowGraphWidgetDestroyReady(widget,data)!=XUI_OK)return XUI_ERROR_BUSY;
+    if(!data->bOwnGraph && !xuiFlowGraphIsOwned(data->pGraph))return XUI_ERROR_INVALID_STATE;
+    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(widget->pContext,&scope);
+    if(status!=XUI_OK)return status;
+    data->bGraphMutationActive=1;
+    xui_flow_graph held=NULL;
+    status=xuiInternalFlowGraphPromoteOwned(data->pGraph);
+    if(status==XUI_OK)status=xuiFlowGraphShareOwned(data->pGraph,&held);
+    data->bGraphMutationActive=0;
+    xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+    status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
+    if(status==XUI_OK)*output=held;
+    else if(held){(void)xuiFlowGraphReleaseChecked(held);xrtClearError();}
+    xrtSetErrorTake(first);return status;
+}
+
+XUI_API int xuiFlowGraphWidgetSetGraphShared(xui_widget widget,xui_flow_graph graph)
+{
+    xui_flow_graph_widget_data_t* data=__xuiFlowGraphWidgetGetData(widget);
+    if(!data || !graph)return XUI_ERROR_INVALID_ARGUMENT;
+    if(widget->pInternalOwner)return XUI_ERROR_INVALID_STATE;
+    if(__xuiFlowGraphWidgetDestroyReady(widget,data)!=XUI_OK || xuiInternalFlowGraphIsValueCallbackActive(graph))return XUI_ERROR_BUSY;
+    if(!xuiFlowGraphIsOwned(graph))return XUI_ERROR_INVALID_ARGUMENT;
+    if(!xuiFlowGraphOwnershipReadReady(xuiFlowGraphOwnership(graph)))return XUI_ERROR_INVALID_STATE;
+    if(data->pGraph==graph && data->bOwnGraph)return XUI_OK;
+    xui_flow_graph held=NULL;int status=xuiFlowGraphShareOwned(graph,&held);
+    if(status!=XUI_OK)return status;
+    bool installed=false;
+    status=__xuiFlowGraphWidgetSetGraph(widget,held,1,NULL,&installed);
+    if(!installed){
+        xerror* first=xrtTakeError();
+        int dropped=xuiFlowGraphReleaseChecked(held);xerror* secondary=xrtTakeError();
+        if(status==XUI_OK && (dropped!=XUI_OK || secondary)){
+            status=dropped!=XUI_OK ? dropped:XUI_ERROR_CALLBACK_FAILED;
+            xrtErrorFree(first);first=secondary;secondary=NULL;
+        }
+        xrtErrorFree(secondary);xrtSetErrorTake(first);
+    }
+    return status;
+}
 
 XUI_API int xuiFlowGraphWidgetSetContextMenuOwned(xui_widget pWidget, xui_flow_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner)
 {
