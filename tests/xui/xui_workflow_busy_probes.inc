@@ -1,4 +1,5 @@
 /* Keep in lockstep with every int entry taking an existing workflow. */
+assert(xuiWorkflowDestroyChecked(workflow)==XUI_ERROR_BUSY);
 assert(xuiWorkflowRegisterNodeType(workflow,NULL,NULL)==XUI_ERROR_BUSY);
 assert(xuiWorkflowFindNodeType(workflow,NULL)==XUI_ERROR_BUSY);
 assert(xuiWorkflowGetNodeTypeCount(workflow)==XUI_ERROR_BUSY);

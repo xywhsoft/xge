@@ -16,7 +16,7 @@ def main():
     metadata=json.loads(build.read_text());assert metadata['complete']and metadata['passed']and metadata['fullTccXrtAndVfs']and not metadata['changedInputs']
     for name in(('xl.exe','xl.dll','xlc.dll')if win else('xl','libxl.so','libxlc.so')):assert sha(runtime/name)==metadata['products'][name]['sha256']
     assert sha(baseline/'extlibs/xrt/xrt.h')==sha(Path(metadata['source'])/'lib/xrt/xrt.h')
-    overlays=['include/xui.h','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c','src/xui/workflow/xui_flow_graph_owned.inl','src/xui/workflow/xui_flow_graph_widget.c','src/xui/workflow/xui_workflow.c','src/xge/core/xge_data_lifetime.inl','tests/xui/xui_flow_graph_owned_test.c','tests/xui/xui_flow_graph_config_reentry_test.c','tests/xui/xui_flow_graph_busy_probes.inc','tests/xui/xui_workflow_busy_probes.inc']
+    overlays=['include/xui.h','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c','src/xui/workflow/xui_flow_graph_owned.inl','src/xui/workflow/xui_flow_graph_widget.c','src/xui/workflow/xui_workflow.c','src/xui/workflow/xui_workflow_owned.inl','src/xge/core/xge_data_lifetime.inl','tests/xui/xui_flow_graph_owned_test.c','tests/xui/xui_flow_graph_config_reentry_test.c','tests/xui/xui_flow_graph_busy_probes.inc','tests/xui/xui_workflow_busy_probes.inc']
     inputs={str(root/r):sha(root/r)for r in overlays};inputs.update({str(f):sha(f)for f in(Path(__file__).resolve(),build,config/'xge_build_config.h',gcc,runtime/('xlc.dll'if win else'libxlc.so'))})
     out.mkdir(parents=True,exist_ok=False);source=out/'source'
     def link(src,dst):

@@ -13860,9 +13860,28 @@ XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
  * Legacy Destroy/GetGraph refuse reentry and report Busy through XRT without
  * replacing an existing error. Independent workflows remain usable. */
 XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow);
+/* Shared workflows own an independent shared graph reference. Every view
+ * releases one real reference; a graph acquired with GetGraphOwned survives
+ * the workflow. Operations are creator-affine. Outputs change on success only,
+ * except CreateOwned initializes its output to NULL. Cleanup consumption is
+ * independent of callback errors. Legacy Create remains uniquely owned C. */
+XUI_API int xuiWorkflowCreateOwned(xui_workflow* output);
+XUI_API int xuiWorkflowShareOwned(xui_workflow source,xui_workflow* output);
+XUI_API bool xuiWorkflowIsOwned(xui_workflow workflow);
+XUI_API int xuiWorkflowReleaseOwnerChecked(xui_workflow workflow,bool* consumed);
+XUI_API int xuiWorkflowReleaseChecked(xui_workflow workflow);
+XUI_API int xuiWorkflowDestroyChecked(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowGetGraphOwned(xui_workflow workflow,xui_flow_graph* output);
+XUI_API xrtownershipref xuiWorkflowOwnership(xui_workflow workflow);
+XUI_API const xrtownershipadapterv1* xuiWorkflowOwnershipAdapterV1(xrtownershipref ref);
+XUI_API const xrtownershippreparationv1* xuiWorkflowOwnershipPreparationV1(xrtownershipref ref);
+XUI_API const xrtownershipquiescencev1* xuiWorkflowOwnershipQuiescenceV1(xrtownershipref ref);
+XUI_API const xrtownershipfinishv2* xuiWorkflowOwnershipCompletionV2(xrtownershipref ref);
+XUI_API const xrtownershipfinalizationv1* xuiWorkflowOwnershipFinalizationV1(xrtownershipref ref);
+XUI_API bool xuiWorkflowOwnershipReadReady(xrtownershipref ref);
 /* 释放工作流模型。 */
 XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow);
-/* Includes the workflow's uniquely owned graph, registered config schemas and
+/* Includes the workflow's owning graph slot, registered config schemas and
  * variable defaults. Same frozen/quiescent contract as the graph tracer. */
 XUI_API bool xuiWorkflowTraceOwnedValues(xui_workflow pWorkflow, xrtownershipvisitor onVisit, void* pUser);
 /* 取底层流程图模型。 */

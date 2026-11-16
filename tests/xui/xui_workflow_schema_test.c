@@ -24,6 +24,12 @@ static void make_control_port(xui_flow_port_desc_t* pPort, const char* sId, int 
 	pPort->iKind = XUI_FLOW_PORT_CONTROL;
 }
 
+static int optional_bool(xvalue* object,const char* key,uint32_t length)
+{
+	xvalue* value=object ? xuiXrtValueObjectGet(object,key,length):NULL;
+	return value ? xuiXrtValueGetBool(value):0;
+}
+
 static int make_dynamic_branch_ports(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig, xui_flow_port_desc_t* pPorts, int iPortCapacity, int* pPortCount, void* pUser)
 {
 	xvalue* pBranches;
@@ -38,7 +44,7 @@ static int make_dynamic_branch_ports(xui_workflow pWorkflow, const char* sNodeId
 	if ( (pPorts == NULL) || (pPortCount == NULL) || (iPortCapacity < 2) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pConfig != NULL && xuiXrtValueGetBool(xuiXrtValueObjectGet(pConfig, "rejectPorts", 11)) ) {
+	if ( optional_bool(pConfig, "rejectPorts", 11) ) {
 		return XUI_ERROR_RESOURCE_FAILED;
 	}
 	*pPortCount = 0;
@@ -582,7 +588,7 @@ int main(void)
 	xrtValueRelease(pNodeConfig);
 	pNodeConfig = NULL;
 	iRet = xuiWorkflowGetNodeConfig(pWorkflow, "n_dynamic", &pNodeConfig);
-	XUI_TEST_CHECK(iRet == XUI_OK && !xuiXrtValueGetBool(xuiXrtValueObjectGet(pNodeConfig, "rejectPorts", 11)) &&
+	XUI_TEST_CHECK(iRet == XUI_OK && !optional_bool(pNodeConfig, "rejectPorts", 11) &&
 	               xrtValueCount(xuiXrtValueObjectGet(pNodeConfig, "branches", 8)) == 1, "callback failure preserves config");
 	xrtValueRelease(pNodeConfig);
 	pNodeConfig = xrtValueDeepClone(pDynamicConfig);
