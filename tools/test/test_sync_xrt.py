@@ -2,6 +2,10 @@
 from pathlib import Path
 import importlib.util
 import unittest
+import tempfile
+import subprocess
+import io
+import zipfile
 
 spec = importlib.util.spec_from_file_location("sync_xrt", Path(__file__).parents[1] / "package/sync_xrt.py")
 sync = importlib.util.module_from_spec(spec)
@@ -9,6 +13,32 @@ spec.loader.exec_module(sync)
 
 
 class ExtensionClosure(unittest.TestCase):
+    def test_commit_archive_ignores_user_checkout_eol(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.STDOUT)
+            git("init", "--quiet")
+            git("config", "core.autocrlf", "false")
+            (root / "source.c").write_bytes(b"first\nsecond\n")
+            git("add", "source.c")
+            git("-c", "user.name=Snapshot test", "-c", "user.email=snapshot@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture")
+            for setting in ("true", "false", "input"):
+                git("config", "core.autocrlf", setting)
+                with zipfile.ZipFile(io.BytesIO(sync.archive_snapshot(root, "HEAD", ["source.c"]))) as archive:
+                    self.assertEqual(archive.read("source.c"), b"first\nsecond\n")
+
+    def test_source_fingerprint_order_is_platform_independent(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for relative in ("a.c", "B.c", "dir/Z.c", "dir/b.c"):
+                path = root / relative
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(b"source\n")
+            self.assertEqual([p.relative_to(root).as_posix() for p in sync.snapshot_files(root)],
+                             ["B.c", "a.c", "dir/Z.c", "dir/b.c"])
+
     def closure(self, records, requested):
         calls = []
         def read(path):

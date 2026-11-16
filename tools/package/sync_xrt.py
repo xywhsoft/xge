@@ -62,6 +62,20 @@ def canonical_bytes(path: Path) -> bytes:
     return data.replace(b"\r\n", b"\n") if path.suffix.lower() in LF_SUFFIXES else data
 
 
+def snapshot_files(root: Path):
+    # WindowsPath orders case-insensitively; PosixPath does not. Provenance
+    # must describe the same exported source bytes identically on both hosts.
+    return sorted((p for p in root.rglob("*") if p.is_file()),
+                  key=lambda p: p.relative_to(root).as_posix())
+
+
+def archive_snapshot(source: Path, commit: str, roots):
+    # Git archive applies checkout EOL conversion. Never let the user's
+    # core.autocrlf/platform default change an immutable commit's bytes.
+    return subprocess.check_output(["git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                                    "archive", "--format=zip", commit, "--", *roots], cwd=source)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -97,7 +111,7 @@ def main() -> int:
         overlays = {}
         if args.base_ref:
             roots = ["include", "src", "tools", "config", "LICENSE", *[f"extlibs/{p}" for p in extensions]]
-            archive = subprocess.check_output(["git", "archive", "--format=zip", commit, "--", *roots], cwd=source)
+            archive = archive_snapshot(source, commit, roots)
             with zipfile.ZipFile(io.BytesIO(archive)) as files:
                 for item in files.infolist():
                     name = PurePosixPath(item.filename)
@@ -129,7 +143,7 @@ def main() -> int:
                 shutil.copytree(source / "extlibs" / product, snapshot / "extlibs" / product,
                                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "build"))
         digest = hashlib.sha256()
-        for path in sorted(p for p in snapshot.rglob("*") if p.is_file()):
+        for path in snapshot_files(snapshot):
             relative = path.relative_to(snapshot)
             content = path.read_bytes()
             if not args.base_ref and content != (source / relative).read_bytes():
