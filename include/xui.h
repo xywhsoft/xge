@@ -14004,8 +14004,14 @@ XUI_API int xuiWorkflowGetVariableCount(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowGetVariable(xui_workflow pWorkflow, int iIndex, xui_workflow_variable_desc_t* pDesc);
 /* 序列化为 xvalue 树；*ppValue 需 xvalue 释放。 */
 XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue);
+/* Assembles a fresh XSON envelope that retains the configuration/default
+ * values. Snapshot the returned tree before exposing it as isolated data. */
+XUI_API int xuiWorkflowToXValueShared(xui_workflow workflow, xvalue** output);
 /* 从 xvalue 树反序列化（替换当前内容）；兼容缺少格式头的旧文档，若提供格式头则必须为 v1。 */
 XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue);
+/* Keeps node configurations and variable defaults by reference in the
+ * staged model. Callers can pass an isolated snapshot to avoid cloning. */
+XUI_API int xuiWorkflowLoadXValueShared(xui_workflow workflow, xvalue* input);
 /* 保存为 XSON 文件。 */
 XUI_API int xuiWorkflowSaveXSONFile(xui_workflow pWorkflow, const char* sPath);
 /* 从 XSON 文件加载。 */

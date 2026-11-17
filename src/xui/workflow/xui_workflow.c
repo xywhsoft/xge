@@ -2513,7 +2513,7 @@ static int __xuiWorkflowAppendPortXValue(xui_workflow pWorkflow, xvalue* pPorts,
 	return iRet;
 }
 
-static int __xuiWorkflowAppendNodeXValue(xui_workflow pWorkflow, xvalue* pNodes, xvalue* pTypeRefs, int iNode)
+static int __xuiWorkflowAppendNodeXValue(xui_workflow pWorkflow, xvalue* pNodes, xvalue* pTypeRefs, int iNode, bool shared)
 {
 	xui_flow_node_info_t tNode;
 	xui_flow_port_info_t tPort;
@@ -2563,9 +2563,15 @@ static int __xuiWorkflowAppendNodeXValue(xui_workflow pWorkflow, xvalue* pNodes,
 	}
 	pConfig = NULL;
 	if ( iRet == XUI_OK ) {
-		iRet = xuiFlowGraphGetNodeConfig(pWorkflow->pGraph, tNode.sId, &pConfig);
+		iRet = shared ? xuiFlowGraphGetNodeConfigShared(pWorkflow->pGraph, tNode.sId, &pConfig) :
+			xuiFlowGraphGetNodeConfig(pWorkflow->pGraph, tNode.sId, &pConfig);
 		if ( iRet == XUI_OK && pConfig != NULL ) {
-			iRet = __xuiWorkflowXsonSetValueCopy(pWorkflow, pObj, "config", pConfig);
+			if (shared) {
+				iRet = __xuiWorkflowXsonSetObject(pWorkflow, pObj, "config", pConfig);
+				pConfig = NULL;
+			} else {
+				iRet = __xuiWorkflowXsonSetValueCopy(pWorkflow, pObj, "config", pConfig);
+			}
 		}
 		if ( pConfig != NULL ) __xuiWorkflowValueRelease(pWorkflow, pConfig);
 	}
@@ -2622,7 +2628,8 @@ static int __xuiWorkflowAppendEdgeXValue(xui_workflow pWorkflow, xvalue* pEdges,
 	return iRet;
 }
 
-static int __xuiWorkflowAppendVariableXValue(xui_workflow pWorkflow, xvalue* pVariables, const xui_workflow_variable_model_t* pVariable)
+static int __xuiWorkflowAppendVariableXValue(xui_workflow pWorkflow, xvalue* pVariables,
+	const xui_workflow_variable_model_t* pVariable, bool shared)
 {
 	xvalue* pObj;
 	int iRet;
@@ -2635,18 +2642,18 @@ static int __xuiWorkflowAppendVariableXValue(xui_workflow pWorkflow, xvalue* pVa
 	if ( iRet == XUI_OK ) iRet = __xuiWorkflowXsonSetText(pObj, "title", pVariable->sTitle);
 	if ( iRet == XUI_OK ) iRet = __xuiWorkflowXsonSetText(pObj, "type", pVariable->sType);
 	if ( iRet == XUI_OK ) iRet = __xuiWorkflowXsonSetText(pObj, "scope", pVariable->sScope);
-	if ( iRet == XUI_OK ) iRet = __xuiWorkflowXsonSetValueCopy(pWorkflow, pObj, "default", pVariable->pDefaultValue);
+	if (iRet == XUI_OK && pVariable->pDefaultValue) {
+		iRet = shared ? __xuiWorkflowXsonSetObject(pWorkflow, pObj, "default",
+			__xuiWorkflowValueRef(pWorkflow, pVariable->pDefaultValue)) :
+			__xuiWorkflowXsonSetValueCopy(pWorkflow, pObj, "default", pVariable->pDefaultValue);
+	}
 	if ( iRet == XUI_OK && !xuiXrtValueArrayAppendTake(pVariables, pObj, TRUE) ) iRet = XUI_ERROR_OUT_OF_MEMORY;
 	if ( iRet != XUI_OK ) __xuiWorkflowValueRelease(pWorkflow, pObj);
 	return iRet;
 }
 
-XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
+static int __xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue, bool shared)
 {
-	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
-    xui_workflow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_viewport_t tViewport;
 	xui_workflow_variable_model_t* pVariable;
 	xvalue* pRoot;
@@ -2660,7 +2667,7 @@ XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
 	int iRet;
 
 	if ( (pWorkflow == NULL) || (ppValue == NULL) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	*ppValue = NULL;
 	pRoot = xrtValueObject();
@@ -2678,7 +2685,7 @@ XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
 		if ( pNodes != NULL ) __xuiWorkflowValueRelease(pWorkflow, pNodes);
 		if ( pEdges != NULL ) __xuiWorkflowValueRelease(pWorkflow, pEdges);
 		if ( pViewport != NULL ) __xuiWorkflowValueRelease(pWorkflow, pViewport);
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
+		return (XUI_ERROR_OUT_OF_MEMORY);
 	}
 	iRet = __xuiWorkflowXsonSetText(pRoot, "kind", "xui.workflow");
 	if ( iRet == XUI_OK && !xuiXrtValueObjectSetInt(pRoot, "version", 0, 1) ) iRet = XUI_ERROR_OUT_OF_MEMORY;
@@ -2686,10 +2693,10 @@ XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
 	if ( iRet == XUI_OK && !xuiXrtValueObjectSetInt(pMeta, "schemaVersion", 0, 1) ) iRet = XUI_ERROR_OUT_OF_MEMORY;
 	for ( i = 1u; iRet == XUI_OK && i <= pWorkflow->arrVariables.Count; ++i ) {
 		pVariable = (xui_workflow_variable_model_t*)xuiXrtArrayGet(&pWorkflow->arrVariables, i);
-		iRet = __xuiWorkflowAppendVariableXValue(pWorkflow, pVariables, pVariable);
+		iRet = __xuiWorkflowAppendVariableXValue(pWorkflow, pVariables, pVariable, shared);
 	}
 	for ( i = 0u; iRet == XUI_OK && i < (uint32_t)xuiFlowGraphGetNodeCount(pWorkflow->pGraph); ++i ) {
-		iRet = __xuiWorkflowAppendNodeXValue(pWorkflow, pNodes, pTypes, (int)i);
+		iRet = __xuiWorkflowAppendNodeXValue(pWorkflow, pNodes, pTypes, (int)i, shared);
 	}
 	for ( i = 0u; iRet == XUI_OK && i < (uint32_t)xuiFlowGraphGetEdgeCount(pWorkflow->pGraph); ++i ) {
 		iRet = __xuiWorkflowAppendEdgeXValue(pWorkflow, pEdges, (int)i);
@@ -2734,10 +2741,28 @@ XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
 	if ( pViewport != NULL ) __xuiWorkflowValueRelease(pWorkflow, pViewport);
 	if ( iRet != XUI_OK ) {
 		__xuiWorkflowValueRelease(pWorkflow, pRoot);
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	*ppValue = pRoot;
-	return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_OK), 0);
+	return (XUI_OK);
+}
+
+XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowToXValue(pWorkflow,ppValue,false),0);
+}
+
+XUI_API int xuiWorkflowToXValueShared(xui_workflow workflow, xvalue** output)
+{
+	if (__xuiWorkflowModelBusy(workflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(workflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowToXValue(workflow,output,true),0);
 }
 
 static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue* pObj)
@@ -2775,7 +2800,7 @@ static int __xuiWorkflowLoadPortXValue(xui_flow_graph pGraph, int iNode, xvalue*
 	return xuiFlowGraphAddPort(pGraph, iNode, &tPort, NULL);
 }
 
-static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
+static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj, bool shared)
 {
 	xui_flow_node_desc_t tNode;
 	xvalue* pPorts;
@@ -2838,7 +2863,8 @@ static int __xuiWorkflowLoadNodeXValue(xui_flow_graph pGraph, xvalue* pObj)
 		if ( xuiXrtValueType(pConfig) != XVALUE_OBJECT ) {
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
-		iRet = xuiFlowGraphSetNodeConfig(pGraph, tNode.sId, pConfig);
+		iRet = shared ? xuiFlowGraphSetNodeConfigShared(pGraph, tNode.sId, pConfig) :
+			xuiFlowGraphSetNodeConfig(pGraph, tNode.sId, pConfig);
 	}
 	if ( iRet == XUI_OK ) {
 		if ( pRunState != NULL && xuiXrtValueType(pRunState) != XVALUE_NULL ) {
@@ -2918,7 +2944,7 @@ static int __xuiWorkflowLoadEdgeXValue(xui_flow_graph pGraph, xvalue* pObj)
 	}
 }
 
-static int __xuiWorkflowLoadVariableXValue(xui_workflow pWorkflow, xvalue* pObj)
+static int __xuiWorkflowLoadVariableXValue(xui_workflow pWorkflow, xvalue* pObj, bool shared)
 {
 	xui_workflow_variable_desc_t tVariable;
 	xvalue* pDefault;
@@ -2942,15 +2968,12 @@ static int __xuiWorkflowLoadVariableXValue(xui_workflow pWorkflow, xvalue* pObj)
 	if ( pDefault != NULL && xuiXrtValueType(pDefault) != XVALUE_NULL ) {
 		tVariable.pDefaultValue = pDefault;
 	}
-	return xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
+	return shared ? xuiWorkflowAddVariableShared(pWorkflow, &tVariable, NULL) :
+		xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
 }
 
-XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
+static int __xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue, bool shared)
 {
-	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
-    xui_workflow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_graph pGraph;
 	xui_workflow pVariablesWorkflow;
 	xvalue* pNodes;
@@ -2965,45 +2988,45 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 	int iRet;
 
 	if ( (pWorkflow == NULL) || (pValue == NULL) || (xuiXrtValueType(pValue) != XVALUE_OBJECT) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	if ( !__xuiWorkflowXsonHeaderValid(pValue) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	pNodes = xuiXrtValueObjectGet(pValue, "nodes", 0);
 	pEdges = xuiXrtValueObjectGet(pValue, "edges", 0);
 	pVariables = xuiXrtValueObjectGet(pValue, "variables", 0);
 	if ( (pNodes == NULL) || (xuiXrtValueType(pNodes) != XVALUE_ARRAY) || (pEdges == NULL) || (xuiXrtValueType(pEdges) != XVALUE_ARRAY) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	if ( pVariables != NULL && xuiXrtValueType(pVariables) != XVALUE_ARRAY ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	pVariablesWorkflow = NULL;
 	iRet = xuiFlowGraphCreate(&pGraph);
 	if ( iRet != XUI_OK ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	iRet=xuiInternalFlowGraphSetCallbackOwner(pGraph,pWorkflow->pGraph);
-	if(iRet!=XUI_OK){xuiFlowGraphDestroy(pGraph);return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);}
+	if(iRet!=XUI_OK){xuiFlowGraphDestroy(pGraph);return (iRet);}
 	for ( i = 0u; i < xrtValueCount(pNodes); ++i ) {
-		iRet = __xuiWorkflowLoadNodeXValue(pGraph, xuiXrtValueArrayGet(pNodes, i));
+		iRet = __xuiWorkflowLoadNodeXValue(pGraph, xuiXrtValueArrayGet(pNodes, i), shared);
 		if ( iRet != XUI_OK ) {
 			xuiFlowGraphDestroy(pGraph);
-			return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+			return (iRet);
 		}
 	}
 	for ( i = 0u; i < xrtValueCount(pEdges); ++i ) {
 		iRet = __xuiWorkflowLoadEdgeXValue(pGraph, xuiXrtValueArrayGet(pEdges, i));
 		if ( iRet != XUI_OK ) {
 			xuiFlowGraphDestroy(pGraph);
-			return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+			return (iRet);
 		}
 	}
 	pViewportValue = xuiXrtValueObjectGet(pValue, "viewport", 0);
 	if ( pViewportValue != NULL && xuiXrtValueType(pViewportValue) != XVALUE_NULL && xuiXrtValueType(pViewportValue) != XVALUE_OBJECT ) {
 		xuiFlowGraphDestroy(pGraph);
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	if ( pViewportValue != NULL && xuiXrtValueType(pViewportValue) == XVALUE_OBJECT ) {
 		xvalue* pField;
@@ -3013,14 +3036,14 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "width", 0)) ||
 		     !__xuiWorkflowXsonOptionalNumber(xuiXrtValueObjectGet(pViewportValue, "height", 0)) ) {
 			xuiFlowGraphDestroy(pGraph);
-			return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+			return (XUI_ERROR_INVALID_ARGUMENT);
 		}
 		memset(&tViewport, 0, sizeof(tViewport));
 		tViewport.iSize = sizeof(tViewport);
 		iRet = xuiFlowGraphGetViewport(pGraph, &tViewport);
 		if ( iRet != XUI_OK ) {
 			xuiFlowGraphDestroy(pGraph);
-			return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+			return (iRet);
 		}
 		pField = xuiXrtValueObjectGet(pViewportValue, "panX", 0);
 		if ( pField != NULL && xuiXrtValueType(pField) != XVALUE_NULL ) tViewport.fPanX = (float)xuiXrtValueGetFloat(pField);
@@ -3035,26 +3058,26 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 		iRet = xuiFlowGraphSetViewport(pGraph, &tViewport);
 		if ( iRet != XUI_OK ) {
 			xuiFlowGraphDestroy(pGraph);
-			return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+			return (iRet);
 		}
 	}
 	iRet = xuiWorkflowCreate(&pVariablesWorkflow);
 	if ( iRet != XUI_OK ) {
 		xuiFlowGraphDestroy(pGraph);
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	iRet=xuiInternalFlowGraphSetCallbackOwner(pVariablesWorkflow->pGraph,pWorkflow->pGraph);
 	if(iRet!=XUI_OK){
 		xuiWorkflowDestroy(pVariablesWorkflow);xuiFlowGraphDestroy(pGraph);
-		return __xuiWorkflowOperationEnd(&__ownedCall,iRet,0);
+		return iRet;
 	}
 	if ( pVariables != NULL ) {
 		for ( i = 0u; i < xrtValueCount(pVariables); ++i ) {
-			iRet = __xuiWorkflowLoadVariableXValue(pVariablesWorkflow, xuiXrtValueArrayGet(pVariables, i));
+			iRet = __xuiWorkflowLoadVariableXValue(pVariablesWorkflow, xuiXrtValueArrayGet(pVariables, i), shared);
 			if ( iRet != XUI_OK ) {
 				xuiWorkflowDestroy(pVariablesWorkflow);
 				xuiFlowGraphDestroy(pGraph);
-				return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+				return (iRet);
 			}
 		}
 	}
@@ -3062,7 +3085,7 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 	if (iRet != XUI_OK) {
 		xuiWorkflowDestroy(pVariablesWorkflow);
 		xuiFlowGraphDestroy(pGraph);
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	xuiFlowGraphDestroy(pGraph);
 	arrVariables = pWorkflow->arrVariables;
@@ -3075,7 +3098,25 @@ XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
 	pWorkflow->iNextVariableId = pVariablesWorkflow->iNextVariableId;
 	pVariablesWorkflow->iNextVariableId = iNextVariableId;
 	xuiWorkflowDestroy(pVariablesWorkflow);
-	return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_OK), 0);
+	return (XUI_OK);
+}
+
+XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowLoadXValue(pWorkflow,pValue,false),0);
+}
+
+XUI_API int xuiWorkflowLoadXValueShared(xui_workflow workflow, xvalue* input)
+{
+	if (__xuiWorkflowModelBusy(workflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(workflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowLoadXValue(workflow,input,true),0);
 }
 
 XUI_API int xuiWorkflowSaveXSONFile(xui_workflow pWorkflow, const char* sPath)
