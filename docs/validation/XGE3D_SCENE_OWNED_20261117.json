@@ -1,0 +1,46 @@
+{
+  "complete": true,
+  "passed": true,
+  "sourceParent": "b44cdfa716e455fda2de8c02fa6b9216fee7f78f",
+  "sourceHashes": {
+    "include/xge.h": "f7d41057d6518f3356c0bbd25ad626036ad3eef6e706da15b8cce601d5a4eb8e",
+    "src/xge/3d/xge3d_internal.h": "add072846e3be7c0ba4628955be881d422045dc2b722f334a8f7f9637e468fdd",
+    "src/xge/3d/xge3d_scene.c": "78d1f945ad8db74c68555f3a6ceb858a8a18f09ebea9d3c0efc9b30a840e4c2d",
+    "tests/xge/xge3d_scene_owned_test.c": "d6a1affed08f7f7aea3477eb1b62524332e999885a6ae112d79b48f341d49fe9",
+    "tools/test/check_scene3d_owned.py": "ceaa571becaa379140eaa3747caed26afdc3d8fe716819392e1a89b97ccaeaa1",
+    "docs/validation/XGE3D_SCENE_OWNED_20261117.md": "1cc9af1c076190906e0e13e72af245b3ea6f7d442e267d06eae70c87a2102a08"
+  },
+  "xrtCommit": "4641cd2e4da09d8b1a66872cabe085c263d8b5ba",
+  "reports": {
+    "win-sdk": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-sdk-win-r1\\results.json",
+      "sha256": "9e2252b80b471bfcb360e14607360e6fac8b583661b21175e40b737131d11e4d"
+    },
+    "win-native-gate": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-native-gate-win-r4\\results.json",
+      "sha256": "5a7524d1b4bb732767f135c9c9432ce196d3c5659015e4830dbdfe79edd1a707"
+    },
+    "win-layout": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-layout-win-r1\\results.json",
+      "sha256": "6cd3d4a9f7418bd5a8fa17fe1c564a176514f75c137fed0c51047b5da7f1a03d"
+    },
+    "linux-sdk": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-sdk-linux-r1-results.json",
+      "sha256": "ad82d3ad64ebea87afcac837cd5d96f4ba4ba7448c42a4757fb10e6d21e46bcd"
+    },
+    "linux-native-gate": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-native-gate-linux-r4-results.json",
+      "sha256": "9c531eb533e87cf7fe27fbbfb89ed657ec36a587f7530bd62ed970824ab158f9"
+    },
+    "linux-layout": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\scene3d-owned-layout-linux-r1-results.json",
+      "sha256": "d0f5ab139d7932a8bae9689af33765de447b587c844a9cbcff42a5c4465596ed"
+    }
+  },
+  "nativeCommands": 22,
+  "fullNativeBuildCommands": 4,
+  "freshCompiledUnits": 660,
+  "productionObjectOverrides": false,
+  "releaseInstalled": false,
+  "goalComplete": false
+}

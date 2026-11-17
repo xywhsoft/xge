@@ -1,10 +1,65 @@
 #include "xge3d_internal.h"
 #include "xge_clock.h"
+#include "xge_data_lifetime_internal.h"
+#include <assert.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #if XGE_ENABLE_3D
 
 /* Scene mutation is serialized by the application, like the GPU context. */
-static uint64_t d3_next_scene;
+static atomic_uint_least64_t d3_next_scene;
+
+static xge_data_lifetime_t *d3_scene_root(xge3d_scene *s)
+{return s && atomic_load_explicit(&s->owned_refs,memory_order_acquire) ? (xge_data_lifetime_t*)(s+1):NULL;}
+static void d3_scene_clear(xge3d_scene *s);
+static int d3_scene_finalize(void *raw,bool *complete)
+{d3_scene_clear(raw);*complete=true;return XGE_OK;}
+/* Attached meshes/materials/models contain native data and no owning language
+ * or callback slots. Node user_data remains explicitly borrowed C data. */
+static const xge_data_lifetime_type_t d3_scene_type={
+    sizeof(xge3d_scene),offsetof(xge3d_scene,owned_refs),NULL,NULL,d3_scene_finalize,NULL};
+#define DO_FN(name) d3_scene_owner_##name
+#define DO_PUBLIC(name) xge3dScene##name
+#define DO_STATUS(name) XGE_##name
+#define DO_API
+#define DO_ROOT(scene) d3_scene_root(scene)
+#define DO_HANDLE xge3d_scene*
+#define DO_OBJECT_TYPE d3_scene_type
+#define DO_GENERATION_TYPE d3_scene_type
+#define DO_READ_READY(root) (d3_scene_owner_Admit(root)==XGE_OK)
+#include "xge_data_lifetime.inl"
+#undef DO_FN
+#undef DO_PUBLIC
+#undef DO_STATUS
+#undef DO_API
+#undef DO_ROOT
+#undef DO_HANDLE
+#undef DO_OBJECT_TYPE
+#undef DO_GENERATION_TYPE
+#undef DO_READ_READY
+
+int xge3dSceneShareOwned(xge3d_scene *s,xge3d_scene **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;int status=d3_scene_owner_Acquire(d3_scene_root(s),true,false);
+    if(status==XGE_OK)*out=s;
+    return status;
+}
+int xge3dSceneReleaseOwnerChecked(xge3d_scene *s,bool *consumed)
+{return d3_scene_owner_Release(d3_scene_root(s),consumed);}
+int xge3dSceneReleaseChecked(xge3d_scene *s)
+{bool consumed=false;return xge3dSceneReleaseOwnerChecked(s,&consumed);}
+int xge3dSceneAccessBegin(xge3d_scene *s)
+{return d3_scene_owner_Acquire(d3_scene_root(s),true,true);}
+int xge3dSceneAccessEnd(xge3d_scene *s)
+{
+    xge_data_lifetime_t *root=d3_scene_root(s);
+    if(!d3_scene_owner_Known(root))return XGE_ERROR_INVALID_ARGUMENT;
+    if(root->iCreator!=xrtThreadCurrentId())return XGE_ERROR_BUSY;
+    if(!atomic_load_explicit(&root->iActivity,memory_order_acquire))return XGE_ERROR_INVALID_STATE;
+    return d3_scene_owner_ActivityEnd(root);
+}
 
 void d3_detach(xge3d_scene *s,xge3d_node_data *n)
 {
@@ -88,14 +143,18 @@ int xge3dNodeGetShadowFlags(xge3d_scene *s,xge3d_node_t h,uint32_t *out)
     *out=n->shadow_flags;return XGE_OK;
 }
 #endif
-int xge3dSceneCreate(xge3d_scene **out)
+static int d3_scene_create(xge3d_scene **out,bool owned)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out = NULL;
-    if (d3_next_scene == UINT64_MAX) return XGE_ERROR_INVALID_STATE;
-    xge3d_scene *s = xrtMalloc(sizeof(*s));
+    xge3d_scene *s = xrtMalloc(sizeof(*s)+(owned?sizeof(xge_data_lifetime_t):0));
     if (!s) return XGE_ERROR_OUT_OF_MEMORY;
     memset(s, 0, sizeof(*s));
+    atomic_init(&s->owned_refs,owned?1u:0u);
+    uint_least64_t id=atomic_load_explicit(&d3_next_scene,memory_order_relaxed);
+    do {
+        if(id==UINT64_MAX){xrtFree(s);return XGE_ERROR_INVALID_STATE;}
+    } while(!atomic_compare_exchange_weak_explicit(&d3_next_scene,&id,id+1u,memory_order_relaxed,memory_order_relaxed));
 #if XGE3D_ENABLE_COLLISION
     xrtArrayInit(&s->collision_tree,sizeof(d3_spatial_branch));xrtArrayInit(&s->collision_items,sizeof(d3_spatial_item));
     xrtArrayInit(&s->collision_pending,sizeof(xge3d_node_t));s->collision_rebuild=1;s->collision_root=-1;
@@ -106,13 +165,16 @@ int xge3dSceneCreate(xge3d_scene **out)
     xrtArrayInit(&s->spatial_tree,sizeof(d3_spatial_branch));xrtArrayInit(&s->spatial_items,sizeof(d3_spatial_item));
     xrtArrayInit(&s->spatial_pending,sizeof(xge3d_node_t));xrtArrayInit(&s->query_stack,sizeof(int));
     s->spatial_root=-1;s->spatial_rebuild=1;
-    s->id = ++d3_next_scene;
+    s->id = id+1u;
     s->version = 1;
+    if(owned)d3_scene_owner_Init(d3_scene_root(s),&d3_scene_type,xrtThreadCurrentId());
     *out = s;
     return XGE_OK;
 }
+int xge3dSceneCreate(xge3d_scene **out){return d3_scene_create(out,false);}
+int xge3dSceneCreateOwned(xge3d_scene **out){return d3_scene_create(out,true);}
 
-void xge3dSceneFree(xge3d_scene *s)
+static void d3_scene_clear(xge3d_scene *s)
 {
     if (!s) return;
     while(s->nodes.Count){xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,s->nodes.Count-1);
@@ -124,7 +186,16 @@ void xge3dSceneFree(xge3d_scene *s)
 #if XGE3D_ENABLE_COLLISION
     xrtArrayUnit(&s->collision_tree);xrtArrayUnit(&s->collision_items);xrtArrayUnit(&s->collision_pending);
 #endif
-    xrtFree(s);
+}
+void xge3dSceneFree(xge3d_scene *s)
+{
+    if(!s)return;
+    if(d3_scene_root(s)){
+        bool consumed=false;int status=xge3dSceneReleaseOwnerChecked(s,&consumed);
+        if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
+        return;
+    }
+    d3_scene_clear(s);xrtFree(s);
 }
 
 size_t xge3dSceneNodeCount(const xge3d_scene *s)

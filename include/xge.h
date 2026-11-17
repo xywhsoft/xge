@@ -4411,6 +4411,29 @@ typedef struct xge3d_render_stats_t {
 /* Create/load clears output on failure; do not replace live objects. CPU scene
  * and camera APIs work without xgeInit. Free scenes before attached resources. */
 XGE_API int xge3dSceneCreate(xge3d_scene **out);
+/* Shared creator-thread Scene ownership. Each successful Create/Share transfers
+ * one reference. Release reports reference consumption separately from status;
+ * a refused final release keeps the reference for a checked retry. Legacy
+ * SceneCreate remains caller-serialized and has no ownership root.
+ *
+ * Direct C operations on an owned Scene require a matching AccessBegin/End
+ * pair on its creator thread. The access pin spans the complete native call,
+ * including borrowed outputs, and prevents physical destruction during it.
+ * AccessEnd can consume the final reference: do not read scene afterwards.
+ * Raw Node user_data is borrowed and is never traced or released. */
+XGE_API int xge3dSceneCreateOwned(xge3d_scene **out);
+XGE_API int xge3dSceneShareOwned(xge3d_scene *scene,xge3d_scene **out);
+XGE_API int xge3dSceneReleaseOwnerChecked(xge3d_scene *scene,bool *consumed);
+XGE_API int xge3dSceneReleaseChecked(xge3d_scene *scene);
+XGE_API int xge3dSceneAccessBegin(xge3d_scene *scene);
+XGE_API int xge3dSceneAccessEnd(xge3d_scene *scene);
+XGE_API xrtownershipref xge3dSceneOwnership(xge3d_scene *scene);
+XGE_API const xrtownershipadapterv1* xge3dSceneOwnershipAdapterV1(xrtownershipref ref);
+XGE_API const xrtownershippreparationv1* xge3dSceneOwnershipPreparationV1(xrtownershipref ref);
+XGE_API const xrtownershipquiescencev1* xge3dSceneOwnershipQuiescenceV1(xrtownershipref ref);
+XGE_API const xrtownershipfinishv2* xge3dSceneOwnershipCompletionV2(xrtownershipref ref);
+XGE_API const xrtownershipfinalizationv1* xge3dSceneOwnershipFinalizationV1(xrtownershipref ref);
+XGE_API bool xge3dSceneOwnershipReadReady(xrtownershipref ref);
 /* 销毁场景及其节点，附加资源仍按各自引用计数管理。 */
 XGE_API void xge3dSceneFree(xge3d_scene *scene);
 /* 返回场景当前节点数量。 */

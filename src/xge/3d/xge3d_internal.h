@@ -5,6 +5,7 @@
 #include "extlibs/xrt/xrt.h"
 #include <math.h>
 #include <string.h>
+#include <stdatomic.h>
 
 typedef struct xge3d_node_data {
 #if XGE3D_ENABLE_SCENE
@@ -52,6 +53,9 @@ typedef struct d3_lods { size_t count;xge3d_lod_t levels[3];uint64_t versions[3]
 void d3_lods_free(d3_lods *lods);
 
 struct xge3d_scene {
+    /* Zero keeps the original caller-serialized C lifetime. Managed scenes
+     * append the common ownership root; business operations keep this pointer. */
+    atomic_uint owned_refs;
 #if XGE3D_ENABLE_COLLISION
     xarray collision_tree,collision_items,collision_pending;
     uint64_t collision_geometry_version,collision_tests;
