@@ -1611,9 +1611,9 @@ XUI_API int xuiFlowGraphRebuildNodeDynamicPorts(xui_flow_graph pGraph, const cha
 	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
-int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
+static int __xuiFlowUpdateNodeConfigurationValue(xui_flow_graph pGraph,
 	const char* sNodeId, xvalue* pConfig, const xui_flow_port_desc_t* pPorts,
-	int iPortCount, int bReplaceDynamicPorts, const char* sSummary)
+	int iPortCount, int bReplaceDynamicPorts, const char* sSummary,bool shared)
 {
 	xui_flow_node_model_t* pNode;
 	xarray arrPorts;
@@ -1638,7 +1638,7 @@ int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 	sSummaryCopy = NULL;
 	memset(&arrPorts, 0, sizeof(arrPorts));
 	memset(&mapPorts, 0, sizeof(mapPorts));
-	iRet = __xuiFlowCopyValue(pGraph, pConfig, &pConfigCopy);
+	iRet = __xuiFlowCopyValueMode(pGraph, pConfig, &pConfigCopy,shared);
 	if ( iRet != XUI_OK ) goto failed;
 	sSummaryCopy = __xuiFlowCopyString(sSummary);
 	if ( sSummary != NULL && sSummaryCopy == NULL ) {
@@ -1678,6 +1678,15 @@ failed:
 	xrtMapUnit(&mapPorts);
 	return __xuiFlowOperationEnd(&__ownedCall,iRet,0);
 }
+
+int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
+    const char* sNodeId,xvalue* pConfig,const xui_flow_port_desc_t* pPorts,
+    int iPortCount,int bReplaceDynamicPorts,const char* sSummary)
+{return __xuiFlowUpdateNodeConfigurationValue(pGraph,sNodeId,pConfig,pPorts,iPortCount,bReplaceDynamicPorts,sSummary,false);}
+int xuiInternalFlowGraphUpdateNodeConfigurationShared(xui_flow_graph pGraph,
+    const char* sNodeId,xvalue* pConfig,const xui_flow_port_desc_t* pPorts,
+    int iPortCount,int bReplaceDynamicPorts,const char* sSummary)
+{return __xuiFlowUpdateNodeConfigurationValue(pGraph,sNodeId,pConfig,pPorts,iPortCount,bReplaceDynamicPorts,sSummary,true);}
 
 XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex)
 {

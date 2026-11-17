@@ -42,7 +42,7 @@ def main():
         shutil.copy2(root/rel,target)
     text=(source/'src/xui/workflow/xui_workflow.c').read_text(encoding='utf8')
     entries=re.findall(r'^XUI_API int (xuiWorkflow\w+)\(xui_workflow pWorkflow\b[^;{}]*\)\s*\{',text,re.M)
-    assert len(entries)==33
+    assert len(entries)==35
     probes=(source/'tests/xui/xui_workflow_busy_probes.inc').read_text(encoding='utf8')
     assert set(entries)==set(re.findall(r'assert\((xuiWorkflow\w+)\(',probes))
     for name in entries:
@@ -52,7 +52,7 @@ def main():
         'src/xge/core/xge_data_lifetime.inl','src/xge/core/xge_data_lifetime_internal.h']
     inputs.update((str(baseline/r),sha(baseline/r)) for r in baseline_paths)
     report=dict(complete=False,passed=False,scope=__doc__,shippingDelivery=False,nativeSdkRebuilt=False,
-        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=32,
+        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=34,
         canonicalXrtSha256=sha(source/'extlibs/xrt/xrt.h'),source=str(source),inputs=inputs,rows=[])
     def save():
         tmp=out/'results.json.tmp';tmp.write_text(json.dumps(report,indent=2)+'\n',encoding='utf8');os.replace(tmp,out/'results.json')

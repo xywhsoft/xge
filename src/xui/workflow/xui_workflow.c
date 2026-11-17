@@ -642,7 +642,7 @@ XUI_API int xuiWorkflowConfigSchemaCreate(xvalue** ppSchema)
 	return XUI_OK;
 }
 
-XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc)
+static int __xuiWorkflowConfigSchemaAddFieldValue(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc,bool shared)
 {
 	xvalue* pFields;
 	xvalue* pField;
@@ -730,7 +730,7 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pDesc->pOptions != NULL ) {
-		pMetaCopy = xrtValueDeepClone(pDesc->pOptions);
+		pMetaCopy = (shared ? xrtValueRetain(pDesc->pOptions) : xrtValueDeepClone(pDesc->pOptions));
 		if ( pMetaCopy == NULL ) {
 			xrtValueRelease(pField);
 			return XUI_ERROR_OUT_OF_MEMORY;
@@ -742,7 +742,7 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 		}
 	}
 	if ( pDesc->pChildren != NULL ) {
-		pMetaCopy = xrtValueDeepClone(pDesc->pChildren);
+		pMetaCopy = (shared ? xrtValueRetain(pDesc->pChildren) : xrtValueDeepClone(pDesc->pChildren));
 		if ( pMetaCopy == NULL ) {
 			xrtValueRelease(pField);
 			return XUI_ERROR_OUT_OF_MEMORY;
@@ -762,7 +762,7 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pDesc->bHasDefault ) {
-		pDefaultCopy = xrtValueDeepClone(pDesc->pDefaultValue);
+		pDefaultCopy = (shared ? xrtValueRetain(pDesc->pDefaultValue) : xrtValueDeepClone(pDesc->pDefaultValue));
 		if ( pDefaultCopy == NULL ) {
 			xrtValueRelease(pField);
 			return XUI_ERROR_OUT_OF_MEMORY;
@@ -779,6 +779,11 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_
 	}
 	return XUI_OK;
 }
+
+XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema,const xui_workflow_config_field_desc_t* pDesc)
+{return __xuiWorkflowConfigSchemaAddFieldValue(pSchema,pDesc,false);}
+XUI_API int xuiWorkflowConfigSchemaAddFieldShared(xvalue* pSchema,const xui_workflow_config_field_desc_t* pDesc)
+{return __xuiWorkflowConfigSchemaAddFieldValue(pSchema,pDesc,true);}
 
 static int __xuiWorkflowRegisterNodeTypeValue(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex,bool shared)
 {
@@ -1946,12 +1951,8 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 	return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
-XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue* pConfig)
+static int __xuiWorkflowSetNodeConfigValue(xui_workflow pWorkflow,const char* sId,xvalue* pConfig,bool shared)
 {
-	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
-    xui_workflow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_info_t tInfo;
 	xui_workflow_type_model_t* pType;
 	xui_flow_port_desc_t* pNewPorts;
@@ -1962,33 +1963,51 @@ XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 
 	iRet = __xuiWorkflowGetNodeType(pWorkflow, sId, &tInfo);
 	if ( iRet != XUI_OK ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return iRet;
 	}
 	iRet = xuiWorkflowValidateConfig(pWorkflow, tInfo.sType, pConfig, &iDiagnostics);
 	if ( iRet != XUI_OK ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return iRet;
 	}
 	if ( iDiagnostics > 0 ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pType = __xuiWorkflowFindTypeModel(pWorkflow, tInfo.sType);
 	if ( pType == NULL ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pNewPorts = NULL;
 	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, &pNewPorts, &iNewPortCount);
 	if ( iRet != XUI_OK ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+		return iRet;
 	}
 	iRet = __xuiWorkflowBuildNodeSummary(pWorkflow, tInfo.sType, pConfig,
 		sSummary, (int)sizeof(sSummary));
 	if ( iRet == XUI_OK ) {
-		iRet = xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph, sId,
-		pConfig, pNewPorts, iNewPortCount, pType->onDynamicPorts != NULL,
-		(sSummary[0] != 0) ? sSummary : NULL);
+        iRet = shared ? xuiInternalFlowGraphUpdateNodeConfigurationShared(pWorkflow->pGraph,sId,
+            pConfig,pNewPorts,iNewPortCount,pType->onDynamicPorts!=NULL,(sSummary[0]!=0) ? sSummary:NULL) :
+            xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph,sId,
+            pConfig,pNewPorts,iNewPortCount,pType->onDynamicPorts!=NULL,(sSummary[0]!=0) ? sSummary:NULL);
 	}
 	xrtFree(pNewPorts);
-	return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
+	return iRet;
+}
+
+XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow,const char* sId,xvalue* pConfig)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowSetNodeConfigValue(pWorkflow,sId,pConfig,false),0);
+}
+XUI_API int xuiWorkflowSetNodeConfigShared(xui_workflow pWorkflow,const char* sId,xvalue* pConfig)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowSetNodeConfigValue(pWorkflow,sId,pConfig,true),0);
 }
 
 XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig)
@@ -2001,6 +2020,18 @@ XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
 	}
 	return __xuiWorkflowOperationEnd(&__ownedCall, (xuiFlowGraphGetNodeConfig(pWorkflow->pGraph, sId, ppConfig)), 0);
+}
+
+XUI_API int xuiWorkflowGetNodeConfigShared(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	if ( pWorkflow == NULL ) {
+		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+	}
+	return __xuiWorkflowOperationEnd(&__ownedCall, (xuiFlowGraphGetNodeConfigShared(pWorkflow->pGraph, sId, ppConfig)), 0);
 }
 
 XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity)

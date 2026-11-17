@@ -1238,6 +1238,9 @@ int xuiInternalFlowGraphSwapContents(xui_flow_graph pFirst, xui_flow_graph pSeco
 int xuiInternalFlowGraphUpdateNodeConfiguration(xui_flow_graph pGraph,
 	const char* sNodeId, xvalue* pConfig, const xui_flow_port_desc_t* pPorts,
 	int iPortCount, int bReplaceDynamicPorts, const char* sSummary);
+int xuiInternalFlowGraphUpdateNodeConfigurationShared(xui_flow_graph pGraph,
+    const char* sNodeId,xvalue* pConfig,const xui_flow_port_desc_t* pPorts,
+    int iPortCount,int bReplaceDynamicPorts,const char* sSummary);
 int xuiInternalWidgetSetTreeLayer(xui_widget pWidget, int iLayer, int iZIndex);
 int xuiInternalOverlayNextZ(xui_context pContext, int iLayer);
 

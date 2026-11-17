@@ -13903,6 +13903,8 @@ XUI_API xui_flow_graph xuiWorkflowGetGraph(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowConfigSchemaCreate(xvalue** ppSchema);
 /* 向 schema 追加字段定义。 */
 XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc);
+/* Retains default/options/children; caller supplies independently isolated data when required. */
+XUI_API int xuiWorkflowConfigSchemaAddFieldShared(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc);
 /* 注册节点类型（含端口/配置 schema）；描述内容由工作流深拷贝。 */
 XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
 /* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
@@ -13937,8 +13939,12 @@ XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sTyp
 XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount);
 /* 设置节点配置（经 schema 校验）。 */
 XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue* pConfig);
+/* Shared value identity; metadata, validation and atomic update behavior are unchanged. */
+XUI_API int xuiWorkflowSetNodeConfigShared(xui_workflow pWorkflow, const char* sId, xvalue* pConfig);
 /* 输出节点配置深拷贝；调用方使用后需 xrtValueRelease。 */
 XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig);
+/* Shared value identity; metadata, validation and atomic update behavior are unchanged. */
+XUI_API int xuiWorkflowGetNodeConfigShared(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig);
 /* 生成唯一变量 id。 */
 XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity);
 /* 添加工作流变量；描述内容与默认值由工作流深拷贝。 */
