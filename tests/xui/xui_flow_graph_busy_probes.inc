@@ -62,3 +62,9 @@ assert(xuiFlowGraphGetDiagnosticCount(graph)==XUI_ERROR_BUSY);
 assert(xuiFlowGraphGetDiagnostic(graph,0,NULL)==XUI_ERROR_BUSY);
 assert(xuiFlowGraphGetNodeDiagnosticCount(graph,NULL)==XUI_ERROR_BUSY);
 assert(xuiFlowGraphGetEdgeDiagnosticCount(graph,NULL)==XUI_ERROR_BUSY);
+
+#ifndef XUI_TEST_BASELINE_NO_SHARED
+assert(xuiFlowGraphSetNodeConfigShared(graph,NULL,NULL)==XUI_ERROR_BUSY);
+assert(xuiFlowGraphGetNodeConfigShared(graph,NULL,NULL)==XUI_ERROR_BUSY);
+assert(xuiFlowGraphCommandSetNodeConfigShared(graph,NULL,NULL)==XUI_ERROR_BUSY);
+#endif

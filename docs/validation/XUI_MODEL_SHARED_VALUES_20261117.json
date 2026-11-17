@@ -1,0 +1,53 @@
+{
+  "complete": true,
+  "passed": true,
+  "sourceParent": "1181e4bca3e0ae1972dbfe8da5c4e993fe644580",
+  "sourceHashes": {
+    "include/xui.h": "d55dd1fb3747c1401dbcdccebb37b3c29a3385a0bd3461235e6a03643f477d6e",
+    "src/xui/workflow/xui_flow_graph.c": "6abaf99cd67920ec892477b657d907bd2777f83f02a32dcdf4c63ff8bd7400ce",
+    "src/xui/workflow/xui_workflow.c": "a140669eea2b5c30eeecfb5ce7541c01686b103f25afd6fad3aa1d62046b8670",
+    "tests/xui/xui_flow_graph_busy_probes.inc": "b35f96fff70ca8037fa20af27b4d28dc3129e9d72785de8916047bd6abd6d1ce",
+    "tests/xui/xui_workflow_busy_probes.inc": "2ea9f80097dff83264be26c25d5cfd71b7da931bafa330adf110dab1bae9de55",
+    "tools/test/check_workflow_shared.py": "ca0169d18f4f2c9d362fbcd877dff454434b3f2bac587901546d1504af47056e",
+    "tools/test/check_flow_graph_reentry.py": "60ab657883611c143505f7e3c1e9d3f56518a216dac30180bca0a73a3291518d",
+    "tools/test/check_workflow_value_reentry.py": "ed668d2feb0376bba355ebb9700a8db1b08b5f02aee253b309d82a5e8686aa9a",
+    "tests/xui/xui_model_shared_values_test.c": "234edbca607c9d4a1e28f565e39c79342dbb857e07ed1a788f9e8782fa9e1d86",
+    "tools/test/check_model_shared_values.py": "0c2519465a6a3fbac7587166c08830b7b75b66988e33bf4383e9395e88227e5d",
+    "docs/validation/XUI_MODEL_SHARED_VALUES_20261117.md": "1b3b5f9988265e200fd39071346c42360883dae66c09ceca4b0b916d27007c8e"
+  },
+  "reports": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\model-shared-verified-win-r1.json",
+      "sha256": "7c59e248a2c5877cf1d43a3751ef3b3676a557590dcd9e16740e41cdcb38d6e6",
+      "verifiedFiles": 7660,
+      "sdkBuild": "F:\\xlang-validation\\xge-full-20261110\\model-shared-sdk-win-r1\\results.json",
+      "sourceGate": "F:\\xlang-validation\\xge-full-20261110\\model-shared-value-guard-win-r4\\results.json",
+      "sdkGate": "F:\\xlang-validation\\xge-full-20261110\\model-shared-sdk-gate-win-r1\\results.json"
+    },
+    "linux": {
+      "path": "/var/tmp/xlang-validation/xge-full-20261110/model-shared-verified-linux-r1.json",
+      "sha256": "61573a686eefddf9ec2a713d86c2753ec9f921129ed12e2eb05fc0a1fd8af068",
+      "verifiedFiles": 7452,
+      "sdkBuild": "/var/tmp/xlang-validation/xge-full-20261110/model-shared-sdk-linux-r1/results.json",
+      "sourceGate": "/var/tmp/xlang-validation/xge-full-20261110/model-shared-value-guard-linux-r4/results.json",
+      "sdkGate": "/var/tmp/xlang-validation/xge-full-20261110/model-shared-sdk-gate-linux-r1/results.json"
+    }
+  },
+  "commands": 186,
+  "sourceUnitCommands": 86,
+  "realSdkClientCommands": 96,
+  "fullSdkBuilds": 4,
+  "freshO2Units": 660,
+  "productionObjectOverrides": false,
+  "publicDeclarationsAdded": 5,
+  "publicRecordAbiChanged": false,
+  "modelDefinitionsUnchanged": true,
+  "defaultDataSnapshotImplemented": false,
+  "cpuEquivalenceClaim": false,
+  "releaseInstalled": false,
+  "fullLanguageGoalComplete": false,
+  "publicHeaderProof": {
+    "path": "F:\\xlang-validation\\xge-full-20261110\\model-shared-public-header-proof-r1.json",
+    "sha256": "864cdf738c96ec5b9a4b9232b3e3f68a5276b143ce3452b80a74c38362a872f8"
+  }
+}

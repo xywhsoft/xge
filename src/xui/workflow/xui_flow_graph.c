@@ -532,7 +532,7 @@ static int __xuiFlowRouteStyleValid(int iRouteStyle)
 	return iRouteStyle >= XUI_FLOW_ROUTE_AUTO && iRouteStyle <= XUI_FLOW_ROUTE_BEZIER;
 }
 
-static int __xuiFlowCopyValue(xui_flow_graph pGraph, xvalue* pSrc, xvalue** ppDst)
+static int __xuiFlowCopyValueMode(xui_flow_graph pGraph, xvalue* pSrc, xvalue** ppDst,bool shared)
 {
 	if ( ppDst == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -542,10 +542,13 @@ static int __xuiFlowCopyValue(xui_flow_graph pGraph, xvalue* pSrc, xvalue** ppDs
 		return XUI_OK;
 	}
 	__xuiFlowValueEnter(pGraph);
-	*ppDst = xrtValueDeepClone(pSrc);
+	*ppDst = shared ? xrtValueRetain(pSrc) : xrtValueDeepClone(pSrc);
 	__xuiFlowValueLeave(pGraph);
 	return (*ppDst != NULL) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
+
+static int __xuiFlowCopyValue(xui_flow_graph graph,xvalue* value,xvalue** output)
+{return __xuiFlowCopyValueMode(graph,value,output,false);}
 
 static void __xuiFlowFreeDiagnostics(xui_flow_graph pGraph)
 {
@@ -2211,12 +2214,8 @@ XUI_API int xuiFlowGraphSetEdgeRoute(xui_flow_graph pGraph, const char* sId, int
 	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
-XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+static int __xuiFlowSetNodeConfigValue(xui_flow_graph pGraph, const char* sId, xvalue* pConfig,bool shared)
 {
-	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-    xui_flow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_node_model_t* pNode;
 	xvalue* pCopy;
 	xvalue* pPrevious;
@@ -2225,23 +2224,23 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	iRevision = pGraph->iRevision;
-	iRet = __xuiFlowCopyValue(pGraph, pConfig, &pCopy);
+	iRet = __xuiFlowCopyValueMode(pGraph, pConfig, &pCopy,shared);
 	if ( iRet != XUI_OK ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	/* A custom xvalue Clone can run user code. Never reuse a node index
 	 * after that callback changed the model (including remove/recreate of
 	 * the same id). Roll back only this newly copied configuration. */
 	if ( pGraph->iRevision != iRevision ) {
 		if ( pCopy != NULL ) __xuiFlowReleaseValue(pGraph, pCopy);
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_STATE), 0);
+		return (XUI_ERROR_INVALID_STATE);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	pPrevious = pNode->pConfig;
@@ -2250,7 +2249,41 @@ XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
 	/* Publish before Drop. Same-model ordinary reentry is Busy; no owning
 	 * slot points at the retiring value during its callback. */
 	if ( pPrevious != NULL ) __xuiFlowReleaseValue(pGraph, pPrevious);
-	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
+	return (XUI_OK);
+}
+
+XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+{
+	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowSetNodeConfigValue(pGraph,sId,pConfig,false),0);
+}
+XUI_API int xuiFlowGraphSetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+{
+	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowSetNodeConfigValue(pGraph,sId,pConfig,true),0);
+}
+
+static int __xuiFlowGetNodeConfigValue(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig,bool shared)
+{
+	xui_flow_node_model_t* pNode;
+	int iNode;
+
+	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || (ppConfig == NULL) ) {
+		return (XUI_ERROR_INVALID_ARGUMENT);
+	}
+	*ppConfig = NULL;
+	iNode = xuiFlowGraphFindNode(pGraph, sId);
+	if ( iNode < 0 ) {
+		return (XUI_ERROR_INVALID_ARGUMENT);
+	}
+	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
+	return (__xuiFlowCopyValueMode(pGraph, pNode->pConfig, ppConfig,shared));
 }
 
 XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig)
@@ -2259,19 +2292,15 @@ XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xv
     xui_flow_operation_t __ownedCall={0};
     int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
     if(__ownedStatus!=XUI_OK)return __ownedStatus;
-	xui_flow_node_model_t* pNode;
-	int iNode;
-
-	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) || (ppConfig == NULL) ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
-	}
-	*ppConfig = NULL;
-	iNode = xuiFlowGraphFindNode(pGraph, sId);
-	if ( iNode < 0 ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
-	}
-	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
-	return __xuiFlowOperationEnd(&__ownedCall, (__xuiFlowCopyValue(pGraph, pNode->pConfig, ppConfig)), 0);
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowGetNodeConfigValue(pGraph,sId,ppConfig,false),0);
+}
+XUI_API int xuiFlowGraphGetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig)
+{
+	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowGetNodeConfigValue(pGraph,sId,ppConfig,true),0);
 }
 
 XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex)
@@ -2484,12 +2513,8 @@ XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_
 	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
-XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+static int __xuiFlowCommandSetNodeConfigValue(xui_flow_graph pGraph, const char* sId, xvalue* pConfig,bool shared)
 {
-	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
-    xui_flow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_flow_command_model_t tCommand;
 	xui_flow_node_model_t* pNode;
 	uint32_t iUndoPos;
@@ -2497,11 +2522,11 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	int iRet;
 
 	if ( (pGraph == NULL) || (sId == NULL) || (sId[0] == 0) ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	iNode = xuiFlowGraphFindNode(pGraph, sId);
 	if ( iNode < 0 ) {
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return (XUI_ERROR_INVALID_ARGUMENT);
 	}
 	pNode = (xui_flow_node_model_t*)xuiXrtArrayGet(&pGraph->arrNodes, (uint32_t)iNode + 1u);
 	__xuiFlowInitCommand(&tCommand);
@@ -2509,7 +2534,7 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	tCommand.sNodeId = __xuiFlowCopyString(sId);
 	if ( tCommand.sNodeId == NULL ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return __xuiFlowOperationEnd(&__ownedCall, (XUI_ERROR_OUT_OF_MEMORY), 0);
+		return (XUI_ERROR_OUT_OF_MEMORY);
 	}
 	iRet = __xuiFlowCopyValue(pGraph, pNode->pConfig, &tCommand.pOldConfig);
 	if ( iRet == XUI_OK ) {
@@ -2517,21 +2542,38 @@ XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* 
 	}
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	iRet = __xuiFlowReserveUndoCommand(pGraph, &iUndoPos);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
-	iRet = xuiFlowGraphSetNodeConfig(pGraph, sId, pConfig);
+	iRet = shared ? xuiFlowGraphSetNodeConfigShared(pGraph,sId,pConfig) : xuiFlowGraphSetNodeConfig(pGraph,sId,pConfig);
 	if ( iRet != XUI_OK ) {
 		__xuiFlowCancelReservedUndo(pGraph, iUndoPos);
 		__xuiFlowFreeCommand(pGraph, &tCommand);
-		return __xuiFlowOperationEnd(&__ownedCall, (iRet), 0);
+		return (iRet);
 	}
 	__xuiFlowCommitReservedUndo(pGraph, iUndoPos, &tCommand);
-	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
+	return (XUI_OK);
+}
+
+XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+{
+	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowCommandSetNodeConfigValue(pGraph,sId,pConfig,false),0);
+}
+XUI_API int xuiFlowGraphCommandSetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue* pConfig)
+{
+	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;
+    xui_flow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiFlowOperationBegin(pGraph,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+    return __xuiFlowOperationEnd(&__ownedCall,__xuiFlowCommandSetNodeConfigValue(pGraph,sId,pConfig,true),0);
 }
 
 XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex)

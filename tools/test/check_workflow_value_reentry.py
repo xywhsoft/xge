@@ -43,7 +43,7 @@ def main():
         shutil.copy2(root/rel,target)
     text=(source/'src/xui/workflow/xui_workflow.c').read_text(encoding='utf8')
     entries=re.findall(r'^XUI_API int (xuiWorkflow\w+)\(xui_workflow pWorkflow\b[^;{}]*\)\s*\{',text,re.M)
-    assert len(entries)==31
+    assert len(entries)==33
     probes=(source/'tests/xui/xui_workflow_busy_probes.inc').read_text(encoding='utf8')
     assert set(entries)==set(re.findall(r'assert\((xuiWorkflow\w+)\(',probes))
     for name in entries:
@@ -54,7 +54,7 @@ def main():
         'src/xge/core/xge_data_lifetime.inl','src/xge/core/xge_data_lifetime_internal.h']
     inputs.update((str(baseline/r),sha(baseline/r)) for r in baseline_paths)
     report=dict(complete=False,passed=False,scope=__doc__,shippingDelivery=False,nativeSdkRebuilt=False,
-        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=30,
+        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=32,
         canonicalXrtSha256=sha(source/'extlibs/xrt/xrt.h'),source=str(source),inputs=inputs,rows=[])
     def save():
         tmp=out/'results.json.tmp';tmp.write_text(json.dumps(report,indent=2)+'\n',encoding='utf8');os.replace(tmp,out/'results.json')
@@ -76,7 +76,7 @@ def main():
     library=runtime/('xlc.dll' if win else 'libxlc.so')
     try:
         baseline_exe=out/('baseline-value-reentry'+('.exe' if win else ''))
-        run('baseline-build',[gcc,*flags,'-O2',baseline/'src/xui/workflow/xui_flow_graph.c',
+        run('baseline-build',[gcc,*flags,'-O2','-DXUI_TEST_BASELINE_NO_SHARED=1',baseline/'src/xui/workflow/xui_flow_graph.c',
             baseline/'src/xui/workflow/xui_workflow.c',source/'tests/xui/xui_workflow_value_reentry_test.c',
             library,*systems,'-o',baseline_exe])
         run('baseline-rejects',[baseline_exe],reject=True)

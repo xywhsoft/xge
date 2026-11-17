@@ -31,7 +31,7 @@ def main():
     # Physical signature coverage, rather than an unmaintained handpicked list.
     header=(source/'include/xui.h').read_text(encoding='utf-8-sig');body=(source/'src/xui/workflow/xui_flow_graph.c').read_text(encoding='utf-8-sig')
     public={m[1]for m in re.finditer(r'XUI_API int (xuiFlowGraph\w+)\(xui_flow_graph pGraph\b[^;]*\);',header)}
-    probes=(source/'tests/xui/xui_flow_graph_busy_probes.inc').read_text();assert public==set(re.findall(r'assert\((xuiFlowGraph\w+)\(',probes))and len(public)==63
+    probes=(source/'tests/xui/xui_flow_graph_busy_probes.inc').read_text();assert public==set(re.findall(r'assert\((xuiFlowGraph\w+)\(',probes))and len(public)==66
     for name in public:
         match=re.search(r'XUI_API int '+name+r'\([^;{}]*\)\s*\{\s*if \(__xuiFlowBusy\(pGraph\)\) return XUI_ERROR_BUSY;',body);assert match,name
         if name!='xuiFlowGraphDestroyChecked':

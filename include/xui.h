@@ -13734,8 +13734,12 @@ XUI_API int xuiFlowGraphSetEdgeRunState(xui_flow_graph pGraph, const char* sId, 
 XUI_API int xuiFlowGraphSetEdgeRoute(xui_flow_graph pGraph, const char* sId, int iRouteStyle, float fRouteBias, float fSourceOffset, float fTargetOffset);
 /* 设置节点配置（xvalue 树）。 */
 XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
+/* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
+XUI_API int xuiFlowGraphSetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
 /* 输出节点配置深拷贝；调用方使用后需 xrtValueRelease。 */
 XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig);
+/* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
+XUI_API int xuiFlowGraphGetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig);
 /* 命令式添加节点（入撤销栈）。 */
 XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex);
 /* 命令式移除节点。 */
@@ -13748,6 +13752,8 @@ XUI_API int xuiFlowGraphCommandRecordMoveNode(xui_flow_graph pGraph, const char*
 XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_flow_move_node_record_t* pRecords, int iRecordCount);
 /* 命令式设置节点配置。 */
 XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
+/* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
+XUI_API int xuiFlowGraphCommandSetNodeConfigShared(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
 /* 命令式添加连线。 */
 XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex);
 /* 命令式移除连线。 */
@@ -13899,6 +13905,8 @@ XUI_API int xuiWorkflowConfigSchemaCreate(xvalue** ppSchema);
 XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc);
 /* 注册节点类型（含端口/配置 schema）；描述内容由工作流深拷贝。 */
 XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
+/* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
+XUI_API int xuiWorkflowRegisterNodeTypeShared(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
 /* 按类型 id 查索引；不存在返回 -1。 */
 XUI_API int xuiWorkflowFindNodeType(xui_workflow pWorkflow, const char* sId);
 /* 读取已注册类型数。 */
@@ -13935,6 +13943,8 @@ XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xv
 XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity);
 /* 添加工作流变量；描述内容与默认值由工作流深拷贝。 */
 XUI_API int xuiWorkflowAddVariable(xui_workflow pWorkflow, const xui_workflow_variable_desc_t* pDesc, int* pIndex);
+/* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
+XUI_API int xuiWorkflowAddVariableShared(xui_workflow pWorkflow, const xui_workflow_variable_desc_t* pDesc, int* pIndex);
 /* 按变量 id 查索引；不存在返回 -1。 */
 XUI_API int xuiWorkflowFindVariable(xui_workflow pWorkflow, const char* sId);
 /* 读取变量数。 */

@@ -30,3 +30,8 @@ assert(xuiWorkflowSetNodeRunState(workflow,NULL)==XUI_ERROR_BUSY);
 assert(xuiWorkflowGetNodeRunState(workflow,NULL,NULL)==XUI_ERROR_BUSY);
 assert(xuiWorkflowSetEdgeRunState(workflow,NULL)==XUI_ERROR_BUSY);
 assert(xuiWorkflowGetEdgeRunState(workflow,NULL,NULL)==XUI_ERROR_BUSY);
+
+#ifndef XUI_TEST_BASELINE_NO_SHARED
+assert(xuiWorkflowRegisterNodeTypeShared(workflow,NULL,NULL)==XUI_ERROR_BUSY);
+assert(xuiWorkflowAddVariableShared(workflow,NULL,NULL)==XUI_ERROR_BUSY);
+#endif

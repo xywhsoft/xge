@@ -21,7 +21,8 @@ def main():
     for name in (('xl.exe','xl.dll','xlc.dll') if win else ('xl','libxl.so','libxlc.so')):
         assert sha(runtime/name)==metadata['products'][name]['sha256']
     assert sha(baseline/'extlibs/xrt/xrt.h')==sha(Path(metadata['source'])/'lib/xrt/xrt.h')
-    overlays=['include/xui.h','src/xui/workflow/xui_workflow.c','src/xui/workflow/xui_workflow_owned.inl',
+    overlays=['include/xui.h','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c',
+        'src/xui/workflow/xui_flow_graph_owned.inl','src/xui/workflow/xui_workflow.c','src/xui/workflow/xui_workflow_owned.inl',
         'tests/xui/xui_workflow_owned_test.c','tests/xui/xui_workflow_busy_probes.inc',
         'tests/xui/xui_workflow_schema_test.c','tests/xui/xui_workflow_xson_test.c',
         'tests/xui/xui_flow_graph_owned_test.c','tests/xui/xui_flow_graph_config_reentry_test.c',
@@ -41,7 +42,7 @@ def main():
         shutil.copy2(root/rel,target)
     text=(source/'src/xui/workflow/xui_workflow.c').read_text(encoding='utf8')
     entries=re.findall(r'^XUI_API int (xuiWorkflow\w+)\(xui_workflow pWorkflow\b[^;{}]*\)\s*\{',text,re.M)
-    assert len(entries)==31
+    assert len(entries)==33
     probes=(source/'tests/xui/xui_workflow_busy_probes.inc').read_text(encoding='utf8')
     assert set(entries)==set(re.findall(r'assert\((xuiWorkflow\w+)\(',probes))
     for name in entries:
@@ -51,7 +52,7 @@ def main():
         'src/xge/core/xge_data_lifetime.inl','src/xge/core/xge_data_lifetime_internal.h']
     inputs.update((str(baseline/r),sha(baseline/r)) for r in baseline_paths)
     report=dict(complete=False,passed=False,scope=__doc__,shippingDelivery=False,nativeSdkRebuilt=False,
-        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=30,
+        networkTests=False,graphicsDeviceTests=False,protectedExistingOperations=32,
         canonicalXrtSha256=sha(source/'extlibs/xrt/xrt.h'),source=str(source),inputs=inputs,rows=[])
     def save():
         tmp=out/'results.json.tmp';tmp.write_text(json.dumps(report,indent=2)+'\n',encoding='utf8');os.replace(tmp,out/'results.json')
