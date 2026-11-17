@@ -23,7 +23,8 @@ def main():
     for name in (('xl.exe','xl.dll','xlc.dll') if win else ('xl','libxl.so','libxlc.so')):
         assert sha(runtime/name)==metadata['products'][name]['sha256']
     assert sha(baseline/'extlibs/xrt/xrt.h')==sha(Path(metadata['source'])/'lib/xrt/xrt.h')
-    overlays=['tests/xui/xui_workflow_shared_storage_test.c','tests/xui/xui_model_shared_values_test.c','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c',
+    overlays=['tests/xui/xui_workflow_shared_storage_test.c','tests/xui/xui_model_shared_values_test.c',
+        'tests/xui/xui_workflow_callbacks_owned_test.c','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c',
         'tests/xui/xui_workflow_value_reentry_test.c','include/xui.h','src/xui/workflow/xui_workflow.c','src/xui/workflow/xui_workflow_owned.inl',
         'tests/xui/xui_workflow_owned_test.c','tests/xui/xui_workflow_busy_probes.inc',
         'tests/xui/xui_workflow_schema_test.c','tests/xui/xui_workflow_xson_test.c',
@@ -83,7 +84,8 @@ def main():
         run('baseline-rejects',[baseline_exe],reject=True)
         assert b'xuiWorkflowDestroyChecked(workflow)==XUI_ERROR_BUSY' in (out/'baseline-rejects.log').read_bytes()
         for opt in ('O0','O2'):
-            for label,case in [('workflow-storage','xui_workflow_shared_storage_test.c'),('model-shared','xui_model_shared_values_test.c'),('workflow-values','xui_workflow_value_reentry_test.c'),('workflow-owned','xui_workflow_owned_test.c'),('graph-owned','xui_flow_graph_owned_test.c'),
+            for label,case in [('workflow-storage','xui_workflow_shared_storage_test.c'),('workflow-callbacks','xui_workflow_callbacks_owned_test.c'),
+                ('model-shared','xui_model_shared_values_test.c'),('workflow-values','xui_workflow_value_reentry_test.c'),('workflow-owned','xui_workflow_owned_test.c'),('graph-owned','xui_flow_graph_owned_test.c'),
                 ('graph-busy','xui_flow_graph_config_reentry_test.c'),('schema','xui_workflow_schema_test.c'),('xson','xui_workflow_xson_test.c')]:
                 exe=out/(label+'-'+opt+('.exe' if win else ''))
                 run(label+'-'+opt+'-build',[gcc,*flags,'-'+opt,*units,source/'tests/xui'/case,library,*systems,'-o',exe])

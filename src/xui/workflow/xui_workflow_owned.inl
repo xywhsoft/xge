@@ -69,8 +69,8 @@ static int __xuiWorkflowModelFinalize(void* data,bool* complete)
     /* Separate each user Drop boundary so a later error cannot overwrite the
      * first. The lifetime state rejects calls while these tables are cleared. */
     for(size_t i=0;i<workflow->arrTypes.Count;++i){
-        __xuiWorkflowFreeType(workflow, xrtArrayGet(&workflow->arrTypes,i));
-        __xuiWorkflowOwnedOutcomeAdd(&outcome,XUI_OK);
+        int status=__xuiWorkflowFreeType(workflow, xrtArrayGet(&workflow->arrTypes,i));
+        __xuiWorkflowOwnedOutcomeAdd(&outcome,status);
     }
     for(size_t i=0;i<workflow->arrVariables.Count;++i){
         __xuiWorkflowFreeVariable(workflow, xrtArrayGet(&workflow->arrVariables,i));

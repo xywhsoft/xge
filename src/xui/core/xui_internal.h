@@ -1231,6 +1231,8 @@ int xuiInternalFlowGraphGetGeometryRevisionChecked(xui_flow_graph pGraph, uint32
 int xuiInternalFlowGraphIsValueCallbackActive(xui_flow_graph pGraph);
 void xuiInternalFlowGraphValueCallbackEnter(xui_flow_graph pGraph);
 void xuiInternalFlowGraphValueCallbackLeave(xui_flow_graph pGraph);
+/* Consume staged diagnostic strings only after reserving the whole batch. */
+int xuiInternalFlowGraphAppendDiagnosticsTake(xui_flow_graph graph, xui_flow_diagnostic_desc_t* rows, size_t count);
 int xuiInternalFlowGraphSetCallbackOwner(xui_flow_graph pGraph,xui_flow_graph pOwner);
 int xuiInternalFlowGraphPromoteOwned(xui_flow_graph pGraph);
 int xuiInternalWorkflowPromoteOwned(xui_workflow workflow);

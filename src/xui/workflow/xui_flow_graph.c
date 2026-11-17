@@ -3352,6 +3352,28 @@ XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, flo
 	return __xuiFlowOperationEnd(&__ownedCall, (XUI_OK), 0);
 }
 
+int xuiInternalFlowGraphAppendDiagnosticsTake(xui_flow_graph graph, xui_flow_diagnostic_desc_t* rows, size_t count)
+{
+	if (!count) return XUI_OK;
+	if (__xuiFlowBusy(graph)) return XUI_ERROR_BUSY;
+	xui_flow_operation_t call = {0};
+	int status = __xuiFlowOperationBegin(graph, &call);
+	if (status != XUI_OK) return status;
+	if (count > INT_MAX || graph->arrDiagnostics.Count > (size_t)INT_MAX - count)
+		return __xuiFlowOperationEnd(&call, XUI_ERROR_LIMIT_EXCEEDED, 0);
+	xui_flow_diagnostic_model_t* result = xrtArrayAdd(&graph->arrDiagnostics, count);
+	if (!result) return __xuiFlowOperationEnd(&call, XUI_ERROR_OUT_OF_MEMORY, 0);
+	for (size_t i = 0; i < count; ++i) {
+		result[i] = (xui_flow_diagnostic_model_t){
+			rows[i].iSeverity, (char*)rows[i].sCode, (char*)rows[i].sMessage,
+			(char*)rows[i].sNode, (char*)rows[i].sEdge, (char*)rows[i].sPath
+		};
+		rows[i] = (xui_flow_diagnostic_desc_t){0};
+	}
+	__xuiFlowBumpRevision(graph);
+	return __xuiFlowOperationEnd(&call, XUI_OK, 0);
+}
+
 XUI_API int xuiFlowGraphAddDiagnostic(xui_flow_graph pGraph, const xui_flow_diagnostic_desc_t* pDesc, int* pIndex)
 {
 	if (__xuiFlowBusy(pGraph)) return XUI_ERROR_BUSY;

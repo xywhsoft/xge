@@ -10,6 +10,14 @@
 #include <string.h>
 #include <assert.h>
 #include "xge_data_lifetime_internal.h"
+#include "xui_callback_hold_internal.h"
+
+typedef struct xui_workflow_type_callbacks_t {
+	xui_workflow_write_ports_proc onPorts;
+	xui_workflow_write_diagnostics_proc onValidate;
+	void* pUser;
+	xui_callback_owner_t tOwner;
+} xui_workflow_type_callbacks_t;
 
 typedef struct xui_workflow_type_model_t {
 	char* sId;
@@ -25,7 +33,30 @@ typedef struct xui_workflow_type_model_t {
 	void* pDynamicPortsUser;
 	xui_workflow_validate_proc onValidate;
 	void* pValidateUser;
+	xui_workflow_type_callbacks_t tCallbacks;
 } xui_workflow_type_model_t;
+
+typedef struct xui_workflow_callback_input_t {
+	xui_workflow_callback_node_t tNode;
+	xvalue* pConfig;
+} xui_workflow_callback_input_t;
+
+struct xui_workflow_port_output_t {
+	xarray arrPorts;
+	int iStatus;
+};
+
+struct xui_workflow_diagnostic_output_t {
+	xarray arrDiagnostics;
+	const char* sNodeId;
+	int iStatus;
+};
+
+typedef struct xui_workflow_port_result_t {
+	xui_flow_port_desc_t* pPorts;
+	void* pAllocation;
+	int iCount;
+} xui_workflow_port_result_t;
 
 typedef struct xui_workflow_variable_model_t {
 	char* sId;
@@ -83,6 +114,21 @@ static void __xuiWorkflowReportBusy(void)
         "Workflow model is busy during a configuration value callback");
 }
 
+static int __xuiWorkflowDropCallbackOwner(xui_workflow workflow, const xui_callback_owner_t* owner)
+{
+	if (!owner->onDrop) return XUI_OK;
+	xerror* first = xrtTakeError();
+	xuiInternalFlowGraphValueCallbackEnter(workflow->pGraph);
+	bool ok = owner->onDrop(owner->tReference.Data);
+	xuiInternalFlowGraphValueCallbackLeave(workflow->pGraph);
+	int status = ok && !xrtGetError() ? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
+	if (first) {
+		xrtClearError();
+		xrtSetErrorTake(first);
+	}
+	return status;
+}
+
 /* Only the actual Clone/Drop boundary is Busy. Normal internal calls
  * between boundaries remain valid, and independent models are unaffected. */
 static xvalue* __xuiWorkflowValueClone(xui_workflow workflow,xvalue* value)
@@ -122,7 +168,7 @@ static void __xuiWorkflowValueRelease(xui_workflow workflow,xvalue* value)
 }
 
 static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
-	xui_flow_port_desc_t** ppPorts, int* pCount);
+	xui_workflow_port_result_t* result);
 
 static char* __xuiWorkflowCopyString(const char* sText)
 {
@@ -138,6 +184,77 @@ static void __xuiWorkflowFreePortDesc(xui_flow_port_desc_t* pPort)
 	xrtFree((void*)pPort->sTitle);
 	xrtFree((void*)pPort->sDataType);
 	memset(pPort, 0, sizeof(*pPort));
+}
+
+static int __xuiWorkflowCopyPortDesc(xui_flow_port_desc_t* dst, const xui_flow_port_desc_t* src)
+{
+	*dst = *src;
+	dst->sId = __xuiWorkflowCopyString(src->sId);
+	dst->sTitle = __xuiWorkflowCopyString(src->sTitle);
+	dst->sDataType = __xuiWorkflowCopyString(src->sDataType);
+	if (!dst->sId || (src->sTitle && !dst->sTitle) || (src->sDataType && !dst->sDataType)) {
+		__xuiWorkflowFreePortDesc(dst);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiWorkflowCallbackConfig(const xui_workflow_callback_node_t* pNode, xui_workflow_callback_config_t* pConfig)
+{
+	if (!pNode || !pConfig) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_workflow_callback_input_t* input = (const xui_workflow_callback_input_t*)pNode;
+	pConfig->pConfig = input->pConfig;
+	return XUI_OK;
+}
+
+XUI_API int xuiWorkflowPortOutputAppend(xui_workflow_port_output_t* output, const xui_flow_port_desc_t* port)
+{
+	if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+	if (output->iStatus != XUI_OK) return output->iStatus;
+	if (!port || port->iSize < sizeof(*port) || !port->sId || !port->sId[0] ||
+	    (port->iDirection != XUI_FLOW_PORT_INPUT && port->iDirection != XUI_FLOW_PORT_OUTPUT) ||
+	    (port->iKind != XUI_FLOW_PORT_CONTROL && port->iKind != XUI_FLOW_PORT_DATA))
+		return output->iStatus = XUI_ERROR_INVALID_ARGUMENT;
+	if (output->arrPorts.Count >= INT_MAX) return output->iStatus = XUI_ERROR_LIMIT_EXCEEDED;
+	xui_flow_port_desc_t* dst = xrtArrayAdd(&output->arrPorts, 1);
+	if (!dst) return output->iStatus = XUI_ERROR_OUT_OF_MEMORY;
+	output->iStatus = __xuiWorkflowCopyPortDesc(dst, port);
+	dst->bDynamic = 1;
+	return output->iStatus;
+}
+
+static void __xuiWorkflowFreeDiagnosticDesc(xui_flow_diagnostic_desc_t* diagnostic)
+{
+	xrtFree((void*)diagnostic->sCode);
+	xrtFree((void*)diagnostic->sMessage);
+	xrtFree((void*)diagnostic->sNode);
+	xrtFree((void*)diagnostic->sEdge);
+	xrtFree((void*)diagnostic->sPath);
+}
+
+XUI_API int xuiWorkflowDiagnosticOutputAppend(xui_workflow_diagnostic_output_t* output,
+	const xui_flow_diagnostic_desc_t* diagnostic)
+{
+	if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+	if (output->iStatus != XUI_OK) return output->iStatus;
+	if (!diagnostic || diagnostic->iSize < sizeof(*diagnostic) ||
+	    diagnostic->iSeverity < XUI_CODE_DIAGNOSTIC_ERROR || diagnostic->iSeverity > XUI_CODE_DIAGNOSTIC_HINT)
+		return output->iStatus = XUI_ERROR_INVALID_ARGUMENT;
+	if (output->arrDiagnostics.Count >= INT_MAX) return output->iStatus = XUI_ERROR_LIMIT_EXCEEDED;
+	xui_flow_diagnostic_desc_t* dst = xrtArrayAdd(&output->arrDiagnostics, 1);
+	if (!dst) return output->iStatus = XUI_ERROR_OUT_OF_MEMORY;
+	const char* node = diagnostic->sNode ? diagnostic->sNode : output->sNodeId;
+	*dst = *diagnostic;
+	dst->sCode = __xuiWorkflowCopyString(diagnostic->sCode);
+	dst->sMessage = __xuiWorkflowCopyString(diagnostic->sMessage);
+	dst->sNode = __xuiWorkflowCopyString(node);
+	dst->sEdge = __xuiWorkflowCopyString(diagnostic->sEdge);
+	dst->sPath = __xuiWorkflowCopyString(diagnostic->sPath);
+	if ((diagnostic->sCode && !dst->sCode) || (diagnostic->sMessage && !dst->sMessage) ||
+	    (node && !dst->sNode) || (diagnostic->sEdge && !dst->sEdge) ||
+	    (diagnostic->sPath && !dst->sPath))
+		output->iStatus = XUI_ERROR_OUT_OF_MEMORY;
+	return output->iStatus;
 }
 
 static int __xuiWorkflowCopyPortArray(xarray* pDst, const xui_flow_port_desc_t* pSrc, int iCount, int iExpectedDirection)
@@ -168,26 +285,21 @@ static int __xuiWorkflowCopyPortArray(xarray* pDst, const xui_flow_port_desc_t* 
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		pPort = (xui_flow_port_desc_t*)xuiXrtArrayGet(pDst, iPos);
-		memset(pPort, 0, sizeof(*pPort));
-		*pPort = pSrc[i];
-		pPort->sId = __xuiWorkflowCopyString(pSrc[i].sId);
-		pPort->sTitle = __xuiWorkflowCopyString(pSrc[i].sTitle);
-		pPort->sDataType = __xuiWorkflowCopyString(pSrc[i].sDataType);
-		if ( pPort->sId == NULL || (pSrc[i].sTitle != NULL && pPort->sTitle == NULL) || (pSrc[i].sDataType != NULL && pPort->sDataType == NULL) ) {
-			__xuiWorkflowFreePortDesc(pPort);
+		int status = __xuiWorkflowCopyPortDesc(pPort, &pSrc[i]);
+		if (status != XUI_OK) {
 			xuiXrtArrayRemove(pDst, iPos, 1u);
-			return XUI_ERROR_OUT_OF_MEMORY;
+			return status;
 		}
 	}
 	return XUI_OK;
 }
 
-static void __xuiWorkflowFreeType(xui_workflow pWorkflow, xui_workflow_type_model_t* pType)
+static int __xuiWorkflowFreeType(xui_workflow pWorkflow, xui_workflow_type_model_t* pType)
 {
 	uint32_t i;
 
 	if ( pType == NULL ) {
-		return;
+		return XUI_OK;
 	}
 	for ( i = 1u; i <= pType->arrInputs.Count; ++i ) {
 		__xuiWorkflowFreePortDesc((xui_flow_port_desc_t*)xuiXrtArrayGet(&pType->arrInputs, i));
@@ -205,7 +317,9 @@ static void __xuiWorkflowFreeType(xui_workflow pWorkflow, xui_workflow_type_mode
 	if ( pType->pConfigSchema != NULL ) {
 		__xuiWorkflowValueRelease(pWorkflow, pType->pConfigSchema);
 	}
+	xui_callback_owner_t owner = pType->tCallbacks.tOwner;
 	memset(pType, 0, sizeof(*pType));
+	return __xuiWorkflowDropCallbackOwner(pWorkflow, &owner);
 }
 
 static void __xuiWorkflowFreeVariable(xui_workflow pWorkflow, xui_workflow_variable_model_t* pVariable)
@@ -600,6 +714,8 @@ static bool __xuiWorkflowTraceValues(xui_workflow pWorkflow, xrtownershipvisitor
 	for ( size_t i = 0; i < pWorkflow->arrTypes.Count; ++i ) {
 		const xui_workflow_type_model_t* pType = xrtArrayGet(&pWorkflow->arrTypes, i);
 		if ( pType->pConfigSchema != NULL && !onVisit(xrtValueOwnership(pType->pConfigSchema), pUser) ) return false;
+		xrtownershipref callback = pType->tCallbacks.tOwner.tReference;
+		if (callback.Data && !onVisit(callback, pUser)) return false;
 	}
 	for ( size_t i = 0; i < pWorkflow->arrVariables.Count; ++i ) {
 		const xui_workflow_variable_model_t* pVariable = xrtArrayGet(&pWorkflow->arrVariables, i);
@@ -785,7 +901,8 @@ XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema,const xui_workflow_c
 XUI_API int xuiWorkflowConfigSchemaAddFieldShared(xvalue* pSchema,const xui_workflow_config_field_desc_t* pDesc)
 {return __xuiWorkflowConfigSchemaAddFieldValue(pSchema,pDesc,true);}
 
-static int __xuiWorkflowRegisterNodeTypeValue(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex,bool shared)
+static int __xuiWorkflowRegisterNodeTypeValue(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc,
+	int* pIndex, bool shared, const xui_workflow_type_callbacks_t* callbacks)
 {
 	xui_workflow_type_model_t* pType;
 	xui_flow_port_desc_t* pInput;
@@ -857,7 +974,16 @@ static int __xuiWorkflowRegisterNodeTypeValue(xui_workflow pWorkflow, const xui_
 		xuiXrtArrayRemove(&pWorkflow->arrTypes, iPos, 1u);
 		return (iRet);
 	}
-	iRet = __xuiWorkflowDictSetIndex(&pWorkflow->mapTypes, pType->sId, iIndex);
+	xrtownershipscope mutation = {0};
+	if (callbacks && !xrtOwnershipMutationBegin(&mutation)) {
+		iRet = XUI_ERROR_INVALID_STATE;
+	} else {
+		iRet = __xuiWorkflowDictSetIndex(&pWorkflow->mapTypes, pType->sId, iIndex);
+		if (callbacks) {
+			if (iRet == XUI_OK) pType->tCallbacks = *callbacks;
+			if (!xrtOwnershipScopeEnd(&mutation)) abort();
+		}
+	}
 	if ( iRet != XUI_OK ) {
 		__xuiWorkflowFreeType(pWorkflow, pType);
 		xuiXrtArrayRemove(&pWorkflow->arrTypes, iPos, 1u);
@@ -875,7 +1001,7 @@ XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workfl
     xui_workflow_operation_t __ownedCall={0};
     int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
     if(__ownedStatus!=XUI_OK)return __ownedStatus;
-    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowRegisterNodeTypeValue(pWorkflow,pDesc,pIndex,false),0);
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowRegisterNodeTypeValue(pWorkflow,pDesc,pIndex,false,NULL),0);
 }
 XUI_API int xuiWorkflowRegisterNodeTypeShared(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex)
 {
@@ -883,7 +1009,44 @@ XUI_API int xuiWorkflowRegisterNodeTypeShared(xui_workflow pWorkflow, const xui_
     xui_workflow_operation_t __ownedCall={0};
     int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
     if(__ownedStatus!=XUI_OK)return __ownedStatus;
-    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowRegisterNodeTypeValue(pWorkflow,pDesc,pIndex,true),0);
+    return __xuiWorkflowOperationEnd(&__ownedCall,__xuiWorkflowRegisterNodeTypeValue(pWorkflow,pDesc,pIndex,true,NULL),0);
+}
+
+XUI_API int xuiWorkflowRegisterNodeTypeOwned(xui_workflow workflow, const xui_workflow_owned_node_type_desc_t* desc,
+	const xui_callback_owner_t* owner, int* index)
+{
+	if (index) *index = -1;
+	if (__xuiWorkflowModelBusy(workflow)) return XUI_ERROR_BUSY;
+	if (!workflow || !workflow->pOwned || !desc || desc->iSize < sizeof(*desc) ||
+	    !xuiInternalCallbackOwnerRawValid(owner) ||
+	    (owner && owner->onHold && !desc->onDynamicPorts && !desc->onValidate))
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_workflow_operation_t operation = {0};
+	int status = __xuiWorkflowOperationBegin(workflow, &operation);
+	if (status != XUI_OK) return status;
+	xui_workflow_node_type_desc_t metadata = {
+		.iSize = sizeof(metadata), .sId = desc->sId, .iVersion = desc->iVersion,
+		.sTitle = desc->sTitle, .sCategory = desc->sCategory, .sDescription = desc->sDescription,
+		.sIcon = desc->sIcon, .pInputs = desc->pInputs, .iInputCount = desc->iInputCount,
+		.pOutputs = desc->pOutputs, .iOutputCount = desc->iOutputCount, .pConfigSchema = desc->pConfigSchema,
+	};
+	xui_workflow_type_callbacks_t callbacks = {
+		.onPorts = desc->onDynamicPorts, .onValidate = desc->onValidate, .pUser = desc->pUser,
+	};
+	if (owner) callbacks.tOwner = *owner;
+	bool held = false;
+	xuiInternalFlowGraphValueCallbackEnter(workflow->pGraph);
+	status = xuiInternalCallbackHoldFresh(owner, &held);
+	xuiInternalFlowGraphValueCallbackLeave(workflow->pGraph);
+	if (status == XUI_OK)
+		status = __xuiWorkflowRegisterNodeTypeValue(workflow, &metadata, index, true, &callbacks);
+	if (status != XUI_OK && held) {
+		xerror* first = xrtTakeError();
+		(void)__xuiWorkflowDropCallbackOwner(workflow, &callbacks.tOwner);
+		xrtClearError();
+		xrtSetErrorTake(first);
+	}
+	return __xuiWorkflowOperationEnd(&operation, status, 0);
 }
 
 XUI_API int xuiWorkflowFindNodeType(xui_workflow pWorkflow, const char* sId)
@@ -907,32 +1070,62 @@ XUI_API int xuiWorkflowGetNodeTypeCount(xui_workflow pWorkflow)
 	return __xuiWorkflowOperationEnd(&__ownedCall, ((pWorkflow != NULL) ? (int)pWorkflow->arrTypes.Count : 0), 0);
 }
 
+static bool __xuiWorkflowHasDynamicPorts(const xui_workflow_type_model_t* type)
+{
+	return type->onDynamicPorts || type->tCallbacks.onPorts;
+}
+
+static void __xuiWorkflowFreeDynamicPorts(const xui_workflow_type_model_t* type, xui_workflow_port_result_t* result)
+{
+	if (type->tCallbacks.onPorts)
+		for (int i = 0; i < result->iCount; ++i) __xuiWorkflowFreePortDesc(&result->pPorts[i]);
+	xrtFree(result->pAllocation);
+	*result = (xui_workflow_port_result_t){0};
+}
+
 static int __xuiWorkflowAddDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, int iNode, xvalue* pConfig)
 {
-	xui_flow_port_desc_t* pPorts;
-	int iCount;
-	int i;
-	int iRet;
+	xui_workflow_port_result_t result = {0};
+	int status = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sNodeId, pConfig, &result);
+	for (int i = 0; i < result.iCount && status == XUI_OK; ++i)
+		status = xuiFlowGraphAddPort(pWorkflow->pGraph, iNode, &result.pPorts[i], NULL);
+	__xuiWorkflowFreeDynamicPorts(pType, &result);
+	return status;
+}
 
-	if ( (pWorkflow == NULL) || (pType == NULL) || (pType->onDynamicPorts == NULL) ) {
-		return XUI_OK;
-	}
-	pPorts = NULL;
-	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sNodeId, pConfig, &pPorts, &iCount);
-	if ( iRet != XUI_OK ) return iRet;
-	for ( i = 0; i < iCount; ++i ) {
-		iRet = xuiFlowGraphAddPort(pWorkflow->pGraph, iNode, &pPorts[i], NULL);
-		if ( iRet != XUI_OK ) {
-			xrtFree(pPorts);
-			return iRet;
+static int __xuiWorkflowCallbackStatus(int status, int outputStatus)
+{
+	if (status != XUI_OK) return status < XUI_OK ? status : XUI_ERROR_CALLBACK_FAILED;
+	if (outputStatus != XUI_OK) return outputStatus;
+	return xrtGetError() ? XUI_ERROR_CALLBACK_FAILED : XUI_OK;
+}
+
+static int __xuiWorkflowInvokeValidator(xui_workflow workflow, const xui_workflow_type_model_t* type,
+	const xui_flow_node_info_t* node, xvalue* config, int* diagnosticCount)
+{
+	xui_workflow_callback_input_t input = {{node->sId, node->sType}, config};
+	xui_workflow_diagnostic_output_t output = {.sNodeId = node->sId};
+	xrtArrayInit(&output.arrDiagnostics, sizeof(xui_flow_diagnostic_desc_t));
+	xuiInternalFlowGraphValueCallbackEnter(workflow->pGraph);
+	int status = type->tCallbacks.onValidate(&input.tNode, &output, type->tCallbacks.pUser);
+	xuiInternalFlowGraphValueCallbackLeave(workflow->pGraph);
+	status = __xuiWorkflowCallbackStatus(status, output.iStatus);
+	xui_flow_diagnostic_desc_t* diagnostics = (xui_flow_diagnostic_desc_t*)output.arrDiagnostics.Data;
+	size_t count = output.arrDiagnostics.Count;
+	if (status == XUI_OK) {
+		status = xuiInternalFlowGraphAppendDiagnosticsTake(workflow->pGraph, diagnostics, count);
+		if (status == XUI_OK) {
+			*diagnosticCount += (int)count;
+			count = 0;
 		}
 	}
-	xrtFree(pPorts);
-	return XUI_OK;
+	for (size_t i = 0; i < count; ++i) __xuiWorkflowFreeDiagnosticDesc(&diagnostics[i]);
+	xrtArrayUnit(&output.arrDiagnostics);
+	return status;
 }
 
 static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_workflow_type_model_t* pType, const char* sNodeId, xvalue* pConfig,
-	xui_flow_port_desc_t** ppPorts, int* pCount)
+	xui_workflow_port_result_t* result)
 {
 	xui_flow_port_desc_t* pPorts;
 	int iCapacity;
@@ -941,11 +1134,20 @@ static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_work
 	int i;
 	int iRet;
 
-	if ( (pWorkflow == NULL) || (pType == NULL) || (ppPorts == NULL) || (pCount == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+	if (pType->tCallbacks.onPorts) {
+		xui_workflow_callback_input_t input = {{sNodeId, pType->sId}, pConfig};
+		xui_workflow_port_output_t output = {0};
+		xrtArrayInit(&output.arrPorts, sizeof(xui_flow_port_desc_t));
+		xuiInternalFlowGraphValueCallbackEnter(pWorkflow->pGraph);
+		iRet = pType->tCallbacks.onPorts(&input.tNode, &output, pType->tCallbacks.pUser);
+		xuiInternalFlowGraphValueCallbackLeave(pWorkflow->pGraph);
+		iRet = __xuiWorkflowCallbackStatus(iRet, output.iStatus);
+		*result = (xui_workflow_port_result_t){
+			(xui_flow_port_desc_t*)output.arrPorts.Data, output.arrPorts.Allocation, (int)output.arrPorts.Count
+		};
+		if (iRet != XUI_OK) __xuiWorkflowFreeDynamicPorts(pType, result);
+		return iRet;
 	}
-	*ppPorts = NULL;
-	*pCount = 0;
 	if ( pType->onDynamicPorts == NULL ) {
 		return XUI_OK;
 	}
@@ -989,8 +1191,7 @@ static int __xuiWorkflowBuildDynamicPorts(xui_workflow pWorkflow, const xui_work
 		}
 		pPorts[i].bDynamic = 1;
 	}
-	*ppPorts = pPorts;
-	*pCount = iPortCount;
+	*result = (xui_workflow_port_result_t){pPorts, pPorts, iPortCount};
 	return XUI_OK;
 }
 
@@ -1057,8 +1258,11 @@ XUI_API int xuiWorkflowAddNode(xui_workflow pWorkflow, const char* sType, const 
 	}
 	iRet = __xuiWorkflowAddDynamicPorts(pWorkflow, pType, sId, iNode, pDefaultConfig);
 	if ( iRet != XUI_OK ) {
+		xerror* first = xrtTakeError();
 		__xuiWorkflowValueRelease(pWorkflow, pDefaultConfig);
 		(void)xuiFlowGraphRemoveNode(pWorkflow->pGraph, sId);
+		xrtClearError();
+		xrtSetErrorTake(first);
 		return __xuiWorkflowOperationEnd(&__ownedCall, (iRet), 0);
 	}
 	iRet = xuiFlowGraphSetNodeConfig(pWorkflow->pGraph, sId, pDefaultConfig);
@@ -1777,7 +1981,13 @@ XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCou
 				iDiagnostics++;
 			}
 		}
-		if ( pType != NULL && pType->onValidate != NULL ) {
+		if (pType && pType->tCallbacks.onValidate) {
+			iRet = __xuiWorkflowInvokeValidator(pWorkflow, pType, &tNode, pConfig, &iDiagnostics);
+			if (iRet != XUI_OK) {
+				__xuiWorkflowValueRelease(pWorkflow, pConfig);
+				return __xuiWorkflowOperationEnd(&__ownedCall, iRet, 0);
+			}
+		} else if ( pType != NULL && pType->onValidate != NULL ) {
 			memset(arrHostDiagnostics, 0, sizeof(arrHostDiagnostics));
 			iHostDiagnostics = 0;
 			iRet = pType->onValidate(pWorkflow, tNode.sId, tNode.sType, pConfig, arrHostDiagnostics, (int)(sizeof(arrHostDiagnostics) / sizeof(arrHostDiagnostics[0])), &iHostDiagnostics, pType->pValidateUser);
@@ -1955,9 +2165,8 @@ static int __xuiWorkflowSetNodeConfigValue(xui_workflow pWorkflow,const char* sI
 {
 	xui_flow_node_info_t tInfo;
 	xui_workflow_type_model_t* pType;
-	xui_flow_port_desc_t* pNewPorts;
+	xui_workflow_port_result_t ports = {0};
 	char sSummary[256];
-	int iNewPortCount;
 	int iDiagnostics;
 	int iRet;
 
@@ -1976,8 +2185,7 @@ static int __xuiWorkflowSetNodeConfigValue(xui_workflow pWorkflow,const char* sI
 	if ( pType == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pNewPorts = NULL;
-	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, &pNewPorts, &iNewPortCount);
+	iRet = __xuiWorkflowBuildDynamicPorts(pWorkflow, pType, sId, pConfig, &ports);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -1985,11 +2193,11 @@ static int __xuiWorkflowSetNodeConfigValue(xui_workflow pWorkflow,const char* sI
 		sSummary, (int)sizeof(sSummary));
 	if ( iRet == XUI_OK ) {
         iRet = shared ? xuiInternalFlowGraphUpdateNodeConfigurationShared(pWorkflow->pGraph,sId,
-            pConfig,pNewPorts,iNewPortCount,pType->onDynamicPorts!=NULL,(sSummary[0]!=0) ? sSummary:NULL) :
+            pConfig,ports.pPorts,ports.iCount,__xuiWorkflowHasDynamicPorts(pType),(sSummary[0]!=0) ? sSummary:NULL) :
             xuiInternalFlowGraphUpdateNodeConfiguration(pWorkflow->pGraph,sId,
-            pConfig,pNewPorts,iNewPortCount,pType->onDynamicPorts!=NULL,(sSummary[0]!=0) ? sSummary:NULL);
+            pConfig,ports.pPorts,ports.iCount,__xuiWorkflowHasDynamicPorts(pType),(sSummary[0]!=0) ? sSummary:NULL);
 	}
-	xrtFree(pNewPorts);
+	__xuiWorkflowFreeDynamicPorts(pType, &ports);
 	return iRet;
 }
 

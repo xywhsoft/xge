@@ -2441,6 +2441,40 @@ typedef struct xui_workflow_node_type_desc_t {
 	void* pValidateUser;
 } xui_workflow_node_type_desc_t;
 
+/* The node and output are valid only during this call on the model thread.
+ * The callbacks run once per invocation. Operations on the same Workflow or
+ * its Graph report Busy while either callback is running. */
+typedef struct xui_workflow_callback_node_t {
+	const char* sId;
+	const char* sType;
+} xui_workflow_callback_node_t;
+typedef struct xui_workflow_callback_config_t {
+	xvalue* pConfig; /* Read-only borrowed value. */
+} xui_workflow_callback_config_t;
+typedef struct xui_workflow_port_output_t xui_workflow_port_output_t;
+typedef struct xui_workflow_diagnostic_output_t xui_workflow_diagnostic_output_t;
+typedef int (*xui_workflow_write_ports_proc)(const xui_workflow_callback_node_t* pNode,
+	xui_workflow_port_output_t* pOutput, void* pUser);
+typedef int (*xui_workflow_write_diagnostics_proc)(const xui_workflow_callback_node_t* pNode,
+	xui_workflow_diagnostic_output_t* pOutput, void* pUser);
+typedef struct xui_workflow_owned_node_type_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	int iVersion;
+	const char* sTitle;
+	const char* sCategory;
+	const char* sDescription;
+	const char* sIcon;
+	const xui_flow_port_desc_t* pInputs;
+	int iInputCount;
+	const xui_flow_port_desc_t* pOutputs;
+	int iOutputCount;
+	xvalue* pConfigSchema;
+	xui_workflow_write_ports_proc onDynamicPorts;
+	xui_workflow_write_diagnostics_proc onValidate;
+	void* pUser;
+} xui_workflow_owned_node_type_desc_t;
+
 typedef struct xui_workflow_node_library_item_t {
 	uint32_t iSize;
 	const char* sId;
@@ -13909,6 +13943,17 @@ XUI_API int xuiWorkflowConfigSchemaAddFieldShared(xvalue* pSchema, const xui_wor
 XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
 /* Retains the exact value identity instead of DeepClone. Caller aliases can mutate it. */
 XUI_API int xuiWorkflowRegisterNodeTypeShared(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
+/* Requires an owned Workflow. Retains the schema and one shared callback
+ * owner. The owner is traced with the model and dropped during finalization.
+ * Failed registration leaves the registry untouched. */
+XUI_API int xuiWorkflowRegisterNodeTypeOwned(xui_workflow pWorkflow, const xui_workflow_owned_node_type_desc_t* pDesc,
+	const xui_callback_owner_t* pOwner, int* pIndex);
+/* Borrowed, read-only config for this callback. NULL denotes absent config. */
+XUI_API int xuiWorkflowCallbackConfig(const xui_workflow_callback_node_t* pNode, xui_workflow_callback_config_t* pConfig);
+/* Appends a copied row. The first append failure rejects the callback result
+ * even if the callback handles the local error and returns XUI_OK. */
+XUI_API int xuiWorkflowPortOutputAppend(xui_workflow_port_output_t* pOutput, const xui_flow_port_desc_t* pPort);
+XUI_API int xuiWorkflowDiagnosticOutputAppend(xui_workflow_diagnostic_output_t* pOutput, const xui_flow_diagnostic_desc_t* pDiagnostic);
 /* 按类型 id 查索引；不存在返回 -1。 */
 XUI_API int xuiWorkflowFindNodeType(xui_workflow pWorkflow, const char* sId);
 /* 读取已注册类型数。 */
