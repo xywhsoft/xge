@@ -1,0 +1,40 @@
+{
+  "complete": true,
+  "passed": true,
+  "sourceParent": "497121af9da7399bc3c9a8c7ade75b4b9d15e046",
+  "xrtCommit": "804cc769de3030118c2b46ef7af69543d1b82d9d",
+  "sourceHashes": {
+    "extlibs/xrt/upstream.json": "56cc67c9afff4fc4af04829031d56edc58235969172acd35d3ed6446d86db2aa",
+    "extlibs/xrt/xrt.h": "7dd32c65c0779e94e630768902cc3e6eb79e25c7ddbc2d264603d36bae7220b0",
+    "extlibs/xrt/xrt_decl.h": "67c8dd99f6725075fb0275876817597e2cc7223ddb7155e93b7e99c8aa1b30b7",
+    "extlibs/xrt/include/xrt/value.h": "5848243ca18d296addda780425ef7113da243ac7620e19ed10a02866b2baa67d"
+  },
+  "reports": {
+    "win": {
+      "path": "F:\\xlang-validation\\xge-full-20261110\\xrt804-sdk-verified-win-r1.json",
+      "sha256": "b4eed892360767b6e1f7239b650b7fca069738b9d42283b3adf18da7c47af9a0",
+      "verifiedFiles": 7659,
+      "sourceGate": "F:\\xlang-validation\\xge-full-20261110\\xrt804-model-source-win-r3\\results.json",
+      "sdkGate": "F:\\xlang-validation\\xge-full-20261110\\xrt804-model-sdk-win-r3\\results.json",
+      "sdkBuild": "F:\\xlang-validation\\xge-full-20261110\\xrt804-sdk-win-r1\\results.json"
+    },
+    "linux": {
+      "path": "/var/tmp/xlang-validation/xge-full-20261110/xrt804-sdk-verified-linux-r1.json",
+      "sha256": "1e924edcc0d7f8b657240b72fe3842c1e916fa91840848700eccbd544cc43cd4",
+      "verifiedFiles": 7451,
+      "sourceGate": "/var/tmp/xlang-validation/xge-full-20261110/xrt804-model-source-linux-r3/results.json",
+      "sdkGate": "/var/tmp/xlang-validation/xge-full-20261110/xrt804-model-sdk-linux-r3/results.json",
+      "sdkBuild": "/var/tmp/xlang-validation/xge-full-20261110/xrt804-sdk-linux-r1/results.json"
+    }
+  },
+  "fullSdkBuilds": 4,
+  "freshO2Units": 660,
+  "commands": 186,
+  "sourceUnitCommands": 86,
+  "realSdkClientCommands": 96,
+  "productionObjectOverrides": false,
+  "nativeImplementationsUnchanged": true,
+  "recordLayoutsUnchanged": true,
+  "releaseInstalled": false,
+  "fullLanguageGoalComplete": false
+}
