@@ -136,7 +136,7 @@ static void drop_value(void* raw,void* user)
 {
     (void)user;payload* value=raw;if(!value->copy)return;
     callback_context* ctx=value->context;++ctx->drops;
-    assert(xuiWorkflowGetVariableCount(ctx->workflow)==XUI_ERROR_INVALID_STATE);
+    assert(xuiWorkflowGetVariableCount(ctx->workflow)==XUI_ERROR_BUSY);
     assert(!xuiWorkflowGetGraph(ctx->workflow));xrtClearError();
     xrtSetErrorInfo(XERR_STATE,"workflow.test",770+ctx->drops,"default Drop failed");xrtFree(value);
 }

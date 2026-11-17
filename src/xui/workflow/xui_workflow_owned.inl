@@ -64,26 +64,26 @@ static int __xuiWorkflowModelFinalize(void* data,bool* complete)
     xui_workflow workflow=((xui_workflow_owned_t*)data)->pWorkflow;
     xge_data_outcome_t outcome={0};
     __xuiWorkflowOwnedOutcomeBegin(&outcome,XUI_OK);
-    /* If the child cannot consume its reference, leave the tables intact so
-     * the checked owner release can be retried without partial destruction. */
+    /* Keep the associated Graph alive while schema/default Drop runs, so
+     * independently shared Graph aliases also reject reentrant operations. */
+    /* Separate each user Drop boundary so a later error cannot overwrite the
+     * first. The lifetime state rejects calls while these tables are cleared. */
+    for(size_t i=0;i<workflow->arrTypes.Count;++i){
+        __xuiWorkflowFreeType(workflow, xrtArrayGet(&workflow->arrTypes,i));
+        __xuiWorkflowOwnedOutcomeAdd(&outcome,XUI_OK);
+    }
+    for(size_t i=0;i<workflow->arrVariables.Count;++i){
+        __xuiWorkflowFreeVariable(workflow, xrtArrayGet(&workflow->arrVariables,i));
+        __xuiWorkflowOwnedOutcomeAdd(&outcome,XUI_OK);
+    }
+    xrtArrayUnit(&workflow->arrTypes);xrtArrayUnit(&workflow->arrVariables);
+    xrtMapUnit(&workflow->mapTypes);xrtMapUnit(&workflow->mapVariables);
     bool consumed=true;
     if(workflow->pGraph){
         __xuiWorkflowOwnedOutcomeAdd(&outcome,xuiFlowGraphReleaseOwnerChecked(workflow->pGraph,&consumed));
         if(!consumed){*complete=false;return __xuiWorkflowOwnedOutcomeEnd(&outcome,NULL);}
         workflow->pGraph=NULL;
     }
-    /* Separate each user Drop boundary so a later error cannot overwrite the
-     * first. The lifetime state rejects calls while these tables are cleared. */
-    for(size_t i=0;i<workflow->arrTypes.Count;++i){
-        __xuiWorkflowFreeType(xrtArrayGet(&workflow->arrTypes,i));
-        __xuiWorkflowOwnedOutcomeAdd(&outcome,XUI_OK);
-    }
-    for(size_t i=0;i<workflow->arrVariables.Count;++i){
-        __xuiWorkflowFreeVariable(xrtArrayGet(&workflow->arrVariables,i));
-        __xuiWorkflowOwnedOutcomeAdd(&outcome,XUI_OK);
-    }
-    xrtArrayUnit(&workflow->arrTypes);xrtArrayUnit(&workflow->arrVariables);
-    xrtMapUnit(&workflow->mapTypes);xrtMapUnit(&workflow->mapVariables);
     *complete=true;
     return __xuiWorkflowOwnedOutcomeEnd(&outcome,NULL);
 }

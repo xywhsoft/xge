@@ -183,6 +183,13 @@ static void __xuiFlowValueLeave(xui_flow_graph graph)
     --graph->iValueCallbackDepth;
 }
 
+/* Internal synchronous value boundary, shared by Workflow schema/defaults.
+ * Caller already admitted the owning model on its creator thread. */
+void xuiInternalFlowGraphValueCallbackEnter(xui_flow_graph graph)
+{ if(graph)__xuiFlowValueEnter(graph); }
+void xuiInternalFlowGraphValueCallbackLeave(xui_flow_graph graph)
+{ if(graph)__xuiFlowValueLeave(graph); }
+
 static void __xuiFlowReportBusy(void)
 {
     if (!xrtGetError()) xrtSetErrorInfo(XERR_STATE, "xui.flow_graph", XUI_ERROR_BUSY,

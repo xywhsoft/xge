@@ -1229,6 +1229,8 @@ int xuiInternalCodeLanguageUsesBuiltinC(const xui_code_language_t* pLanguage);
 uint32_t xuiInternalFlowGraphGetGeometryRevision(xui_flow_graph pGraph);
 int xuiInternalFlowGraphGetGeometryRevisionChecked(xui_flow_graph pGraph, uint32_t* pRevision);
 int xuiInternalFlowGraphIsValueCallbackActive(xui_flow_graph pGraph);
+void xuiInternalFlowGraphValueCallbackEnter(xui_flow_graph pGraph);
+void xuiInternalFlowGraphValueCallbackLeave(xui_flow_graph pGraph);
 int xuiInternalFlowGraphSetCallbackOwner(xui_flow_graph pGraph,xui_flow_graph pOwner);
 int xuiInternalFlowGraphPromoteOwned(xui_flow_graph pGraph);
 int xuiInternalWorkflowPromoteOwned(xui_workflow workflow);
