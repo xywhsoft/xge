@@ -27,7 +27,8 @@ def main():
     for product in products:assert sha(product)==metadata['products'][product.name]['sha256']
     overlays=['include/xui.h','src/xui/core/xui_internal.h','src/xui/workflow/xui_flow_graph.c',
         'src/xui/workflow/xui_flow_graph_owned.inl','src/xui/workflow/xui_flow_graph_widget.c',
-        'src/xui/workflow/xui_workflow.c','src/xge/core/xge_data_lifetime.inl',
+        'src/xui/workflow/xui_flow_graph_widget_internal.h','src/xui/workflow/xui_workflow.c',
+        'src/xui/workflow/xui_workflow_owned.inl','src/xge/core/xge_data_lifetime.inl',
         'tests/xui/xui_flow_graph_shared_widget_test.c']
     pins=[Path(__file__).resolve(),cc,build,native_report,archive,sdk/'xge_build_config.h',*products,*[root/r for r in overlays]]
     inputs={str(p):sha(p)for p in pins}

@@ -1875,6 +1875,35 @@ static void __xuiFlowGraphWidgetReleaseData(xui_flow_graph_widget_data_t* pData,
 	memset(pData, 0, sizeof(*pData));
 }
 
+int xuiInternalFlowGraphWidgetPrepareModelRelease(xui_widget widget,xui_widget authority)
+{
+    /* Logical retirement clears public/stable part slots before physical
+     * destruction. The native owner's part list still retains the real part. */
+    if(!widget && authority){
+        for(xui_widget part=authority->pFirstOwnedPart;part;part=part->pOwnedPartNext){
+            if(part->pInitializedType && part->pInitializedType->sName &&
+               strcmp(part->pInitializedType->sName,"flowgraph")==0){widget=part;break;}
+        }
+    }
+    if(!widget)return XUI_OK;
+    /* The native composite owns this physically live part through preparation,
+     * including after logical retirement. Public GetData rejects that state. */
+    if(!authority || widget->pInternalOwner!=authority || widget->pContext!=authority->pContext ||
+       !(authority->bDestroyPending || authority->pContext->bCloseRequested || authority->pContext->bDestroying))
+        return XUI_ERROR_INVALID_STATE;
+    xui_flow_graph_widget_data_t* data=widget->pTypeData;
+    if(!data || data->bOwnGraph)return XUI_ERROR_INVALID_STATE;
+    int status=__xuiFlowGraphWidgetDestroyReady(widget,data);
+    if(status!=XUI_OK)return status;
+    data->bGraphMutationActive=1;
+    status=__xuiFlowGraphWidgetRestoreDraggedNodes(data);
+    if(status==XUI_OK){
+        __xuiFlowGraphWidgetClearDrag(data);
+        data->pGraph=NULL;
+    }
+    data->bGraphMutationActive=0;return status;
+}
+
 static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	static const int arrEvents[] = {
@@ -2129,12 +2158,13 @@ XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget)
 	return (pData != NULL) ? pData->pGraph : NULL;
 }
 
-static int __xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph,xui_widget authority,bool* installed)
+static int __xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph,xui_widget authority,bool* installed,bool* published)
 {
 	xui_flow_graph_widget_data_t* pData;
 	int iRet;
     int cleanupStatus=XUI_OK;xerror* cleanupError=NULL;
     if(installed)*installed=false;
+    if(published)*published=false;
 
 	pData = __xuiFlowGraphWidgetGetData(pWidget);
 	if ( pData == NULL || pGraph == NULL ) {
@@ -2177,6 +2207,7 @@ static int __xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGrap
     if(installed && bOwnGraph && (pData->pGraph!=pGraph || !pData->bOwnGraph))*installed=true;
 	pData->pGraph = pGraph;
 	pData->bOwnGraph = bOwnGraph ? 1 : 0;
+    if(published)*published=true;
 	pData->iHoverType = XUI_FLOW_HIT_NONE;
 	pData->iHoverNode = -1;
 	pData->iHoverPort = -1;
@@ -2197,7 +2228,10 @@ finish:
 }
 
 int xuiInternalFlowGraphWidgetSetGraph(xui_widget widget,xui_flow_graph graph,int ownGraph,xui_widget authority)
-{return __xuiFlowGraphWidgetSetGraph(widget,graph,ownGraph,authority,NULL);}
+{return __xuiFlowGraphWidgetSetGraph(widget,graph,ownGraph,authority,NULL,NULL);}
+
+int xuiInternalFlowGraphWidgetSetGraphPublished(xui_widget widget,xui_flow_graph graph,int ownGraph,xui_widget authority,bool* published)
+{return __xuiFlowGraphWidgetSetGraph(widget,graph,ownGraph,authority,NULL,published);}
 
 XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget widget,xui_flow_graph graph,int ownGraph)
 {return xuiInternalFlowGraphWidgetSetGraph(widget,graph,ownGraph,NULL);}
@@ -2235,7 +2269,7 @@ XUI_API int xuiFlowGraphWidgetSetGraphShared(xui_widget widget,xui_flow_graph gr
     xui_flow_graph held=NULL;int status=xuiFlowGraphShareOwned(graph,&held);
     if(status!=XUI_OK)return status;
     bool installed=false;
-    status=__xuiFlowGraphWidgetSetGraph(widget,held,1,NULL,&installed);
+    status=__xuiFlowGraphWidgetSetGraph(widget,held,1,NULL,&installed,NULL);
     if(!installed){
         xerror* first=xrtTakeError();
         int dropped=xuiFlowGraphReleaseChecked(held);xerror* secondary=xrtTakeError();

@@ -13845,6 +13845,13 @@ XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext);
 XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_workflow_desc_t* pDesc);
 /* 取绑定的工作流模型。 */
 XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget);
+/* Acquires an independent reference, promoting an owned unique slot once.
+ * A borrowed unique slot cannot be promoted. Output changes on success only. */
+XUI_API int xuiWorkflowWidgetGetWorkflowOwned(xui_widget widget,xui_workflow* output);
+/* The canvas retains its own model reference. A failure in retiring the old
+ * model can be reported after the new slot is installed. Any unconsumed old
+ * reference remains traced and is retried before another handoff or destroy. */
+XUI_API int xuiWorkflowWidgetSetWorkflowShared(xui_widget widget,xui_workflow workflow);
 /* 绑定模型；bOwnWorkflow 为真时由控件接管销毁。 */
 XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkflow, int bOwnWorkflow);
 /* 注册画布右键回调。 */
