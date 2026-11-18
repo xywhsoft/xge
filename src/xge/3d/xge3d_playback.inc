@@ -75,15 +75,17 @@ static int d3_playback_pose(xge3d_animator *a,int index,double time,double previ
 }
 int xge3dAnimatorFadeLayer(xge3d_animator *a,int index,float weight,float seconds)
 {
-    if(!a||index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!isfinite(weight)||weight<0||weight>1||!isfinite(seconds)||seconds<0)return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_animator_status(a);if(status!=XGE_OK)return status;
+    if(index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!isfinite(weight)||weight<0||weight>1||!isfinite(seconds)||seconds<0)return XGE_ERROR_INVALID_ARGUMENT;
     d3_layer *l=&a->layers[index];if(!l->clip)return XGE_ERROR_NOT_FOUND;
     l->fade_from=l->weight;l->fade_to=weight;l->fade_duration=seconds;l->fade_time=0;l->stopping=0;
     if(!seconds)l->weight=weight;
     return XGE_OK;
 }
-int xge3dAnimatorPlay(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *desc,float seconds)
+static int d3_animator_play(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *desc,float seconds)
 {
-    if(!a||index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!isfinite(seconds)||seconds<0)return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_animator_status(a);if(status!=XGE_OK)return status;
+    if(index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!isfinite(seconds)||seconds<0)return XGE_ERROR_INVALID_ARGUMENT;
     if(!seconds)return xge3dAnimatorSetLayer(a,index,clip,desc);
     d3_layer *l=&a->layers[index];d3_transition *t=&a->transitions[index];
     if(!clip){if(!l->clip)return XGE_OK;int result=xge3dAnimatorFadeLayer(a,index,0,seconds);if(!result)l->stopping=1;return result;}
@@ -104,13 +106,36 @@ int xge3dAnimatorPlay(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_a
     *l=incoming;return XGE_OK;
 done:d3_layer_free(&incoming);xrtArrayUnit(&snapshot);return result;
 }
+int xge3dAnimatorPlay(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *desc,float seconds)
+{return d3_animator_play(a,index,clip,desc,seconds);}
+int xge3dAnimatorPlayArrays(xge3d_animator *a,int index,xge3d_clip *clip,
+    const xge3d_animation_options_t *options,float seconds,const float *mask,size_t mask_count,
+    const xge3d_bone_binding_t *bindings,size_t binding_count)
+{
+    if(mask_count && !mask)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_animation_layer_t desc=xge3dAnimationLayerDefault();
+    if(options){
+        desc.time=options->time;desc.speed=options->speed;desc.weight=options->weight;desc.loop=options->loop;
+    }
+    desc.mask=mask;desc.mask_count=mask_count;desc.bindings=bindings;desc.binding_count=binding_count;
+    return d3_animator_play(a,index,clip,&desc,seconds);
+}
 int xge3dAnimatorSetPaused(xge3d_animator *a,int paused)
-{if(!a||(paused!=0&&paused!=1))return XGE_ERROR_INVALID_ARGUMENT;a->paused=paused;return XGE_OK;}
+{
+    int status=d3_animator_status(a);if(status!=XGE_OK)return status;
+    if(paused!=0&&paused!=1)return XGE_ERROR_INVALID_ARGUMENT;
+    a->paused=paused;return XGE_OK;
+}
 int xge3dAnimatorSetLayerPaused(xge3d_animator *a,int index,int paused)
-{if(!a||index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||(paused!=0&&paused!=1))return XGE_ERROR_INVALID_ARGUMENT;a->layers[index].paused=paused;return XGE_OK;}
+{
+    int status=d3_animator_status(a);if(status!=XGE_OK)return status;
+    if(index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||(paused!=0&&paused!=1))return XGE_ERROR_INVALID_ARGUMENT;
+    a->layers[index].paused=paused;return XGE_OK;
+}
 int xge3dAnimatorGetPlayback(const xge3d_animator *a,int index,xge3d_playback_info_t *out)
 {
-    if(!a||index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_animator_status(a);if(status!=XGE_OK)return status;
+    if(index<0||index>=XGE3D_ANIMATION_MAX_LAYERS||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
     const d3_layer *l=&a->layers[index];const d3_transition *t=&a->transitions[index];
     xge3d_playback_info_t info={.size=sizeof(info),.paused=a->paused||l->paused,.mode=a->modes[index]};
     if(l->clip){info.active=1;info.time=(float)l->time;info.duration=l->clip->duration;info.speed=l->speed;info.weight=l->weight;info.loop=l->loop;

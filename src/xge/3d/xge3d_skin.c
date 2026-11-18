@@ -49,7 +49,7 @@ int d3_skin_create(xge3d_scene *scene,xge3d_node_data *owner,xge3d_model *model,
     int result=d3_skin_register(scene,owner,s);if(result!=XGE_OK){d3_skin_free(s);return result;}
     *out=s;return XGE_OK;
 }
-int xge3dNodeBindSkin(xge3d_scene *scene,xge3d_node_t handle,const xge3d_skin_binding_t *binding)
+static int d3_bind_skin(xge3d_scene *scene,xge3d_node_t handle,const xge3d_skin_binding_t *binding)
 {
     xge3d_node_data *node=d3_node(scene,handle);if(!node||!node->mesh)return XGE_ERROR_INVALID_ARGUMENT;
     if(!binding){d3_skin_free(node->skin);node->skin=NULL;node->bounds_version=0;d3_spatial_dirty(scene,node);return XGE_OK;}
@@ -66,6 +66,15 @@ int xge3dNodeBindSkin(xge3d_scene *scene,xge3d_node_t handle,const xge3d_skin_bi
     for(size_t i=0;i<binding->count;++i)*(xge3d_mat4_t*)xrtArrayGet(&skin->inverse_bind,i)=binding->inverse_bind?binding->inverse_bind[i]:d3_identity();
     int result=d3_skin_register(scene,node,skin);if(result){d3_skin_free(skin);return result;}
     d3_skin_free(node->skin);node->skin=skin;node->bounds_version=0;d3_spatial_dirty(scene,node);return XGE_OK;
+}
+int xge3dNodeBindSkin(xge3d_scene *scene,xge3d_node_t handle,const xge3d_skin_binding_t *binding)
+{return d3_bind_skin(scene,handle,binding);}
+int xge3dNodeBindSkinArrays(xge3d_scene *scene,xge3d_node_t handle,
+    const xge3d_node_t *joints,size_t count,const xge3d_mat4_t *inverse_bind,size_t inverse_count)
+{
+    if((inverse_count || inverse_bind) && (!inverse_bind || inverse_count!=count))return XGE_ERROR_INVALID_ARGUMENT;
+    const xge3d_skin_binding_t binding={.joints=joints,.inverse_bind=inverse_bind,.count=count};
+    return d3_bind_skin(scene,handle,&binding);
 }
 int d3_skin_update(xge3d_scene *scene,xge3d_node_data *node)
 {
@@ -126,5 +135,29 @@ int xge3dNodeSkinMatrices(xge3d_scene *scene,xge3d_node_t node,const xge3d_mat4_
     if (!n->skin) return XGE_ERROR_NOT_FOUND;
     int result=d3_skin_update(scene,n);if (result!=XGE_OK) return result;
     *matrices=(const xge3d_mat4_t*)n->skin->palette.Data;*count=n->skin->palette.Count;return XGE_OK;
+}
+int xge3dNodeSkinMatrixAt(xge3d_scene *scene,xge3d_node_t node,size_t joint,xge3d_mat4_t *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    const xge3d_mat4_t *matrices=NULL;
+    size_t count=0;
+    int status=xge3dNodeSkinMatrices(scene,node,&matrices,&count);
+    if(status!=XGE_OK)return status;
+    if(joint>=count)return XGE_ERROR_NOT_FOUND;
+    *out=matrices[joint];return XGE_OK;
+}
+int xge3dNodeSkinPaletteBytes(xge3d_scene *scene,xge3d_node_t node,uint8_t **out,uint64_t *size)
+{
+    if(!out||!size)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;*size=0;
+    const xge3d_mat4_t *matrices=NULL;
+    size_t count=0;
+    int status=xge3dNodeSkinMatrices(scene,node,&matrices,&count);
+    if(status!=XGE_OK)return status;
+    size_t bytes=count*sizeof(*matrices);
+    uint8_t *copy=xrtMalloc(bytes);
+    if(!copy)return XGE_ERROR_OUT_OF_MEMORY;
+    memcpy(copy,matrices,bytes);
+    *out=copy;*size=bytes;return XGE_OK;
 }
 #endif

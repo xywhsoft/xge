@@ -264,6 +264,7 @@ int d3_texture_upload(xge3d_texture *texture, uint64_t *bytes);
 int d3_material_retain(xge3d_material *material);
 #if XGE3D_ENABLE_MODEL
 struct cgltf_data *d3_model_data(const xge3d_model *model);
+bool d3_model_managed(const xge3d_model *model);
 int d3_model_retain(xge3d_model *model);
 #if XGE3D_ENABLE_CACHE
 int d3_model_share_textures(xge3d_model *model,int (*intern)(xge3d_texture *,xge3d_texture **,void *),void *user);

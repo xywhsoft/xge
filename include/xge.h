@@ -4901,10 +4901,22 @@ XGE_API void xge3dClipFree(xge3d_clip *clip);
 XGE_API xge3d_clip_info_t xge3dClipInfo(const xge3d_clip *clip);
 /* 借用剪辑指定源节点的 UTF-8 名称。 */
 XGE_API const char *xge3dClipNodeName(const xge3d_clip *clip, size_t source_node);
+/* Managed clips retain a managed model and use its creating thread. */
+XGE_API int xge3dClipFromModelOwned(xge3d_model *model,size_t animation,xge3d_clip **out);
+XGE_API int xge3dClipShareOwned(xge3d_clip *clip,xge3d_clip **out);
+XGE_API int xge3dClipReleaseOwnerChecked(xge3d_clip *clip,bool *consumed);
+XGE_API int xge3dClipReleaseChecked(xge3d_clip *clip);
+XGE_API int xge3dClipInfoChecked(const xge3d_clip *clip,xge3d_clip_info_t *out);
+XGE_API int xge3dClipNodeNameChecked(const xge3d_clip *clip,size_t source_node,const char **out);
 /* 为场景中的模型根节点创建动画器。 */
 XGE_API int xge3dAnimatorCreate(xge3d_scene *scene, xge3d_node_t model_root, xge3d_animator **out);
 /* 释放动画器及其剪辑引用，场景仍由调用方持有。 */
 XGE_API void xge3dAnimatorFree(xge3d_animator *animator);
+/* Managed animators retain the scene, its model and all clips used by layers
+ * and transitions. The model-root handle remains generation checked. */
+XGE_API int xge3dAnimatorCreateOwned(xge3d_scene *scene,xge3d_node_t model_root,xge3d_animator **out);
+XGE_API int xge3dAnimatorReleaseOwnerChecked(xge3d_animator *animator,bool *consumed);
+XGE_API int xge3dAnimatorReleaseChecked(xge3d_animator *animator);
 /* 返回动画层的默认播放和混合设置。 */
 XGE_API xge3d_animation_layer_t xge3dAnimationLayerDefault(void);
 /* NULL clears a layer. Failed binding preserves the old layer. Automatic
@@ -4926,6 +4938,11 @@ typedef struct xge3d_playback_info_t {
  * Global/per-layer pause freezes both playback and real-time fade clocks. */
 XGE_API int xge3dAnimatorPlay(xge3d_animator *animator,int layer,xge3d_clip *clip,
     const xge3d_animation_layer_t *desc,float fade_seconds);
+typedef struct xge3d_animation_options_t { float time,speed,weight;int loop; } xge3d_animation_options_t;
+/* Independently sized, synchronous mask and retargeting inputs. */
+XGE_API int xge3dAnimatorPlayArrays(xge3d_animator *animator,int layer,xge3d_clip *clip,
+    const xge3d_animation_options_t *options,float fade_seconds,const float *mask,size_t mask_count,
+    const xge3d_bone_binding_t *bindings,size_t binding_count);
 /* Fade gain without changing the clip. Zero weight still advances/emits events,
  * as SetLayerWeight does; use Play(NULL) to stop/release after a fade. */
 XGE_API int xge3dAnimatorFadeLayer(xge3d_animator *animator,int layer,float weight,float seconds);
@@ -5118,6 +5135,8 @@ XGE_API int xge3dModelLoadMemoryBudget(const void *data,size_t size,const char *
 #if XGE3D_ENABLE_ANIMATION
 /* 在共享解码配额约束下加载动画剪辑。 */
 XGE_API int xge3dClipLoadBudget(const char *uri,size_t animation,xge3d_decode_budget *budget,xge3d_clip **out);
+/* Optional quota covers source decode and clip track storage. */
+XGE_API int xge3dClipLoadOwned(const char *uri,size_t animation,xge3d_decode_budget *budget,xge3d_clip **out);
 #endif
 /* 查询模型保留的 CPU 存储和预估 GPU 载荷。 */
 XGE_API int xge3dModelMemoryInfo(const xge3d_model *model, xge3d_asset_memory_t *out);
@@ -5171,6 +5190,11 @@ typedef struct xge3d_skin_binding_t {
  * validates all joints/weights; failure preserves the old skin. NULL unbinds.
  * Multiple meshes may use the SAME joint nodes without extra animators. */
 XGE_API int xge3dNodeBindSkin(xge3d_scene *scene, xge3d_node_t node, const xge3d_skin_binding_t *binding);
+XGE_API int xge3dNodeBindSkinArrays(xge3d_scene *scene,xge3d_node_t node,
+    const xge3d_node_t *joints,size_t count,const xge3d_mat4_t *inverse_bind,size_t inverse_count);
+/* Owned snapshot of consecutive native matrices, allocated by xrtMalloc. */
+XGE_API int xge3dNodeSkinPaletteBytes(xge3d_scene *scene,xge3d_node_t node,uint8_t **out,uint64_t *size);
+XGE_API int xge3dNodeSkinMatrixAt(xge3d_scene *scene,xge3d_node_t node,size_t joint,xge3d_mat4_t *out);
 #if XGE3D_ENABLE_ASYNC
 /* 按上传预算预热节点蒙皮所需的 GPU 数据。 */
 XGE_API int xge3dNodePrepareSkin(xge3d_scene *scene, xge3d_node_t node,

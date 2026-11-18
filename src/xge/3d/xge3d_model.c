@@ -720,9 +720,11 @@ int xge3dModelInfoChecked(const xge3d_model *m,xge3d_model_info_t *out)
     return XGE_OK;
 }
 struct cgltf_data *d3_model_data(const xge3d_model *m)
-{return m&&!m->retiring&&d3_model_thread(m)?m->data:NULL;}
+{return m&&d3_model_thread(m)&&!m->retiring?m->data:NULL;}
+bool d3_model_managed(const xge3d_model *m)
+{return m && m->owner_thread!=0;}
 int d3_model_retain(xge3d_model *m)
-{if(!m||m->retiring||!d3_model_thread(m)||m->refs==UINT32_MAX)return 0;++m->refs;return 1;}
+{if(!m||!d3_model_thread(m)||m->retiring||m->refs==UINT32_MAX)return 0;++m->refs;return 1;}
 #if XGE3D_ENABLE_ANIMATION
 size_t xge3dModelSkinJointNode(const xge3d_model *m,size_t skin,size_t joint)
 {
