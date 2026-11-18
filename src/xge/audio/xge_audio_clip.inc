@@ -125,8 +125,11 @@ int xgeSoundFromClip(xge_sound sound,const xge_sound_clip_desc_t *desc)
     ma_result r=ma_audio_buffer_ref_init(ma_format_f32,clip->info.channels,
         clip->samples+(size_t)first*clip->info.channels,frames,&voice->buffer);
     if(r==MA_SUCCESS){voice->buffer.sampleRate=clip->info.sample_rate;
+        /* The nonspatial path has no pitch control. Bypass the unity-ratio
+         * resampler so it cannot truncate short clips. Miniaudio enables
+         * resampling when the source rate differs from the engine rate. */
         r=ma_sound_init_from_data_source((ma_engine*)g_xge.pAudioEngine,&voice->buffer,
-            desc->spatial?0:MA_SOUND_FLAG_NO_SPATIALIZATION,
+            desc->spatial ? 0 : MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_NO_PITCH,
             group ? &group->group:NULL,&voice->base.sound);
         if(r!=MA_SUCCESS)ma_audio_buffer_ref_uninit(&voice->buffer);
     }

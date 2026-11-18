@@ -334,7 +334,10 @@ int xgeAudioGroupInit(xge_audio_group pGroup)
 		(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	ma_result initialized=ma_sound_group_init((ma_engine*)g_xge.pAudioEngine, MA_SOUND_FLAG_NO_SPATIALIZATION, NULL, pMaGroup);
+	/* A group supplies gain and fades. It has no pitch control and uses the
+	 * engine sample rate, so keep its resampler out of the signal path. */
+	ma_result initialized=ma_sound_group_init((ma_engine*)g_xge.pAudioEngine,
+		MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_NO_PITCH, NULL, pMaGroup);
 	if ( initialized != MA_SUCCESS ) {
 		xrtFree(backend);(void)__xgeAudioOwnerRelease(&g_xgeGraphicsLifetime);
 		return initialized==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY:XGE_ERROR_AUDIO_FAILED;
