@@ -3282,6 +3282,10 @@ XGE_API int xgeShapeExAppendSvgPath(xge_shape_ex pShape, const char* sPath);
 XGE_API int xgeShapeExGetPath(xge_shape_ex pShape, const uint8_t** ppCommands, int* pCommandCount, const xge_vec2_t** ppPoints, int* pPointCount);
 /* 把路径序列化为 SVG path data；缓冲不足时输出所需大小。 */
 XGE_API int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize, int* pRequiredSize);
+/* Export locale-independent SVG path data. On success the independent XRT
+ * allocation is NUL-terminated and the byte count excludes its terminator.
+ * Release the result with xrtFree. Failure publishes NULL and zero. */
+XGE_API int xgeShapeExExportSvgPathData(xge_shape_ex pShape, char** ppText, size_t* pTextBytes);
 /* 设置纯色填充。 */
 XGE_API int xgeShapeExFillColor(xge_shape_ex pShape, uint32_t iColor);
 /* 读取填充类型（纯色/线性/径向）。 */

@@ -1,6 +1,6 @@
 #include <float.h>
 #include <limits.h>
-#include <stdarg.h>
+#include <locale.h>
 
 #define XGE_SHAPE_EX_MAGIC 0x58475358u
 #define XGE_SHAPE_EX_PATH_MEASURE_MAGIC 0x5847504Du
@@ -9445,11 +9445,16 @@ static int __xgeShapeExSvgDoubleToFloat(double fValue, float* pValue)
 	return 1;
 }
 
-static int __xgeShapeExSvgReadNumber(const char** ppText, float* pValue)
+static bool __xgeShapeExSvgUsesDecimalDot(void)
+{
+	const char* sPoint = localeconv()->decimal_point;
+	return sPoint != NULL && sPoint[0] == '.' && sPoint[1] == '\0';
+}
+
+static int __xgeShapeExSvgReadNumber(const char** ppText, float* pValue, bool bDecimalDot)
 {
 	const char* pText;
 	const char* pNumberEnd;
-	char* pEnd;
 	double fValue;
 
 	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
@@ -9463,9 +9468,25 @@ static int __xgeShapeExSvgReadNumber(const char** ppText, float* pValue)
 	if ( !__xgeShapeExSvgScanNumberEnd(pText, &pNumberEnd) ) {
 		return 0;
 	}
-	fValue = strtod(pText, &pEnd);
-	if ( (pEnd == pText) || (pEnd != pNumberEnd) ) {
-		return 0;
+#if defined(_WIN32)
+	/* MinGW's strtod can register a process-exit hook in this module. A
+	 * statically linked XGE DLL must be safe to unload before process exit. */
+	(void)bDecimalDot;
+#else
+	if ( bDecimalDot ) {
+		char* pEnd;
+		fValue = strtod(pText, &pEnd);
+		if ( pEnd != pNumberEnd ) return 0;
+	} else
+#endif
+	{
+		/* Preserve pending XRT diagnostics while translating numeric errors
+		 * to the native path parser's existing status. */
+		xerror* pPrevious = xrtTakeError();
+		bool bParsed = xrtNumParse((xstrview){pText, (size_t)(pNumberEnd - pText)}, 0, &fValue);
+		if ( !bParsed ) xrtClearError();
+		if ( pPrevious != NULL ) xrtSetErrorTake(pPrevious);
+		if ( !bParsed ) return 0;
 	}
 	if ( !__xgeShapeExSvgDoubleToFloat(fValue, pValue) ) {
 		return 0;
@@ -10767,6 +10788,11 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 	if ( !__xgeShapeExValid(pShape) || (sPath == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+#if defined(_WIN32)
+	bool bDecimalDot = false;
+#else
+	bool bDecimalDot = __xgeShapeExSvgUsesDecimalDot();
+#endif
 	pText = sPath;
 	cCommand = 0;
 	cPrevCommand = 0;
@@ -10790,7 +10816,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fY;
 				int bFirst = 1;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative && pShape->bHasCurrent ) {
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
@@ -10821,7 +10847,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) {
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
@@ -10843,7 +10869,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fX;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) fX += pShape->tCurrent.fX;
 					{
 						xge_vec2_t tStart = pShape->tCurrent;
@@ -10862,7 +10888,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) fY += pShape->tCurrent.fY;
 					{
 						xge_vec2_t tStart = pShape->tCurrent;
@@ -10881,9 +10907,9 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fC1X, fC1Y, fC2X, fC2Y, fX, fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fC1X) || !__xgeShapeExSvgReadNumber(&pText, &fC1Y) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fC2X) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fC1X, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fC1Y, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fC2X, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) {
 						fC1X += pShape->tCurrent.fX; fC1Y += pShape->tCurrent.fY;
 						fC2X += pShape->tCurrent.fX; fC2Y += pShape->tCurrent.fY;
@@ -10906,8 +10932,8 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fC1X, fC1Y, fC2X, fC2Y, fX, fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fC2X) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fC2X, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( (__xgeShapeExSvgLower(cPrevCommand) == 'c') || (__xgeShapeExSvgLower(cPrevCommand) == 's') ) {
 						fC1X = (2.0f * pShape->tCurrent.fX) - pShape->tLastCubicControl.fX;
 						fC1Y = (2.0f * pShape->tCurrent.fY) - pShape->tLastCubicControl.fY;
@@ -10937,8 +10963,8 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fCX, fCY, fX, fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fCX) || !__xgeShapeExSvgReadNumber(&pText, &fCY) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fCX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fCY, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) {
 						fCX += pShape->tCurrent.fX; fCY += pShape->tCurrent.fY;
 						fX += pShape->tCurrent.fX; fY += pShape->tCurrent.fY;
@@ -10960,7 +10986,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fCX, fCY, fX, fY;
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( (__xgeShapeExSvgLower(cPrevCommand) == 'q') || (__xgeShapeExSvgLower(cPrevCommand) == 't') ) {
 						fCX = (2.0f * pShape->tCurrent.fX) - pShape->tLastQuadControl.fX;
 						fCY = (2.0f * pShape->tCurrent.fY) - pShape->tLastQuadControl.fY;
@@ -10993,10 +11019,10 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					int iArcRet;
-					if ( !__xgeShapeExSvgReadNumber(&pText, &fRX) || !__xgeShapeExSvgReadNumber(&pText, &fRY) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fAxis) || !__xgeShapeExSvgReadFlag(&pText, &bLargeArcFlag) ||
-					     !__xgeShapeExSvgReadFlag(&pText, &bSweepFlag) || !__xgeShapeExSvgReadNumber(&pText, &fX) ||
-					     !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
+					if ( !__xgeShapeExSvgReadNumber(&pText, &fRX, bDecimalDot) || !__xgeShapeExSvgReadNumber(&pText, &fRY, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fAxis, bDecimalDot) || !__xgeShapeExSvgReadFlag(&pText, &bLargeArcFlag) ||
+					     !__xgeShapeExSvgReadFlag(&pText, &bSweepFlag) || !__xgeShapeExSvgReadNumber(&pText, &fX, bDecimalDot) ||
+					     !__xgeShapeExSvgReadNumber(&pText, &fY, bDecimalDot) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) {
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
@@ -11070,29 +11096,94 @@ int xgeShapeExGetPath(xge_shape_ex pShape, const uint8_t** ppCommands, int* pCom
 	return XGE_OK;
 }
 
-static int __xgeShapeExSvgPathAppendFormat(char* sBuffer, int iBufferSize, int* pLength, const char* sFormat, ...)
+static int __xgeShapeExSvgPathAppend(char* sBuffer, int iBufferSize, int* pLength, const char* sText, size_t iBytes)
 {
-	va_list args;
-	int iWritten;
+	/* The legacy required size is an int and includes the terminator. */
+	if ( iBytes > (size_t)(INT_MAX - 1 - *pLength) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( sBuffer != NULL && *pLength < iBufferSize - 1 ) {
+		size_t iAvailable = (size_t)(iBufferSize - 1 - *pLength);
+		size_t iCopy = iBytes < iAvailable ? iBytes : iAvailable;
+		memcpy(sBuffer + *pLength, sText, iCopy);
+		sBuffer[*pLength + iCopy] = '\0';
+	}
+	*pLength += (int)iBytes;
+	return XGE_OK;
+}
 
-	if ( (pLength == NULL) || (sFormat == NULL) || (*pLength < 0) || (iBufferSize < 0) ) {
+static bool __xgeShapeExSvgPathFormatCoordinate(float fValue, char* sText, size_t* pBytes)
+{
+	/* A nine-digit decimal for FLT_MAX can exceed the parser's finite bound.
+	 * Emit the round-trip double spelling for these two boundary values. */
+	if ( fValue == FLT_MAX || fValue == -FLT_MAX ) {
+		return xrtNumWrite(fValue, sText, 32, pBytes, XNUMBER_FLOAT_COMPACT);
+	}
+	return xrtNumFormatTo(fValue, (xstrview){".9g", 3}, sText, 32, pBytes);
+}
+
+static int __xgeShapeExSvgPathAppendPoint(char* sBuffer, int iBufferSize, int* pLength,
+	const xge_vec2_t* pPoint, bool bFirst)
+{
+	char sPair[2 * 32 + 2];
+	size_t iX, iY;
+	size_t iStart = bFirst ? 0 : 1;
+	sPair[0] = ' ';
+	if ( !__xgeShapeExSvgPathFormatCoordinate(pPoint->fX, sPair + iStart, &iX) ||
+	     !__xgeShapeExSvgPathFormatCoordinate(pPoint->fY, sPair + iStart + iX + 1, &iY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	va_start(args, sFormat);
-	if ( (sBuffer != NULL) && (*pLength < iBufferSize) ) {
-		iWritten = vsnprintf(sBuffer + *pLength, (size_t)(iBufferSize - *pLength), sFormat, args);
-	} else {
-		iWritten = vsnprintf(NULL, 0, sFormat, args);
+	sPair[iStart + iX] = ' ';
+	return __xgeShapeExSvgPathAppend(sBuffer, iBufferSize, pLength, sPair, iStart + iX + 1 + iY);
+}
+
+static bool __xgeShapeExSvgPathFitsNineDigits(const xge_vec2_t* pPoints, int iPoints)
+{
+	for ( int i = 0; i < iPoints; ++i ) {
+		if ( fabsf(pPoints[i].fX) == FLT_MAX || fabsf(pPoints[i].fY) == FLT_MAX ) return false;
 	}
-	va_end(args);
-	if ( iWritten < 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
+	return true;
+}
+
+static int __xgeShapeExSvgPathAppendDotCommand(char* sBuffer, int iBufferSize, int* pLength,
+	const char* sCommand, const xge_vec2_t* pPoints, int iPoints)
+{
+#if defined(_WIN32)
+	/* Call the OS CRT entry without MinGW's process-exit formatter hooks.
+	 * The scratch buffer holds the full command, including six coordinates. */
+	char sScratch[128];
+	char* sTarget = sScratch;
+	size_t iAvailable = sizeof(sScratch);
+#define XGE_SVG_PATH_SNPRINTF _snprintf
+#else
+	size_t iAvailable = sBuffer != NULL && *pLength < iBufferSize ? (size_t)(iBufferSize - *pLength) : 0;
+	char* sTarget = iAvailable ? sBuffer + *pLength : NULL;
+#define XGE_SVG_PATH_SNPRINTF snprintf
+#endif
+	int iWritten;
+	switch ( iPoints ) {
+	case 1:
+		iWritten = XGE_SVG_PATH_SNPRINTF(sTarget, iAvailable, "%s%.9g %.9g",
+			sCommand, pPoints[0].fX, pPoints[0].fY);
+		break;
+	case 2:
+		iWritten = XGE_SVG_PATH_SNPRINTF(sTarget, iAvailable, "%s%.9g %.9g %.9g %.9g",
+			sCommand, pPoints[0].fX, pPoints[0].fY, pPoints[1].fX, pPoints[1].fY);
+		break;
+	default:
+		iWritten = XGE_SVG_PATH_SNPRINTF(sTarget, iAvailable, "%s%.9g %.9g %.9g %.9g %.9g %.9g",
+			sCommand, pPoints[0].fX, pPoints[0].fY, pPoints[1].fX, pPoints[1].fY, pPoints[2].fX, pPoints[2].fY);
+		break;
 	}
-	if ( iWritten > INT_MAX - *pLength ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
+#undef XGE_SVG_PATH_SNPRINTF
+#if defined(_WIN32)
+	if ( iWritten < 0 || (size_t)iWritten >= iAvailable ) return XGE_ERROR_INVALID_ARGUMENT;
+	return __xgeShapeExSvgPathAppend(sBuffer, iBufferSize, pLength, sScratch, (size_t)iWritten);
+#else
+	if ( iWritten < 0 || iWritten > INT_MAX - 1 - *pLength ) return XGE_ERROR_INVALID_ARGUMENT;
 	*pLength += iWritten;
 	return XGE_OK;
+#endif
 }
 
 int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize, int* pRequiredSize)
@@ -11108,43 +11199,36 @@ int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize
 	if ( (sBuffer != NULL) && (iBufferSize > 0) ) {
 		sBuffer[0] = '\0';
 	}
+	bool bDecimalDot = __xgeShapeExSvgUsesDecimalDot();
 	iPointRead = 0;
 	iLength = 0;
 	for ( i = 0; i < pShape->iCommandCount; i++ ) {
-		uint8_t iCommand = pShape->pCommands[i];
-
-		if ( i > 0 ) {
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, " ");
+		int iPoints;
+		char sCommand[3] = {' ', 0, 0};
+		switch ( pShape->pCommands[i] ) {
+		case XGE_SHAPE_EX_CMD_MOVE_TO: sCommand[1] = 'M'; iPoints = 1; break;
+		case XGE_SHAPE_EX_CMD_LINE_TO: sCommand[1] = 'L'; iPoints = 1; break;
+		case XGE_SHAPE_EX_CMD_QUAD_TO: sCommand[1] = 'Q'; iPoints = 2; break;
+		case XGE_SHAPE_EX_CMD_CUBIC_TO: sCommand[1] = 'C'; iPoints = 3; break;
+		case XGE_SHAPE_EX_CMD_CLOSE: sCommand[1] = 'Z'; iPoints = 0; break;
+		default: return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iPoints > pShape->iPointCount - iPointRead ) return XGE_ERROR_INVALID_ARGUMENT;
+		if ( bDecimalDot && iPoints && __xgeShapeExSvgPathFitsNineDigits(pShape->pPoints + iPointRead, iPoints) ) {
+			iRet = __xgeShapeExSvgPathAppendDotCommand(sBuffer, iBufferSize, &iLength,
+				sCommand + (i == 0), pShape->pPoints + iPointRead, iPoints);
 			if ( iRet != XGE_OK ) return iRet;
+			iPointRead += iPoints;
+			continue;
 		}
-		if ( iCommand == XGE_SHAPE_EX_CMD_MOVE_TO ) {
-			if ( iPointRead + 1 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "M%.9g %.9g", pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY);
-			iPointRead++;
-		} else if ( iCommand == XGE_SHAPE_EX_CMD_LINE_TO ) {
-			if ( iPointRead + 1 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "L%.9g %.9g", pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY);
-			iPointRead++;
-		} else if ( iCommand == XGE_SHAPE_EX_CMD_QUAD_TO ) {
-			if ( iPointRead + 2 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "Q%.9g %.9g %.9g %.9g",
-				pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY,
-				pShape->pPoints[iPointRead + 1].fX, pShape->pPoints[iPointRead + 1].fY);
-			iPointRead += 2;
-		} else if ( iCommand == XGE_SHAPE_EX_CMD_CUBIC_TO ) {
-			if ( iPointRead + 3 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "C%.9g %.9g %.9g %.9g %.9g %.9g",
-				pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY,
-				pShape->pPoints[iPointRead + 1].fX, pShape->pPoints[iPointRead + 1].fY,
-				pShape->pPoints[iPointRead + 2].fX, pShape->pPoints[iPointRead + 2].fY);
-			iPointRead += 3;
-		} else if ( iCommand == XGE_SHAPE_EX_CMD_CLOSE ) {
-			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "Z");
-		} else {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
+		iRet = __xgeShapeExSvgPathAppend(sBuffer, iBufferSize, &iLength, sCommand + (i == 0), i == 0 ? 1 : 2);
 		if ( iRet != XGE_OK ) {
 			return iRet;
+		}
+		for ( int j = 0; j < iPoints; ++j ) {
+			iRet = __xgeShapeExSvgPathAppendPoint(sBuffer, iBufferSize, &iLength,
+				&pShape->pPoints[iPointRead++], j == 0);
+			if ( iRet != XGE_OK ) return iRet;
 		}
 	}
 	if ( iPointRead != pShape->iPointCount ) {
@@ -11163,6 +11247,28 @@ int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize
 	if ( (sBuffer != NULL) && (iBufferSize < iLength + 1) ) {
 		return XGE_ERROR_BUFFER_TOO_SMALL;
 	}
+	return XGE_OK;
+}
+
+int xgeShapeExExportSvgPathData(xge_shape_ex pShape, char** ppText, size_t* pTextBytes)
+{
+	if ( ppText == NULL || pTextBytes == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppText = NULL;
+	*pTextBytes = 0;
+
+	int iRequired;
+	int iRet = xgeShapeExGetSvgPathData(pShape, NULL, 0, &iRequired);
+	if ( iRet != XGE_OK ) return iRet;
+	char* sText = xrtMalloc((size_t)iRequired);
+	if ( sText == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	int iWritten;
+	iRet = xgeShapeExGetSvgPathData(pShape, sText, iRequired, &iWritten);
+	if ( iRet != XGE_OK ) {
+		xrtFree(sText);
+		return iRet;
+	}
+	*ppText = sText;
+	*pTextBytes = (size_t)iWritten - 1;
 	return XGE_OK;
 }
 
