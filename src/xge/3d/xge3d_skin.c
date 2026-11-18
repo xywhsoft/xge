@@ -160,4 +160,78 @@ int xge3dNodeSkinPaletteBytes(xge3d_scene *scene,xge3d_node_t node,uint8_t **out
     memcpy(copy,matrices,bytes);
     *out=copy;*size=bytes;return XGE_OK;
 }
+
+struct xge3d_skin_palette {
+    uint64_t owner_thread;
+    size_t count;
+    uint32_t refs;
+    xge3d_mat4_t matrices[];
+};
+
+int xge3dNodeAcquireSkinPalette(xge3d_scene *scene,xge3d_node_t node,xge3d_skin_palette **out)
+{
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    int status = xge3dSceneAccessBegin(scene);
+    if (status != XGE_OK) return status;
+
+    const xge3d_mat4_t *matrices = NULL;
+    size_t count = 0;
+    xge3d_skin_palette *palette = NULL;
+    /* SlotMapGet diagnoses stale slots through the XRT error channel.
+     * Report stale handles through this API's status result instead. */
+    status = node.scene == scene->id && xrtSlotMapContains(&scene->slots,node.slot)
+        ? xge3dNodeSkinMatrices(scene,node,&matrices,&count)
+        : XGE_ERROR_INVALID_ARGUMENT;
+    if (status == XGE_OK) {
+        if (count > (SIZE_MAX - sizeof(*palette)) / sizeof(*matrices)) {
+            status = XGE_ERROR_OUT_OF_MEMORY;
+        } else {
+            size_t bytes = count * sizeof(*matrices);
+            palette = xrtMalloc(sizeof(*palette) + bytes);
+            if (!palette) {
+                status = XGE_ERROR_OUT_OF_MEMORY;
+            } else {
+                palette->owner_thread = xrtThreadCurrentId();
+                palette->count = count;
+                palette->refs = 1;
+                if (bytes) memcpy(palette->matrices,matrices,bytes);
+            }
+        }
+    }
+    int end_status = xge3dSceneAccessEnd(scene);
+    if (status == XGE_OK) status = end_status;
+    if (status == XGE_OK) *out = palette;
+    else if (palette) xrtFree(palette);
+    return status;
+}
+
+int xge3dSkinPaletteAddRef(xge3d_skin_palette *palette)
+{
+    if (!palette) return XGE_ERROR_INVALID_ARGUMENT;
+    if (palette->owner_thread != xrtThreadCurrentId() || palette->refs == UINT32_MAX)
+        return XGE_ERROR_INVALID_STATE;
+    ++palette->refs;
+    return XGE_OK;
+}
+
+int xge3dSkinPaletteReleaseChecked(xge3d_skin_palette *palette)
+{
+    if (!palette) return XGE_ERROR_INVALID_ARGUMENT;
+    if (palette->owner_thread != xrtThreadCurrentId()) return XGE_ERROR_INVALID_STATE;
+    if (!--palette->refs) xrtFree(palette);
+    return XGE_OK;
+}
+
+int xge3dSkinPaletteMatrices(const xge3d_skin_palette *palette,const xge3d_mat4_t **data,size_t *count)
+{
+    if (!data || !count) return XGE_ERROR_INVALID_ARGUMENT;
+    *data = NULL;
+    *count = 0;
+    if (!palette) return XGE_ERROR_INVALID_ARGUMENT;
+    if (palette->owner_thread != xrtThreadCurrentId()) return XGE_ERROR_INVALID_STATE;
+    *data = palette->matrices;
+    *count = palette->count;
+    return XGE_OK;
+}
 #endif

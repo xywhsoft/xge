@@ -5235,6 +5235,15 @@ XGE_API int xge3dNodeBindSkinArrays(xge3d_scene *scene,xge3d_node_t node,
 /* Owned snapshot of consecutive native matrices, allocated by xrtMalloc. */
 XGE_API int xge3dNodeSkinPaletteBytes(xge3d_scene *scene,xge3d_node_t node,uint8_t **out,uint64_t *size);
 XGE_API int xge3dNodeSkinMatrixAt(xge3d_scene *scene,xge3d_node_t node,size_t joint,xge3d_mat4_t *out);
+/* Copies the current mesh-local matrices once. Requires an owned scene.
+ * The result has no scene/GPU references and stays valid across pose changes,
+ * node deletion and engine shutdown. Use and retire it on its creator thread. */
+typedef struct xge3d_skin_palette xge3d_skin_palette;
+XGE_API int xge3dNodeAcquireSkinPalette(xge3d_scene *scene,xge3d_node_t node,xge3d_skin_palette **out);
+XGE_API int xge3dSkinPaletteAddRef(xge3d_skin_palette *palette);
+XGE_API int xge3dSkinPaletteReleaseChecked(xge3d_skin_palette *palette);
+/* Borrowed immutable array. Keep a palette reference while accessing it. */
+XGE_API int xge3dSkinPaletteMatrices(const xge3d_skin_palette *palette,const xge3d_mat4_t **data,size_t *count);
 #if XGE3D_ENABLE_ASYNC
 /* 按上传预算预热节点蒙皮所需的 GPU 数据。 */
 XGE_API int xge3dNodePrepareSkin(xge3d_scene *scene, xge3d_node_t node,
