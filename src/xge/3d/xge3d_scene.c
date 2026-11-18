@@ -2,6 +2,7 @@
 #include "xge_clock.h"
 #include "xge_data_lifetime_internal.h"
 #include <assert.h>
+#include <float.h>
 #include <limits.h>
 #include <stdlib.h>
 
@@ -215,9 +216,10 @@ int xge3dRelativePosition(xge3d_dvec3_t origin,xge3d_dvec3_t global,xge3d_vec3_t
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=(xge3d_vec3_t){0};
     if (!isfinite(origin.x) || !isfinite(origin.y) || !isfinite(origin.z) || !isfinite(global.x) || !isfinite(global.y) || !isfinite(global.z)) return XGE_ERROR_INVALID_ARGUMENT;
-    xge3d_vec3_t position={(float)(global.x-origin.x),(float)(global.y-origin.y),(float)(global.z-origin.z)};
-    if (!d3_finite3(position)) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=position;return XGE_OK;
+    xge3d_dvec3_t delta={global.x-origin.x,global.y-origin.y,global.z-origin.z};
+    if (fabs(delta.x)>FLT_MAX || fabs(delta.y)>FLT_MAX || fabs(delta.z)>FLT_MAX) return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_vec3_t){(float)delta.x,(float)delta.y,(float)delta.z};
+    return XGE_OK;
 }
 void d3_set_local(xge3d_scene *s,xge3d_node_data *n,xge3d_mat4_t matrix)
 {
@@ -250,11 +252,19 @@ int xge3dNodeSetGlobalPosition(xge3d_scene *s,xge3d_node_t root,xge3d_dvec3_t po
     xge3d_mat4_t matrix=n->local;matrix.m[12]=local.x;matrix.m[13]=local.y;matrix.m[14]=local.z;
     d3_set_local(s,n,matrix);n->global_position=position;return XGE_OK;
 }
-int xge3dCameraLookAtGlobal(xge3d_camera_t *camera,xge3d_dvec3_t origin,xge3d_dvec3_t eye,xge3d_dvec3_t target,xge3d_vec3_t up)
+int xge3dViewLookAtGlobal(xge3d_dvec3_t origin,xge3d_dvec3_t eye,xge3d_dvec3_t target,
+    xge3d_vec3_t up,xge3d_mat4_t *out)
 {
     xge3d_vec3_t e,t;
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     if (xge3dRelativePosition(origin,eye,&e)!=XGE_OK || xge3dRelativePosition(origin,target,&t)!=XGE_OK) return XGE_ERROR_INVALID_ARGUMENT;
-    return xge3dCameraLookAt(camera,e,t,up);
+    return xge3dViewLookAt(e,t,up,out);
+}
+
+int xge3dCameraLookAtGlobal(xge3d_camera_t *camera,xge3d_dvec3_t origin,xge3d_dvec3_t eye,xge3d_dvec3_t target,xge3d_vec3_t up)
+{
+    if (!camera) return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dViewLookAtGlobal(origin,eye,target,up,&camera->view);
 }
 
 int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
@@ -538,18 +548,26 @@ int xge3dCameraOrthographic(xge3d_camera_t *out, float width, float height, floa
     return d3_finite_matrix(&out->projection) ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
 }
 
-int xge3dCameraLookAt(xge3d_camera_t *camera, xge3d_vec3_t eye, xge3d_vec3_t target, xge3d_vec3_t up)
+int xge3dViewLookAt(xge3d_vec3_t eye, xge3d_vec3_t target, xge3d_vec3_t up, xge3d_mat4_t *out)
 {
-    if (!camera || !d3_finite3(eye) || !d3_finite3(target) || !d3_finite3(up))
+    if (!out || !d3_finite3(eye) || !d3_finite3(target) || !d3_finite3(up))
         return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_vec3_t z=d3_sub(eye,target);
     if (!d3_normalize(&z)) return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_vec3_t x=d3_cross(up,z);
     if (!d3_normalize(&x)) return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_vec3_t y=d3_cross(z,x);
-    camera->view = (xge3d_mat4_t){{x.x,y.x,z.x,0, x.y,y.y,z.y,0, x.z,y.z,z.z,0,
-        -d3_dot(x,eye),-d3_dot(y,eye),-d3_dot(z,eye),1}};
+    xge3d_vec3_t offset={-d3_dot(x,eye),-d3_dot(y,eye),-d3_dot(z,eye)};
+    if (!d3_finite3(offset)) return XGE_ERROR_INVALID_ARGUMENT;
+    *out = (xge3d_mat4_t){{x.x,y.x,z.x,0, x.y,y.y,z.y,0, x.z,y.z,z.z,0,
+        offset.x,offset.y,offset.z,1}};
     return XGE_OK;
+}
+
+int xge3dCameraLookAt(xge3d_camera_t *camera, xge3d_vec3_t eye, xge3d_vec3_t target, xge3d_vec3_t up)
+{
+    if (!camera) return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dViewLookAt(eye,target,up,&camera->view);
 }
 
 #endif

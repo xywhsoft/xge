@@ -4476,6 +4476,10 @@ XGE_API int xge3dRelativePosition(xge3d_dvec3_t origin, xge3d_dvec3_t global, xg
 /* 使用双精度全局观察点和目标更新相机视图。 */
 XGE_API int xge3dCameraLookAtGlobal(xge3d_camera_t *camera, xge3d_dvec3_t origin,
     xge3d_dvec3_t eye, xge3d_dvec3_t target, xge3d_vec3_t up);
+/* Constructs a view using double-precision origin subtraction before narrowing.
+ * The output is unchanged on error. */
+XGE_API int xge3dViewLookAtGlobal(xge3d_dvec3_t origin, xge3d_dvec3_t eye,
+    xge3d_dvec3_t target, xge3d_vec3_t up, xge3d_mat4_t *out);
 #if XGE3D_ENABLE_ANIMATION
 /* Borrowed mesh-local joint matrices; invalidated by pose mutation or deletion.
  * Joint indices follow the source glTF Skin order. NOT_FOUND means no skin. */
@@ -5559,6 +5563,9 @@ XGE_API int xge3dCameraPerspective(xge3d_camera_t *out, float fov_y, float aspec
 XGE_API int xge3dCameraOrthographic(xge3d_camera_t *out, float width, float height, float near_z, float far_z);
 /* 根据观察点、目标和上方向更新相机视图。 */
 XGE_API int xge3dCameraLookAt(xge3d_camera_t *camera, xge3d_vec3_t eye, xge3d_vec3_t target, xge3d_vec3_t up);
+/* Constructs a view from coordinates relative to the scene origin. The
+ * output is unchanged on error. */
+XGE_API int xge3dViewLookAt(xge3d_vec3_t eye, xge3d_vec3_t target, xge3d_vec3_t up, xge3d_mat4_t *out);
 #endif
 
 #ifdef __cplusplus
