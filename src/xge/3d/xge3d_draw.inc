@@ -225,8 +225,9 @@ int xge3dBillboardsSet(xge3d_renderer *r,const xge3d_billboard_t *items,size_t c
     return XGE_OK;
 }
 
-int xge3dBillboardsSetGeometry(xge3d_renderer *r,
-    const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture)
+static inline int d3_billboards_set_geometry(xge3d_renderer *r,
+    const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture,
+    xge3d_texture *const *textures)
 {
     if(!r||(count&&!items)||count>65536)return XGE_ERROR_INVALID_ARGUMENT;
     if(r->context!=__xge3dContext()||(texture&&texture->context&&texture->context!=r->context))
@@ -234,18 +235,34 @@ int xge3dBillboardsSetGeometry(xge3d_renderer *r,
     for(size_t i=0;i<count;++i){
         xge3d_billboard_t item=d3_billboard_native(items+i,NULL);
         if(!d3_billboard_valid(&item))return XGE_ERROR_INVALID_ARGUMENT;
+        xge3d_texture *row=textures?textures[i]:NULL;
+        if(row&&row->context&&row->context!=r->context)return XGE_ERROR_INVALID_STATE;
     }
     if(!xrtArrayResize(&r->billboard_staging,count))return XGE_ERROR_OUT_OF_MEMORY;
     xge3d_billboard_t *staged=(xge3d_billboard_t*)r->billboard_staging.Data;
     for(size_t i=0;i<count;++i){
-        if(texture&&!d3_texture_retain(texture)){
+        xge3d_texture *row=textures?textures[i]:texture;
+        if(row&&!d3_texture_retain(row)){
             d3_billboards_drop(&r->billboard_staging,i);
             return XGE_ERROR_INVALID_STATE;
         }
-        staged[i]=d3_billboard_native(items+i,texture);
+        staged[i]=d3_billboard_native(items+i,row);
     }
     d3_billboards_publish(r);
     return XGE_OK;
+}
+
+int xge3dBillboardsSetGeometry(xge3d_renderer *r,
+    const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture)
+{
+    return d3_billboards_set_geometry(r,items,count,texture,NULL);
+}
+
+int xge3dBillboardsSetTexturedGeometry(xge3d_renderer *r,
+    const xge3d_billboard_geometry_t *items,xge3d_texture *const *textures,size_t count)
+{
+    if(!textures&&count)return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_billboards_set_geometry(r,items,count,NULL,textures);
 }
 static int d3_billboard_compare(const void *a,const void *b)
 {const d3_billboard_order *x=a,*y=b;return x->depth>y->depth?-1:x->depth<y->depth?1:x->index<y->index?-1:x->index>y->index;}

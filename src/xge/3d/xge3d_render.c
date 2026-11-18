@@ -162,7 +162,7 @@ struct xge3d_renderer {
 struct xge3d_target {
     xge_texture_t texture;
     GLuint fbo, depth;
-    uint64_t context;
+    uint64_t context,owner_thread;
 };
 
 #endif
@@ -836,13 +836,31 @@ int xge3dRendererReleaseChecked(xge3d_renderer *r)
     return xge3dRendererReleaseOwnerChecked(r,&consumed);
 }
 
+static int d3_render_frame(xge3d_renderer *r,xge3d_scene *s,
+    const xge3d_camera_t *camera,xge3d_target *target,const float clear_color[4],uint32_t clear_flags,
+    float exposure,xge3d_render_stats_t *stats)
+{
+    xge3d_render_desc_t frame={.camera=camera,.target=target,.clear_flags=clear_flags,.exposure=exposure};
+    if(clear_color)memcpy(frame.clear_color,clear_color,sizeof(frame.clear_color));
+    return xge3dRender(r,s,&frame,stats);
+}
+
 int xge3dRenderFrame(xge3d_renderer *r,xge3d_scene *s,
     const xge3d_camera_t *camera,const float clear_color[4],uint32_t clear_flags,
     float exposure,xge3d_render_stats_t *stats)
 {
-    xge3d_render_desc_t frame={.camera=camera,.clear_flags=clear_flags,.exposure=exposure};
-    if(clear_color)memcpy(frame.clear_color,clear_color,sizeof(frame.clear_color));
-    return xge3dRender(r,s,&frame,stats);
+    return d3_render_frame(r,s,camera,NULL,clear_color,clear_flags,exposure,stats);
+}
+
+int xge3dRenderFrameTo(xge3d_renderer *r,xge3d_scene *s,
+    const xge3d_camera_t *camera,xge3d_target *target,const float clear_color[4],
+    uint32_t clear_flags,float exposure,xge3d_render_stats_t *stats)
+{
+    if(!target){
+        if(stats)*stats=(xge3d_render_stats_t){0};
+        return XGE_ERROR_INVALID_ARGUMENT;
+    }
+    return d3_render_frame(r,s,camera,target,clear_color,clear_flags,exposure,stats);
 }
 
 int xge3dTargetCreate(int width, int height, xge3d_target **out)
@@ -881,18 +899,60 @@ int xge3dTargetCreate(int width, int height, xge3d_target **out)
     if (result==XGE_OK) {*out=t;}
     return result;
 }
-void xge3dTargetFree(xge3d_target *t)
+int xge3dTargetCreateOwned(int width,int height,xge3d_target **out)
 {
-    if (!t) {return;}
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int result=xgeInternalGraphicsOwnerAcquire();
+    if(result!=XGE_OK)return result;
+    result=xge3dTargetCreate(width,height,out);
+    if(result!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return result;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
+
+static int d3_target_release(xge3d_target *t,bool *consumed)
+{
+    if(!t)return XGE_OK;
+    uint64_t current=__xge3dContext();
+    bool managed=t->owner_thread!=0;
+    if(managed && (t->owner_thread!=xrtThreadCurrentId() || (current && t->context!=current)))
+        return XGE_ERROR_INVALID_STATE;
+    if(consumed)*consumed=true;
 #if XGE3D_ENABLE_DYNAMIC
-    if(--t->refs){return;}
+    if(--t->refs)return XGE_OK;
 #endif
-    if (t->context==__xge3dContext()) {
+    if (t->context==current) {
         if (t->fbo) {xge_glDeleteFramebuffers(1,&t->fbo);}
         if (t->depth) {xge_glDeleteRenderbuffers(1,&t->depth);}
     } else t->texture.iBackendId=0; /* Never delete a reused name in a later context. */
     xgeTextureFree(&t->texture);
     xrtFree(t);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dTargetFree(xge3d_target *t){(void)d3_target_release(t,NULL);}
+int xge3dTargetReleaseOwnerChecked(xge3d_target *t,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return t&&t->owner_thread?d3_target_release(t,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dTargetReleaseChecked(xge3d_target *t)
+{
+    bool consumed;
+    return xge3dTargetReleaseOwnerChecked(t,&consumed);
+}
+
+int xge3dTargetSize(const xge3d_target *t,int *width,int *height)
+{
+    if(!t||!width||!height)return XGE_ERROR_INVALID_ARGUMENT;
+    if(t->owner_thread && t->owner_thread!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
+    *width=t->texture.iWidth;
+    *height=t->texture.iHeight;
+    return XGE_OK;
 }
 int xge3dTargetResize(xge3d_target *t, int width, int height)
 {
@@ -903,6 +963,8 @@ int xge3dTargetResize(xge3d_target *t, int width, int height)
     if (result!=XGE_OK) {return result;}
     xge3d_target previous=*t;
     *t=*next; *next=previous;
+    t->owner_thread=previous.owner_thread;
+    next->owner_thread=0;
 #if XGE3D_ENABLE_DYNAMIC
     t->refs=previous.refs;next->refs=1;
 #endif
@@ -912,23 +974,46 @@ int xge3dTargetResize(xge3d_target *t, int width, int height)
 const xge_texture_t *xge3dTargetTexture(const xge3d_target *t)
 { return t ? &t->texture : NULL; }
 #if XGE3D_ENABLE_DYNAMIC
-int d3_target_retain(xge3d_target *t){if(!t||t->refs==UINT32_MAX){return 0;}++t->refs;return 1;}
+int d3_target_retain(xge3d_target *t)
+{
+    if(!t || (t->owner_thread && t->owner_thread!=xrtThreadCurrentId()) || t->refs==UINT32_MAX)
+        return 0;
+    ++t->refs;
+    return 1;
+}
 #endif
 
 int xge3dTargetReadPixels(xge3d_target *t, void *rgba, size_t size, int stride)
 {
-    if (!t || !rgba || stride<t->texture.iWidth*4 ||
-        (size_t)stride>SIZE_MAX/(size_t)t->texture.iHeight || size<(size_t)stride*t->texture.iHeight)
-        {return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!t||!rgba)return XGE_ERROR_INVALID_ARGUMENT;
+    if(t->owner_thread && t->owner_thread!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
+    int width=t->texture.iWidth,height=t->texture.iHeight;
+    if(!stride)stride=width*4;
+    if(stride<width*4 || (size_t)stride>SIZE_MAX/(size_t)height ||
+        size<(size_t)stride*height)return XGE_ERROR_INVALID_ARGUMENT;
     if (t->context!=__xge3dContext()) {return XGE_ERROR_INVALID_STATE;}
-    int width=t->texture.iWidth, height=t->texture.iHeight;
-    GLint framebuffer, pack;
-    xge_glGetIntegerv(0x8CAA,&framebuffer); xge_glGetIntegerv(0x0D05,&pack);
-    xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,t->fbo); xge_glPixelStorei(0x0D05,1);
-    for (int y=0;y<height;++y)
-        {xge_glReadPixels(0,height-1-y,width,1,GL_RGBA,GL_UNSIGNED_BYTE,(unsigned char*)rgba+(size_t)y*stride);}
+    GLint framebuffer,alignment,row_length,skip_rows,skip_pixels,pack_buffer;
+    xge_glGetIntegerv(0x8CAA,&framebuffer);
+    xge_glGetIntegerv(0x0D05,&alignment);
+    xge_glGetIntegerv(0x0D02,&row_length);
+    xge_glGetIntegerv(0x0D03,&skip_rows);
+    xge_glGetIntegerv(0x0D04,&skip_pixels);
+    xge_glGetIntegerv(0x88ED,&pack_buffer);
+    xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,t->fbo);
+    xge_glBindBuffer(0x88EB,0); /* CPU destination, even if the host uses a PBO. */
+    xge_glPixelStorei(0x0D05,1);
+    xge_glPixelStorei(0x0D02,0);
+    xge_glPixelStorei(0x0D03,0);
+    xge_glPixelStorei(0x0D04,0);
+    for(int y=0;y<height;++y)
+        xge_glReadPixels(0,height-1-y,width,1,GL_RGBA,GL_UNSIGNED_BYTE,(unsigned char*)rgba+(size_t)y*stride);
     int result=xge_glGetError()==GL_NO_ERROR ? XGE_OK : XGE_ERROR_GPU_FAILED;
-    xge_glPixelStorei(0x0D05,pack); xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,framebuffer);
+    xge_glPixelStorei(0x0D04,skip_pixels);
+    xge_glPixelStorei(0x0D03,skip_rows);
+    xge_glPixelStorei(0x0D02,row_length);
+    xge_glPixelStorei(0x0D05,alignment);
+    xge_glBindBuffer(0x88EB,pack_buffer);
+    xge_glBindFramebuffer(D3_READ_FRAMEBUFFER,framebuffer);
     return result;
 }
 

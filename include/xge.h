@@ -4579,6 +4579,15 @@ XGE_API int xge3dRendererReleaseChecked(xge3d_renderer *renderer);
 XGE_API void xge3dRendererFree(xge3d_renderer *renderer);
 /* 创建指定像素尺寸的离屏 3D 渲染目标。 */
 XGE_API int xge3dTargetCreate(int width, int height, xge3d_target **out);
+/* Managed target keeps the graphics context alive through its final native
+ * reference, including any texture view published from it. */
+XGE_API int xge3dTargetCreateOwned(int width,int height,xge3d_target **out);
+XGE_API int xge3dTargetReleaseOwnerChecked(xge3d_target *target,bool *consumed);
+XGE_API int xge3dTargetReleaseChecked(xge3d_target *target);
+XGE_API int xge3dTargetSize(const xge3d_target *target,int *width,int *height);
+/* With dynamic 3D textures enabled, a sampled color view pins the same
+ * managed target and follows resize. Otherwise returns XGE_ERROR_UNSUPPORTED. */
+XGE_API int xge3dTextureFromTargetOwned(xge3d_target *target,xge3d_texture **out);
 /* 调整离屏目标尺寸，失败时保留原目标。 */
 XGE_API int xge3dTargetResize(xge3d_target *target, int width, int height);
 /* 释放离屏 3D 渲染目标。 */
@@ -4596,6 +4605,9 @@ XGE_API int xge3dRender(xge3d_renderer *renderer, xge3d_scene *scene,
 XGE_API int xge3dRenderFrame(xge3d_renderer *renderer,xge3d_scene *scene,
     const xge3d_camera_t *camera,const float clear_color[4],uint32_t clear_flags,
     float exposure,xge3d_render_stats_t *stats);
+XGE_API int xge3dRenderFrameTo(xge3d_renderer *renderer,xge3d_scene *scene,
+    const xge3d_camera_t *camera,xge3d_target *target,const float clear_color[4],
+    uint32_t clear_flags,float exposure,xge3d_render_stats_t *stats);
 #if XGE3D_ENABLE_FXAA
 #define XGE3D_AA_NONE 0
 #define XGE3D_AA_FXAA 1
@@ -5289,6 +5301,9 @@ XGE_API xge3d_billboard_geometry_t xge3dBillboardGeometryDefault(void);
  * the selected texture, retained by the renderer on successful submission. */
 XGE_API int xge3dBillboardsSetGeometry(xge3d_renderer *renderer,
     const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture);
+/* The two columns have the same count. A NULL entry uses white. */
+XGE_API int xge3dBillboardsSetTexturedGeometry(xge3d_renderer *renderer,
+    const xge3d_billboard_geometry_t *items,xge3d_texture *const *textures,size_t count);
 #endif
 
 #if XGE3D_ENABLE_PARTICLES

@@ -221,7 +221,10 @@ struct xge3d_material {
 };
 #if XGE3D_ENABLE_DYNAMIC
 struct xge3d_target {
-    xge_texture_t texture;uint32_t fbo,depth;uint64_t context;uint32_t refs;
+    xge_texture_t texture;
+    uint32_t fbo,depth;
+    uint64_t context,owner_thread;
+    uint32_t refs;
 };
 int d3_target_retain(xge3d_target *target);
 #endif

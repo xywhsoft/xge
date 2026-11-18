@@ -243,6 +243,8 @@ int xge3dTextureFromTarget(xge3d_target *target,xge3d_texture **out)
     xge3d_texture *t=xrtCalloc(1,sizeof(*t));if(!t){return XGE_ERROR_OUT_OF_MEMORY;}
     if(!d3_target_retain(target)){xrtFree(t);return XGE_ERROR_INVALID_STATE;}
     t->target=target;t->refs=1;t->srgb=1;t->width=target->texture.iWidth;t->height=target->texture.iHeight;
+    t->owner_thread=target->owner_thread;
+    t->context=target->context;
     t->sampler=(xge3d_sampler_t){GL_LINEAR,GL_LINEAR,GL_CLAMP_TO_EDGE,GL_CLAMP_TO_EDGE};*out=t;return XGE_OK;
 }
 int xge3dTextureUpdate(xge3d_texture *t,int x,int y,int width,int height,const void *pixels,int stride)
@@ -268,4 +270,17 @@ int xge3dTextureUpdate(xge3d_texture *t,int x,int y,int width,int height,const v
     return XGE_OK;
 }
 #endif
+
+int xge3dTextureFromTargetOwned(xge3d_target *target,xge3d_texture **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+#if XGE3D_ENABLE_DYNAMIC
+    if(!target||!target->owner_thread)return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dTextureFromTarget(target,out);
+#else
+    (void)target;
+    return XGE_ERROR_UNSUPPORTED;
+#endif
+}
 #endif
