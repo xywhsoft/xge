@@ -101,6 +101,8 @@ void d3_node_dirty(xge3d_scene *scene,xge3d_node_data *node);
 void d3_spatial_dirty(xge3d_scene *scene,xge3d_node_data *node);
 #if XGE3D_ENABLE_COLLISION
 struct d3_triangle_bvh;
+static inline xge3d_shape_t d3_shape(const xge3d_shape_settings_t *s,xge3d_mesh *mesh)
+{return (xge3d_shape_t){s->type,s->center,s->half_extents,s->radius,s->half_height,mesh};}
 void d3_collision_dirty(xge3d_scene *scene,xge3d_node_data *node);
 void d3_triangle_bvh_free(struct d3_triangle_bvh *bvh);
 #endif
@@ -120,6 +122,7 @@ struct xge3d_mesh {
     xge3d_aabb_t bounds;
     uint32_t refs, vao, vbo, ibo;
     int index_bits;
+    bool immutable;
     uint64_t context, version, owner_thread;
     size_t prepare_offset;int prepare_partial;
 };

@@ -651,7 +651,7 @@ int xge3dMeshAddRef(xge3d_mesh *mesh)
 int xge3dMeshUpdate(xge3d_mesh *m, const xge3d_mesh_desc_t *desc)
 {
     if (!m) {return XGE_ERROR_INVALID_ARGUMENT;}
-    if(!d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(!d3_mesh_thread(m) || m->immutable)return XGE_ERROR_INVALID_STATE;
     if (m->context && m->context!=__xge3dContext()) {return XGE_ERROR_INVALID_STATE;}
     xge3d_mesh *next=NULL;
     int result=xge3dMeshCreate(desc,&next);

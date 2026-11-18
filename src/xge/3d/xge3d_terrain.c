@@ -1,4 +1,5 @@
 #include "xge3d_internal.h"
+#include "xge_graphics_internal.h"
 #include <limits.h>
 #if XGE3D_ENABLE_TERRAIN
 typedef struct d3_terrain_chunk {
@@ -6,11 +7,29 @@ typedef struct d3_terrain_chunk {
 } d3_terrain_chunk;
 struct xge3d_terrain {
     xge3d_terrain_desc_t desc;xge3d_terrain_info_t info;xarray heights,chunks;size_t columns;
+    uint64_t owner;
 };
+xge3d_terrain_options_t xge3dTerrainOptionsDefault(void)
+{
+    return (xge3d_terrain_options_t){.format=XGE3D_HEIGHT_F32,.cell_size=1,.height_scale=1,
+        .chunk_cells=32,.lod_count=3,.lod_distances={40,100,200}};
+}
+static xge3d_terrain_desc_t d3_terrain_desc(const xge3d_terrain_options_t *o)
+{
+    return (xge3d_terrain_desc_t){.width=o->width,.depth=o->depth,.stride=o->stride,.format=o->format,
+        .cell_size=o->cell_size,.height_scale=o->height_scale,.height_offset=o->height_offset,
+        .chunk_cells=o->chunk_cells,.lod_count=o->lod_count,
+        .lod_distances={o->lod_distances[0],o->lod_distances[1],o->lod_distances[2]},.skirt_depth=o->skirt_depth};
+}
 xge3d_terrain_desc_t xge3dTerrainDefault(void)
 {
-    xge3d_terrain_desc_t d={0};d.format=XGE3D_HEIGHT_F32;d.cell_size=d.height_scale=1;
-    d.chunk_cells=32;d.lod_count=3;d.lod_distances[0]=40;d.lod_distances[1]=100;d.lod_distances[2]=200;return d;
+    xge3d_terrain_options_t options=xge3dTerrainOptionsDefault();
+    return d3_terrain_desc(&options);
+}
+static int d3_terrain_status(const xge3d_terrain *t)
+{
+    if(!t)return XGE_ERROR_INVALID_ARGUMENT;
+    return t->owner && t->owner!=xrtThreadCurrentId()?XGE_ERROR_INVALID_STATE:XGE_OK;
 }
 static float d3_height(const xge3d_terrain *t,size_t x,size_t z)
 {return ((const float*)t->heights.Data)[z*t->info.width+x];}
@@ -50,17 +69,54 @@ static int d3_terrain_mesh(xge3d_terrain *t,d3_terrain_chunk *c,int lod,xge3d_me
         uint32_t a=e[i],b=e[(i+1)%ring],c0=(uint32_t)(grid+i),d=(uint32_t)(grid+(i+1)%ring);
         uint32_t side[]={a,b,d,a,d,c0};memcpy(ix+index,side,sizeof(side));index+=6;
     }
-    xge3d_mesh_desc_t md={v,vertices.Count,ix,indices.Count,32};result=xge3dMeshCreate(&md,out);
+    if(t->owner){
+        result=xge3dMeshCreateU32Owned(v,vertices.Count,ix,indices.Count,out);
+        if(result==XGE_OK)(*out)->immutable=true;
+    }else{
+        xge3d_mesh_desc_t md={v,vertices.Count,ix,indices.Count,32};
+        result=xge3dMeshCreate(&md,out);
+    }
 done:
     xrtArrayUnit(&vertices);xrtArrayUnit(&indices);xrtArrayUnit(&edges);return result;
 }
-void xge3dTerrainFree(xge3d_terrain *t)
+static void d3_terrain_dispose(xge3d_terrain *t)
 {
-    if (!t) return;
     for (size_t i=0;i<t->chunks.Count;++i) {d3_terrain_chunk *c=xrtArrayGet(&t->chunks,i);for (int k=0;k<4;++k) xge3dMeshFree(c->meshes[k]);}
     xge3dMaterialFree(t->desc.material);xrtArrayUnit(&t->chunks);xrtArrayUnit(&t->heights);xrtFree(t);
 }
-int xge3dTerrainCreate(const xge3d_terrain_desc_t *d,xge3d_terrain **out)
+static int d3_terrain_release(xge3d_terrain *t,bool *consumed)
+{
+    if(!t)return XGE_OK;
+    int status=d3_terrain_status(t);
+    if(status!=XGE_OK)return status;
+    bool managed=t->owner!=0;
+    uint64_t context=managed?__xge3dContext():0;
+    for(size_t i=0;context && i<t->chunks.Count;++i){
+        const d3_terrain_chunk *chunk=xrtArrayConstGet(&t->chunks,i);
+        for(int lod=0;lod<t->info.lod_count;++lod){
+            const xge3d_mesh *mesh=chunk->meshes[lod];
+            if(mesh->refs==1 && mesh->context && mesh->context!=context)return XGE_ERROR_INVALID_STATE;
+        }
+    }
+    d3_terrain_dispose(t);
+    if(consumed)*consumed=true;
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dTerrainFree(xge3d_terrain *t)
+{(void)d3_terrain_release(t,NULL);}
+int xge3dTerrainReleaseOwnerChecked(xge3d_terrain *t,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!t||!t->owner)return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_terrain_release(t,consumed);
+}
+int xge3dTerrainReleaseChecked(xge3d_terrain *t)
+{
+    bool consumed;
+    return xge3dTerrainReleaseOwnerChecked(t,&consumed);
+}
+static int d3_terrain_create(const xge3d_terrain_desc_t *d,size_t bytes,bool managed,xge3d_terrain **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
@@ -72,12 +128,14 @@ int xge3dTerrainCreate(const xge3d_terrain_desc_t *d,xge3d_terrain **out)
     size_t sample=d->format==XGE3D_HEIGHT_U16 ? 2 : 4,row=d->width*sample,stride=d->stride ? d->stride : row;
     if (stride<row || d->depth-1>(SIZE_MAX-row)/stride || d->width>SIZE_MAX/d->depth/sizeof(float) ||
         !isfinite((float)((d->width-1)*(double)d->cell_size)) || !isfinite((float)((d->depth-1)*(double)d->cell_size))) return XGE_ERROR_INVALID_ARGUMENT;
+    if(managed && (d->depth-1)*stride+row>bytes)return XGE_ERROR_BUFFER_TOO_SMALL;
     float previous=0;for (int i=0;i<d->lod_count-1;++i) {
         if (!isfinite(d->lod_distances[i]) || d->lod_distances[i]<=previous) return XGE_ERROR_INVALID_ARGUMENT;
         previous=d->lod_distances[i];
     }
     xge3d_terrain *t=xrtMalloc(sizeof(*t));if (!t) return XGE_ERROR_OUT_OF_MEMORY;
     memset(t,0,sizeof(*t));t->desc=*d;t->desc.heights=NULL;t->desc.material=NULL;
+    if(managed)t->owner=xrtThreadCurrentId();
     t->info.width=d->width;t->info.depth=d->depth;t->info.lod_count=d->lod_count;
     xrtArrayInit(&t->heights,sizeof(float));xrtArrayInit(&t->chunks,sizeof(d3_terrain_chunk));
     int result=XGE_ERROR_OUT_OF_MEMORY;
@@ -94,8 +152,19 @@ int xge3dTerrainCreate(const xge3d_terrain_desc_t *d,xge3d_terrain **out)
     if (!t->desc.skirt_depth) t->desc.skirt_depth=(float)((double)maximum-minimum+d->cell_size*.1);
     if (!isfinite(t->desc.skirt_depth) || !isfinite(minimum-t->desc.skirt_depth)) {result=XGE_ERROR_INVALID_ARGUMENT;goto failed;}
     t->info.bounds=(xge3d_aabb_t){{0,minimum,0},{(d->width-1)*d->cell_size,maximum,(d->depth-1)*d->cell_size}};
-    if (d->material) {if (!d3_material_retain(d->material)) {result=XGE_ERROR_INVALID_STATE;goto failed;}t->desc.material=d->material;}
+    if (d->material) {
+        if(managed)result=xge3dMaterialShareOwned(d->material,&t->desc.material);
+        else if(d3_material_retain(d->material)){t->desc.material=d->material;result=XGE_OK;}
+        else result=XGE_ERROR_INVALID_STATE;
+        if(result!=XGE_OK)goto failed;
+    }
     else {xge3d_material_desc_t material=xge3dMaterialDefault();material.metallic=0;result=xge3dMaterialCreate(&material,&t->desc.material);if (result!=XGE_OK) goto failed;}
+    if(managed && !d->material){
+        xge3d_material *owned=NULL;
+        result=xge3dMaterialShareOwned(t->desc.material,&owned);
+        if(result!=XGE_OK)goto failed;
+        xge3dMaterialFree(owned);
+    }
     t->columns=(d->width-2)/d->chunk_cells+1;size_t rows=(d->depth-2)/d->chunk_cells+1;
     if (!xrtArrayResize(&t->chunks,t->columns*rows)) {result=XGE_ERROR_OUT_OF_MEMORY;goto failed;}
     memset(t->chunks.Data,0,t->chunks.Count*t->chunks.ItemSize);t->info.chunk_count=t->chunks.Count;
@@ -108,21 +177,62 @@ int xge3dTerrainCreate(const xge3d_terrain_desc_t *d,xge3d_terrain **out)
     }
     *out=t;return XGE_OK;
 failed:
-    xge3dTerrainFree(t);return result;
+    d3_terrain_dispose(t);return result;
+}
+int xge3dTerrainCreate(const xge3d_terrain_desc_t *d,xge3d_terrain **out)
+{return d3_terrain_create(d,0,false,out);}
+int xge3dTerrainCreateOwned(const void *heights,size_t bytes,const xge3d_terrain_options_t *options,
+    xge3d_material *material,xge3d_terrain **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!options)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_terrain_desc_t desc=d3_terrain_desc(options);
+    desc.heights=heights;desc.material=material;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=d3_terrain_create(&desc,bytes,true,out);
+    if(status!=XGE_OK)(void)xgeInternalGraphicsOwnerRelease();
+    return status;
 }
 xge3d_terrain_info_t xge3dTerrainInfo(const xge3d_terrain *t)
-{return t ? t->info : (xge3d_terrain_info_t){0};}
+{return d3_terrain_status(t)==XGE_OK?t->info:(xge3d_terrain_info_t){0};}
+int xge3dTerrainInfoChecked(const xge3d_terrain *t,xge3d_terrain_info_t *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_terrain_info_t){0};
+    int status=d3_terrain_status(t);
+    if(status!=XGE_OK)return status;
+    *out=t->info;return XGE_OK;
+}
 int xge3dTerrainChunkMesh(const xge3d_terrain *t,size_t chunk,int lod,const xge3d_mesh **out,xge3d_vec3_t *position)
 {
     if (!out || !position) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;*position=(xge3d_vec3_t){0};
-    if (!t || chunk>=t->chunks.Count || lod<0 || lod>=t->info.lod_count) return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_terrain_status(t);if(status!=XGE_OK)return status;
+    if (chunk>=t->chunks.Count || lod<0 || lod>=t->info.lod_count) return XGE_ERROR_INVALID_ARGUMENT;
     const d3_terrain_chunk *c=xrtArrayConstGet(&t->chunks,chunk);*out=c->meshes[lod];*position=c->position;return XGE_OK;
+}
+int xge3dTerrainChunkMeshOwned(const xge3d_terrain *t,size_t chunk,int lod,xge3d_mesh **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!t||!t->owner)return XGE_ERROR_INVALID_ARGUMENT;
+    const xge3d_mesh *mesh=NULL;
+    xge3d_vec3_t position;
+    int status=xge3dTerrainChunkMesh(t,chunk,lod,&mesh,&position);
+    return status==XGE_OK?xge3dMeshShareOwned((xge3d_mesh*)mesh,out):status;
+}
+int xge3dTerrainChunkPosition(const xge3d_terrain *t,size_t chunk,xge3d_vec3_t *out)
+{
+    const xge3d_mesh *mesh=NULL;
+    return xge3dTerrainChunkMesh(t,chunk,0,&mesh,out);
 }
 int xge3dTerrainInstantiate(xge3d_scene *s,xge3d_terrain *t,xge3d_node_t parent,xge3d_node_t *out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=(xge3d_node_t){0};if (!s || !t) return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_node_t){0};if (!s) return XGE_ERROR_INVALID_ARGUMENT;
+    int access=d3_terrain_status(t);if(access!=XGE_OK)return access;
     /* Reserve rollback traversal before publishing any node, so an allocation
      * failure during instance creation cannot prevent subtree removal. */
     if (!xrtArrayReserve(&s->scratch,t->chunks.Count+1)) return XGE_ERROR_OUT_OF_MEMORY;
@@ -144,7 +254,9 @@ int xge3dTerrainInstantiate(xge3d_scene *s,xge3d_terrain *t,xge3d_node_t parent,
 int xge3dTerrainSample(const xge3d_terrain *t,int lod,float x,float z,float *out,xge3d_vec3_t *normal)
 {
     if (!out || !normal) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=0;*normal=(xge3d_vec3_t){0};if (!t || lod<0 || lod>=t->info.lod_count || !isfinite(x) || !isfinite(z)) return XGE_ERROR_INVALID_ARGUMENT;
+    *out=0;*normal=(xge3d_vec3_t){0};
+    int status=d3_terrain_status(t);if(status!=XGE_OK)return status;
+    if (lod<0 || lod>=t->info.lod_count || !isfinite(x) || !isfinite(z)) return XGE_ERROR_INVALID_ARGUMENT;
     if (x<0 || z<0 || x>t->info.bounds.max.x || z>t->info.bounds.max.z) return XGE_ERROR_NOT_FOUND;
     double gx=fmin(x/(double)t->desc.cell_size,t->info.width-1),gz=fmin(z/(double)t->desc.cell_size,t->info.depth-1);
     size_t cx=(size_t)(gx/t->desc.chunk_cells),cz=(size_t)(gz/t->desc.chunk_cells),rows=t->chunks.Count/t->columns;
@@ -169,7 +281,8 @@ int xge3dTerrainRaycast(const xge3d_terrain *t,int lod,const xge3d_ray_t *ray,fl
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     memset(out,0,sizeof(*out));if (chunk) *chunk=SIZE_MAX;
-    if (!t || lod<0 || lod>=t->info.lod_count || !ray || !d3_finite3(ray->origin) || !d3_finite3(ray->direction) || !isfinite(max) || max<=0) return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_terrain_status(t);if(status!=XGE_OK)return status;
+    if (lod<0 || lod>=t->info.lod_count || !ray || !d3_finite3(ray->origin) || !d3_finite3(ray->direction) || !isfinite(max) || max<=0) return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_vec3_t direction=ray->direction;if (!d3_normalize(&direction)) return XGE_ERROR_INVALID_ARGUMENT;
     int found=0;
     for (size_t i=0;i<t->chunks.Count;++i) {

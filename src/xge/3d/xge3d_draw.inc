@@ -124,6 +124,7 @@ int xge3dDebugShape(xge3d_renderer *r,const xge3d_shape_t *shape,const xge3d_mat
         xge3d_aabb_t box={d3_scale(shape->half_extents,-1),shape->half_extents};return xge3dDebugBox(r,&box,&w,color,depth);}
     size_t count=r->debug_lines.Count;int result=0;
     if(shape->type==XGE3D_SHAPE_MESH){if(!shape->mesh){return XGE_ERROR_INVALID_ARGUMENT;}xge3d_mesh_desc_t mesh;result=xge3dMeshGetData(shape->mesh,&mesh);
+        if(result!=XGE_OK)return result;
         size_t n=mesh.index_count?mesh.index_count:mesh.vertex_count;for(size_t i=0;i<n&&!result;i+=3){xge3d_vec3_t p[3];for(int j=0;j<3;++j){size_t k=i+j;if(mesh.index_count){k=mesh.index_bits==16?((const uint16_t*)mesh.indices)[k]:((const uint32_t*)mesh.indices)[k];}p[j]=d3_point(w,mesh.vertices[k].position);}
             for(int j=0;j<3&&!result;++j){result=xge3dDebugLine(r,p[j],p[(j+1)%3],color,depth);}}
     }else if(shape->type==XGE3D_SHAPE_SPHERE||shape->type==XGE3D_SHAPE_CAPSULE){
@@ -138,6 +139,13 @@ int xge3dDebugShape(xge3d_renderer *r,const xge3d_shape_t *shape,const xge3d_mat
         }}
     }else result=XGE_ERROR_INVALID_ARGUMENT;
     if(result){r->debug_lines.Count=count;}return result;
+}
+int xge3dDebugShapeSettings(xge3d_renderer *r,const xge3d_shape_settings_t *settings,xge3d_mesh *mesh,
+    const xge3d_mat4_t *world,const float color[4],int depth)
+{
+    if(!settings || (mesh && settings->type!=XGE3D_SHAPE_MESH))return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,mesh);
+    return xge3dDebugShape(r,&shape,world,color,depth);
 }
 #endif
 #if XGE3D_ENABLE_ANIMATION

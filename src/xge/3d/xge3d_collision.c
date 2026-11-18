@@ -81,6 +81,11 @@ static int affine_valid(const xge3d_mat4_t *m)
 {xge3d_mat4_t inverse;return d3_finite_matrix(m)&&!m->m[3]&&!m->m[7]&&!m->m[11]&&m->m[15]==1&&d3_inverse(*m,&inverse);}
 xge3d_shape_t xge3dShapeDefault(int type)
 {return (xge3d_shape_t){.type=type,.half_extents={.5f,.5f,.5f},.radius=.5f,.half_height=.5f};}
+xge3d_shape_settings_t xge3dShapeSettingsDefault(int type)
+{
+    xge3d_shape_t s=xge3dShapeDefault(type);
+    return (xge3d_shape_settings_t){s.type,s.center,s.half_extents,s.radius,s.half_height};
+}
 int xge3dNodeSetCollider(xge3d_scene *s,xge3d_node_t h,const xge3d_shape_t *shape)
 {
     xge3d_node_data *n=d3_node(s,h);if(!n||(shape&&!shape_valid(shape,1))){return XGE_ERROR_INVALID_ARGUMENT;}
@@ -90,6 +95,29 @@ int xge3dNodeSetCollider(xge3d_scene *s,xge3d_node_t h,const xge3d_shape_t *shap
 }
 int xge3dNodeGetCollider(xge3d_scene *s,xge3d_node_t h,xge3d_shape_t *out)
 {if(!out){return XGE_ERROR_INVALID_ARGUMENT;}memset(out,0,sizeof(*out));xge3d_node_data *n=d3_node(s,h);if(!n){return XGE_ERROR_INVALID_ARGUMENT;}if(!n->collider){return XGE_ERROR_NOT_FOUND;}*out=*n->collider;return XGE_OK;}
+int xge3dNodeSetColliderSettings(xge3d_scene *s,xge3d_node_t h,const xge3d_shape_settings_t *settings,xge3d_mesh *mesh)
+{
+    if(!settings)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,mesh);
+    return xge3dNodeSetCollider(s,h,&shape);
+}
+int xge3dNodeColliderSettings(xge3d_scene *s,xge3d_node_t h,xge3d_shape_settings_t *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_shape_settings_t){0};
+    xge3d_shape_t shape;
+    int status=xge3dNodeGetCollider(s,h,&shape);
+    if(status==XGE_OK)*out=(xge3d_shape_settings_t){shape.type,shape.center,shape.half_extents,shape.radius,shape.half_height};
+    return status;
+}
+int xge3dNodeColliderMeshOwned(xge3d_scene *s,xge3d_node_t h,xge3d_mesh **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xge3d_node_data *n=d3_node(s,h);
+    if(!n)return XGE_ERROR_INVALID_ARGUMENT;
+    return n->collider && n->collider->mesh?xge3dMeshShareOwned(n->collider->mesh,out):XGE_OK;
+}
 static xge3d_aabb_t convex_bounds(const convex *c)
 {
     xge3d_aabb_t box;cv x=support(c,(cv){1,0,0}),y=support(c,(cv){0,1,0}),z=support(c,(cv){0,0,1});box.max=(xge3d_vec3_t){(float)x.x,(float)y.y,(float)z.z};
@@ -226,4 +254,140 @@ int xge3dSceneCollisionStats(xge3d_scene *s,xge3d_collision_stats_t *out)
     xrtMapUnit(&seen);return XGE_OK;
 }
 #include "xge3d_motion.inc"
+
+struct xge3d_query_results {
+    xarray storage;
+    uint64_t owner;
+    size_t written,required;
+    bool contacts;
+};
+static int d3_results_status(const xge3d_query_results *r)
+{
+    if(!r)return XGE_ERROR_INVALID_ARGUMENT;
+    return r->owner==xrtThreadCurrentId()?XGE_OK:XGE_ERROR_INVALID_STATE;
+}
+static int d3_results_create(size_t capacity,size_t element,bool contacts,xge3d_query_results **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(capacity>SIZE_MAX/element)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_query_results *r=xrtMalloc(sizeof(*r));
+    if(!r)return XGE_ERROR_OUT_OF_MEMORY;
+    memset(r,0,sizeof(*r));
+    r->owner=xrtThreadCurrentId();
+    r->contacts=contacts;
+    xrtArrayInit(&r->storage,element);
+    if(!xrtArrayResize(&r->storage,capacity)){
+        xrtArrayUnit(&r->storage);xrtFree(r);return XGE_ERROR_OUT_OF_MEMORY;
+    }
+    *out=r;return XGE_OK;
+}
+int xge3dNodeResultsCreate(size_t capacity,xge3d_query_results **out)
+{return d3_results_create(capacity,sizeof(xge3d_node_t),false,out);}
+int xge3dQueryResultsResize(xge3d_query_results *r,size_t capacity)
+{
+    int status=d3_results_status(r);if(status!=XGE_OK)return status;
+    if(capacity>SIZE_MAX/r->storage.ItemSize)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!xrtArrayResize(&r->storage,capacity))return XGE_ERROR_OUT_OF_MEMORY;
+    r->written=r->required=0;
+    return XGE_OK;
+}
+int xge3dQueryResultsInfo(const xge3d_query_results *r,xge3d_query_results_info_t *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_query_results_info_t){0};
+    int status=d3_results_status(r);if(status!=XGE_OK)return status;
+    *out=(xge3d_query_results_info_t){r->storage.Count,r->written,r->required};
+    return XGE_OK;
+}
+static int d3_results_at(const xge3d_query_results *r,size_t index,bool contacts,void *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    int status=d3_results_status(r);if(status!=XGE_OK)return status;
+    if(r->contacts!=contacts)return XGE_ERROR_INVALID_ARGUMENT;
+    if(index>=r->written)return XGE_ERROR_NOT_FOUND;
+    memcpy(out,xrtArrayConstGet(&r->storage,index),r->storage.ItemSize);
+    return XGE_OK;
+}
+int xge3dQueryResultsNodeAt(const xge3d_query_results *r,size_t index,xge3d_node_t *out)
+{return d3_results_at(r,index,false,out);}
+int xge3dQueryResultsRelease(xge3d_query_results *r,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    int status=d3_results_status(r);if(status!=XGE_OK)return status;
+    xrtArrayUnit(&r->storage);xrtFree(r);*consumed=true;return XGE_OK;
+}
+int xge3dQueryResultsReleaseChecked(xge3d_query_results *r)
+{
+    bool consumed;
+    return xge3dQueryResultsRelease(r,&consumed);
+}
+static int d3_results_begin(xge3d_query_results *r,bool contacts)
+{
+    int status=d3_results_status(r);if(status!=XGE_OK)return status;
+    if(r->contacts!=contacts)return XGE_ERROR_INVALID_ARGUMENT;
+    r->written=r->required=0;
+    return XGE_OK;
+}
+static int d3_results_finish(xge3d_query_results *r,size_t count,int status)
+{
+    if(status==XGE_OK || status==XGE_ERROR_BUFFER_TOO_SMALL){
+        r->required=count;
+        r->written=count<r->storage.Count?count:r->storage.Count;
+    }
+    return status;
+}
+xge3d_query_filter_t xge3dQueryFilterDefault(void)
+{return (xge3d_query_filter_t){.layers=UINT32_MAX};}
+xge3d_collision_filter_t xge3dCollisionFilterDefault(void)
+{return (xge3d_collision_filter_t){.layers=UINT32_MAX};}
+int xge3dSceneQueryAabbInto(xge3d_scene *s,const xge3d_aabb_t *box,const xge3d_query_filter_t *filter,xge3d_query_results *r)
+{
+    int status=d3_results_begin(r,false);if(status!=XGE_OK)return status;
+    size_t count=0,capacity=r->storage.Count;
+    status=xge3dSceneQueryAabbEx(s,box,filter,capacity?(xge3d_node_t*)r->storage.Data:NULL,capacity,&count);
+    return d3_results_finish(r,count,status);
+}
+int xge3dSceneOverlapInto(xge3d_scene *s,const xge3d_shape_settings_t *settings,const xge3d_mat4_t *world,
+    const xge3d_collision_filter_t *filter,xge3d_query_results *r)
+{
+    int status=d3_results_begin(r,false);if(status!=XGE_OK)return status;
+    if(!settings)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,NULL);
+    size_t count=0,capacity=r->storage.Count;
+    status=xge3dSceneOverlapShape(s,&shape,world,filter,capacity?(xge3d_node_t*)r->storage.Data:NULL,capacity,&count);
+    return d3_results_finish(r,count,status);
+}
+int xge3dSceneSweepSettings(xge3d_scene *s,const xge3d_shape_settings_t *settings,const xge3d_mat4_t *world,
+    xge3d_vec3_t motion,const xge3d_collision_filter_t *filter,xge3d_collision_hit_t *out)
+{
+    if(!settings)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,NULL);
+    return xge3dSceneSweepShape(s,&shape,world,motion,filter,out);
+}
+#if XGE3D_ENABLE_MOTION
+int xge3dContactResultsCreate(size_t capacity,xge3d_query_results **out)
+{return d3_results_create(capacity,sizeof(xge3d_contact_t),true,out);}
+int xge3dQueryResultsContactAt(const xge3d_query_results *r,size_t index,xge3d_contact_t *out)
+{return d3_results_at(r,index,true,out);}
+int xge3dSceneContactInto(xge3d_scene *s,const xge3d_shape_settings_t *settings,const xge3d_mat4_t *world,
+    const xge3d_collision_filter_t *filter,xge3d_query_results *r)
+{
+    int status=d3_results_begin(r,true);if(status!=XGE_OK)return status;
+    if(!settings)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,NULL);
+    size_t count=0,capacity=r->storage.Count;
+    status=xge3dSceneContactShape(s,&shape,world,filter,capacity?(xge3d_contact_t*)r->storage.Data:NULL,capacity,&count);
+    return d3_results_finish(r,count,status);
+}
+int xge3dSceneMoveSettings(xge3d_scene *s,const xge3d_shape_settings_t *settings,const xge3d_mat4_t *world,
+    xge3d_vec3_t movement,const xge3d_collision_filter_t *filter,const xge3d_motion_settings_t *options,
+    xge3d_motion_result_t *out)
+{
+    if(!settings)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_shape_t shape=d3_shape(settings,NULL);
+    return xge3dSceneMoveShape(s,&shape,world,movement,filter,options,out);
+}
+#endif
 #endif

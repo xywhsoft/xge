@@ -4543,6 +4543,21 @@ typedef struct xge3d_terrain_desc_t {
 typedef struct xge3d_terrain_info_t {
     size_t width,depth,chunk_count;int lod_count;xge3d_aabb_t bounds; /* Surface; excludes skirts. */
 } xge3d_terrain_info_t;
+typedef struct xge3d_terrain_options_t {
+    size_t width,depth,stride;
+    int format;float cell_size,height_scale,height_offset;
+    size_t chunk_cells;int lod_count;float lod_distances[3],skirt_depth;
+} xge3d_terrain_options_t;
+XGE_API xge3d_terrain_options_t xge3dTerrainOptionsDefault(void);
+/* A counted height span and optional managed material. Generated meshes
+ * retain independent graphics ownership and reject MeshUpdate. */
+XGE_API int xge3dTerrainCreateOwned(const void *heights,size_t bytes,
+    const xge3d_terrain_options_t *options,xge3d_material *material,xge3d_terrain **out);
+XGE_API int xge3dTerrainReleaseOwnerChecked(xge3d_terrain *terrain,bool *consumed);
+XGE_API int xge3dTerrainReleaseChecked(xge3d_terrain *terrain);
+XGE_API int xge3dTerrainInfoChecked(const xge3d_terrain *terrain,xge3d_terrain_info_t *out);
+XGE_API int xge3dTerrainChunkMeshOwned(const xge3d_terrain *terrain,size_t chunk,int lod,xge3d_mesh **out);
+XGE_API int xge3dTerrainChunkPosition(const xge3d_terrain *terrain,size_t chunk,xge3d_vec3_t *out);
 /* 返回地形创建描述的默认值。 */
 XGE_API xge3d_terrain_desc_t xge3dTerrainDefault(void);
 /* Copy uint16/float height samples without an 8-bit conversion. Fixed chunks,
@@ -5274,6 +5289,32 @@ typedef struct xge3d_collision_hit_t {
     int started_overlapping;
 } xge3d_collision_hit_t;
 typedef struct xge3d_collision_stats_t { size_t colliders, triangle_bvh_bytes;uint64_t triangle_tests; } xge3d_collision_stats_t;
+/* Pointer-free shape settings. Mesh colliders pass their mesh separately. */
+typedef struct xge3d_shape_settings_t {
+    int type;xge3d_vec3_t center,half_extents;float radius,half_height;
+} xge3d_shape_settings_t;
+XGE_API xge3d_shape_settings_t xge3dShapeSettingsDefault(int type);
+XGE_API xge3d_collision_filter_t xge3dCollisionFilterDefault(void);
+XGE_API int xge3dNodeSetColliderSettings(xge3d_scene *scene,xge3d_node_t node,
+    const xge3d_shape_settings_t *shape,xge3d_mesh *mesh);
+XGE_API int xge3dNodeColliderSettings(xge3d_scene *scene,xge3d_node_t node,xge3d_shape_settings_t *out);
+XGE_API int xge3dNodeColliderMeshOwned(xge3d_scene *scene,xge3d_node_t node,xge3d_mesh **out);
+/* Reusable bounded result storage. With zero capacity, queries only count. */
+typedef struct xge3d_query_results xge3d_query_results;
+typedef struct xge3d_query_results_info_t {size_t capacity,written,required;} xge3d_query_results_info_t;
+XGE_API int xge3dNodeResultsCreate(size_t capacity,xge3d_query_results **out);
+XGE_API int xge3dQueryResultsResize(xge3d_query_results *results,size_t capacity);
+XGE_API int xge3dQueryResultsInfo(const xge3d_query_results *results,xge3d_query_results_info_t *out);
+XGE_API int xge3dQueryResultsNodeAt(const xge3d_query_results *results,size_t index,xge3d_node_t *out);
+XGE_API int xge3dQueryResultsRelease(xge3d_query_results *results,bool *consumed);
+XGE_API int xge3dQueryResultsReleaseChecked(xge3d_query_results *results);
+XGE_API xge3d_query_filter_t xge3dQueryFilterDefault(void);
+XGE_API int xge3dSceneQueryAabbInto(xge3d_scene *scene,const xge3d_aabb_t *box,
+    const xge3d_query_filter_t *filter,xge3d_query_results *results);
+XGE_API int xge3dSceneOverlapInto(xge3d_scene *scene,const xge3d_shape_settings_t *shape,
+    const xge3d_mat4_t *world,const xge3d_collision_filter_t *filter,xge3d_query_results *results);
+XGE_API int xge3dSceneSweepSettings(xge3d_scene *scene,const xge3d_shape_settings_t *shape,const xge3d_mat4_t *world,
+    xge3d_vec3_t motion,const xge3d_collision_filter_t *filter,xge3d_collision_hit_t *out);
 /* Default sphere radius .5. Explicit colliders ignore render visibility and use
  * NodeSetLayers' query layers. Affine transforms apply to the complete shape. */
 XGE_API xge3d_shape_t xge3dShapeDefault(int type);
@@ -5360,6 +5401,8 @@ XGE_API int xge3dDebugBox(xge3d_renderer *renderer,const xge3d_aabb_t *box,const
 XGE_API int xge3dDebugAxes(xge3d_renderer *renderer,const xge3d_mat4_t *world,float length,int depth_test);
 #if XGE3D_ENABLE_COLLISION
 XGE_API int xge3dDebugShape(xge3d_renderer *renderer,const xge3d_shape_t *shape,const xge3d_mat4_t *world,const float color[4],int depth_test);
+XGE_API int xge3dDebugShapeSettings(xge3d_renderer *renderer,const xge3d_shape_settings_t *shape,xge3d_mesh *mesh,
+    const xge3d_mat4_t *world,const float color[4],int depth_test);
 #endif
 #if XGE3D_ENABLE_ANIMATION
 XGE_API int xge3dDebugSkeleton(xge3d_renderer *renderer,xge3d_scene *scene,xge3d_node_t skinned_node,const float color[4],int depth_test);
@@ -5384,10 +5427,18 @@ typedef struct xge3d_motion_result_t {
 XGE_API int xge3dSceneContactShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
     const xge3d_collision_filter_t *filter,xge3d_contact_t *contacts,size_t capacity,size_t *count);
 XGE_API xge3d_motion_settings_t xge3dMotionDefault(void);
+XGE_API void xge3dMotionDefaultInto(xge3d_motion_settings_t *out);
 /* Pure query: never moves a node. Recovers overlaps then sweeps/slides a convex
  * shape, with finite iteration/distance limits. LIMITED exposes unresolved work.
  * No gravity, stairs, slope policy or rigid-body simulation. */
 XGE_API int xge3dSceneMoveShape(xge3d_scene *scene,const xge3d_shape_t *shape,const xge3d_mat4_t *world,
+    xge3d_vec3_t movement,const xge3d_collision_filter_t *filter,const xge3d_motion_settings_t *settings,
+    xge3d_motion_result_t *out);
+XGE_API int xge3dContactResultsCreate(size_t capacity,xge3d_query_results **out);
+XGE_API int xge3dQueryResultsContactAt(const xge3d_query_results *results,size_t index,xge3d_contact_t *out);
+XGE_API int xge3dSceneContactInto(xge3d_scene *scene,const xge3d_shape_settings_t *shape,
+    const xge3d_mat4_t *world,const xge3d_collision_filter_t *filter,xge3d_query_results *results);
+XGE_API int xge3dSceneMoveSettings(xge3d_scene *scene,const xge3d_shape_settings_t *shape,const xge3d_mat4_t *world,
     xge3d_vec3_t movement,const xge3d_collision_filter_t *filter,const xge3d_motion_settings_t *settings,
     xge3d_motion_result_t *out);
 #endif

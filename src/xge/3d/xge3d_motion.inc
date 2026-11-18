@@ -41,6 +41,10 @@ int xge3dSceneContactShape(xge3d_scene *s,const xge3d_shape_t *shape,const xge3d
 {return contact_query(s,shape,world,filter,out,capacity,count,NULL);}
 xge3d_motion_settings_t xge3dMotionDefault(void)
 {return (xge3d_motion_settings_t){sizeof(xge3d_motion_settings_t),8,.001f,1};}
+void xge3dMotionDefaultInto(xge3d_motion_settings_t *out)
+{
+    if(out)*out=xge3dMotionDefault();
+}
 static int motion_normal(xge3d_motion_result_t *r,xge3d_vec3_t n)
 {
     if(!d3_normalize(&n)){return 0;}for(int i=0;i<r->contact_count;++i){if(d3_dot(n,r->normals[i])>.9999f){return 1;}}
