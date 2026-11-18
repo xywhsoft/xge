@@ -5379,6 +5379,13 @@ XGE_API int xge3dNodeFind(xge3d_scene *scene,xge3d_node_t root,const char *name,
 /* Borrowed application pointer, never freed by XGE. Clone clears it by default. */
 XGE_API int xge3dNodeSetUserData(xge3d_scene *scene,xge3d_node_t node,void *data);
 XGE_API void *xge3dNodeUserData(xge3d_scene *scene,xge3d_node_t node);
+/* Store an independent snapshot of plain XRT data and release it with the
+ * node. NULL clears the attachment. Pointer values, handles, nominal objects
+ * and cycles are rejected. The borrowed UserData slot is separate. */
+XGE_API int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t node,const xvalue *value);
+/* Returns an owned independent snapshot, or NULL for an empty attachment.
+ * XGE3D_CLONE_USER_DATA preserves both attachment slots when cloning. */
+XGE_API int xge3dNodeCopyUserValue(xge3d_scene *scene,xge3d_node_t node,xvalue **out);
 /* Copies hierarchy, names, matrices, layers, LOD, colliders and model/skin
  * bindings; shares immutable assets. Skin joints must be inside the subtree.
  * New skins/animators are independent; create an Animator for the cloned model.

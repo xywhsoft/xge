@@ -13,13 +13,27 @@ static atomic_uint_least64_t d3_next_scene;
 
 static xge_data_lifetime_t *d3_scene_root(xge3d_scene *s)
 {return s && atomic_load_explicit(&s->owned_refs,memory_order_acquire) ? (xge_data_lifetime_t*)(s+1):NULL;}
-static void d3_scene_clear(xge3d_scene *s);
+static int d3_scene_clear(xge3d_scene *s);
 static int d3_scene_finalize(void *raw,bool *complete)
-{d3_scene_clear(raw);*complete=true;return XGE_OK;}
-/* Attached meshes/materials/models contain native data and no owning language
- * or callback slots. Node user_data remains explicitly borrowed C data. */
+{int status=d3_scene_clear(raw);*complete=status==XGE_OK;return status;}
+#if XGE3D_ENABLE_SCENE
+static bool d3_scene_trace(const void *raw,xrtownershipvisitor visit,void *user)
+{
+    const xge3d_scene *scene=raw;
+    for(size_t i=0;i<scene->user_values.Count;++i){
+        const d3_node_user_value *entry=xrtArrayConstGet(&scene->user_values,i);
+        xrtownershipref value=xrtValueOwnership(entry->value);
+        if(value.Data && !visit(value,user))return false;
+    }
+    return true;
+}
+#define D3_SCENE_TRACE d3_scene_trace
+#else
+#define D3_SCENE_TRACE NULL
+#endif
 static const xge_data_lifetime_type_t d3_scene_type={
-    sizeof(xge3d_scene),offsetof(xge3d_scene,owned_refs),NULL,NULL,d3_scene_finalize,NULL};
+    sizeof(xge3d_scene),offsetof(xge3d_scene,owned_refs),NULL,D3_SCENE_TRACE,d3_scene_finalize,NULL};
+#undef D3_SCENE_TRACE
 #define DO_FN(name) d3_scene_owner_##name
 #define DO_PUBLIC(name) xge3dScene##name
 #define DO_STATUS(name) XGE_##name
@@ -61,6 +75,63 @@ int xge3dSceneAccessEnd(xge3d_scene *s)
     if(!atomic_load_explicit(&root->iActivity,memory_order_acquire))return XGE_ERROR_INVALID_STATE;
     return d3_scene_owner_ActivityEnd(root);
 }
+
+#if XGE3D_ENABLE_SCENE
+int d3_scene_user_value_ready(xge3d_scene *scene)
+{
+    if(!scene)return XGE_ERROR_INVALID_ARGUMENT;
+    xge_data_lifetime_t *root=d3_scene_root(scene);
+    return root ? d3_scene_owner_Admit(root) : XGE_OK;
+}
+
+/* These operations move a physical owning slot. Callers hold a mutation
+ * scope whenever the table can be observed by the ownership collector. */
+static int d3_user_values_begin(xge3d_scene *scene,xrtownershipscope *scope,bool *entered)
+{
+    *entered=scene->user_values.Count!=0;
+    return !*entered || xrtOwnershipMutationBegin(scope) ? XGE_OK : XGE_ERROR_INVALID_STATE;
+}
+
+static void d3_node_drop_user_value(xge3d_scene *scene,xge3d_node_data *node)
+{
+    if(!node->user_value_slot)return;
+    size_t index=node->user_value_slot-1;
+    size_t last=scene->user_values.Count-1;
+    const d3_node_user_value *entry=xrtArrayConstGet(&scene->user_values,index);
+    xvalue *released=entry->value;
+    if(index!=last){
+        const d3_node_user_value *moved=xrtArrayConstGet(&scene->user_values,last);
+        moved->node->user_value_slot=index+1;
+    }
+    xrtArrayRemoveSwap(&scene->user_values,index);
+    node->user_value_slot=0;
+    xrtValueRelease(released);
+}
+
+/* On success the node consumes the caller's prepared reference. */
+int d3_node_assign_user_value(xge3d_scene *scene,xge3d_node_data *node,xvalue *prepared)
+{
+    if(!prepared&&!node->user_value_slot)return XGE_OK;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))return XGE_ERROR_INVALID_STATE;
+    int status=XGE_OK;
+    xvalue *retired=NULL;
+    if(!prepared){
+        d3_node_drop_user_value(scene,node);
+    }else if(node->user_value_slot){
+        d3_node_user_value *entry=xrtArrayGet(&scene->user_values,node->user_value_slot-1);
+        retired=entry->value;
+        entry->value=prepared;
+    }else{
+        d3_node_user_value entry={node,prepared};
+        if(!xrtArrayPush(&scene->user_values,&entry))status=XGE_ERROR_OUT_OF_MEMORY;
+        else node->user_value_slot=scene->user_values.Count;
+    }
+    d3_scene_owner_MutationEnd(&mutation);
+    xrtValueRelease(retired);
+    return status;
+}
+#endif
 
 void d3_detach(xge3d_scene *s,xge3d_node_data *n)
 {
@@ -113,6 +184,7 @@ static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
 #endif
 #if XGE3D_ENABLE_SCENE
     xrtFree(n->name);
+    d3_node_drop_user_value(s,n);
 #endif
 #if XGE3D_ENABLE_COLLISION
     if(!staged)s->collision_rebuild=1;
@@ -170,6 +242,9 @@ static int d3_scene_create(xge3d_scene **out,bool owned)
     xrtSlotMapInit(&s->slots);
     xrtArrayInit(&s->nodes, sizeof(xge3d_node_data*));
     xrtArrayInit(&s->scratch, sizeof(xge3d_node_data*));
+#if XGE3D_ENABLE_SCENE
+    xrtArrayInit(&s->user_values,sizeof(d3_node_user_value));
+#endif
     xrtArrayInit(&s->spatial_tree,sizeof(d3_spatial_branch));xrtArrayInit(&s->spatial_items,sizeof(d3_spatial_item));
     xrtArrayInit(&s->spatial_pending,sizeof(xge3d_node_t));xrtArrayInit(&s->query_stack,sizeof(int));
     s->spatial_root=-1;s->spatial_rebuild=1;
@@ -182,11 +257,21 @@ static int d3_scene_create(xge3d_scene **out,bool owned)
 int xge3dSceneCreate(xge3d_scene **out){return d3_scene_create(out,false);}
 int xge3dSceneCreateOwned(xge3d_scene **out){return d3_scene_create(out,true);}
 
-static void d3_scene_clear(xge3d_scene *s)
+static int d3_scene_clear(xge3d_scene *s)
 {
-    if (!s) return;
+    if (!s) return XGE_OK;
+#if XGE3D_ENABLE_SCENE
+    xrtownershipscope mutation={0};
+    bool entered;
+    int status=d3_user_values_begin(s,&mutation,&entered);
+    if(status!=XGE_OK)return status;
+#endif
     while(s->nodes.Count){xge3d_node_data *n=*(xge3d_node_data**)xrtArrayGet(&s->nodes,s->nodes.Count-1);
         while(n->first_child){n=n->first_child;}d3_destroy_one(s,n);}
+#if XGE3D_ENABLE_SCENE
+    xrtArrayUnit(&s->user_values);
+    if(entered)d3_scene_owner_MutationEnd(&mutation);
+#endif
     xrtArrayUnit(&s->nodes);
     xrtArrayUnit(&s->scratch);
     xrtArrayUnit(&s->spatial_tree);xrtArrayUnit(&s->spatial_items);xrtArrayUnit(&s->spatial_pending);xrtArrayUnit(&s->query_stack);
@@ -194,6 +279,7 @@ static void d3_scene_clear(xge3d_scene *s)
 #if XGE3D_ENABLE_COLLISION
     xrtArrayUnit(&s->collision_tree);xrtArrayUnit(&s->collision_items);xrtArrayUnit(&s->collision_pending);
 #endif
+    return XGE_OK;
 }
 void xge3dSceneFree(xge3d_scene *s)
 {
@@ -203,7 +289,7 @@ void xge3dSceneFree(xge3d_scene *s)
         if(status!=XGE_OK && !xrtGetError())xrtSetErrorKind(XERR_STATE);
         return;
     }
-    d3_scene_clear(s);xrtFree(s);
+    if(d3_scene_clear(s)==XGE_OK)xrtFree(s);
 }
 
 size_t xge3dSceneNodeCount(const xge3d_scene *s)
@@ -492,9 +578,18 @@ int xge3dNodeSetMaterialTree(xge3d_scene *s,xge3d_node_t handle,xge3d_material *
 int xge3dNodeDestroy(xge3d_scene *s,xge3d_node_t node)
 {
     xge3d_node_data *root=d3_node(s,node);if(!root)return XGE_ERROR_INVALID_ARGUMENT;
+#if XGE3D_ENABLE_SCENE
+    xrtownershipscope mutation={0};
+    bool entered;
+    int status=d3_user_values_begin(s,&mutation,&entered);
+    if(status!=XGE_OK)return status;
+#endif
     xge3d_node_data *n=root;
     while(n){while(n->first_child)n=n->first_child;
         xge3d_node_data *parent=n==root?NULL:n->parent_node;d3_destroy_one(s,n);n=parent;}
+#if XGE3D_ENABLE_SCENE
+    if(entered)d3_scene_owner_MutationEnd(&mutation);
+#endif
     return XGE_OK;
 }
 int xge3dNodeDestroyStep(xge3d_scene *s,xge3d_node_t handle,const xge3d_work_budget_t *budget,int *completed)
@@ -502,7 +597,14 @@ int xge3dNodeDestroyStep(xge3d_scene *s,xge3d_node_t handle,const xge3d_work_bud
     if(!completed){return XGE_ERROR_INVALID_ARGUMENT;}*completed=0;
     xge3d_node_data *root=s&&handle.scene==s->id?xrtSlotMapGet(&s->slots,handle.slot):NULL;
     if(!root||!budget)return XGE_ERROR_INVALID_ARGUMENT;
-    if(!root->retiring){if(!d3_node(s,handle))return XGE_ERROR_INVALID_STATE;
+    if(!root->retiring && !d3_node(s,handle))return XGE_ERROR_INVALID_STATE;
+#if XGE3D_ENABLE_SCENE
+    xrtownershipscope mutation={0};
+    bool entered;
+    int status=d3_user_values_begin(s,&mutation,&entered);
+    if(status!=XGE_OK)return status;
+#endif
+    if(!root->retiring){
         root->retiring=1;root->visible=0;root->retire_cursor=root;++s->retiring_count;}
     uint64_t start=xgeClockMicroseconds();size_t count=0;
     while(count<budget->nodes){
@@ -511,7 +613,11 @@ int xge3dNodeDestroyStep(xge3d_scene *s,xge3d_node_t handle,const xge3d_work_bud
         int last=n==root; xge3d_node_data *parent=n->parent_node;
         if(!last)root->retire_cursor=parent;
         d3_destroy_one(s,n);++count;if(last){*completed=1;break;}
-    }return XGE_OK;
+    }
+#if XGE3D_ENABLE_SCENE
+    if(entered)d3_scene_owner_MutationEnd(&mutation);
+#endif
+    return XGE_OK;
 }
 int xge3dSceneStats(xge3d_scene *s,xge3d_scene_stats_t *out,int reset)
 {

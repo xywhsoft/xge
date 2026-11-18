@@ -32,6 +32,7 @@ static inline xge3d_billboard_t d3_billboard_native(
 typedef struct xge3d_node_data {
 #if XGE3D_ENABLE_SCENE
     char *name;void *user_data;
+    size_t user_value_slot;
 #endif
 #if XGE3D_ENABLE_COLLISION
     xge3d_shape_t *collider;
@@ -72,6 +73,15 @@ typedef struct xge3d_node_data {
     xarray instance_nodes;
 #endif
 } xge3d_node_data;
+#if XGE3D_ENABLE_SCENE
+typedef struct d3_node_user_value {
+    xge3d_node_data *node;
+    xvalue *value;
+} d3_node_user_value;
+int d3_scene_user_value_ready(xge3d_scene *scene);
+int d3_node_assign_user_value(xge3d_scene *scene,xge3d_node_data *node,xvalue *prepared);
+int d3_node_share_user_value(xge3d_scene *scene,const xge3d_node_data *from,xge3d_node_data *to);
+#endif
 typedef struct d3_lods { size_t count;xge3d_lod_t levels[3];uint64_t versions[3]; } d3_lods;
 void d3_lods_free(d3_lods *lods);
 
@@ -88,6 +98,9 @@ struct xge3d_scene {
     xge3d_dvec3_t origin;
     xslotmap slots;
     xarray nodes, scratch;
+#if XGE3D_ENABLE_SCENE
+    xarray user_values;
+#endif
 #if XGE3D_ENABLE_MODEL
     /* Non-NULL only while a builder is executing on this scene. */
     xarray *active_instance_nodes;

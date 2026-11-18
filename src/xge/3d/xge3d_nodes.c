@@ -26,6 +26,78 @@ const char *xge3dNodeName(xge3d_scene *s,xge3d_node_t h){xge3d_node_data *n=d3_n
 int xge3dNodeSetUserData(xge3d_scene *s,xge3d_node_t h,void *data)
 {xge3d_node_data *n=d3_node(s,h);if(!n){return XGE_ERROR_INVALID_ARGUMENT;}n->user_data=data;return XGE_OK;}
 void *xge3dNodeUserData(xge3d_scene *s,xge3d_node_t h){xge3d_node_data *n=d3_node(s,h);return n?n->user_data:NULL;}
+
+static int d3_user_value_plain_object(uint64 type,xvaluegraphnextv1 *next,xvalue **out,ptr user)
+{
+    (void)next;
+    (void)out;
+    (void)user;
+    if(!type)return 0;
+    xrtSetErrorKind(XERR_UNSUPPORTED);
+    return -1;
+}
+
+static int d3_user_value_snapshot(const xvalue *value,xvalue **out)
+{
+    const xvaluegraphcopyv1 config={.Size=sizeof(config),
+        .Flags=XVALUE_GRAPH_COPY_DATA_V1|XVALUE_GRAPH_COPY_STRICT_DATA_V1,
+        .CopyObject=d3_user_value_plain_object};
+    *out=xrtValueGraphCopyV1(value,&config);
+    if(*out)return XGE_OK;
+    switch(xrtErrorKind(xrtGetError())){
+        case XERR_MEMORY: return XGE_ERROR_OUT_OF_MEMORY;
+        case XERR_UNSUPPORTED: return XGE_ERROR_UNSUPPORTED;
+        case XERR_STATE: return XGE_ERROR_INVALID_STATE;
+        default: return XGE_ERROR_INVALID_ARGUMENT;
+    }
+}
+
+static const xvalue *d3_node_user_value_get(const xge3d_scene *scene,const xge3d_node_data *node)
+{
+    if(!node->user_value_slot)return NULL;
+    const d3_node_user_value *entry=xrtArrayConstGet(&scene->user_values,node->user_value_slot-1);
+    return entry->value;
+}
+
+int d3_node_share_user_value(xge3d_scene *scene,const xge3d_node_data *from,xge3d_node_data *to)
+{
+    const xvalue *value=d3_node_user_value_get(scene,from);
+    if(!value)return XGE_OK;
+    xvalue *retained=xrtValueRetain(value);
+    if(!retained)return XGE_ERROR_INVALID_STATE;
+    int status=d3_node_assign_user_value(scene,to,retained);
+    if(status!=XGE_OK)xrtValueRelease(retained);
+    return status;
+}
+
+int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t handle,const xvalue *value)
+{
+    int status=d3_scene_user_value_ready(scene);
+    if(status!=XGE_OK)return status;
+    xge3d_node_data *node=d3_node(scene,handle);
+    if(!node||d3_node_staged(node))return XGE_ERROR_INVALID_ARGUMENT;
+    xvalue *prepared=NULL;
+    if(value&&!xrtValueIs(value,XVALUE_NULL)){
+        status=d3_user_value_snapshot(value,&prepared);
+        if(status!=XGE_OK)return status;
+    }
+    status=d3_node_assign_user_value(scene,node,prepared);
+    if(status!=XGE_OK)xrtValueRelease(prepared);
+    return status;
+}
+
+int xge3dNodeCopyUserValue(xge3d_scene *scene,xge3d_node_t handle,xvalue **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=d3_scene_user_value_ready(scene);
+    if(status!=XGE_OK)return status;
+    xge3d_node_data *node=d3_node(scene,handle);
+    if(!node||d3_node_staged(node))return XGE_ERROR_INVALID_ARGUMENT;
+    const xvalue *value=d3_node_user_value_get(scene,node);
+    return value ? d3_user_value_snapshot(value,out) : XGE_OK;
+}
+
 int xge3dNodeFind(xge3d_scene *s,xge3d_node_t root,const char *name,xge3d_node_t *out)
 {
     if(!out){return XGE_ERROR_INVALID_ARGUMENT;}*out=(xge3d_node_t){0};
@@ -59,6 +131,7 @@ int xge3dNodeClone(xge3d_scene *s,xge3d_node_t source,xge3d_node_t parent,uint32
 {
     if(!out){return XGE_ERROR_INVALID_ARGUMENT;}*out=(xge3d_node_t){0};xge3d_node_data *root=d3_node(s,source);
     if(!root||(flags&~XGE3D_CLONE_USER_DATA)||((parent.slot||parent.scene)&&!d3_node(s,parent))){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(flags&XGE3D_CLONE_USER_DATA){int ready=d3_scene_user_value_ready(s);if(ready!=XGE_OK)return ready;}
     xarray originals;xrtArrayInit(&originals,sizeof(xge3d_node_data*));xmap map;xrtMapInit(&map,sizeof(xge3d_node_t));
     int result=XGE_ERROR_OUT_OF_MEMORY;xge3d_node_t clone={0};
     for(xge3d_node_data *n=root;n;n=d3_subtree_next(n,root))if(!d3_node(s,n->handle)||!xrtArrayPush(&originals,&n)){goto done;}
@@ -72,7 +145,12 @@ int xge3dNodeClone(xge3d_scene *s,xge3d_node_t source,xge3d_node_t parent,uint32
 #if XGE3D_ENABLE_SHADOW
         next->shadow_flags=n->shadow_flags;
 #endif
-        if(i){next->visible=n->visible;}if(flags&XGE3D_CLONE_USER_DATA){next->user_data=n->user_data;}
+        if(i){next->visible=n->visible;}
+        if(flags&XGE3D_CLONE_USER_DATA){
+            next->user_data=n->user_data;
+            result=d3_node_share_user_value(s,n,next);
+            if(result!=XGE_OK)goto done;
+        }
         if(n->lods&&(result=xge3dNodeSetLods(s,h,n->lods->levels,n->lods->count))){goto done;}
 #if XGE3D_ENABLE_COLLISION
         if(n->collider&&(result=xge3dNodeSetCollider(s,h,n->collider))){goto done;}
