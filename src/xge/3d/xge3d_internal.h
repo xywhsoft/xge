@@ -296,7 +296,19 @@ struct xge3d_environment {
     d3_cube irradiance, prefiltered;
     xge3d_texture *brdf;
 #endif
+    uint32_t refs;
+    uint64_t owner_thread;
 };
+static inline bool d3_environment_thread(const xge3d_environment *environment)
+{
+    return !environment->owner_thread || environment->owner_thread==xrtThreadCurrentId();
+}
+/* Stack descriptors for packed RGBA inputs, borrowed through the native copy. */
+int d3_packed_cube(xge3d_cube_level_t *levels,xge_image_t (*images)[6],size_t count,
+    int edge,const void *data,size_t bytes);
+int d3_packed_image(xge_image_t *image,int width,int height,const void *data,size_t bytes);
+void d3_unpack_begin(int state[5]);
+void d3_unpack_end(const int state[5]);
 int d3_cube_copy(d3_cube *cube,const xge3d_cube_level_t *levels,size_t count,int srgb);
 void d3_cube_free(d3_cube *cube);
 int d3_cube_upload(d3_cube *cube,uint64_t *bytes);

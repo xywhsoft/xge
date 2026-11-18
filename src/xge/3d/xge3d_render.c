@@ -985,6 +985,48 @@ int xge3dRenderFrameTo(xge3d_renderer *r,xge3d_scene *s,
     return d3_render_frame(r,s,camera,target,clear_color,clear_flags,exposure,stats);
 }
 
+xge3d_frame_options_t xge3dFrameOptionsDefault(void)
+{
+    xge3d_frame_options_t options={.clear_flags=XGE3D_CLEAR_COLOR|XGE3D_CLEAR_DEPTH};
+#if XGE3D_ENABLE_SHADOW
+    options.shadows=xge3dShadowDefault();
+#endif
+#if XGE3D_ENABLE_FOG
+    options.fog=xge3dFogDefault();
+#endif
+    return options;
+}
+
+int xge3dRenderFrameConfigured(xge3d_renderer *r,xge3d_scene *s,
+    const xge3d_camera_t *camera,const xge3d_frame_options_t *options,
+    xge3d_target *target,xge3d_environment *environment,xge3d_render_stats_t *stats)
+{
+    if(!options){
+        if(stats)*stats=(xge3d_render_stats_t){0};
+        return XGE_ERROR_INVALID_ARGUMENT;
+    }
+    if((!XGE3D_ENABLE_SHADOW && options->enable_shadows) ||
+        (!XGE3D_ENABLE_FOG && options->enable_fog) ||
+        (!XGE3D_ENABLE_IBL && options->ibl_intensity!=0)){
+        if(stats)*stats=(xge3d_render_stats_t){0};
+        return XGE_ERROR_UNSUPPORTED;
+    }
+    xge3d_render_desc_t frame={.camera=camera,.target=target,.environment=environment,
+        .clear_flags=options->clear_flags,.exposure=options->exposure,
+        .disable_culling=options->disable_culling,.disable_instancing=options->disable_instancing};
+    memcpy(frame.clear_color,options->clear_color,sizeof(frame.clear_color));
+#if XGE3D_ENABLE_SHADOW
+    if(options->enable_shadows)frame.shadows=&options->shadows;
+#endif
+#if XGE3D_ENABLE_FOG
+    if(options->enable_fog)frame.fog=&options->fog;
+#endif
+#if XGE3D_ENABLE_IBL
+    frame.ibl_intensity=options->ibl_intensity;
+#endif
+    return xge3dRender(r,s,&frame,stats);
+}
+
 int xge3dTargetCreate(int width, int height, xge3d_target **out)
 {
     if (!out) {return XGE_ERROR_INVALID_ARGUMENT;}
@@ -1474,6 +1516,14 @@ int xge3dRender(xge3d_renderer *r, xge3d_scene *s, const xge3d_render_desc_t *d,
     if (!r || !s || !d || !d->camera || !d3_finite_matrix(&d->camera->view) ||
         !d3_finite_matrix(&d->camera->projection) || (d->clear_flags&~3u))
         {return XGE_ERROR_INVALID_ARGUMENT;}
+    uint64_t renderer_thread=r->owner_thread;
+    uint64_t target_thread=d->target?d->target->owner_thread:0;
+    uint64_t environment_thread=d->environment?d->environment->owner_thread:0;
+    if(renderer_thread || target_thread || environment_thread){
+        uint64_t thread=xrtThreadCurrentId();
+        if((renderer_thread && renderer_thread!=thread) || (target_thread && target_thread!=thread) ||
+            (environment_thread && environment_thread!=thread))return XGE_ERROR_INVALID_STATE;
+    }
     for (int i=0;i<4;++i) {if (!isfinite(d->clear_color[i])) {return XGE_ERROR_INVALID_ARGUMENT;}}
     if (!isfinite(d->exposure) || d->exposure<0) {return XGE_ERROR_INVALID_ARGUMENT;}
 #if XGE3D_ENABLE_TONEMAP || XGE3D_ENABLE_COLOR_GRADING

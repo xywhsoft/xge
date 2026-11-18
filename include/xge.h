@@ -4371,18 +4371,20 @@ XGE_API int xge3dNodeSetShadowFlags(xge3d_scene *scene, xge3d_node_t node, uint3
 XGE_API int xge3dNodeGetShadowFlags(xge3d_scene *scene, xge3d_node_t node, uint32_t *out);
 #define XGE3D_MAX_CASCADES 4
 #define XGE3D_MAX_SHADOW_SPOTS 2
+#endif
 typedef struct xge3d_shadow_settings_t {
     int resolution, cascades; /* Per map, 1..4 cascades; one sun and two spots. */
     float distance, split_lambda, blend, bias, normal_bias, filter_radius, depth_padding;
 } xge3d_shadow_settings_t;
+#if XGE3D_ENABLE_SHADOW
 /* 返回阴影渲染的默认设置。 */
 XGE_API xge3d_shadow_settings_t xge3dShadowDefault(void);
 #endif
-#if XGE3D_ENABLE_FOG
 typedef struct xge3d_fog_settings_t {
     xge3d_vec3_t color; /* Linear RGB, blended before exposure and sRGB conversion. */
     float start, end; /* Metres along camera forward; 0 <= start < end. Sky is unchanged. */
 } xge3d_fog_settings_t;
+#if XGE3D_ENABLE_FOG
 /* 返回线性雾效的默认设置。 */
 XGE_API xge3d_fog_settings_t xge3dFogDefault(void);
 #endif
@@ -4405,6 +4407,17 @@ typedef struct xge3d_render_desc_t {
     const xge3d_fog_settings_t *fog; /* Borrowed for this call; NULL disables fog. */
 #endif
 } xge3d_render_desc_t;
+/* Value options usable with any 3D build. Feature-specific values are read
+ * only when requested, and a build without that feature reports Unsupported. */
+typedef struct xge3d_frame_options_t {
+    float clear_color[4];
+    uint32_t clear_flags;
+    float exposure, ibl_intensity;
+    int disable_culling, disable_instancing;
+    int enable_shadows, enable_fog;
+    xge3d_shadow_settings_t shadows;
+    xge3d_fog_settings_t fog;
+} xge3d_frame_options_t;
 typedef struct xge3d_render_stats_t {
     uint32_t draw_calls;
     uint64_t triangles, upload_bytes;
@@ -4604,6 +4617,15 @@ XGE_API int xge3dNodeSetColor(xge3d_scene *scene, xge3d_node_t node, const float
 /* Copies all faces on the CPU; first render uploads once. Release uploaded
  * environments on their context thread before xgeUnit. */
 XGE_API int xge3dEnvironmentCreate(const xge3d_environment_desc_t *desc, xge3d_environment **out);
+/* Both managed constructors copy six RGBA8 faces in native cube order. The
+ * packed form takes exactly edge*edge*4*6 bytes, without row padding. */
+XGE_API int xge3dEnvironmentCreateImagesOwned(xge_image_t *const *faces,size_t count,int srgb,
+    xge3d_environment **out);
+XGE_API int xge3dEnvironmentCreateRGBAOwned(int edge,const void *pixels,size_t bytes,int srgb,
+    xge3d_environment **out);
+XGE_API int xge3dEnvironmentShareOwned(xge3d_environment *environment,xge3d_environment **out);
+XGE_API int xge3dEnvironmentReleaseOwnerChecked(xge3d_environment *environment,bool *consumed);
+XGE_API int xge3dEnvironmentReleaseChecked(xge3d_environment *environment);
 /* 释放环境贴图及其 GPU 资源。 */
 XGE_API void xge3dEnvironmentFree(xge3d_environment *environment);
 #if XGE3D_ENABLE_IBL
@@ -4611,6 +4633,16 @@ XGE_API void xge3dEnvironmentFree(xge3d_environment *environment);
  * can only be replaced on the owning context thread. Sky faces stay intact. */
 XGE_API int xge3dEnvironmentSetIBL(xge3d_environment *environment, const xge3d_ibl_desc_t *desc);
 #endif
+/* Precomputed linear RGBA8. Prefiltered faces are grouped by mip, largest
+ * level first, and must end with 1x1 faces. Replacement is transactional. */
+XGE_API int xge3dEnvironmentSetIBLImages(xge3d_environment *environment,
+    xge_image_t *const *irradiance,size_t irradiance_count,
+    xge_image_t *const *prefiltered,size_t prefiltered_count,const xge_image_t *brdf);
+XGE_API int xge3dEnvironmentSetIBLRGBA(xge3d_environment *environment,
+    int irradiance_edge,const void *irradiance,size_t irradiance_bytes,
+    int prefiltered_edge,const void *prefiltered,size_t prefiltered_bytes,
+    int brdf_width,int brdf_height,const void *brdf,size_t brdf_bytes);
+XGE_API int xge3dEnvironmentClearIBL(xge3d_environment *environment);
 /* Renderer/targets require the active context. All GPU objects must be freed
  * before context destruction. Existing targets remain valid if resize fails. */
 XGE_API int xge3dRendererCreate(xge3d_renderer **out);
@@ -4643,6 +4675,10 @@ XGE_API int xge3dTargetReadPixels(xge3d_target *target, void *rgba, size_t size,
 /* 使用给定相机、目标和环境描述渲染场景并可返回统计。 */
 XGE_API int xge3dRender(xge3d_renderer *renderer, xge3d_scene *scene,
     const xge3d_render_desc_t *desc, xge3d_render_stats_t *stats);
+XGE_API xge3d_frame_options_t xge3dFrameOptionsDefault(void);
+XGE_API int xge3dRenderFrameConfigured(xge3d_renderer *renderer,xge3d_scene *scene,
+    const xge3d_camera_t *camera,const xge3d_frame_options_t *options,
+    xge3d_target *target,xge3d_environment *environment,xge3d_render_stats_t *stats);
 /* Draw to the active viewport with flat frame options. Extended target,
  * atmosphere and lighting inputs are supplied by xge3dRender. */
 XGE_API int xge3dRenderFrame(xge3d_renderer *renderer,xge3d_scene *scene,

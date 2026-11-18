@@ -174,10 +174,11 @@ int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
     if (t->context && t->context!=context) {return XGE_ERROR_INVALID_STATE;}
     if (t->prepare_partial) {return XGE_ERROR_INVALID_STATE;}
     if (t->id) { xge_glBindTexture(GL_TEXTURE_2D,t->id); return XGE_OK; }
-    GLint maximum, unpack;
+    GLint maximum;
     xge_glGetIntegerv(0x0D33,&maximum);
     if (t->width>maximum || t->height>maximum) {return XGE_ERROR_UNSUPPORTED;}
-    xge_glGetIntegerv(GL_UNPACK_ALIGNMENT,&unpack); xge_glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+    int unpack[5];
+    d3_unpack_begin(unpack);
     xge_glGenTextures(1,&t->id); xge_glBindTexture(GL_TEXTURE_2D,t->id);
     xge_glTexImage2D(GL_TEXTURE_2D,0,t->srgb ? 0x8C43 : GL_RGBA8,t->width,t->height,0,GL_RGBA,GL_UNSIGNED_BYTE,t->pixels.Data);
     xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,t->sampler.min_filter);
@@ -185,7 +186,7 @@ int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
     xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,t->sampler.wrap_u);
     xge_glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,t->sampler.wrap_v);
     if (t->sampler.min_filter>=0x2700 && t->sampler.min_filter<=0x2703) {xge_glGenerateMipmap(GL_TEXTURE_2D);}
-    xge_glPixelStorei(GL_UNPACK_ALIGNMENT,unpack);
+    d3_unpack_end(unpack);
     GLenum error=xge_glGetError();
     if (!t->id || error!=GL_NO_ERROR) {
         if (t->id) {xge_glDeleteTextures(1,&t->id);}
