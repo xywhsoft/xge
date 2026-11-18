@@ -3605,7 +3605,10 @@ XGE_API int xgeShapeExSceneGetCount(xge_shape_ex_scene pScene, int* pCount);
 XGE_API int xgeShapeExSceneGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppShape);
 /* 按索引取子节点（含类型判别，路径或子场景）。 */
 XGE_API int xgeShapeExSceneChildGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex_scene_child_t* pChild);
-/* 深度优先遍历场景树并回调每个节点。 */
+/* Preorder traversal of the scene and its descendants. A zero visitor
+ * result stops successfully. Child-list writes under the traversed root
+ * return XGE_ERROR_BUSY until the last traversal returns; reads and nested
+ * visits remain available. The callback's child record is borrowed. */
 XGE_API int xgeShapeExSceneTraverse(xge_shape_ex_scene pScene, xge_shape_ex_scene_visit_proc onPaint, void* pUser);
 /* 以矩阵覆盖场景变换（作用于全部子节点）。 */
 XGE_API int xgeShapeExSceneTransformSet(xge_shape_ex_scene pScene, const xge_shape_ex_matrix_t* pMatrix);

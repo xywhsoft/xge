@@ -134,6 +134,7 @@ struct xge_shape_ex_scene_t {
 	uint32_t iMagic;
 	int iRefCount;
 	uint32_t iId;
+	int iTraversals;
 	xge_shape_ex_scene pParentScene;
 	xge_shape_ex_scene_child_t* pChildren;
 	int iChildCount;
@@ -16648,11 +16649,20 @@ void xgeShapeExSceneDestroy(xge_shape_ex_scene pScene)
 	xrtFree(pScene);
 }
 
+static int __xgeShapeExSceneHierarchyBusy(xge_shape_ex_scene pScene)
+{
+	for ( ; pScene != NULL; pScene = pScene->pParentScene ) {
+		if ( pScene->iTraversals != 0 ) return 1;
+	}
+	return 0;
+}
+
 int xgeShapeExSceneClear(xge_shape_ex_scene pScene)
 {
 	int i;
 
 	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( __xgeShapeExSceneHierarchyBusy(pScene) ) return XGE_ERROR_BUSY;
 	for ( i = 0; i < pScene->iChildCount; i++ ) {
 		__xgeShapeExSceneChildRelease(pScene, &pScene->pChildren[i]);
 	}
@@ -16710,6 +16720,7 @@ static int __xgeShapeExSceneInsertChildAt(
 	     (iIndex < 0) || (iIndex > pScene->iChildCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xgeShapeExSceneHierarchyBusy(pScene) ) return XGE_ERROR_BUSY;
 	if ( ((pChild->iType == XGE_SHAPE_EX_SCENE_CHILD_SHAPE) &&
 	      (pChild->pShape->pParentScene != NULL)) ||
 	     ((pChild->iType == XGE_SHAPE_EX_SCENE_CHILD_SCENE) &&
@@ -16760,6 +16771,7 @@ static int __xgeShapeExSceneRemoveChildAt(xge_shape_ex_scene pScene, int iIndex)
 	if ( !__xgeShapeExSceneValid(pScene) || (iIndex < 0) || (iIndex >= pScene->iChildCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xgeShapeExSceneHierarchyBusy(pScene) ) return XGE_ERROR_BUSY;
 	__xgeShapeExSceneChildRelease(pScene, &pScene->pChildren[iIndex]);
 	if ( iIndex + 1 < pScene->iChildCount ) {
 		memmove(
@@ -16896,7 +16908,8 @@ int xgeShapeExSceneChildGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_e
 static int __xgeShapeExSceneTraverse(
 	xge_shape_ex_scene pScene,
 	xge_shape_ex_scene_visit_proc onPaint,
-	void* pUser
+	void* pUser,
+	int iDepth
 )
 {
 	enum { XGE_SHAPE_EX_TRAVERSE_STOP = 1 };
@@ -16904,6 +16917,7 @@ static int __xgeShapeExSceneTraverse(
 	int i;
 	int iRet;
 
+	if ( iDepth > XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) return XGE_ERROR_INVALID_ARGUMENT;
 	memset(&tPaint, 0, sizeof(tPaint));
 	tPaint.iType = XGE_SHAPE_EX_SCENE_CHILD_SCENE;
 	tPaint.pScene = pScene;
@@ -16912,7 +16926,7 @@ static int __xgeShapeExSceneTraverse(
 		const xge_shape_ex_scene_child_t* pChild = &pScene->pChildren[i];
 
 		if ( pChild->iType == XGE_SHAPE_EX_SCENE_CHILD_SCENE ) {
-			iRet = __xgeShapeExSceneTraverse(pChild->pScene, onPaint, pUser);
+			iRet = __xgeShapeExSceneTraverse(pChild->pScene, onPaint, pUser, iDepth + 1);
 			if ( iRet != XGE_OK ) return iRet;
 		} else if ( !onPaint(pChild, pUser) ) {
 			return XGE_SHAPE_EX_TRAVERSE_STOP;
@@ -16929,9 +16943,12 @@ int xgeShapeExSceneTraverse(xge_shape_ex_scene pScene, xge_shape_ex_scene_visit_
 	if ( !__xgeShapeExSceneValid(pScene) || (onPaint == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pScene->iTraversals == INT_MAX ) return XGE_ERROR_BUSY;
 	iRet = xgeShapeExSceneAddRef(pScene);
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xgeShapeExSceneTraverse(pScene, onPaint, pUser);
+	pScene->iTraversals++;
+	iRet = __xgeShapeExSceneTraverse(pScene, onPaint, pUser, 0);
+	pScene->iTraversals--;
 	xgeShapeExSceneDestroy(pScene);
 	return iRet == XGE_SHAPE_EX_TRAVERSE_STOP ? XGE_OK : iRet;
 }
