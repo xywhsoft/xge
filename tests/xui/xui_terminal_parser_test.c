@@ -281,6 +281,34 @@ int main(void)
 	iRet = xuiTerminalGetFindMatch(pTerminal, &iLine, &iColumn, &iLength);
 	XUI_TEST_CHECK(iRet == 1 && iLength == 3, "regex terminal match width");
 
+	iRet = xuiTerminalResize(pTerminal, 24, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "resize for same-row search");
+	(void)xuiTerminalClearScrollback(pTerminal);
+	(void)xuiTerminalClear(pTerminal);
+	iRet = xuiTerminalWriteText(pTerminal, "word gap word\r\nunrelated");
+	if ( iRet == XUI_OK ) iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "write two matches on one row");
+	iRet = xuiTerminalFindText(pTerminal, "word", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 0, "first same-row match");
+	iRet = xuiTerminalFindNext(pTerminal, "word", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 9, "second same-row match");
+	iRet = xuiTerminalFindNext(pTerminal, "word", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 0, "forward same-row wrap");
+	iRet = xuiTerminalFindPrev(pTerminal, "word", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 9, "reverse same-row wrap");
+	iRet = xuiTerminalFindText(pTerminal, "[", XUI_TERMINAL_SEARCH_REGEX, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet < 0 && iLine == 0 && iColumn == 9, "invalid pattern preserves outputs");
+	iRet = xuiTerminalGetFindMatch(pTerminal, &iLine, &iColumn, &iLength);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 9 && iLength == 4, "invalid pattern preserves match");
+	iRet = xuiTerminalFindText(pTerminal, "gap", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 5, "find a sole match");
+	iRet = xuiTerminalFindNext(pTerminal, "gap", 0, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 5, "sole match wraps to itself");
+	iRet = xuiTerminalFindText(pTerminal, "$", XUI_TERMINAL_SEARCH_REGEX, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 13, "first zero-width end-of-row match");
+	iRet = xuiTerminalFindNext(pTerminal, "$", XUI_TERMINAL_SEARCH_REGEX, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == 1 && iLine == 1 && iColumn == 9, "next row after zero-width match");
+
 	iRet = xuiTerminalResize(pTerminal, 8, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize for stable history search");
 	(void)xuiTerminalClearScrollback(pTerminal);

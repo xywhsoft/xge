@@ -3573,6 +3573,8 @@ static int __xuiTerminalFindInLine(const char* sLine, const char* sText, uint32_
 	if ( iStartColumn < 0 ) return 0;
 	iLineBytes = (int)strlen(sLine);
 	iStartByte = __xuiTerminalUtf8ByteFromColumn(sLine, iStartColumn);
+	if ( bForward && iStartByte == iLineBytes &&
+	     iStartColumn > __xuiTerminalUtf8DisplayColumns(sLine, iLineBytes) ) return 0;
 	memset(&tResult, 0, sizeof(tResult));
 	tResult.iSize = sizeof(tResult);
 	sError[0] = '\0';
@@ -3866,80 +3868,80 @@ static int __xuiTerminalUpdateHoverLink(xui_widget pWidget, xui_terminal_data_t*
 	return __xuiTerminalSetHoverLink(pWidget, pData, -1, 0, 0, NULL);
 }
 
-static int __xuiTerminalSetSearchText(xui_terminal_data_t* pData, const char* sText, uint32_t iFlags)
+static int __xuiTerminalFindLogicalLine(xui_terminal_data_t* pData, int iLine,
+	const char* sText, uint32_t iFlags, int bForward, int* pColumn, int* pLength)
 {
-	char* sCopy;
-
-	if ( (pData == NULL) || (sText == NULL) || (sText[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( (pData->sSearchText != NULL) && (strcmp(pData->sSearchText, sText) == 0) && (pData->iSearchFlags == iFlags) ) {
-		return XUI_OK;
-	}
-	sCopy = xrtStrDup(sText);
-	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
-	pData->sSearchText = sCopy;
-	pData->iSearchFlags = iFlags;
-	__xuiTerminalClearFindMatch(pData);
-	return XUI_OK;
+	char* sOwned = NULL;
+	const char* sLine = __xuiTerminalLogicalLineText(pData, iLine, &sOwned);
+	if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	int iRet = __xuiTerminalFindInLine(sLine, sText, iFlags, *pColumn, bForward,
+		pColumn, pLength);
+	xrtFree(sOwned);
+	return iRet;
 }
 
 static int __xuiTerminalFindNavigate(xui_widget pWidget, xui_terminal_data_t* pData, const char* sText, uint32_t iFlags, int bForward, int bContinue, int* pLine, int* pColumn)
 {
-	const char* sLine;
-	char* sOwned;
-	int iCount;
-	int iStartLine;
-	int iStartColumn;
-	int iLine;
-	int iColumn;
-	int iLength;
-	int i;
-	int iRet;
-
 	if ( (pWidget == NULL) || (pData == NULL) || (sText == NULL) || (sText[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiTerminalRebuildHistoryView(pData);
+	int iRet = __xuiTerminalRebuildHistoryView(pData);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTerminalSetSearchText(pData, sText, iFlags);
-	if ( iRet != XUI_OK ) return iRet;
-	iCount = __xuiTerminalLogicalLineCount(pData);
-	if ( iCount <= 0 ) return 0;
-	if ( bContinue && pData->iSearchLine >= 0 ) {
-		if ( pData->iSearchHistoryId != 0u ) (void)__xuiTerminalResolveFindAnchor(pData);
+	int iCount = __xuiTerminalLogicalLineCount(pData);
+	int bSameQuery = pData->sSearchText != NULL && pData->iSearchFlags == iFlags &&
+		strcmp(pData->sSearchText, sText) == 0;
+	if ( bContinue && bSameQuery && pData->iSearchHistoryId != 0u )
+		(void)__xuiTerminalResolveFindAnchor(pData);
+	int bPartial = bContinue && bSameQuery && pData->iSearchLine >= 0 && iCount > 0;
+	int iBoundary = bForward ? 0 : pData->iColumns;
+	int iStartLine = bForward ? 0 : iCount - 1;
+	int iColumn = iBoundary;
+	if ( bPartial ) {
 		iStartLine = __xuiTerminalClampLine(pData, pData->iSearchLine);
-		iStartColumn = bForward ? (pData->iSearchColumn + __xuiTerminalMax(pData->iSearchLength, 1)) : (pData->iSearchColumn - 1);
+		if ( bForward ) {
+			int iStartColumn = __xuiTerminalClampColumn(pData, pData->iSearchColumn);
+			int iRemaining = pData->iColumns - iStartColumn;
+			int iStep = __xuiTerminalMax(pData->iSearchLength, 1);
+			iColumn = iStep <= iRemaining ? iStartColumn + iStep : -1;
+		} else iColumn = pData->iSearchColumn - 1;
+	}
+	int iLine = iStartLine;
+	int iLength = 0;
+	for ( int i = 0; i < iCount; ++i ) {
+		iRet = __xuiTerminalFindLogicalLine(pData, iLine, sText, iFlags, bForward, &iColumn, &iLength);
+		if ( iRet != 0 ) break;
+		iLine = bForward ? (iLine + 1 == iCount ? 0 : iLine + 1) :
+			(iLine == 0 ? iCount - 1 : iLine - 1);
+		iColumn = iBoundary;
+	}
+	if ( iRet == 0 && bPartial ) {
+		/* The first pass used only one side of the starting row. */
+		iLine = iStartLine;
+		iColumn = iBoundary;
+		iRet = __xuiTerminalFindLogicalLine(pData, iLine, sText, iFlags, bForward, &iColumn, &iLength);
+	}
+	if ( iRet < 0 ) return iRet;
+
+	/* A failed scan or pattern allocation does not replace the active search. */
+	if ( !bSameQuery ) {
+		char* sCopy = xrtStrDup(sText);
+		if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		xrtFree(pData->sSearchText);
+		pData->sSearchText = sCopy;
+		pData->iSearchFlags = iFlags;
+	}
+	if ( iRet == 0 ) {
+		__xuiTerminalClearFindMatch(pData);
 	} else {
-		iStartLine = bForward ? 0 : (iCount - 1);
-		iStartColumn = bForward ? 0 : pData->iColumns;
+		pData->iSearchLine = iLine;
+		pData->iSearchColumn = __xuiTerminalClampColumn(pData, iColumn);
+		pData->iSearchLength = iLength;
+		__xuiTerminalSetFindAnchor(pData, iLine, pData->iSearchColumn);
+		if ( pLine != NULL ) *pLine = iLine;
+		if ( pColumn != NULL ) *pColumn = pData->iSearchColumn;
+		__xuiTerminalSyncScrollModel(pWidget, pData);
+		(void)xuiScrollModelSetOffset(&pData->tScroll, 0.0f, (float)iLine * pData->fCellHeight);
 	}
-	if ( iStartColumn < 0 ) iStartColumn = -1;
-	if ( iStartColumn > pData->iColumns ) iStartColumn = pData->iColumns;
-	for ( i = 0; i < iCount; i++ ) {
-		iLine = bForward ? ((iStartLine + i) % iCount) : ((iStartLine - i + iCount) % iCount);
-		iColumn = (i == 0) ? iStartColumn : (bForward ? 0 : pData->iColumns);
-		sOwned = NULL;
-		sLine = __xuiTerminalLogicalLineText(pData, iLine, &sOwned);
-		if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		iLength = 0;
-		iRet = __xuiTerminalFindInLine(sLine, sText, iFlags, iColumn, bForward,
-			&iColumn, &iLength);
-		xrtFree(sOwned);
-		if ( iRet < 0 ) return iRet;
-		if ( iRet > 0 ) {
-			pData->iSearchLine = iLine;
-			pData->iSearchColumn = __xuiTerminalClampColumn(pData, iColumn);
-			pData->iSearchLength = iLength;
-			__xuiTerminalSetFindAnchor(pData, pData->iSearchLine, pData->iSearchColumn);
-			if ( pLine != NULL ) *pLine = pData->iSearchLine;
-			if ( pColumn != NULL ) *pColumn = pData->iSearchColumn;
-			__xuiTerminalSyncScrollModel(pWidget, pData);
-			(void)xuiScrollModelSetOffset(&pData->tScroll, 0.0f, (float)pData->iSearchLine * pData->fCellHeight);
-			__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-			return 1;
-		}
-	}
-	__xuiTerminalClearFindMatch(pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	return 0;
+	return iRet;
 }
 
 static void __xuiTerminalClearSelectionData(xui_terminal_data_t* pData)
@@ -7593,18 +7595,17 @@ static void __xuiTerminalProcessCloseHandles(xui_terminal_session_t* pSession)
 
 static int __xuiTerminalSessionResizeTransport(xui_terminal_session_t* pSession, int iColumns, int iRows)
 {
+	if ( pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pSession->iKind != XUI_TERMINAL_SESSION_PROCESS ) return XUI_OK;
 #if defined(_WIN32) || defined(_WIN64)
 	xui_terminal_conpty_api_t tApi;
 	HRESULT iResult;
 
-	if ( pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pSession->iKind != XUI_TERMINAL_SESSION_PROCESS ) return XUI_OK;
 	if ( pSession->hPseudoConsole == NULL ) return XUI_OK;
 	if ( !__xuiTerminalConptyGetApi(&tApi) ) return XUI_ERROR_UNSUPPORTED;
 	iResult = tApi.resizePseudoConsole(pSession->hPseudoConsole, __xuiTerminalConptySize(iColumns, iRows));
 	return SUCCEEDED(iResult) ? XUI_OK : XUI_ERROR_BACKEND_FAILED;
 #else
-	(void)pSession;
 	(void)iColumns;
 	(void)iRows;
 	return XUI_ERROR_UNSUPPORTED;
