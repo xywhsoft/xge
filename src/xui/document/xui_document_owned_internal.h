@@ -54,6 +54,9 @@ extern const doc_model_type doc_model_document_type,doc_model_snapshot_type;
 extern const doc_model_type doc_model_change_type,doc_model_transaction_type;
 extern const doc_model_type doc_model_prepare_type,doc_model_fragment_type,doc_model_index_type;
 extern const doc_model_type doc_model_matches_type,doc_model_markdown_losses_type;
+#if XUI_ENABLE_DOCUMENT_VIEW
+extern const doc_model_type doc_model_range_rects_type;
+#endif
 void doc_model_init(doc_model_lifetime*,const doc_model_type*,struct doc_allocator*);
 bool doc_model_owned(const doc_model_lifetime*);
 static inline bool doc_model_typed(const doc_model_lifetime* root,const doc_model_type* type)

@@ -293,8 +293,7 @@ static int doc_impl_GetCaretRect(xui_document_renderer r, const xui_doc_position
 static int doc_impl_GetLineRange(xui_document_renderer r,
     const xui_doc_position_t* position, xui_doc_range_t* out);
 static int doc_impl_GetRangeRects(xui_document_renderer r,
-    const xui_doc_range_t* range, xui_doc_rect_t* rects,
-    uint64_t capacity, uint64_t* total);
+    const xui_doc_range_t* range, doc_query_rows* rows);
 static int doc_impl_Draw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
     const xui_doc_range_t* selection, uint32_t selection_color);
 static int doc_impl_GetStats(xui_document_renderer r, xui_doc_renderer_stats_t* out);
@@ -3377,11 +3376,11 @@ static int doc_render_grapheme_selected(xui_document_renderer r,
         if (doc_render_selected(r, &block->fragments[i], range)) return 1;
     return 0;
 }
-static void doc_render_range_emit(xui_doc_rect_t* rects, uint64_t capacity,
-    uint64_t* count, const xui_doc_rect_t* rect)
+static int doc_render_range_emit(doc_query_rows* rows, const xui_doc_rect_t* rect)
 {
-    if (*count < capacity) rects[*count] = *rect;
-    (*count)++;
+    xui_doc_rect_t* entry = doc_query_rows_next(rows, sizeof(*entry));
+    if (entry) *entry = *rect;
+    return rows->status;
 }
 static size_t doc_render_range_descendant(xui_document_renderer r,
     uint64_t id, int last)
@@ -3449,16 +3448,13 @@ int doc_render_position_may_bidi(xui_document_renderer r, const xui_doc_position
     return !block->measured && !block->line_lazy && !block->virtual_gap;
 }
 static int doc_impl_GetRangeRects(xui_document_renderer r,
-    const xui_doc_range_t* range, xui_doc_rect_t* rects,
-    uint64_t capacity, uint64_t* total)
+    const xui_doc_range_t* range, doc_query_rows* rows)
 {
     const xui_doc_position_t *start, *end;
     xui_doc_rect_t pending = {0};
     size_t first = 0, last, block_index, pending_block = SIZE_MAX;
-    uint64_t count = 0; int order, result, has_pending = 0;
-    if (total) *total = 0;
-    if (!r || !r->snapshot || !range || !total || (capacity && !rects))
-        return XUI_ERROR_INVALID_ARGUMENT;
+    int order, result, has_pending = 0;
+    if (!r->snapshot || !range) return XUI_ERROR_INVALID_ARGUMENT;
     result = doc_render_refresh_resources(r); if (result != XUI_OK) return result;
     result = doc_render_compare(r, &range->tAnchor, &range->tCaret, &order);
     if (result != XUI_OK) return result;
@@ -3526,7 +3522,8 @@ static int doc_impl_GetRangeRects(xui_document_renderer r,
             if (next.width <= 0 || next.height <= 0) continue;
             if (!selected) {
                 if (has_pending) {
-                    doc_render_range_emit(rects, capacity, &count, &pending);
+                    result = doc_render_range_emit(rows, &pending);
+                    if (result != XUI_OK) return result;
                     has_pending = 0;
                 }
                 continue;
@@ -3539,14 +3536,15 @@ static int doc_impl_GetRangeRects(xui_document_renderer r,
                 double right = fmax(pending.x + pending.width, next.x + next.width);
                 pending.width = right - pending.x;
             } else {
-                if (has_pending) doc_render_range_emit(rects, capacity, &count, &pending);
+                if (has_pending) {
+                    result = doc_render_range_emit(rows, &pending);
+                    if (result != XUI_OK) return result;
+                }
                 pending = next; pending_block = block_index; has_pending = 1;
             }
         }
     }
-    if (has_pending) doc_render_range_emit(rects, capacity, &count, &pending);
-    *total = count;
-    return XUI_OK;
+    return has_pending ? doc_render_range_emit(rows, &pending) : XUI_OK;
 }
 static uint64_t doc_render_find_hit(xui_document_renderer r, const doc_fragment* fragment)
 {
@@ -4296,8 +4294,85 @@ XUI_API int xuiDocumentRendererGetRangeRects(xui_document_renderer r,
     uint64_t capacity, uint64_t* total)
 {
     doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,false);
-    if(status==XUI_OK)status=doc_impl_GetRangeRects(r,range,rects,capacity,total);
+    if (status == XUI_OK) {
+        if (total) *total = 0;
+        if (!total || (capacity && !rects)) status = XUI_ERROR_INVALID_ARGUMENT;
+        else {
+            doc_query_rows rows = {.items = rects, .capacity = capacity};
+            status = doc_impl_GetRangeRects(r, range, &rows);
+            if (status == XUI_OK) *total = rows.count;
+        }
+    }
     return doc_renderer_call_end(&call,status);
+}
+
+struct xui_doc_range_rects_t {
+    atomic_uint refs;
+    doc_model_lifetime owned;
+    const xui_doc_rect_t* entries;
+    size_t count;
+};
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_range_rects_t);
+
+static int doc_range_rects_finish(void* object)
+{
+    xui_document_range_rects rectangles = object;
+    doc_free((void*)rectangles->entries);
+    return XUI_OK;
+}
+
+const doc_model_type doc_model_range_rects_type = {DOC_MODEL_ALLOCATED, NULL, NULL, NULL, doc_range_rects_finish};
+DOC_MODEL_POD_RESULT_FUNCTIONS(xuiDocumentRangeRects, xui_document_range_rects, doc_model_range_rects_type)
+
+XUI_API int xuiDocumentRangeRectsGetEntries(xui_document_range_rects rectangles,
+    const xui_doc_rect_t** entries, size_t* count)
+{
+    if (entries) *entries = NULL;
+    if (count) *count = 0;
+    if (!rectangles || !entries || !count || !doc_model_typed(&rectangles->owned, &doc_model_range_rects_type))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!doc_model_readable(&rectangles->owned)) return XUI_ERROR_INVALID_STATE;
+    *entries = rectangles->entries;
+    *count = rectangles->count;
+    return XUI_OK;
+}
+
+XUI_API int xuiDocumentRendererCollectRangeRects(xui_document_renderer r,
+    const xui_doc_range_t* range, xui_document_range_rects* out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    doc_renderer_call_t call = {0};
+    int status = doc_renderer_call_begin(r, &call, false, false);
+    doc_query_rows rows = {0};
+    xui_document_range_rects rectangles = NULL;
+    if (status == XUI_OK) {
+        if (!r->snapshot || !doc_model_typed(&r->snapshot->owned, &doc_model_snapshot_type))
+            status = XUI_ERROR_INVALID_ARGUMENT;
+        else {
+            rows.allocator = r->snapshot->state->allocator;
+            /* The call tail may release the renderer's last snapshot reference. */
+            doc_allocator_retain(rows.allocator);
+            status = doc_impl_GetRangeRects(r, range, &rows);
+            if (status == XUI_OK) {
+                rectangles = doc_alloc(rows.allocator, sizeof(*rectangles));
+                if (!rectangles) status = XUI_ERROR_OUT_OF_MEMORY;
+            }
+        }
+    }
+    status = doc_renderer_call_end(&call, status);
+    if (status == XUI_OK) {
+        atomic_init(&rectangles->refs, 1);
+        doc_model_init(&rectangles->owned, &doc_model_range_rects_type, rows.allocator);
+        rectangles->entries = rows.items;
+        rectangles->count = (size_t)rows.count;
+        *out = rectangles;
+    } else {
+        doc_free(rectangles);
+        doc_free(rows.items);
+    }
+    doc_allocator_release(rows.allocator);
+    return status;
 }
 XUI_API int xuiDocumentRendererDraw(xui_document_renderer r, xui_draw_context draw, double ox, double oy, xui_rect_t clip,
     const xui_doc_range_t* selection, uint32_t selection_color)

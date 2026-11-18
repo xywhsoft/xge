@@ -24,6 +24,9 @@ static void modelUnlock(doc_model_lifetime* root)
 {atomic_fetch_and_explicit(&root->state,~DOC_MODEL_LOCK,memory_order_release);}
 static bool modelType(const doc_model_type* type)
 {
+#if XUI_ENABLE_DOCUMENT_VIEW
+    if (type == &doc_model_range_rects_type) return true;
+#endif
     return type==&doc_model_document_type || type==&doc_model_snapshot_type ||
         type==&doc_model_change_type || type==&doc_model_transaction_type ||
         type==&doc_model_prepare_type || type==&doc_model_fragment_type || type==&doc_model_index_type ||

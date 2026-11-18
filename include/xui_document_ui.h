@@ -7,6 +7,7 @@ extern "C" {
 #endif
 
 typedef struct xui_document_renderer_t* xui_document_renderer;
+typedef struct xui_doc_range_rects_t* xui_document_range_rects;
 /* Callback-period output. SetFont takes a real native Font owner; the consumer
  * moves that owner before disposing the automatic record. Never copy a live
  * record or keep its borrowed backend identity after its callback period. */
@@ -249,6 +250,19 @@ XUI_API int xuiDocumentRendererGetLineRange(xui_document_renderer renderer,
 XUI_API int xuiDocumentRendererGetRangeRects(xui_document_renderer renderer,
     const xui_doc_range_t* range, xui_doc_rect_t* rects,
     uint64_t capacity, uint64_t* total);
+/* Collect all rectangles from one layout query on an owned snapshot.
+ * The immutable geometry can outlive the renderer and snapshot. */
+XUI_API int xuiDocumentRendererCollectRangeRects(xui_document_renderer renderer,
+    const xui_doc_range_t* range, xui_document_range_rects* out);
+XUI_API int xuiDocumentRangeRectsAddRef(xui_document_range_rects rectangles);
+XUI_API int xuiDocumentRangeRectsShareOwned(xui_document_range_rects rectangles,
+    xui_document_range_rects* out);
+XUI_API int xuiDocumentRangeRectsReleaseOwnerChecked(xui_document_range_rects rectangles,
+    bool* consumed);
+XUI_API int xuiDocumentRangeRectsReleaseChecked(xui_document_range_rects rectangles);
+XUI_API xrtownershipref xuiDocumentRangeRectsOwnership(xui_document_range_rects rectangles);
+XUI_API int xuiDocumentRangeRectsGetEntries(xui_document_range_rects rectangles,
+    const xui_doc_rect_t** entries, size_t* count);
 /* Draw visible content, selection and objects in the supplied clip. */
 XUI_API int xuiDocumentRendererDraw(xui_document_renderer renderer, xui_draw_context draw, double origin_x, double origin_y,
     xui_rect_t clip, const xui_doc_range_t* selection, uint32_t selection_color);
