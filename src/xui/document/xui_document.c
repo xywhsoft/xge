@@ -177,6 +177,29 @@ XUI_API int xuiDocumentSnapshotGetNode(xui_document_snapshot s, uint64_t id, xui
 {
     return s ? doc_node_info(s->state, doc_index_get(s->state->index, id), out) : XUI_ERROR_INVALID_ARGUMENT;
 }
+static int doc_node_attribute_view(const doc_node* node, xui_doc_node_attributes_view_t* out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    if (!node) return XUI_ERROR_NOT_FOUND;
+    const xui_doc_attributes_t* a = node->attrs;
+    *out = (xui_doc_node_attributes_view_t){
+        .tValues = {
+            .iMarks = a->iMarks, .iFlags = a->iFlags,
+            .iHeadingLevel = a->iHeadingLevel, .iAlignment = a->iAlignment,
+            .iRowSpan = a->iRowSpan, .iColumnSpan = a->iColumnSpan,
+            .iListStart = a->iListStart, .iTextColor = a->iTextColor,
+            .iBackgroundColor = a->iBackgroundColor, .fFontSize = a->fFontSize,
+            .fWidth = a->fWidth, .fHeight = a->fHeight, .fParagraphSpacing = a->fParagraphSpacing
+        },
+        .sFontFamily = a->sFontFamily, .iFontFamilyBytes = strlen(a->sFontFamily),
+        .sLanguage = a->sLanguage
+    };
+    return XUI_OK;
+}
+XUI_API int xuiDocumentSnapshotGetNodeAttributes(xui_document_snapshot s, uint64_t id, xui_doc_node_attributes_view_t* out)
+{
+    return s ? doc_node_attribute_view(doc_index_get(s->state->index, id), out) : XUI_ERROR_INVALID_ARGUMENT;
+}
 XUI_API int xuiDocumentSnapshotGetChild(xui_document_snapshot s, uint64_t parent, uint64_t index, uint64_t* out)
 {
     doc_node* p;
@@ -483,6 +506,11 @@ XUI_API int xuiDocumentTxnGetNode(xui_document_transaction t, uint64_t id, xui_d
     int result = doc_txn_check(t, 0);
     return result == XUI_OK ? doc_node_info(t->draft, doc_index_get(t->draft->index, id), out) : result;
 }
+XUI_API int xuiDocumentTxnGetNodeAttributes(xui_document_transaction t, uint64_t id, xui_doc_node_attributes_view_t* out)
+{
+    int result = doc_txn_check(t, 0);
+    return result == XUI_OK ? doc_node_attribute_view(doc_index_get(t->draft->index, id), out) : result;
+}
 static int doc_parent_replace(xui_document_transaction t, uint64_t parent_id, uint64_t start, uint64_t end, uint64_t child)
 {
     doc_node *parent = doc_index_get(t->draft->index, parent_id), *copy;
@@ -560,6 +588,36 @@ int doc_txn_insert(xui_document_transaction t, uint64_t parent_id, uint64_t inde
 XUI_API int xuiDocumentTxnInsertNode(xui_document_transaction t, uint64_t parent, uint64_t index, const xui_doc_node_desc_t* desc, uint64_t* out)
 {
     return doc_txn_insert(t, parent, index, desc, out);
+}
+static int doc_unpack_node_attributes(const xui_doc_node_attributes_view_t* view, xui_doc_attributes_t* out)
+{
+    if (!view || view->iFontFamilyBytes >= sizeof(out->sFontFamily) ||
+        (view->iFontFamilyBytes && !view->sFontFamily)) return XUI_ERROR_INVALID_ARGUMENT;
+    size_t bytes = view->iFontFamilyBytes;
+    if (bytes && memchr(view->sFontFamily, 0, bytes)) return XUI_DOC_ERROR_SCHEMA;
+    const xui_doc_node_attributes_t* a = &view->tValues;
+    *out = (xui_doc_attributes_t){
+        .iMarks = a->iMarks, .iFlags = a->iFlags,
+        .iHeadingLevel = a->iHeadingLevel, .iAlignment = a->iAlignment,
+        .iRowSpan = a->iRowSpan, .iColumnSpan = a->iColumnSpan,
+        .iListStart = a->iListStart, .iTextColor = a->iTextColor,
+        .iBackgroundColor = a->iBackgroundColor, .fFontSize = a->fFontSize,
+        .fWidth = a->fWidth, .fHeight = a->fHeight, .fParagraphSpacing = a->fParagraphSpacing,
+        .sLanguage = view->sLanguage
+    };
+    if (bytes) memcpy(out->sFontFamily, view->sFontFamily, bytes);
+    return XUI_OK;
+}
+XUI_API int xuiDocumentTxnInsertNodeWithAttributes(xui_document_transaction t, uint64_t parent, uint64_t index,
+    const xui_doc_node_attributes_view_t* attributes, const xui_doc_node_desc_t* desc, uint64_t* out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = 0;
+    if (!desc || desc->iSize != sizeof(*desc)) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_doc_node_desc_t input = *desc;
+    if (!input.iExtensionPayloadBytes) input.pExtensionPayload = NULL;
+    int result = doc_unpack_node_attributes(attributes, &input.tAttributes);
+    return result == XUI_OK ? doc_txn_insert(t, parent, index, &input, out) : result;
 }
 static int doc_remove_subtree(xui_document_transaction t, uint64_t id)
 {
@@ -673,6 +731,12 @@ int doc_txn_text(xui_document_transaction t, uint64_t id, uint64_t start, uint64
 XUI_API int xuiDocumentTxnReplaceText(xui_document_transaction t, uint64_t id, uint64_t start, uint64_t end, const char* text, uint64_t bytes)
 {
     return doc_txn_text(t, id, start, end, text, bytes);
+}
+XUI_API int xuiDocumentTxnSetNodeAttributes(xui_document_transaction t, uint64_t id, const xui_doc_node_attributes_view_t* view)
+{
+    xui_doc_attributes_t attributes;
+    int result = doc_unpack_node_attributes(view, &attributes);
+    return result == XUI_OK ? xuiDocumentTxnSetAttributes(t, id, &attributes) : result;
 }
 XUI_API int xuiDocumentTxnSetAttributes(xui_document_transaction t, uint64_t id, const xui_doc_attributes_t* attrs)
 {

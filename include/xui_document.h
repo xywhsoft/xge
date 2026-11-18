@@ -457,6 +457,29 @@ typedef struct xui_doc_attributes_t {
      * results borrow storage until that snapshot is released. */
     const char* sLanguage;
 } xui_doc_attributes_t;
+/* Pointer-free attributes for the counted node attribute interface. The two
+ * strings of xui_doc_node_attributes_view_t are separate from these values. */
+typedef struct xui_doc_node_attributes_t {
+    uint32_t iMarks;
+    uint32_t iFlags;
+    uint32_t iHeadingLevel;
+    uint32_t iAlignment;
+    uint32_t iRowSpan;
+    uint32_t iColumnSpan;
+    uint64_t iListStart;
+    uint32_t iTextColor;
+    uint32_t iBackgroundColor;
+    float fFontSize;
+    float fWidth;
+    float fHeight;
+    float fParagraphSpacing;
+} xui_doc_node_attributes_t;
+typedef struct xui_doc_node_attributes_view_t {
+    xui_doc_node_attributes_t tValues;
+    const char* sFontFamily;
+    size_t iFontFamilyBytes;   /* At most 63 UTF-8 bytes and no embedded NUL. */
+    const char* sLanguage;    /* Optional NUL-terminated BCP 47 string. */
+} xui_doc_node_attributes_view_t;
 enum xui_doc_text_style_field {
     XUI_DOC_TEXT_STYLE_COLOR = 1u,
     XUI_DOC_TEXT_STYLE_BACKGROUND = 2u,
@@ -723,6 +746,8 @@ XUI_API uint64_t xuiDocumentSnapshotGetIdentity(xui_document_snapshot snapshot);
 XUI_API uint64_t xuiDocumentSnapshotGetRevision(xui_document_snapshot snapshot);
 /* Read a node by stable ID from this snapshot. */
 XUI_API int xuiDocumentSnapshotGetNode(xui_document_snapshot snapshot, xui_doc_node_id id, xui_doc_node_info_t* out);
+/* Strings borrow immutable snapshot data. Font family is also terminated. */
+XUI_API int xuiDocumentSnapshotGetNodeAttributes(xui_document_snapshot snapshot, xui_doc_node_id id, xui_doc_node_attributes_view_t* out);
 /* Read a parent's child ID by zero-based index. */
 XUI_API int xuiDocumentSnapshotGetChild(xui_document_snapshot snapshot, xui_doc_node_id parent, uint64_t index, xui_doc_node_id* out);
 /* Ordered text-to-source segments. Unknown source endpoints are UINT64_MAX. */
@@ -924,8 +949,13 @@ XUI_API int xuiDocumentSnapshotConvertToRich(
 XUI_API int xuiDocumentBeginTransaction(xui_document document, const xui_doc_txn_desc_t* desc, xui_document_transaction* out);
 /* Read a node from the current transaction draft. */
 XUI_API int xuiDocumentTxnGetNode(xui_document_transaction transaction, xui_doc_node_id id, xui_doc_node_info_t* out);
+/* Strings borrow the current draft until it is edited or released. */
+XUI_API int xuiDocumentTxnGetNodeAttributes(xui_document_transaction transaction, xui_doc_node_id id, xui_doc_node_attributes_view_t* out);
 /* Insert a schema-valid node into the transaction draft. */
 XUI_API int xuiDocumentTxnInsertNode(xui_document_transaction transaction, xui_doc_node_id parent, uint64_t child_index, const xui_doc_node_desc_t* desc, xui_doc_node_id* out);
+/* The separate attributes view replaces desc->tAttributes. All data is
+ * admitted by the ordinary insert transaction. */
+XUI_API int xuiDocumentTxnInsertNodeWithAttributes(xui_document_transaction transaction, xui_doc_node_id parent, uint64_t child_index, const xui_doc_node_attributes_view_t* attributes, const xui_doc_node_desc_t* desc, xui_doc_node_id* out);
 /* Copy one complete subtree from a retained snapshot into this transaction.
  * Every copied node receives a new ID in the target document; the source
  * snapshot stays unchanged. The root is not a copyable subtree. Markdown
@@ -998,6 +1028,7 @@ XUI_API int xuiDocumentTxnMoveNode(xui_document_transaction transaction, xui_doc
 XUI_API int xuiDocumentTxnReplaceText(xui_document_transaction transaction, xui_doc_node_id node, uint64_t start, uint64_t end, const char* utf8, uint64_t bytes);
 /* Replace a node's semantic and presentation attributes. */
 XUI_API int xuiDocumentTxnSetAttributes(xui_document_transaction transaction, xui_doc_node_id node, const xui_doc_attributes_t* attributes);
+XUI_API int xuiDocumentTxnSetNodeAttributes(xui_document_transaction transaction, xui_doc_node_id node, const xui_doc_node_attributes_view_t* attributes);
 /* Set a node's resource, info and title strings. */
 XUI_API int xuiDocumentTxnSetResource(xui_document_transaction transaction, xui_doc_node_id node, const char* resource, const char* info, const char* title);
 /* Replaces an extension's opaque payload and version in one root transaction. */
