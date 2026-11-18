@@ -5141,9 +5141,15 @@ XGE_API int xge3dModelAddRef(xge3d_model *model);
 /* 返回模型聚合资源载荷估算和引用信息。 */
 XGE_API int xge3dModelResourceInfo(const xge3d_model *model, xge3d_resource_info_t *out);
 /* Staging remains hidden. Take publishes the whole instance; failures never
- * publish a partial instance. Free cancels synchronously, suitable for shutdown. */
+ * publish a partial instance. Keep the raw scene live until Free. */
 XGE_API int xge3dModelInstanceBegin(xge3d_scene *scene, xge3d_model *model,
     xge3d_node_t parent, xge3d_instance_builder **out);
+/* Retains independent owners of the managed scene and model and requires
+ * creator-thread Step, Take and release. Free cancels synchronously. */
+XGE_API int xge3dModelInstanceBeginOwned(xge3d_scene *scene, xge3d_model *model,
+    xge3d_node_t parent, xge3d_instance_builder **out);
+XGE_API int xge3dModelInstanceReleaseOwnerChecked(xge3d_instance_builder *builder,bool *consumed);
+XGE_API int xge3dModelInstanceReleaseChecked(xge3d_instance_builder *builder);
 /* 按节点数和软时间预算推进模型实例构建。 */
 XGE_API int xge3dModelInstanceStep(xge3d_instance_builder *builder,
     const xge3d_work_budget_t *budget, int *completed);

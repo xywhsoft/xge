@@ -58,6 +58,7 @@ typedef struct xge3d_node_data {
 #endif
 #if XGE3D_ENABLE_MODEL
     xge3d_model *model;
+    xarray *staging_nodes;
     xge3d_node_t instance_root;
     size_t source_node;
     xarray instance_nodes;
@@ -79,6 +80,10 @@ struct xge3d_scene {
     xge3d_dvec3_t origin;
     xslotmap slots;
     xarray nodes, scratch;
+#if XGE3D_ENABLE_MODEL
+    /* Non-NULL only while a builder is executing on this scene. */
+    xarray *active_instance_nodes;
+#endif
     xarray spatial_tree, spatial_items, spatial_pending, query_stack;
     uint64_t spatial_geometry_version;
     int spatial_rebuild, spatial_root;
@@ -168,8 +173,21 @@ static inline xge3d_mat4_t d3_mul(xge3d_mat4_t a, xge3d_mat4_t b)
 static inline xge3d_node_data *d3_node(xge3d_scene *s, xge3d_node_t h)
 {
     xge3d_node_data *n=s && h.scene==s->id ? xrtSlotMapGet(&s->slots,h.slot) : NULL;
+#if XGE3D_ENABLE_MODEL
+    if(n && n->staging_nodes && n->staging_nodes!=s->active_instance_nodes)return NULL;
+#endif
     if(n && s->retiring_count) for(xge3d_node_data *p=n;p;p=p->parent.slot?xrtSlotMapGet(&s->slots,p->parent.slot):NULL) if(p->retiring)return NULL;
     return n;
+}
+
+static inline bool d3_node_staged(const xge3d_node_data *node)
+{
+#if XGE3D_ENABLE_MODEL
+    return node->staging_nodes!=NULL;
+#else
+    (void)node;
+    return false;
+#endif
 }
 
 static inline xge3d_vec3_t d3_point(xge3d_mat4_t m, xge3d_vec3_t p)

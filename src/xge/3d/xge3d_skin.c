@@ -7,7 +7,10 @@ void d3_skin_free(d3_skin *skin)
 {
     if (!skin) return;
     if(skin->scene)for(size_t j=0;j<skin->joints.Count;++j){xge3d_node_t h=*(xge3d_node_t*)xrtArrayGet(&skin->joints,j);
-        xge3d_node_data *joint=xrtSlotMapGet(&skin->scene->slots,h.slot);if(!joint)continue;
+        /* Subtree retirement can remove a registered joint before its skin.
+         * This is normal cleanup and should not set an XRT error. */
+        if(!xrtSlotMapContains(&skin->scene->slots,h.slot))continue;
+        xge3d_node_data *joint=xrtSlotMapGet(&skin->scene->slots,h.slot);
         for(size_t i=joint->skin_users.Count;i>0;--i)if(*(d3_skin**)xrtArrayGet(&joint->skin_users,i-1)==skin)xrtArrayRemoveSwap(&joint->skin_users,i-1);}
     if (skin->texture && skin->context==__xge3dContext()) xge_glDeleteTextures(1,&skin->texture);
     xge3dModelFree(skin->model);xrtArrayUnit(&skin->joints);xrtArrayUnit(&skin->inverse_bind);xrtArrayUnit(&skin->palette);xrtFree(skin);

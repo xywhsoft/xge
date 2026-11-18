@@ -105,14 +105,20 @@ void d3_node_dirty(xge3d_scene *s,xge3d_node_data *root)
 }
 static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
 {
+    bool staged=d3_node_staged(n);
+    xarray *nodes=&s->nodes;
+#if XGE3D_ENABLE_MODEL
+    if(staged)nodes=n->staging_nodes;
+#endif
 #if XGE3D_ENABLE_SCENE
     xrtFree(n->name);
 #endif
 #if XGE3D_ENABLE_COLLISION
-    s->collision_rebuild=1;
+    if(!staged)s->collision_rebuild=1;
     if(n->collider){xge3dMeshFree(n->collider->mesh);xrtFree(n->collider);}
 #endif
-    d3_detach(s,n);s->spatial_rebuild=1;
+    d3_detach(s,n);
+    if(!staged)s->spatial_rebuild=1;
 #if XGE3D_ENABLE_ANIMATION
     for(size_t i=0;i<n->skin_users.Count;++i){d3_skin *skin=*(d3_skin**)xrtArrayGet(&n->skin_users,i);skin->dirty=1;
         xge3d_node_data *owner=xrtSlotMapGet(&s->slots,skin->owner.slot);if(owner){owner->bounds_version=0;d3_spatial_dirty(s,owner);}}
@@ -120,14 +126,15 @@ static void d3_destroy_one(xge3d_scene *s,xge3d_node_data *n)
 #endif
     if(n->retiring)--s->retiring_count;
     xrtSlotMapRemove(&s->slots,n->handle.slot,NULL);
-    size_t at=n->dense_index,last=s->nodes.Count-1;
-    if(at!=last){xge3d_node_data *moved=*(xge3d_node_data**)xrtArrayGet(&s->nodes,last);moved->dense_index=at;}
-    xrtArrayRemoveSwap(&s->nodes,at);
+    size_t at=n->dense_index,last=nodes->Count-1;
+    if(at!=last){xge3d_node_data *moved=*(xge3d_node_data**)xrtArrayGet(nodes,last);moved->dense_index=at;}
+    xrtArrayRemoveSwap(nodes,at);
     xge3dMeshFree(n->mesh);d3_lods_free(n->lods);xge3dMaterialFree(n->material);
 #if XGE3D_ENABLE_MODEL
     xrtArrayUnit(&n->instance_nodes);xge3dModelFree(n->model);
 #endif
-    ++s->stats.destroyed_nodes;xrtFree(n);++s->version;
+    if(!staged){++s->stats.destroyed_nodes;++s->version;}
+    xrtFree(n);
 }
 
 #if XGE3D_ENABLE_SHADOW
@@ -220,7 +227,7 @@ void d3_set_local(xge3d_scene *s,xge3d_node_data *n,xge3d_mat4_t matrix)
     if(!memcmp(&n->local,&matrix,sizeof(matrix)))return;
     d3_node_dirty(s,n);
     n->local=matrix;
-    ++s->version;
+    if(!d3_node_staged(n))++s->version;
 }
 int xge3dSceneSetOrigin(xge3d_scene *s,xge3d_dvec3_t origin)
 {
@@ -256,6 +263,7 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
     *out = (xge3d_node_t){0};
     if (!s || ((parent.slot || parent.scene) && !d3_node(s, parent)))
         return XGE_ERROR_INVALID_ARGUMENT;
+    xarray *nodes=&s->nodes;
     xge3d_node_data *n = xrtMalloc(sizeof(*n));
     if (!n) return XGE_ERROR_OUT_OF_MEMORY;
     memset(n, 0, sizeof(*n));
@@ -274,11 +282,13 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
     xrtArrayInit(&n->skin_users,sizeof(d3_skin*));
 #endif
 #if XGE3D_ENABLE_MODEL
+    n->staging_nodes=s->active_instance_nodes;
+    if(n->staging_nodes)nodes=n->staging_nodes;
     xrtArrayInit(&n->instance_nodes,sizeof(xge3d_node_t));
 #endif
     for (int i=0; i<4; ++i) n->color[i]=1;
     n->handle = (xge3d_node_t){xrtSlotMapInsert(&s->slots, n), s->id};
-    if (!n->handle.slot || !xrtArrayPush(&s->nodes, &n)) {
+    if (!n->handle.slot || !xrtArrayPush(nodes, &n)) {
         if (n->handle.slot) xrtSlotMapRemove(&s->slots, n->handle.slot, NULL);
         xge3dMeshFree(n->mesh);
         xge3dMaterialFree(n->material);
@@ -291,8 +301,8 @@ int xge3dNodeCreate(xge3d_scene *s, xge3d_node_t parent, xge3d_node_t *out)
         xrtFree(n);
         return XGE_ERROR_OUT_OF_MEMORY;
     }
-    n->dense_index=s->nodes.Count-1;d3_attach(s,n,d3_node(s,parent));
-    ++s->version;s->spatial_rebuild=1;
+    n->dense_index=nodes->Count-1;d3_attach(s,n,d3_node(s,parent));
+    if(!d3_node_staged(n)){++s->version;s->spatial_rebuild=1;}
     *out = n->handle;
     return XGE_OK;
 }
@@ -310,7 +320,7 @@ int xge3dNodeSetParent(xge3d_scene *s, xge3d_node_t node, xge3d_node_t parent)
     if(n->parent.slot==parent.slot&&n->parent.scene==parent.scene)return XGE_OK;
     d3_node_dirty(s,n);d3_detach(s,n);d3_attach(s,n,d3_node(s,parent));
     if (!parent.slot) n->global_position=(xge3d_dvec3_t){s->origin.x+n->local.m[12],s->origin.y+n->local.m[13],s->origin.z+n->local.m[14]};
-    ++s->version;
+    if(!d3_node_staged(n))++s->version;
     return XGE_OK;
 }
 
@@ -392,8 +402,8 @@ int xge3dNodeSetMesh(xge3d_scene *s, xge3d_node_t node, xge3d_mesh *mesh)
     xge3dMeshFree(n->mesh);
     d3_lods_free(n->lods);n->lods=NULL;
     n->mesh=mesh;
-    n->bounds_version=0;s->spatial_rebuild=1;
-    ++s->version;
+    n->bounds_version=0;
+    if(!d3_node_staged(n)){s->spatial_rebuild=1;++s->version;}
     return XGE_OK;
 }
 

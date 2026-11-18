@@ -82,9 +82,10 @@ int main(void)
     CHECK(xge3dSceneNodeCount(s)==1);xge3dMeshFree(mesh);
     xge3d_model *model=NULL;CHECK(xge3dModelLoad("artifacts/xge-3d/fixtures/skin.gltf",&model)==XGE_OK);
     xge3d_instance_builder *builder=NULL;CHECK(xge3dModelInstanceBegin(s,model,(xge3d_node_t){0},&builder)==XGE_OK);
+    CHECK(xge3dSceneNodeCount(s)==1 && !xge3dSceneNodeAt(s,1).slot);
     budget.nodes=1;completed=0;int iterations=0;
     while(!completed){remaining=xge3dSceneNodeCount(s);CHECK(xge3dModelInstanceStep(builder,&budget,&completed)==XGE_OK);
-        CHECK(xge3dSceneNodeCount(s)-remaining<=1);CHECK(++iterations<100);}
+        CHECK(xge3dSceneNodeCount(s)==remaining);CHECK(++iterations<100);}
     xge3d_node_t root;CHECK(xge3dModelInstanceTake(builder,&root)==XGE_OK);xge3dModelInstanceFree(builder);
     xge3d_animator *anim=NULL;CHECK(xge3dAnimatorCreate(s,root,&anim)==XGE_OK);
     xge3d_clip *clip=NULL;CHECK(xge3dClipLoad("artifacts/xge-3d/fixtures/motion-linear.gltf",0,&clip)==XGE_OK);
