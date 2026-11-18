@@ -619,25 +619,42 @@ static int __xuiWorkflowRefreshNodeSummary(xui_workflow pWorkflow, const char* s
 		(sSummary[0] != 0) ? sSummary : NULL);
 }
 
-static void __xuiWorkflowConfigAddDiagnostic(xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, const char* sPath, const char* sCode, const char* sMessage)
-{
-	xui_workflow_config_diagnostic_t* pDiagnostic;
-	int iIndex;
+typedef struct xui_workflow_config_output_t {
+	xui_workflow_config_diagnostic_t* pFixed;
+	int iCapacity;
+	xvalue* pReport;
+	int iCount;
+	int iStatus;
+} xui_workflow_config_output_t;
 
-	if ( pDiagnosticCount == NULL ) {
+static bool __xuiWorkflowConfigReportAppend(xvalue* report, const char* path, const char* code, const char* message)
+{
+	xvalue* issue = xrtValueObject();
+	if (issue &&
+	    xuiXrtValueObjectSetText(issue, "path", 4, (ptr)(void*)path, 0, FALSE) &&
+	    xuiXrtValueObjectSetText(issue, "code", 4, (ptr)(void*)code, 0, FALSE) &&
+	    xuiXrtValueObjectSetText(issue, "message", 7, (ptr)(void*)message, 0, FALSE) &&
+	    xuiXrtValueArrayAppendTake(report, issue, TRUE))
+		return true;
+	xrtValueRelease(issue);
+	return false;
+}
+
+static void __xuiWorkflowConfigAddDiagnostic(xui_workflow_config_output_t* output,
+	const char* path, const char* code, const char* message)
+{
+	if (output->iStatus != XUI_OK) return;
+	if (output->iCount == INT_MAX) {
+		output->iStatus = XUI_ERROR_LIMIT_EXCEEDED;
 		return;
 	}
-	iIndex = *pDiagnosticCount;
-	(*pDiagnosticCount)++;
-	if ( (pDiagnostics == NULL) || (iIndex < 0) || (iIndex >= iDiagnosticCapacity) ) {
-		return;
-	}
-	pDiagnostic = &pDiagnostics[iIndex];
-	memset(pDiagnostic, 0, sizeof(*pDiagnostic));
-	pDiagnostic->iSize = sizeof(*pDiagnostic);
-	pDiagnostic->sPath = sPath;
-	pDiagnostic->sCode = sCode;
-	pDiagnostic->sMessage = sMessage;
+	int index = output->iCount++;
+	if (output->pFixed && index < output->iCapacity)
+		output->pFixed[index] = (xui_workflow_config_diagnostic_t){
+			.iSize = sizeof(xui_workflow_config_diagnostic_t), .sPath = path, .sCode = code, .sMessage = message
+		};
+	if (output->pReport && !__xuiWorkflowConfigReportAppend(output->pReport, path, code, message))
+		output->iStatus = XUI_ERROR_OUT_OF_MEMORY;
 }
 
 XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow)
@@ -1501,42 +1518,33 @@ XUI_API int xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType,
 	return __xuiWorkflowOperationEnd(&__ownedCall, (xuiWorkflowValidateConfigEx(pWorkflow, sType, pConfig, NULL, 0, pDiagnosticCount)), 0);
 }
 
-XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue* pConfig, xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount)
+static int __xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType, xvalue* pConfig,
+	xui_workflow_config_output_t* output)
 {
-	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
-    xui_workflow_operation_t __ownedCall={0};
-    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
-    if(__ownedStatus!=XUI_OK)return __ownedStatus;
 	xui_workflow_type_model_t* pType;
 	xvalue* pFields;
 	xvalue* pField;
 	xvalue* pValue;
 	const char* sId;
-	int iDiagnostics;
 	int iKind;
 	int iExpectedType;
 	int iValueType;
 	int bRequired;
 	double fValue;
-	uint32_t i;
-	uint32_t iCount;
+	size_t i;
+	size_t iCount;
 
-	if ( (pDiagnosticCount == NULL) || (iDiagnosticCapacity < 0) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
-	}
-	*pDiagnosticCount = 0;
 	pType = __xuiWorkflowFindTypeModel(pWorkflow, sType);
 	if ( pType == NULL || (pConfig != NULL && xuiXrtValueType(pConfig) != XVALUE_OBJECT) ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_ERROR_INVALID_ARGUMENT), 0);
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pFields = __xuiWorkflowConfigFields(pType->pConfigSchema);
 	if ( pFields == NULL ) {
-		return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_OK), 0);
+		return XUI_OK;
 	}
-	iDiagnostics = 0;
 	iCount = xrtValueCount(pFields);
-	for ( i = 0u; i < iCount; ++i ) {
-		pField = xuiXrtValueArrayGet(pFields, i);
+	for (i = 0u; i < iCount && output->iStatus == XUI_OK; ++i) {
+		pField = xrtValueArrayGet(pFields, i);
 		if ( xuiXrtValueType(pField) != XVALUE_OBJECT ) {
 			continue;
 		}
@@ -1549,7 +1557,7 @@ XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sTyp
 		pValue = (pConfig != NULL) ? xuiXrtValueObjectGet(pConfig, sId, (uint32_t)strlen(sId)) : NULL;
 		iValueType = xuiXrtValueType(pValue);
 		if ( bRequired && (iValueType == XVALUE_NULL || ((iValueType == XVALUE_STRING) && xuiXrtValueSize(pValue) == 0u)) ) {
-			__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "required", "Required config field is missing.");
+			__xuiWorkflowConfigAddDiagnostic(output, sId, "required", "Required config field is missing.");
 			continue;
 		}
 		if ( iValueType == XVALUE_NULL ) {
@@ -1558,29 +1566,61 @@ XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sTyp
 		iExpectedType = __xuiWorkflowConfigKindToXvoType(iKind);
 		if ( iExpectedType == XVALUE_FLOAT ) {
 			if ( (iValueType != XVALUE_FLOAT) && (iValueType != XVALUE_INT) ) {
-				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "type", "Config field has the wrong value type.");
+				__xuiWorkflowConfigAddDiagnostic(output, sId, "type", "Config field has the wrong value type.");
 				continue;
 			}
 		} else if ( iValueType != iExpectedType ) {
-			__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "type", "Config field has the wrong value type.");
+			__xuiWorkflowConfigAddDiagnostic(output, sId, "type", "Config field has the wrong value type.");
 			continue;
 		}
 		if ( (iKind == XUI_WORKFLOW_CONFIG_FIELD_INT) || (iKind == XUI_WORKFLOW_CONFIG_FIELD_FLOAT) ) {
 			fValue = (iValueType == XVALUE_INT) ? (double)xuiXrtValueGetInt(pValue) : xuiXrtValueGetFloat(pValue);
 			if ( !isfinite(fValue) ) {
-				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "number.finite", "Config field must be a finite number.");
+				__xuiWorkflowConfigAddDiagnostic(output, sId, "number.finite", "Config field must be a finite number.");
 				continue;
 			}
 			if ( xuiXrtValueType(xuiXrtValueObjectGet(pField, "min", 3)) != XVALUE_NULL && fValue < xuiXrtValueObjectGetFloat(pField, "min", 3) ) {
-				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "range.min", "Config field is below minimum.");
+				__xuiWorkflowConfigAddDiagnostic(output, sId, "range.min", "Config field is below minimum.");
 			}
 			if ( xuiXrtValueType(xuiXrtValueObjectGet(pField, "max", 3)) != XVALUE_NULL && fValue > xuiXrtValueObjectGetFloat(pField, "max", 3) ) {
-				__xuiWorkflowConfigAddDiagnostic(pDiagnostics, iDiagnosticCapacity, &iDiagnostics, sId, "range.max", "Config field is above maximum.");
+				__xuiWorkflowConfigAddDiagnostic(output, sId, "range.max", "Config field is above maximum.");
 			}
 		}
 	}
-	*pDiagnosticCount = iDiagnostics;
-	return __xuiWorkflowOperationEnd(&__ownedCall, (XUI_OK), 0);
+	return output->iStatus;
+}
+
+XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue* pConfig,
+	xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount)
+{
+	if (__xuiWorkflowModelBusy(pWorkflow)) return XUI_ERROR_BUSY;
+    xui_workflow_operation_t __ownedCall={0};
+    int __ownedStatus=__xuiWorkflowOperationBegin(pWorkflow,&__ownedCall);
+    if(__ownedStatus!=XUI_OK)return __ownedStatus;
+	if (!pDiagnosticCount || iDiagnosticCapacity < 0)
+		return __xuiWorkflowOperationEnd(&__ownedCall, XUI_ERROR_INVALID_ARGUMENT, 0);
+	*pDiagnosticCount = 0;
+	xui_workflow_config_output_t output = {.pFixed = pDiagnostics, .iCapacity = iDiagnosticCapacity};
+	int status = __xuiWorkflowValidateConfig(pWorkflow, sType, pConfig, &output);
+	if (status == XUI_OK) *pDiagnosticCount = output.iCount;
+	return __xuiWorkflowOperationEnd(&__ownedCall, status, 0);
+}
+
+XUI_API int xuiWorkflowCollectConfigDiagnostics(xui_workflow workflow, const char* type, xvalue* config, xvalue** result)
+{
+	if (__xuiWorkflowModelBusy(workflow)) return XUI_ERROR_BUSY;
+	if (!result) return XUI_ERROR_INVALID_ARGUMENT;
+	*result = NULL;
+	xui_workflow_operation_t operation = {0};
+	int status = __xuiWorkflowOperationBegin(workflow, &operation);
+	if (status != XUI_OK) return status;
+	xui_workflow_config_output_t output = {.pReport = xrtValueArray()};
+	status = output.pReport ? __xuiWorkflowValidateConfig(workflow, type,
+		xuiXrtValueType(config) == XVALUE_NULL ? NULL : config, &output) : XUI_ERROR_OUT_OF_MEMORY;
+	status = __xuiWorkflowOperationEnd(&operation, status, 0);
+	if (status == XUI_OK) *result = output.pReport;
+	else xrtValueRelease(output.pReport);
+	return status;
 }
 
 static int __xuiWorkflowAnalyzeControlGraph(xui_workflow pWorkflow, int* pReachable, int* pCycleEdge)

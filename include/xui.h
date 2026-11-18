@@ -13980,6 +13980,9 @@ XUI_API int xuiWorkflowCreateDefaultConfig(xui_workflow pWorkflow, const char* s
 XUI_API int xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType, xvalue* pConfig, int* pDiagnosticCount);
 /* 校验配置并输出诊断明细数组。 */
 XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue* pConfig, xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
+/* Returns an owned array of {path, code, message} records. The independent
+ * report includes all issues and preserves schema order. */
+XUI_API int xuiWorkflowCollectConfigDiagnostics(xui_workflow workflow, const char* type, xvalue* config, xvalue** output);
 /* 校验整图（连通性/类型匹配）；返回诊断数。 */
 XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount);
 /* 设置节点配置（经 schema 校验）。 */
