@@ -196,6 +196,16 @@ int main(void)
 	pDialogNode = xuiMessageListGetNode(pDialog, 0);
 	XUI_TEST_CHECK(pDialogNode != NULL && strcmp(pDialogNode->sId, "m1") == 0,
 		"message node snapshot");
+	{
+		xui_message_node_t tNode = {0};
+		iRet = xuiMessageListGetNodeDescriptor(pDialog, 1, &tNode);
+		XUI_TEST_CHECK(iRet == XUI_OK && tNode.iSize == sizeof(tNode) && tNode.iType == XUI_MESSAGE_NODE_SYSTEM &&
+			strcmp(tNode.sText, arrNodes[1].sText) == 0 && strcmp(pDialogNode->sId, "m1") == 0,
+			"descriptor query does not overwrite the legacy result");
+		XUI_TEST_CHECK(xuiMessageListGetNodeDescriptor(pDialog, -1, &tNode) == XUI_ERROR_INVALID_ARGUMENT &&
+			tNode.iType == XUI_MESSAGE_NODE_SYSTEM && xuiMessageListGetNodeDescriptor(pDialog, 0, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+			"invalid descriptor request preserves output");
+	}
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 460, 360, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");

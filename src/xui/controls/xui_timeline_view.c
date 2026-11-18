@@ -3206,6 +3206,19 @@ XUI_API int xuiTimeLineViewGetLayer(xui_widget pWidget, int iLayer, xui_timeline
 	return XUI_OK;
 }
 
+XUI_API int xuiTimeLineViewGetLayerDescriptor(xui_widget pWidget, int iLayer, xui_timeline_layer_desc_t* pLayer)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL || pLayer == NULL || iLayer < 0 || iLayer >= pData->iLayerCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_timeline_layer_t* pSource = &pData->arrLayers[iLayer];
+	*pLayer = (xui_timeline_layer_desc_t){
+		.iId = pSource->iId, .sName = pSource->sName, .bVisible = pSource->bVisible,
+		.bLocked = pSource->bLocked, .bSelected = pSource->bSelected,
+		.fHeight = pSource->fHeight, .iColor = pSource->iColor
+	};
+	return XUI_OK;
+}
+
 XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const char* sName)
 {
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
@@ -3664,6 +3677,21 @@ XUI_API int xuiTimeLineViewGetSpan(xui_widget pWidget, int iSpanId, xui_timeline
 	iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
 	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pSpan = pData->arrSpans[iIndex];
+	return XUI_OK;
+}
+
+XUI_API int xuiTimeLineViewGetSpanDescriptor(xui_widget pWidget, int iSpanId, xui_timeline_span_desc_t* pSpan)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL || pSpan == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
+	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_timeline_span_t* pSource = &pData->arrSpans[iIndex];
+	*pSpan = (xui_timeline_span_desc_t){
+		.iLayer = pSource->iLayer, .iId = pSource->iId, .iStartFrame = pSource->iStartFrame,
+		.iEndFrame = pSource->iEndFrame, .iType = pSource->iType,
+		.sCustomType = pSource->sCustomType, .sLabel = pSource->sLabel, .iColor = pSource->iColor
+	};
 	return XUI_OK;
 }
 

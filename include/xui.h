@@ -4950,6 +4950,28 @@ struct xui_timeline_layer_t {
 	void* pUser;
 };
 
+/* 借用文本仅在当前图层或区间保持不变期间有效。 */
+typedef struct xui_timeline_layer_desc_t {
+	int iId;
+	const char* sName;
+	int bVisible;
+	int bLocked;
+	int bSelected;
+	float fHeight;
+	uint32_t iColor;
+} xui_timeline_layer_desc_t;
+
+typedef struct xui_timeline_span_desc_t {
+	int iLayer;
+	int iId;
+	int iStartFrame;
+	int iEndFrame;
+	int iType;
+	const char* sCustomType;
+	const char* sLabel;
+	uint32_t iColor;
+} xui_timeline_span_desc_t;
+
 struct xui_timeline_selection_t {
 	int iLayer;
 	int iFrame;
@@ -11467,6 +11489,8 @@ XUI_API int xuiMessageListClear(xui_widget pWidget);
 XUI_API int xuiMessageListGetNodeCount(xui_widget pWidget);
 /* 按索引输出消息描述。返回指针由当前控件所有，在当前控件的下一次查询或修改前有效。 */
 XUI_API const xui_message_node_t* xuiMessageListGetNode(xui_widget pWidget, int iIndex);
+/* 输出当前节点描述。文本仍由控件拥有；无效参数不修改输出。 */
+XUI_API int xuiMessageListGetNodeDescriptor(xui_widget pWidget, int iIndex, xui_message_node_t* pNode);
 /* 设置选中消息索引。 */
 XUI_API int xuiMessageListSetSelected(xui_widget pWidget, int iIndex);
 /* 读取选中索引（未选 -1）。 */
@@ -12023,6 +12047,8 @@ XUI_API int xuiTimeLineViewMoveLayer(xui_widget pWidget, int iLayer, int iToLaye
 XUI_API int xuiTimeLineViewGetLayerCount(xui_widget pWidget);
 /* 按索引输出图层描述。 */
 XUI_API int xuiTimeLineViewGetLayer(xui_widget pWidget, int iLayer, xui_timeline_layer_t* pLayer);
+/* 读取图层标量和借用名称；无效参数不修改输出。 */
+XUI_API int xuiTimeLineViewGetLayerDescriptor(xui_widget pWidget, int iLayer, xui_timeline_layer_desc_t* pLayer);
 /* 设置图层名。 */
 XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const char* sName);
 /* 读取图层名；返回借用字符串，图层变更或控件销毁后失效。 */
@@ -12065,6 +12091,8 @@ XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId);
 XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFrame, int iEndFrame, int iType, const char* sLabel);
 /* 按 id 输出区间描述。 */
 XUI_API int xuiTimeLineViewGetSpan(xui_widget pWidget, int iSpanId, xui_timeline_span_t* pSpan);
+/* 读取区间标量和借用文本；无效参数不修改输出。 */
+XUI_API int xuiTimeLineViewGetSpanDescriptor(xui_widget pWidget, int iSpanId, xui_timeline_span_desc_t* pSpan);
 /* 设置区间色。 */
 XUI_API int xuiTimeLineViewSetSpanColor(xui_widget pWidget, int iSpanId, uint32_t iColor);
 /* 设置区间自定义类型名。 */

@@ -494,6 +494,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTimeLineViewGetLayerLocked(pTimeline, iLayerCam) == 1, "layer lock toggle");
 	iRet = xuiTimeLineViewGetLayer(pTimeline, iLayerFx, &tLayer);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tLayer.sName, "Effects") == 0, "get layer");
+	{
+		xui_timeline_layer_desc_t tSnapshot = {0};
+		iRet = xuiTimeLineViewGetLayerDescriptor(pTimeline, iLayerFx, &tSnapshot);
+		XUI_TEST_CHECK(iRet == XUI_OK && tSnapshot.iId == tLayer.iId && tSnapshot.bVisible == 0 &&
+			strcmp(tSnapshot.sName, "Effects") == 0 && tSnapshot.iColor == tLayer.iColor, "get layer descriptor");
+		XUI_TEST_CHECK(xuiTimeLineViewGetLayerDescriptor(pTimeline, -1, &tSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+			tSnapshot.iId == tLayer.iId && strcmp(tSnapshot.sName, "Effects") == 0, "invalid descriptor preserves layer output");
+	}
 	sLongUtf8[0] = 'a';
 	for ( i = 0; i < 40; i++ ) memcpy(sLongUtf8 + 1 + i * 3, "\xE4\xB8\xAD", 3u);
 	sLongUtf8[121] = '\0';
@@ -525,6 +533,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "span custom type");
 	iRet = xuiTimeLineViewGetSpan(pTimeline, iSpan, &tSpan);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tSpan.sLabel, "intro") == 0 && strcmp(tSpan.sCustomType, "clip") == 0, "get span");
+	{
+		xui_timeline_span_desc_t tSnapshot = {0};
+		iRet = xuiTimeLineViewGetSpanDescriptor(pTimeline, iSpan, &tSnapshot);
+		XUI_TEST_CHECK(iRet == XUI_OK && tSnapshot.iLayer == iLayerBg && tSnapshot.iId == iSpan &&
+			tSnapshot.iStartFrame == 0 && tSnapshot.iEndFrame == 20 && tSnapshot.iType == XUI_TIMELINE_SPAN_HOLD &&
+			strcmp(tSnapshot.sLabel, "intro") == 0 && strcmp(tSnapshot.sCustomType, "clip") == 0 &&
+			tSnapshot.iColor == tSpan.iColor, "get span descriptor");
+		XUI_TEST_CHECK(xuiTimeLineViewGetSpanDescriptor(pTimeline, -1, &tSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+			tSnapshot.iId == iSpan && strcmp(tSnapshot.sLabel, "intro") == 0, "invalid descriptor preserves span output");
+	}
 	iSpanChangeBefore = xuiTimeLineViewGetSpanChangeCount(pTimeline);
 	iRet = xuiTimeLineViewSetSpanCustomType(pTimeline, iSpan, sLongUtf8);
 	if ( iRet == XUI_OK ) iRet = xuiTimeLineViewSetSpanCustomType(pTimeline, iSpan, sLongUtf8);
@@ -901,6 +919,7 @@ int main(void)
 cleanup:
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	if ( pContext != NULL ) xuiDestroy(pContext);
+	if ( pFont != NULL ) tState.tProxy.fontDestroy(&tState.tProxy, pFont);
 	if ( iFailed ) return 1;
 	printf("xui_timeline_view_test passed\n");
 	return 0;

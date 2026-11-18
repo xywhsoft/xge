@@ -5078,6 +5078,14 @@ XUI_API const xui_message_node_t* xuiMessageListGetNode(xui_widget pWidget, int 
 	return &pData->tPublicNode;
 }
 
+XUI_API int xuiMessageListGetNodeDescriptor(xui_widget pWidget, int iIndex, xui_message_node_t* pNode)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	if ( pData == NULL || pNode == NULL || iIndex < 0 || iIndex >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pNode = __xuiMessagePublicNode(&pData->arrNodes[iIndex]);
+	return XUI_OK;
+}
+
 XUI_API int xuiMessageListSetSelected(xui_widget pWidget, int iIndex)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
