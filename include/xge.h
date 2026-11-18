@@ -3663,6 +3663,8 @@ XGE_API int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg);
 XGE_API int xgeSvgLoadMemory(xge_svg pSvg, const void* pData, int iSize);
 /* 引用计数加一。 */
 XGE_API int xgeSvgAddRef(xge_svg pSvg);
+/* Acquire an independent reference to the same mutable document. */
+XGE_API int xgeSvgShareOwned(xge_svg pSvg, xge_svg* ppShared);
 /* 读取当前引用计数。 */
 XGE_API int xgeSvgRefCountGet(xge_svg pSvg, int* pRefCount);
 /* 使指定 URI 的缓存条目失效（下次重新加载）；条目不存在返回 XGE_ERROR_NOT_FOUND。 */

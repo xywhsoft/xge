@@ -5882,10 +5882,28 @@ static int __xgeSvgScanNumberEnd(const char* pText, const char** ppEnd)
 	return 1;
 }
 
+static int __xgeSvgReadDecimal(const char* pStart, const char* pEnd, double* pValue, bool bAllowOverflow)
+{
+	/* XRT parses SVG's ASCII decimal point independently of the process locale.
+	 * In a static Windows DLL, the MinGW converters can register process-exit
+	 * callbacks whose code becomes invalid when the DLL is unloaded. */
+	xerror* pPrevious = xrtTakeError();
+	bool bParsed = xrtNumParse((xstrview){pStart, (size_t)(pEnd - pStart)}, 0, pValue);
+	if ( !bParsed ) {
+		xerror* pError = xrtTakeError();
+		if ( bAllowOverflow && pError && xrtErrorKind(pError) == XERR_RANGE ) {
+			*pValue = (*pStart == '-') ? -INFINITY : INFINITY;
+			bParsed = true;
+		}
+		xrtErrorFree(pError);
+	}
+	if ( pPrevious != NULL ) xrtSetErrorTake(pPrevious);
+	return bParsed;
+}
+
 static int __xgeSvgParseNumberAt(const char* pText, const char** ppEnd, double* pValue)
 {
 	const char* pNumberEnd;
-	char* pEnd;
 	double fValue;
 
 	if ( (pText == NULL) || (ppEnd == NULL) || (pValue == NULL) ) {
@@ -5894,8 +5912,7 @@ static int __xgeSvgParseNumberAt(const char* pText, const char** ppEnd, double* 
 	if ( !__xgeSvgScanNumberEnd(pText, &pNumberEnd) ) {
 		return 0;
 	}
-	fValue = strtod(pText, &pEnd);
-	if ( (pEnd == pText) || (pEnd != pNumberEnd) || !__xgeSvgDoubleIsFiniteFloat(fValue) ) {
+	if ( !__xgeSvgReadDecimal(pText, pNumberEnd, &fValue, false) || !__xgeSvgDoubleIsFiniteFloat(fValue) ) {
 		return 0;
 	}
 	*ppEnd = pNumberEnd;
@@ -6785,20 +6802,53 @@ static int __xgeSvgParseFilter(xge_svg pSvg, const char* pTag, const char* pTagE
 	return XGE_OK;
 }
 
+static int __xgeSvgAsciiStartsWithNoCase(const char* sText, const char* sPrefix);
+
 static float __xgeSvgToFloatThorvg(const char* sText, char** ppEnd)
 {
-	char* pEnd;
-	float fValue;
+	const char* pStart;
+	const char* pEnd;
+	double fValue;
 
 	if ( ppEnd != NULL ) *ppEnd = (char*)sText;
 	if ( sText == NULL ) return 0.0f;
-	fValue = strtof(sText, &pEnd);
-	if ( (pEnd != sText) && ((*pEnd == 'e') || (*pEnd == 'E')) &&
-	     ((pEnd[1] == 'm') || (pEnd[1] == 'M')) ) {
+	pStart = sText;
+	__xgeSvgSkipSpaces(&pStart);
+	if ( __xgeSvgScanNumberEnd(pStart, &pEnd) ) {
+		if ( !__xgeSvgReadDecimal(pStart, pEnd, &fValue, true) ) return 0.0f;
+		/* Keep the ordinary float rounding interval above FLT_MAX. */
+		if ( fValue > XGE_SVG_FLOAT_ABS_MAX ) {
+			fValue = (fValue >= 0x1.ffffffp127) ? INFINITY : XGE_SVG_FLOAT_ABS_MAX;
+		} else if ( fValue < -XGE_SVG_FLOAT_ABS_MAX ) {
+			fValue = (fValue <= -0x1.ffffffp127) ? -INFINITY : -XGE_SVG_FLOAT_ABS_MAX;
+		}
+	} else {
+		/* ThorVG compatibility here preserves its permissive special values.
+		 * Other SVG number consumers accept finite decimal tokens only. */
+		const char* pWord = pStart;
+		if ( *pWord == '+' || *pWord == '-' ) pWord++;
+		if ( __xgeSvgAsciiStartsWithNoCase(pWord, "inf") ) {
+			pEnd = pWord + (__xgeSvgAsciiStartsWithNoCase(pWord, "infinity") ? 8 : 3);
+			fValue = INFINITY;
+		} else if ( __xgeSvgAsciiStartsWithNoCase(pWord, "nan") ) {
+			pEnd = pWord + 3;
+			if ( *pEnd == '(' ) {
+				const char* pPayload = pEnd + 1;
+				while ( (*pPayload >= 'a' && *pPayload <= 'z') || (*pPayload >= 'A' && *pPayload <= 'Z') ||
+				        __xgeSvgNumberIsDigit(*pPayload) || *pPayload == '_' ) pPayload++;
+				if ( *pPayload == ')' ) pEnd = pPayload + 1;
+			}
+			fValue = NAN;
+		} else {
+			return 0.0f;
+		}
+		if ( *pStart == '-' ) fValue = -fValue;
+	}
+	if ( ((*pEnd == 'e') || (*pEnd == 'E')) && ((pEnd[1] == 'm') || (pEnd[1] == 'M')) ) {
 		pEnd += 2;
 	}
-	if ( ppEnd != NULL ) *ppEnd = pEnd;
-	return fValue;
+	if ( ppEnd != NULL ) *ppEnd = (char*)pEnd;
+	return (float)fValue;
 }
 
 static int __xgeSvgParseGaussianBlurStdDeviation(const char* sText, float* pStdX, float* pStdY)
@@ -8656,7 +8706,7 @@ static float __xgeSvgParseDashOffsetThorvg(const char* sText, float fPercentRef,
 	}
 	p = sText;
 	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) p++;
-	fValue = strtof(p, &pEnd);
+	fValue = __xgeSvgToFloatThorvg(p, &pEnd);
 	if ( (pEnd != p) && !isfinite(fValue) ) {
 		return fValue;
 	}
@@ -16188,6 +16238,15 @@ int xgeSvgAddRef(xge_svg pSvg)
 	if ( pSvg->iRefCount == INT_MAX ) return XGE_ERROR_OUT_OF_MEMORY;
 	pSvg->iRefCount++;
 	return XGE_OK;
+}
+
+int xgeSvgShareOwned(xge_svg pSvg, xge_svg* ppShared)
+{
+	if ( ppShared == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppShared = NULL;
+	int iStatus = xgeSvgAddRef(pSvg);
+	if ( iStatus == XGE_OK ) *ppShared = pSvg;
+	return iStatus;
 }
 
 int xgeSvgRefCountGet(xge_svg pSvg, int* pRefCount)
