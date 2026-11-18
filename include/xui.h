@@ -4589,6 +4589,25 @@ struct xui_tree_view_node_t {
 	void* pUser;
 };
 
+/* Tree node values. Depth and child presence describe the resolved hierarchy;
+ * the setter derives them from the order and parent IDs. */
+typedef struct xui_tree_node_state_t {
+	int iId;
+	int iParent;
+	int iDepth;
+	int bExpanded;
+	int bEnabled;
+	int bHasChildren;
+	int bIconReserved;
+	int bCheckReserved;
+	int bChecked;
+} xui_tree_node_state_t;
+
+typedef struct xui_tree_node_desc_t {
+	xui_tree_node_state_t tState;
+	const char* sText;
+} xui_tree_node_desc_t;
+
 /* Owning adapter output. Initialize once, never bit-copy a live record, and
  * Dispose after use. _tText is PRIVATE owned XRT storage; bindings must hide
  * it. Text access goes through SetText/GetText, not writable pointer fields. */
@@ -11549,6 +11568,12 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget);
 XUI_API int xuiTreeViewClear(xui_widget pWidget);
 /* 以扁平数组（id/父 id）批量设置节点。 */
 XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount);
+/* Replaces the tree from parent-first descriptors and owns its text copy. */
+XUI_API int xuiTreeViewSetNodeDescriptors(xui_widget pWidget, const xui_tree_node_desc_t* pNodes, int iCount);
+/* Returns node values and text borrowed until the next tree replacement or destruction. */
+XUI_API int xuiTreeViewGetNodeDescriptor(xui_widget pWidget, int iIndex, xui_tree_node_desc_t* pNode);
+XUI_API int xuiTreeViewGetNodeDescriptorById(xui_widget pWidget, int iNodeId, xui_tree_node_desc_t* pNode);
+XUI_API int xuiTreeViewGetVisibleNodeDescriptor(xui_widget pWidget, int iVisible, xui_tree_node_desc_t* pNode);
 /* 追加节点（指定 id 与父 id）。 */
 XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const char* sText);
 /* 读取节点总数。 */
