@@ -4790,12 +4790,17 @@ typedef struct xge3d_release_budget_t {size_t operations;uint64_t microseconds;}
 typedef struct xge3d_retirement_info_t {uint32_t size;size_t operations,total_operations;int completed;} xge3d_retirement_info_t;
 /* 将一个独占模型引用转移到可分步回收的令牌。 */
 XGE_API int xge3dModelRetireBegin(xge3d_model **owned,xge3d_model_retirement **out);
+/* Starts retirement of an exclusively owned managed model and gives the
+ * token its own native reference. The original view remains closeable.
+ * Additional model owners make this operation return BUSY. */
+XGE_API int xge3dModelRetireBeginOwned(xge3d_model *model,xge3d_model_retirement **out);
 /* 按操作数和软时间预算推进模型资源回收。 */
 XGE_API int xge3dModelRetireStep(xge3d_model_retirement *token,const xge3d_release_budget_t *budget,int *completed);
 /* 查询模型回收令牌的进度。 */
 XGE_API int xge3dModelRetireInfo(const xge3d_model_retirement *token,xge3d_retirement_info_t *out);
 /* 释放回收令牌；未完成令牌会同步完成剩余清理。 */
 XGE_API int xge3dModelRetireFree(xge3d_model_retirement *token);
+XGE_API int xge3dModelRetireReleaseOwnerChecked(xge3d_model_retirement *token,bool *consumed);
 /* 返回模型的节点、图元、材质、动画与蒙皮信息。 */
 XGE_API xge3d_model_info_t xge3dModelInfo(const xge3d_model *model);
 XGE_API int xge3dModelInfoChecked(const xge3d_model *model,xge3d_model_info_t *out);
@@ -5376,10 +5381,22 @@ typedef struct xge3d_scene_desc_t {
 #endif
 } xge3d_scene_desc_t;
 XGE_API xge3d_scene_node_desc_t xge3dSceneNodeDefault(void);
+XGE_API size_t xge3dSceneRootParent(void);
+XGE_API void xge3dSceneNodeTransformDefault(xge3d_transform_t *out);
 /* Declarative C data, not a new file format. Parent indices must precede child;
  * supports existing glTF through a resolver (e.g. CacheLoad). Host parses its
  * chosen file format. Failure removes the staged hierarchy and releases assets. */
 XGE_API int xge3dSceneLoad(xge3d_scene *scene,xge3d_node_t parent,const xge3d_scene_desc_t *desc,xge3d_node_t *out_root);
+#if XGE3D_ENABLE_MODEL
+struct xge3d_cache;
+/* Resolve model URIs through the optional cache or the managed loader. A
+ * parallel model array may be omitted, or must have one entry per node.
+ * A row chooses either a URI or an already owned model. Inputs are borrowed
+ * for the synchronous call; the resulting hierarchy owns all its assets. */
+XGE_API int xge3dSceneLoadOwned(xge3d_scene *scene,xge3d_node_t parent,
+    const xge3d_scene_node_desc_t *nodes,size_t count,xge3d_model *const *models,
+    size_t model_count,struct xge3d_cache *cache,xge3d_node_t *out_root);
+#endif
 #endif
 #if XGE3D_ENABLE_DYNAMIC
 /* Shared materials affect every user. Validation/ref acquisition is transactional;

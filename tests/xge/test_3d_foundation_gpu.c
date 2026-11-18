@@ -69,6 +69,7 @@ static int frame(void *user)
     while(!completed)CHECK(xge3dNodeDestroyStep(s,root,&work,&completed)==XGE_OK);
     /* A removed shared joint fails explicitly, never dereferences stale data. */
     CHECK(xge3dNodeGetBounds(s,green,0,&after)==XGE_ERROR_INVALID_STATE);
+    xrtClearError();
     CHECK(xge3dNodeBindSkin(s,green,NULL)==XGE_OK);
     xge3dAnimatorFree(anim);anim=NULL;
     CHECK(xge3dModelAddRef(model)==XGE_OK);xge3d_model *alias=model;

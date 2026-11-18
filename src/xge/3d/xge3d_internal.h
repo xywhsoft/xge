@@ -275,6 +275,7 @@ int d3_model_retain(xge3d_model *model);
 int d3_model_share_textures(xge3d_model *model,int (*intern)(xge3d_texture *,xge3d_texture **,void *),void *user);
 int d3_model_cache_bytes(const xge3d_model *model,uint64_t *cpu,uint64_t *gpu);
 void d3_model_freeze_assets(xge3d_model *model);
+int d3_cache_load_owned(xge3d_cache *cache,const char *uri,xge3d_model **out);
 #endif
 int d3_mesh_detach_gpu(xge3d_mesh *mesh);
 int d3_texture_detach_gpu(xge3d_texture *texture);

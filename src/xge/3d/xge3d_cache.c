@@ -204,6 +204,11 @@ int xge3dCacheLoad(xge3d_cache *c,const char *uri,xge3d_model **out)
     result=xge3dModelAddRef(e->model);if(result){return result;}e->stamp=++c->clock;*out=e->model;result=xge3dCacheTrim(c);
     if(result){xge3dModelFree(*out);*out=NULL;}return result;
 }
+int d3_cache_load_owned(xge3d_cache *c,const char *uri,xge3d_model **out)
+{
+    if(!c||!c->managed)return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dCacheLoad(c,uri,out);
+}
 #if XGE3D_ENABLE_ASYNC
 static cache_view *get_view(xge3d_cache *c,xge3d_cache_request_t h)
 {return h.cache==c->id?xrtSlotMapGet(&c->slots,h.slot):NULL;}
