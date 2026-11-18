@@ -484,6 +484,13 @@ int xgeSoundResume(xge_sound pSound)
 	return xgeSoundPlay(pSound);
 }
 
+static int __xgeAudioTryRetain(void* record)
+{
+    int* refs = &XGE_AUDIO_REFS(record);
+    if (*refs <= 0 || *refs == INT_MAX) return 0;
+    return ++*refs;
+}
+
 int xgeSoundAddRef(xge_sound pSound)
 {
 	if(!pSound)return 0;
@@ -492,11 +499,7 @@ int xgeSoundAddRef(xge_sound pSound)
 	if(XGE_AUDIO_BACKEND(pSound) && __xgeAudioControlAccess()!=XGE_OK)return 0;
 	/* Empty/dead records cannot be resurrected; overflow must not report a
 	 * retained reference which was never acquired. Match Font's contract. */
-	if ( XGE_AUDIO_REFS(pSound) <= 0 || XGE_AUDIO_REFS(pSound) == INT_MAX ) {
-		return 0;
-	}
-	XGE_AUDIO_REFS(pSound)++;
-	return XGE_AUDIO_REFS(pSound);
+	return __xgeAudioTryRetain(pSound);
 }
 
 int xgeSoundFreeChecked(xge_sound pSound)
@@ -573,6 +576,40 @@ int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group)
     int result=xgeStreamOpenGroup(stream,path,group);
     if(result!=XGE_OK){xrtFree(stream);return result;}
     stream->iFlags|=XGE_SOUND_OWNED_RECORD;*out=stream;return XGE_OK;
+}
+
+static int __xgeAudioShareOwned(void* record)
+{
+    if (!record) return XGE_ERROR_INVALID_ARGUMENT;
+    int access = __xgeAudioControlAccess();
+    if (access != XGE_OK) return access;
+    if (!(XGE_AUDIO_FLAGS(record) & XGE_SOUND_OWNED_RECORD) || !XGE_AUDIO_BACKEND(record))
+        return XGE_ERROR_INVALID_STATE;
+    return __xgeAudioTryRetain(record) ? XGE_OK : XGE_ERROR_INVALID_STATE;
+}
+
+int xgeSoundShareOwned(xge_sound sound, xge_sound* out)
+{
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeAudioShareOwned(sound);
+    *out = status == XGE_OK ? sound : NULL;
+    return status;
+}
+
+int xgeMusicShareOwned(xge_music music, xge_music* out)
+{
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeAudioShareOwned(music);
+    *out = status == XGE_OK ? music : NULL;
+    return status;
+}
+
+int xgeStreamShareOwned(xge_stream stream, xge_stream* out)
+{
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeAudioShareOwned(stream);
+    *out = status == XGE_OK ? stream : NULL;
+    return status;
 }
 
 void xgeSoundSetLoop(xge_sound pSound, int bLoop)
@@ -760,6 +797,12 @@ int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group)
 {(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group)
 {(void)path;(void)group;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeSoundShareOwned(xge_sound sound, xge_sound* out)
+{(void)sound;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeMusicShareOwned(xge_music music, xge_music* out)
+{(void)music;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
+int xgeStreamShareOwned(xge_stream stream, xge_stream* out)
+{(void)stream;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 int xgeAudioIsReady(void) { return 0; }
 void xgeAudioSetVolume(float fVolume) { (void)fVolume; }
 float xgeAudioGetVolume(void) { return 0.0f; }

@@ -2590,6 +2590,12 @@ XGE_API int xgeSoundFallbackCreateOwned(xge_sound* out);
 XGE_API int xgeSoundCreateFromClipOwned(xge_sound* out,const xge_sound_clip_desc_t* desc);
 XGE_API int xgeMusicCreateOwned(xge_music* out,const char* path,xge_audio_group group);
 XGE_API int xgeStreamCreateOwned(xge_stream* out,const char* path,xge_audio_group group);
+/* Acquire another owning reference to the same playback state on the engine
+ * creator thread. Only stable owning records are accepted. Release with the
+ * matching Sound/Music/Stream release. On failure, *out is cleared. */
+XGE_API int xgeSoundShareOwned(xge_sound sound,xge_sound* out);
+XGE_API int xgeMusicShareOwned(xge_music music,xge_music* out);
+XGE_API int xgeStreamShareOwned(xge_stream stream,xge_stream* out);
 /* 设置循环播放。 */
 XGE_API void xgeSoundSetLoop(xge_sound pSound, int bLoop);
 /* 设置音效音量。 */

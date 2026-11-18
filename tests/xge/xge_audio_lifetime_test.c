@@ -238,9 +238,92 @@ static void soundLoadMode(int mode)
     assert(!remove("audio-load.wav"));
 }
 #endif
+#if defined(XGE_TEST_PLAYBACK_SHARE)
+typedef struct PlaybackRefs {
+    xge_sound sound;
+    xge_music music;
+    xge_stream stream;
+} PlaybackRefs;
+
+static int32_t shareOnWorker(ptr raw)
+{
+    PlaybackRefs* original = raw;
+    PlaybackRefs rejected = *original;
+    assert(xgeSoundShareOwned(original->sound, &rejected.sound) == XGE_ERROR_INVALID_STATE);
+    assert(xgeMusicShareOwned(original->music, &rejected.music) == XGE_ERROR_INVALID_STATE);
+    assert(xgeStreamShareOwned(original->stream, &rejected.stream) == XGE_ERROR_INVALID_STATE);
+    assert(!rejected.sound && !rejected.music && !rejected.stream);
+    return 0;
+}
+
+static void checkPlaybackShare(void)
+{
+    const char* path = "audio-shared.wav";
+    FILE* file = fopen(path, "wb");
+    assert(file && fwrite(wave, 1, sizeof(wave), file) == sizeof(wave) && !fclose(file));
+    PlaybackRefs original = {0};
+    assert(xgeSoundCreateOwned(&original.sound, path, NULL) == XGE_OK);
+    assert(xgeMusicCreateOwned(&original.music, path, NULL) == XGE_OK);
+    assert(xgeStreamCreateOwned(&original.stream, path, NULL) == XGE_OK);
+    xge_sound_t inplace = {0};
+    assert(xgeSoundLoad(&inplace, path) == XGE_OK);
+    xge_sound rejected = original.sound;
+    assert(xgeSoundShareOwned(&inplace, &rejected) == XGE_ERROR_INVALID_STATE && !rejected);
+    assert(inplace.iRefCount == 1 && xgeSoundFreeChecked(&inplace) == XGE_OK);
+    assert(xgeSoundShareOwned(original.sound, NULL) == XGE_ERROR_INVALID_ARGUMENT);
+    rejected = original.sound;
+    assert(xgeSoundShareOwned(NULL, &rejected) == XGE_ERROR_INVALID_ARGUMENT && !rejected);
+    original.sound->iRefCount = INT_MAX;
+    rejected = original.sound;
+    assert(xgeSoundShareOwned(original.sound, &rejected) == XGE_ERROR_INVALID_STATE && !rejected);
+    assert(original.sound->iRefCount == INT_MAX);
+    original.sound->iRefCount = 1;
+
+    xthread* worker = xrtThreadCreate(shareOnWorker, &original, 0);
+    assert(worker && xrtThreadWaitFor(worker, 30000) == XWAIT_OK && xrtThreadExitCode(worker) == 0);
+    xrtThreadDestroy(worker);
+    assert(original.sound->iRefCount == 1 && original.music->iRefCount == 1 &&
+        original.stream->iRefCount == 1);
+
+    xmemdebugsnapshot before, after;
+    xrtMemDebugSnapshot(&before);
+    assert(xrtMemDebugFailAfter(0));
+    PlaybackRefs shared = {0};
+    assert(xgeSoundShareOwned(original.sound, &shared.sound) == XGE_OK);
+    assert(xgeMusicShareOwned(original.music, &shared.music) == XGE_OK);
+    assert(xgeStreamShareOwned(original.stream, &shared.stream) == XGE_OK);
+    assert(!xrtMemDebugFailTriggered());
+    xrtMemDebugFailClear();
+    xrtMemDebugSnapshot(&after);
+    assert(!xrtGetError() && before.LiveCount == after.LiveCount && before.LiveBytes == after.LiveBytes);
+    assert(shared.sound == original.sound && shared.music == original.music && shared.stream == original.stream);
+    assert(shared.sound->iRefCount == 2 && shared.music->iRefCount == 2 && shared.stream->iRefCount == 2);
+
+    assert(xgeSoundPlay(original.sound) == XGE_OK && xgeSoundIsPlaying(shared.sound));
+    assert(xgeSoundFreeChecked(original.sound) == XGE_OK && shared.sound->iRefCount == 1);
+    xgeMusicFree(original.music);
+    xgeStreamClose(original.stream);
+    assert(g_xge.iAudioCount == 3 && xgeAudioUnitChecked() == XGE_ERROR_BUSY);
+    mix();
+    assert(xgeSoundFreeChecked(shared.sound) == XGE_OK);
+    assert(xgeMusicPlay(shared.music) == XGE_OK);
+    mix();
+    xgeMusicFree(shared.music);
+    assert(xgeStreamPlay(shared.stream) == XGE_OK);
+    mix();
+    xgeStreamClose(shared.stream);
+    assert(!remove(path));
+    puts("Native playback share: 0 allocations / 0 bytes");
+}
+#endif
 int main(int argc,char** argv)
 {
-    assert(argc==2);int mode=atoi(argv[1]);assert(mode>=0 && mode<=31);begin();
+    assert(argc==2);int mode=atoi(argv[1]);begin();
+#if defined(XGE_TEST_PLAYBACK_SHARE)
+    assert(mode==32);checkPlaybackShare();
+#else
+    assert(mode>=0 && mode<=31);
+#endif
 #if defined(XGE_TEST_OWNED_SOUND_LOAD)
     if(mode>=16)soundLoadMode(mode);
 #endif

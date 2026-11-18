@@ -25,9 +25,12 @@ def main():
     parser.add_argument('--resident-oom',action='store_true',help='Keep the same audio engine alive across allocation prefixes')
     parser.add_argument('--resident-oom-baseline',action='store_true')
     parser.add_argument('--sound-load',action='store_true',help='Qualify owning Sound requests in a real no-device mixer')
+    parser.add_argument('--playback-share',action='store_true',help='Qualify shared owning Sound, Music and Stream records')
     args=parser.parse_args()
     assert sum((args.baseline,args.graphics_coupling_baseline,args.allocator_baseline,args.resident_oom_baseline))<=1
     control=args.baseline or args.graphics_coupling_baseline or args.allocator_baseline or args.resident_oom_baseline
+    if args.playback_share and (control or args.resident_oom or args.sound_load):
+        parser.error('--playback-share runs independently of the other modes')
     root,tests,static,runtime,header,out=[value.resolve() for value in
         (args.root,args.test_root,args.static,args.runtime,args.host_header,args.out)]
     sha=lambda path:hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -88,6 +91,8 @@ def main():
     if args.sound_load:
         assert not control
         flags+=['-DXGE_TEST_OWNED_SOUND_LOAD=1']
+    if args.playback_share:
+        flags+=['-DXGE_TEST_PLAYBACK_SHARE=1']
     systems=['-l'+name for name in archive['system_libraries']]
     if os.name!='nt':
         systems+=['-pthread','-ldl','-lm','-Wl,-rpath,'+str(runtime.parent)]
@@ -101,7 +106,7 @@ def main():
         # The fixture provides exactly one production aggregate. Do not pull
         # another copy from the archive, which could obscure the private state.
         assert '('+member+')' not in linkmap.read_text(errors='replace')
-        modes=range(16,32) if args.sound_load else (13,) if args.resident_oom_baseline else range(13,16) if args.resident_oom else range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(16)
+        modes=(32,) if args.playback_share else range(16,32) if args.sound_load else (13,) if args.resident_oom_baseline else range(13,16) if args.resident_oom else range(3) if args.baseline else (7,9) if args.allocator_baseline else (8,) if control else range(16)
         for mode in modes:
             text=run(optimization+'-'+str(mode),[binary,str(mode)],out,control)
             if control:
@@ -111,6 +116,8 @@ def main():
                 assert b'Audio ownership budgets:' in text
             elif mode==7:
                 assert b'Audio file ownership budgets:' in text
+            elif mode==32:
+                assert b'Native playback share: 0 allocations / 0 bytes' in text
     report.update(passed=not control,baselineControlsVerified=control,
                   inputsUnchanged=all(sha(path)==digest for path,digest in inputs.items()))
     assert report['inputsUnchanged'];save()
