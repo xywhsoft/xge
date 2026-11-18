@@ -199,6 +199,62 @@ static int d3_billboard_valid(const xge3d_billboard_t *b)
     return 1;
 }
 
+xge3d_billboard_batch *d3_billboard_batch_create(size_t count,bool validated)
+{
+    if(count>(SIZE_MAX-sizeof(xge3d_billboard_batch))/sizeof(xge3d_billboard_geometry_t))
+        return NULL;
+    xge3d_billboard_batch *batch=xrtMalloc(sizeof(*batch)+count*sizeof(batch->items[0]));
+    if(!batch)return NULL;
+    atomic_init(&batch->refs,1);
+    batch->validated=validated;
+    batch->count=count;
+    return batch;
+}
+
+int xge3dBillboardBatchCreate(const xge3d_billboard_geometry_t *items,size_t count,
+    xge3d_billboard_batch **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if((count&&!items)||count>65536)return XGE_ERROR_INVALID_ARGUMENT;
+    for(size_t i=0;i<count;++i){
+        xge3d_billboard_t item=d3_billboard_native(items+i,NULL);
+        if(!d3_billboard_valid(&item))return XGE_ERROR_INVALID_ARGUMENT;
+    }
+    xge3d_billboard_batch *batch=d3_billboard_batch_create(count,true);
+    if(!batch)return XGE_ERROR_OUT_OF_MEMORY;
+    if(count)memcpy(batch->items,items,count*sizeof(batch->items[0]));
+    *out=batch;
+    return XGE_OK;
+}
+
+int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch)
+{
+    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
+    unsigned refs=atomic_load_explicit(&batch->refs,memory_order_relaxed);
+    do {
+        if(!refs||refs==UINT_MAX)return XGE_ERROR_INVALID_STATE;
+    } while(!atomic_compare_exchange_weak_explicit(&batch->refs,&refs,refs+1,
+        memory_order_relaxed,memory_order_relaxed));
+    return XGE_OK;
+}
+
+void xge3dBillboardBatchFree(xge3d_billboard_batch *batch)
+{
+    if(batch&&atomic_fetch_sub_explicit(&batch->refs,1,memory_order_acq_rel)==1)xrtFree(batch);
+}
+
+int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
+    const xge3d_billboard_geometry_t **items,size_t *count)
+{
+    if(items)*items=NULL;
+    if(count)*count=0;
+    if(!batch||!items||!count)return XGE_ERROR_INVALID_ARGUMENT;
+    *items=batch->count?batch->items:NULL;
+    *count=batch->count;
+    return XGE_OK;
+}
+
 static void d3_billboards_drop(xarray *items,size_t count)
 {
     xge3d_billboard_t *records=(xge3d_billboard_t*)items->Data;
@@ -235,14 +291,16 @@ int xge3dBillboardsSet(xge3d_renderer *r,const xge3d_billboard_t *items,size_t c
 
 static inline int d3_billboards_set_geometry(xge3d_renderer *r,
     const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture,
-    xge3d_texture *const *textures)
+    xge3d_texture *const *textures,bool validated)
 {
     if(!r||(count&&!items)||count>65536)return XGE_ERROR_INVALID_ARGUMENT;
     if(r->context!=__xge3dContext()||(texture&&texture->context&&texture->context!=r->context))
         return XGE_ERROR_INVALID_STATE;
-    for(size_t i=0;i<count;++i){
-        xge3d_billboard_t item=d3_billboard_native(items+i,NULL);
-        if(!d3_billboard_valid(&item))return XGE_ERROR_INVALID_ARGUMENT;
+    for(size_t i=0;(!validated||textures) && i<count;++i){
+        if(!validated){
+            xge3d_billboard_t item=d3_billboard_native(items+i,NULL);
+            if(!d3_billboard_valid(&item))return XGE_ERROR_INVALID_ARGUMENT;
+        }
         xge3d_texture *row=textures?textures[i]:NULL;
         if(row&&row->context&&row->context!=r->context)return XGE_ERROR_INVALID_STATE;
     }
@@ -263,14 +321,28 @@ static inline int d3_billboards_set_geometry(xge3d_renderer *r,
 int xge3dBillboardsSetGeometry(xge3d_renderer *r,
     const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture)
 {
-    return d3_billboards_set_geometry(r,items,count,texture,NULL);
+    return d3_billboards_set_geometry(r,items,count,texture,NULL,false);
 }
 
 int xge3dBillboardsSetTexturedGeometry(xge3d_renderer *r,
     const xge3d_billboard_geometry_t *items,xge3d_texture *const *textures,size_t count)
 {
     if(!textures&&count)return XGE_ERROR_INVALID_ARGUMENT;
-    return d3_billboards_set_geometry(r,items,count,NULL,textures);
+    return d3_billboards_set_geometry(r,items,count,NULL,textures,false);
+}
+
+int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *texture)
+{
+    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_billboards_set_geometry(renderer,batch->items,batch->count,texture,NULL,batch->validated);
+}
+
+int xge3dBillboardsSetTexturedBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *const *textures,size_t count)
+{
+    if(!batch||batch->count!=count||(count&&!textures))return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_billboards_set_geometry(renderer,batch->items,count,NULL,textures,batch->validated);
 }
 static int d3_billboard_compare(const void *a,const void *b)
 {const d3_billboard_order *x=a,*y=b;return x->depth>y->depth?-1:x->depth<y->depth?1:x->index<y->index?-1:x->index>y->index;}

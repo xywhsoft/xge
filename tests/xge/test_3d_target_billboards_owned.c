@@ -135,15 +135,38 @@ static int frame(void *user)
     assert(xge3dBillboardsSetTexturedGeometry(renderer,geometry,textures,3)==XGE_OK);
     assert(xge3dRenderFrameTo(renderer,scene,&camera,source,black,3,1,NULL)==XGE_ERROR_INVALID_STATE);
 
+    xge3d_billboard_batch *batch=NULL;
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dBillboardBatchCreate(geometry,3,&batch)==XGE_ERROR_OUT_OF_MEMORY && !batch);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtClearError();
+    assert(xge3dBillboardBatchCreate(geometry,65537,&batch)==XGE_ERROR_INVALID_ARGUMENT && !batch);
+    assert(xge3dBillboardBatchCreate(geometry,3,&batch)==XGE_OK);
+    assert(xge3dBillboardsSetTexturedBatch(renderer,batch,textures,3)==XGE_OK);
+    assert(xge3dBillboardsSetTexturedBatch(renderer,batch,textures,2)==XGE_ERROR_INVALID_ARGUMENT);
+    assert(xge3dBillboardsSetTexturedBatch(renderer,batch,NULL,3)==XGE_ERROR_INVALID_ARGUMENT);
+
     xge3d_billboard_geometry_t many[64];
     xge3d_texture *untextured[64]={0};
     for(size_t i=0;i<64;++i)many[i]=xge3dBillboardGeometryDefault();
+    xge3d_billboard_batch *large=NULL;
+    assert(xge3dBillboardBatchCreate(many,64,&large)==XGE_OK);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dBillboardsSetTexturedBatch(renderer,large,untextured,64)==XGE_ERROR_OUT_OF_MEMORY);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtClearError();
     assert(xrtMemDebugFailAfter(0));
     assert(xge3dBillboardsSetTexturedGeometry(renderer,many,untextured,64)==XGE_ERROR_OUT_OF_MEMORY);
     assert(xrtMemDebugFailAfter(-1));
     xrtClearError();
+    xge3dBillboardBatchFree(large);
     geometry[2].width=-1;
+    assert(xge3dBillboardBatchCreate(geometry,3,&large)==XGE_ERROR_INVALID_ARGUMENT && !large);
     assert(xge3dBillboardsSetTexturedGeometry(renderer,geometry,textures,3)==XGE_ERROR_INVALID_ARGUMENT);
+    const xge3d_billboard_geometry_t *stored=NULL;
+    size_t count=0;
+    assert(xge3dBillboardBatchGetGeometry(batch,&stored,&count)==XGE_OK && count==3 && stored[2].width==.8f);
+    xge3dBillboardBatchFree(batch);
 
     assert(xge3dTextureReleaseChecked(red)==XGE_OK);
     assert(xge3dTextureReleaseChecked(green)==XGE_OK);
@@ -153,6 +176,13 @@ static int frame(void *user)
     assert(xge3dTargetReadPixels(destination,pixels,sizeof(pixels),0)==XGE_OK);
     assert(!memcmp(reference,pixels,sizeof(pixels)));
     check_readback(pixels);
+    xge3d_billboard_batch *empty=NULL;
+    assert(xge3dBillboardBatchCreate(NULL,0,&empty)==XGE_OK);
+    assert(xge3dBillboardBatchGetGeometry(empty,&stored,&count)==XGE_OK && !stored && !count);
+    assert(xge3dBillboardsSetTexturedBatch(renderer,empty,NULL,0)==XGE_OK);
+    xge3dBillboardBatchFree(empty);
+    assert(xgeGraphicsOwnedResourceCount()==2);
+    assert(xge3dRenderFrameTo(renderer,scene,&camera,destination,black,3,1,&stats)==XGE_OK && !stats.triangles);
     xge3dSceneFree(scene);
     return 1;
 }
@@ -162,7 +192,7 @@ int main(void)
     xge_desc_t desc={.iWidth=128,.iHeight=64,.sTitle="XGE managed target verification"};
     assert(xgeInit(&desc)==XGE_OK);
     assert(xgeRun(frame,NULL)==XGE_OK);
-    assert(xgeGraphicsOwnedResourceCount()==4 && xgeUnitChecked()==XGE_ERROR_BUSY);
+    assert(xgeGraphicsOwnedResourceCount()==2 && xgeUnitChecked()==XGE_ERROR_BUSY);
     assert(xge3dRendererReleaseChecked(renderer)==XGE_OK && xgeGraphicsOwnedResourceCount()==1);
     assert(xge3dTargetReleaseChecked(destination)==XGE_OK && xgeGraphicsOwnedResourceCount()==0);
     assert(xgeUnitChecked()==XGE_OK);

@@ -5533,6 +5533,22 @@ XGE_API int xge3dBillboardsSetGeometry(xge3d_renderer *renderer,
 /* The two columns have the same count. A NULL entry uses white. */
 XGE_API int xge3dBillboardsSetTexturedGeometry(xge3d_renderer *renderer,
     const xge3d_billboard_geometry_t *items,xge3d_texture *const *textures,size_t count);
+
+typedef struct xge3d_billboard_batch xge3d_billboard_batch;
+/* Validate and copy geometry into a CPU-only immutable batch. Up to 65,536
+ * rows, the renderer's submission limit. Zero rows creates an empty batch. */
+XGE_API int xge3dBillboardBatchCreate(const xge3d_billboard_geometry_t *items,
+    size_t count,xge3d_billboard_batch **out);
+XGE_API int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch);
+XGE_API void xge3dBillboardBatchFree(xge3d_billboard_batch *batch);
+XGE_API int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
+    const xge3d_billboard_geometry_t **items,size_t *count);
+XGE_API int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *texture);
+/* The texture count must equal the batch row count. NULL entries use white.
+ * The renderer retains the selected textures on successful submission. */
+XGE_API int xge3dBillboardsSetTexturedBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *const *textures,size_t count);
 #endif
 
 #if XGE3D_ENABLE_PARTICLES
@@ -5558,17 +5574,10 @@ XGE_API int xge3dParticlesInfo(const xge3d_particles *particles,xge3d_particle_i
  * returns required count and BUFFER_TOO_SMALL. Submit to BillboardsSet to retain. */
 XGE_API int xge3dParticlesBillboards(const xge3d_particles *particles,xge3d_texture *texture,int blend,
     xge3d_billboard_t *items,size_t capacity,size_t *count);
-typedef struct xge3d_billboard_batch xge3d_billboard_batch;
 /* An independent CPU-only snapshot of the live particles. Rows are immutable
  * and valid for as long as a batch reference is held. */
 XGE_API int xge3dParticlesCollectBillboards(const xge3d_particles *particles,int blend,
     xge3d_billboard_batch **out);
-XGE_API int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch);
-XGE_API void xge3dBillboardBatchFree(xge3d_billboard_batch *batch);
-XGE_API int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
-    const xge3d_billboard_geometry_t **items,size_t *count);
-XGE_API int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
-    const xge3d_billboard_batch *batch,xge3d_texture *texture);
 #endif
 
 /* 将 TRS 变换转换为 4x4 仿射矩阵。 */

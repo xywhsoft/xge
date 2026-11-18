@@ -8,6 +8,14 @@
 #include <stdatomic.h>
 
 #if XGE3D_ENABLE_BILLBOARD
+struct xge3d_billboard_batch {
+    atomic_uint refs;
+    bool validated;
+    size_t count;
+    xge3d_billboard_geometry_t items[];
+};
+xge3d_billboard_batch *d3_billboard_batch_create(size_t count, bool validated);
+
 static inline xge3d_billboard_t d3_billboard_native(
     const xge3d_billboard_geometry_t *geometry,xge3d_texture *texture)
 {

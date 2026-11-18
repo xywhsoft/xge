@@ -1,14 +1,8 @@
 #include "xge3d_internal.h"
 #if XGE3D_ENABLE_PARTICLES
-#include <limits.h>
 
 typedef struct d3_particle {xge3d_vec3_t position,velocity;float age,life,rotation;} d3_particle;
 struct xge3d_particles {xge3d_particle_desc_t desc;xarray live;uint32_t random;double emission;uint64_t emitted,dropped;};
-struct xge3d_billboard_batch {
-    atomic_uint refs;
-    size_t count;
-    xge3d_billboard_geometry_t items[];
-};
 static float particle_random(xge3d_particles *p){uint32_t x=p->random;x^=x<<13;x^=x>>17;x^=x<<5;p->random=x;return (x>>8)*(1.0f/16777216.0f);}
 xge3d_particle_desc_t xge3dParticlesDefault(void)
 {
@@ -102,12 +96,8 @@ int xge3dParticlesCollectBillboards(const xge3d_particles *p,int blend,xge3d_bil
     if(!p||(blend!=XGE3D_BILLBOARD_ALPHA&&blend!=XGE3D_BILLBOARD_ADD))
         return XGE_ERROR_INVALID_ARGUMENT;
     size_t count=p->live.Count;
-    if(count>(SIZE_MAX-sizeof(xge3d_billboard_batch))/sizeof(xge3d_billboard_geometry_t))
-        return XGE_ERROR_OUT_OF_MEMORY;
-    xge3d_billboard_batch *batch=xrtMalloc(sizeof(*batch)+count*sizeof(batch->items[0]));
+    xge3d_billboard_batch *batch=d3_billboard_batch_create(count,false);
     if(!batch)return XGE_ERROR_OUT_OF_MEMORY;
-    atomic_init(&batch->refs,1);
-    batch->count=count;
     const d3_particle *live=(const d3_particle*)p->live.Data;
     for(size_t i=0;i<count;++i)
         batch->items[i]=particle_billboard(&p->desc,live+i,blend);
@@ -115,37 +105,4 @@ int xge3dParticlesCollectBillboards(const xge3d_particles *p,int blend,xge3d_bil
     return XGE_OK;
 }
 
-int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch)
-{
-    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
-    unsigned refs=atomic_load_explicit(&batch->refs,memory_order_relaxed);
-    do {
-        if(!refs||refs==UINT_MAX)return XGE_ERROR_INVALID_STATE;
-    } while(!atomic_compare_exchange_weak_explicit(&batch->refs,&refs,refs+1,
-        memory_order_relaxed,memory_order_relaxed));
-    return XGE_OK;
-}
-
-void xge3dBillboardBatchFree(xge3d_billboard_batch *batch)
-{
-    if(batch&&atomic_fetch_sub_explicit(&batch->refs,1,memory_order_acq_rel)==1)xrtFree(batch);
-}
-
-int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
-    const xge3d_billboard_geometry_t **items,size_t *count)
-{
-    if(items)*items=NULL;
-    if(count)*count=0;
-    if(!batch||!items||!count)return XGE_ERROR_INVALID_ARGUMENT;
-    *items=batch->count?batch->items:NULL;
-    *count=batch->count;
-    return XGE_OK;
-}
-
-int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
-    const xge3d_billboard_batch *batch,xge3d_texture *texture)
-{
-    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
-    return xge3dBillboardsSetGeometry(renderer,batch->items,batch->count,texture);
-}
 #endif
