@@ -381,8 +381,30 @@ int main(void)
 	}
 	sOwnedItem[0] = 'X';
 	XUI_TEST_CHECK(strcmp(xuiComboBoxGetItemText(pCombo, 0), "Owned") == 0, "item text is deep copied");
+	{
+		xui_combobox_item_t tInput = {sOwnedItem, 17, 1, 0, 6, &tSelect};
+		xui_combobox_item_t tItem = {0};
+		iRet = xuiComboBoxSetItemData(pCombo, &tInput, 1);
+		XUI_TEST_CHECK(iRet == XUI_OK, "set complete item for descriptor query");
+		sOwnedItem[0] = 'Y';
+		iRet = xuiComboBoxGetItemDescriptor(pCombo, 0, &tItem);
+		XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tItem.sText, "Xwned") == 0 &&
+		               tItem.iValue == 17 && tItem.bEnabled == 1 && tItem.bSeparator == 0 &&
+		               tItem.iIcon == 6 && tItem.pUser == &tSelect, "descriptor reflects stored item data");
+		XUI_TEST_CHECK(xuiComboBoxGetItemDescriptor(pCombo, -1, &tItem) == XUI_ERROR_INVALID_ARGUMENT && tItem.iValue == 17,
+		               "invalid index leaves descriptor alone");
+		XUI_TEST_CHECK(xuiComboBoxGetItemDescriptor(pCombo, 0, NULL) == XUI_ERROR_INVALID_ARGUMENT &&
+		               xuiComboBoxGetItemDescriptor(NULL, 0, &tItem) == XUI_ERROR_INVALID_ARGUMENT,
+		               "descriptor rejects invalid widget or output pointer");
+	}
 	iRet = xuiComboBoxSetItemData(pCombo, arrItems, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxSetSelected(pCombo, 0) == XUI_OK, "restore item data after ownership test");
+	{
+		xui_combobox_item_t tItem = {0};
+		iRet = xuiComboBoxGetItemDescriptor(pCombo, 2, &tItem);
+		XUI_TEST_CHECK(iRet == XUI_OK && tItem.bSeparator == 1 && tItem.bEnabled == 0 &&
+		               tItem.sText != NULL && tItem.sText[0] == '\0', "separator has empty display text");
+	}
 	{
 		xui_widget pItemsMenu = xuiComboBoxGetMenuWidget(pCombo);
 		xui_widget pItemsPopup = xuiComboBoxGetPopupWidget(pCombo);
@@ -901,6 +923,9 @@ int main(void)
 cleanup:
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
+	}
+	if ( pTarget != NULL ) {
+		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}
 	if ( pFont != NULL ) {
 		tState.tProxy.fontDestroy(&tState.tProxy, pFont);

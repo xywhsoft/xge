@@ -12702,6 +12702,9 @@ XUI_API int xuiComboBoxSetEnabledItems(xui_widget pWidget, const int* arrEnabled
 XUI_API int xuiComboBoxGetItemCount(xui_widget pWidget);
 /* 按索引输出只读选项描述；返回指针由控件持有，后续数据更新会使其失效。 */
 XUI_API const xui_combobox_item_t* xuiComboBoxGetItem(xui_widget pWidget, int iIndex);
+/* 复制选项描述。文本为非 NULL 的借用字符串，在控件数据更新前有效。
+ * pUser 仍由应用持有。无效索引或输出指针返回 XUI_ERROR_INVALID_ARGUMENT。 */
+XUI_API int xuiComboBoxGetItemDescriptor(xui_widget pWidget, int iIndex, xui_combobox_item_t* pItem);
 /* 按索引读取控件持有的只读文本；后续数据更新会使其失效。 */
 XUI_API const char* xuiComboBoxGetItemText(xui_widget pWidget, int iIndex);
 /* 按索引读取选项业务值。 */

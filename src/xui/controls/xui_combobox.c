@@ -1973,6 +1973,16 @@ XUI_API const xui_combobox_item_t* xuiComboBoxGetItem(xui_widget pWidget, int iI
 	return &pData->arrItems[iIndex];
 }
 
+XUI_API int xuiComboBoxGetItemDescriptor(xui_widget pWidget, int iIndex, xui_combobox_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_combobox_item_t* pSource = xuiComboBoxGetItem(pWidget, iIndex);
+	if ( pSource == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pSource;
+	pItem->sText = __xuiComboBoxText(pSource->sText);
+	return XUI_OK;
+}
+
 XUI_API const char* xuiComboBoxGetItemText(xui_widget pWidget, int iIndex)
 {
 	const xui_combobox_item_t* pItem = xuiComboBoxGetItem(pWidget, iIndex);
