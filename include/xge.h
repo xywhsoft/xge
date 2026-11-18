@@ -4201,8 +4201,10 @@ XGE_API int xgeParticleUpdate(xge_particle_world pWorld, double fDeltaSeconds);
 XGE_API int xgeParticlePrewarm(xge_particle_world pWorld, xge_particle_effect iEffect, float fSeconds);
 /* 遍历世界存活粒子并回调（自绘渲染用）。 */
 XGE_API int xgeParticleVisit(xge_particle_world pWorld, xge_particle_visit_proc pVisit, void* pUser);
-/* 轮询世界事件队列（碰撞/死亡等）；无事件返回非零。 */
+/* Poll one event. Returns 1 for an event, 0 for empty, or a negative error. */
 XGE_API int xgeParticleEventPoll(xge_particle_world pWorld, xge_particle_event_t* pEvent);
+/* Checked poll. On success, *pAvailable says whether pEvent was written. */
+XGE_API int xgeParticleWorldPollEvent(xge_particle_world pWorld, bool* pAvailable, xge_particle_event_t* pEvent);
 /* 读取世界运行统计（存活数/丢弃计数等）。 */
 XGE_API xge_particle_stats_t xgeParticleStats(xge_particle_world pWorld);
 /* Optional collision query helpers; plane's allowed side is dot(P, normal) >= offset. */
@@ -4211,6 +4213,11 @@ XGE_API int xgeParticleCollidePlane(xge_vec2_t tFrom, xge_vec2_t tTo, float fRad
 /* 粒子扫掠与矩形碰撞检测（纯函数，世界无关）。 */
 XGE_API int xgeParticleCollideRect(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius,
 	xge_rect_t tRect, xge_particle_hit_t* pHit);
+/* Checked sweeps distinguish invalid arguments from a miss. A miss only sets pHit to false. */
+XGE_API int xgeParticleSweepPlane(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius,
+	xge_vec2_t tNormal, float fOffset, bool* pHit, xge_particle_hit_t* pContact);
+XGE_API int xgeParticleSweepRect(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius,
+	xge_rect_t tRect, bool* pHit, xge_particle_hit_t* pContact);
 
 /* Renderer holds references to definitions, textures and shader resources.
  * Their caller-owned C structs must remain alive until unbound/renderer destruction. */

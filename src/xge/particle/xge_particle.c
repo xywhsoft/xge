@@ -857,13 +857,16 @@ static float xp_noise(float x, float y, uint32_t seed)
 	d = (float)(xp_hash((uint32_t)(ix + 1) ^ xp_hash((uint32_t)(iy + 1) + seed)) & 65535) / 32767.5f - 1;
 	return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
 }
-int xgeParticleCollidePlane(xge_vec2_t from, xge_vec2_t to, float radius, xge_vec2_t normal, float offset,
+static int xp_collide_plane(xge_vec2_t from, xge_vec2_t to, float radius, xge_vec2_t normal, float offset,
                             xge_particle_hit_t *hit)
 {
-	float length = xp_length(normal), a, b, t;
+	float length, a, b, t;
 	if (!hit || !xp_vec_valid(from) || !xp_vec_valid(to) || !xp_vec_valid(normal) || !xp_finite(radius) ||
-	    radius < 0 || !xp_finite(offset) || length < 1e-6f)
-		return 0;
+	    radius < 0 || !xp_finite(offset))
+		return XGE_ERROR_INVALID_ARGUMENT;
+	length = xp_length(normal);
+	if (length < 1e-6f)
+		return XGE_ERROR_INVALID_ARGUMENT;
 	normal = xp_mul(normal, 1 / length);
 	offset /= length;
 	a = xp_dot(from, normal) - offset - radius;
@@ -884,7 +887,7 @@ int xgeParticleCollidePlane(xge_vec2_t from, xge_vec2_t to, float radius, xge_ve
 	hit->fFraction = t;
 	return 1;
 }
-int xgeParticleCollideRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rect_t rect,
+static int xp_collide_rect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rect_t rect,
                            xge_particle_hit_t *hit)
 {
 	float mins[2] = {rect.fX - radius, rect.fY - radius},
@@ -895,7 +898,7 @@ int xgeParticleCollideRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rec
 	if (!hit || !xp_vec_valid(from) || !xp_vec_valid(to) || !xp_finite(radius) || radius < 0 ||
 	    !xp_finite(rect.fX) || !xp_finite(rect.fY) || !xp_finite(rect.fW) || !xp_finite(rect.fH) ||
 	    rect.fW <= 0 || rect.fH <= 0)
-		return 0;
+		return XGE_ERROR_INVALID_ARGUMENT;
 	if (p[0] > mins[0] && p[0] < maxs[0] && p[1] > mins[1] && p[1] < maxs[1])
 	{
 		float distances[4] = {p[0] - mins[0], maxs[0] - p[0], p[1] - mins[1], maxs[1] - p[1]};
@@ -947,6 +950,43 @@ int xgeParticleCollideRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rec
 	hit->tPosition = xp_add(from, xp_mul(xp_sub(to, from), enter));
 	return 1;
 }
+
+int xgeParticleCollidePlane(xge_vec2_t from, xge_vec2_t to, float radius, xge_vec2_t normal, float offset,
+                            xge_particle_hit_t *hit)
+{
+	return xp_collide_plane(from, to, radius, normal, offset, hit) == 1;
+}
+
+int xgeParticleCollideRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rect_t rect,
+                           xge_particle_hit_t *hit)
+{
+	return xp_collide_rect(from, to, radius, rect, hit) == 1;
+}
+
+static int xp_sweep_result(int result, bool *hit)
+{
+	if (result < 0)
+		return result;
+	*hit = result == 1;
+	return XGE_OK;
+}
+
+int xgeParticleSweepPlane(xge_vec2_t from, xge_vec2_t to, float radius, xge_vec2_t normal, float offset,
+                           bool *hit, xge_particle_hit_t *contact)
+{
+	if (!hit)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	return xp_sweep_result(xp_collide_plane(from, to, radius, normal, offset, contact), hit);
+}
+
+int xgeParticleSweepRect(xge_vec2_t from, xge_vec2_t to, float radius, xge_rect_t rect,
+                          bool *hit, xge_particle_hit_t *contact)
+{
+	if (!hit)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	return xp_sweep_result(xp_collide_rect(from, to, radius, rect, contact), hit);
+}
+
 static int xp_integrate(xge_particle_world w, xp_effect *f, float dt)
 {
 	size_t i = 0;
@@ -1313,19 +1353,42 @@ int xgeParticleBounds(xge_particle_world w, xge_particle_effect h, xge_rect_t *b
 	                             : (xge_rect_t){f->current.tPosition.fX, f->current.tPosition.fY, 0, 0};
 	XP_WORLD_RETURN(XGE_OK);
 }
-int xgeParticleEventPoll(xge_particle_world w, xge_particle_event_t *event)
+static int xp_event_poll(xge_particle_world w, xge_particle_event_t *event, bool *available)
 {
 	XP_WORLD_ENTER(w);
 	if (!w || !event)
 		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
 	if (w->busy)
 		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
-	if (!w->eventCount)
-		XP_WORLD_RETURN(0);
-	*event = ((xge_particle_event_t *)w->events.Data)[w->eventHead];
-	w->eventHead = (w->eventHead + 1) % w->desc.iMaxEvents;
-	w->eventCount--;
-	XP_WORLD_RETURN(1);
+	const bool found = w->eventCount != 0;
+	xge_particle_event_t pending;
+	if (found)
+	{
+		pending = ((xge_particle_event_t *)w->events.Data)[w->eventHead];
+		w->eventHead = (w->eventHead + 1) % w->desc.iMaxEvents;
+		w->eventCount--;
+	}
+	int result = xp_world_end(&world_frame, found ? 1 : 0);
+	if (result < 0)
+		return result;
+	if (found)
+		*event = pending;
+	if (!available)
+		return result;
+	*available = found;
+	return XGE_OK;
+}
+
+int xgeParticleEventPoll(xge_particle_world w, xge_particle_event_t *event)
+{
+	return xp_event_poll(w, event, NULL);
+}
+
+int xgeParticleWorldPollEvent(xge_particle_world w, bool *available, xge_particle_event_t *event)
+{
+	if (!available)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	return xp_event_poll(w, event, available);
 }
 xge_particle_stats_t xgeParticleStats(xge_particle_world w)
 {
