@@ -1900,6 +1900,39 @@ typedef struct xge_input_event_t {
 	int iAttribute;
 } xge_input_event_t;
 
+/* Pointer-free event metadata. The text is passed separately as exact bytes. */
+typedef struct xge_input_event_info_t {
+	uint32_t iSize;
+	int iType;
+	uint32_t iFlags;
+	uint64_t iSequence;
+	double fTime;
+	int iKey;
+	int iNativeKey;
+	int iScanCode;
+	uint32_t iModifiers;
+	uint64_t iPointerId;
+	int iButton;
+	uint32_t iButtons;
+	float fX;
+	float fY;
+	float fDX;
+	float fDY;
+	uint32_t iCodepoint;
+	int iTextSize;
+	int iCursor;
+	int iSelectStart;
+	int iSelectEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
+	int iAttribute;
+} xge_input_event_info_t;
+
+#define XGE_INPUT_READ_EMPTY 0
+#define XGE_INPUT_READ_READY 1
+#define XGE_INPUT_READ_NEED_BUFFER 2
+
 /*
  * Snapshot supplied by the focused text control to the native IME backend.
  * Text and selection offsets use UTF-8 bytes. The backend copies the data
@@ -3936,6 +3969,15 @@ XGE_API uint32_t xgeTextGet(void);
 XGE_API int xgeInputEventGet(xge_input_event_t* pEvent);
 /* 向输入事件队列追加合成事件。 */
 XGE_API int xgeInputEventPost(const xge_input_event_t* pEvent);
+/* Creator thread. Shares the ordered queue with Get. On NEED_BUFFER returns
+ * head metadata (including the required byte length) without popping or writing
+ * text. READY copies the counted bytes, with no terminator. EMPTY clears the
+ * metadata. Negative errors leave both outputs untouched. The lifetime of a
+ * previously returned Get text pointer is unchanged by Read. */
+XGE_API int xgeInputEventRead(xge_input_event_info_t* pInfo, void* pText, size_t iCapacity);
+/* Creator thread. Copies counted text before returning. The byte count wins
+ * over pInfo->iTextSize. The queue assigns the sequence and synthetic flag. */
+XGE_API int xgeInputEventPostData(const xge_input_event_info_t* pInfo, const void* pText, size_t iTextSize);
 /* 待轮询事件数量。 */
 XGE_API int xgeInputEventPendingCount(void);
 /* 队列饱和丢弃的事件累计数（诊断用）。 */

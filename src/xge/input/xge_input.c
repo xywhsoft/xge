@@ -345,44 +345,12 @@ static void __xgeInputDiscardLegacyIme(int iType)
 	memset(&g_xge.pImeQueue[g_xge.iImeQueueCount], 0, sizeof(*g_xge.pImeQueue));
 }
 
-int xgeInputEventGet(xge_input_event_t* pEvent)
+static void __xgeInputEventConsume(xge_input_queue_item_t* pItem)
 {
-	xge_input_queue_item_t* pItem;
-	const char* sText;
-	int iTextSize;
-	int iType;
-	uint32_t iCodepoint;
-
-	if ( pEvent == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( g_xge.sInputEventText != NULL ) {
-		xrtFree(g_xge.sInputEventText);
-		g_xge.sInputEventText = NULL;
-	}
-	memset(pEvent, 0, sizeof(*pEvent));
-	pEvent->iSize = sizeof(*pEvent);
-	pEvent->sText = "";
-	g_xge.iInputImeOwner = 0;
-	if ( g_xge.iInputEventQueueCount <= 0 ) return 0;
-	pItem = &g_xge.pInputEventQueue[g_xge.iInputEventQueueHead];
-	*pEvent = pItem->tEvent;
+	int iType = pItem->tEvent.iType;
+	uint32_t iCodepoint = pItem->tEvent.iCodepoint;
 	g_xge.iInputImeOwner = pItem->iImeOwner;
-	iType = pEvent->iType;
-	iCodepoint = pEvent->iCodepoint;
-	iTextSize = pItem->tEvent.iTextSize;
-	sText = pItem->tEvent.sText;
-	if ( pItem->sHeapText != NULL ) {
-		g_xge.sInputEventText = pItem->sHeapText;
-		pItem->sHeapText = NULL;
-		pEvent->sText = g_xge.sInputEventText;
-	} else if ( (sText != NULL) && (iTextSize > 0) ) {
-		memcpy(g_xge.sInputEventInlineText, sText, (size_t)iTextSize);
-		g_xge.sInputEventInlineText[iTextSize] = '\0';
-		pEvent->sText = g_xge.sInputEventInlineText;
-	} else {
-		g_xge.sInputEventInlineText[0] = '\0';
-		pEvent->sText = g_xge.sInputEventInlineText;
-	}
-	memset(pItem, 0, sizeof(*pItem));
+	__xgeInputQueueItemFree(pItem);
 	g_xge.iInputEventQueueHead = (g_xge.iInputEventQueueHead + 1) % g_xge.iInputEventQueueCapacity;
 	g_xge.iInputEventQueueCount--;
 	if ( (iType == XGE_EVENT_TEXT) && (g_xge.iTextQueueCount > 0) &&
@@ -395,6 +363,37 @@ int xgeInputEventGet(xge_input_event_t* pEvent)
 	            (iType == XGE_EVENT_IME_CANDIDATE_END) ) {
 		__xgeInputDiscardLegacyIme(iType);
 	}
+}
+
+int xgeInputEventGet(xge_input_event_t* pEvent)
+{
+	if ( pEvent == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( g_xge.sInputEventText != NULL ) {
+		xrtFree(g_xge.sInputEventText);
+		g_xge.sInputEventText = NULL;
+	}
+	memset(pEvent, 0, sizeof(*pEvent));
+	pEvent->iSize = sizeof(*pEvent);
+	pEvent->sText = "";
+	g_xge.iInputImeOwner = 0;
+	if ( g_xge.iInputEventQueueCount <= 0 ) return 0;
+	xge_input_queue_item_t* pItem = &g_xge.pInputEventQueue[g_xge.iInputEventQueueHead];
+	*pEvent = pItem->tEvent;
+	int iTextSize = pEvent->iTextSize;
+	const char* sText = pEvent->sText;
+	if ( pItem->sHeapText != NULL ) {
+		g_xge.sInputEventText = pItem->sHeapText;
+		pItem->sHeapText = NULL;
+		pEvent->sText = g_xge.sInputEventText;
+	} else if ( (sText != NULL) && (iTextSize > 0) ) {
+		memcpy(g_xge.sInputEventInlineText, sText, (size_t)iTextSize);
+		g_xge.sInputEventInlineText[iTextSize] = '\0';
+		pEvent->sText = g_xge.sInputEventInlineText;
+	} else {
+		g_xge.sInputEventInlineText[0] = '\0';
+		pEvent->sText = g_xge.sInputEventInlineText;
+	}
+	__xgeInputEventConsume(pItem);
 	return 1;
 }
 
@@ -434,6 +433,58 @@ int xgeInputEventPost(const xge_input_event_t* pEvent)
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iFlags |= XGE_INPUT_EVENT_FLAG_SYNTHETIC;
 	return __xgeInputEventQueuePush(&tEvent) ? XGE_OK : XGE_ERROR_OUT_OF_MEMORY;
+}
+
+int xgeInputEventRead(xge_input_event_info_t* pInfo, void* pText, size_t iCapacity)
+{
+	if ( pInfo == NULL || (pText == NULL && iCapacity != 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	int iRet = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( iRet != XGE_OK ) return iRet;
+	if ( g_xge.iInputEventQueueCount <= 0 ) {
+		*pInfo = (xge_input_event_info_t){ .iSize = sizeof(*pInfo) };
+		g_xge.iInputImeOwner = 0;
+		return XGE_INPUT_READ_EMPTY;
+	}
+	xge_input_queue_item_t* pItem = &g_xge.pInputEventQueue[g_xge.iInputEventQueueHead];
+	const xge_input_event_t* e = &pItem->tEvent;
+	*pInfo = (xge_input_event_info_t){
+		.iSize = sizeof(*pInfo), .iType = e->iType, .iFlags = e->iFlags,
+		.iSequence = e->iSequence, .fTime = e->fTime,
+		.iKey = e->iKey, .iNativeKey = e->iNativeKey, .iScanCode = e->iScanCode,
+		.iModifiers = e->iModifiers, .iPointerId = e->iPointerId,
+		.iButton = e->iButton, .iButtons = e->iButtons,
+		.fX = e->fX, .fY = e->fY, .fDX = e->fDX, .fDY = e->fDY,
+		.iCodepoint = e->iCodepoint, .iTextSize = e->iTextSize,
+		.iCursor = e->iCursor, .iSelectStart = e->iSelectStart, .iSelectEnd = e->iSelectEnd,
+		.bReplacementRange = e->bReplacementRange, .iReplacementStart = e->iReplacementStart,
+		.iReplacementEnd = e->iReplacementEnd, .iAttribute = e->iAttribute
+	};
+	size_t iBytes = (size_t)e->iTextSize;
+	if ( iBytes > iCapacity ) return XGE_INPUT_READ_NEED_BUFFER;
+	if ( iBytes != 0 ) memcpy(pText, e->sText, iBytes);
+	__xgeInputEventConsume(pItem);
+	return XGE_INPUT_READ_READY;
+}
+
+int xgeInputEventPostData(const xge_input_event_info_t* pInfo, const void* pText, size_t iTextSize)
+{
+	if ( pInfo == NULL || (pText == NULL && iTextSize != 0) ||
+	     (pInfo->iSize != 0 && pInfo->iSize < sizeof(*pInfo)) ||
+	     iTextSize > (1024 * 1024) ) return XGE_ERROR_INVALID_ARGUMENT;
+	int iRet = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( iRet != XGE_OK ) return iRet;
+	xge_input_event_t event = {
+		.iSize = sizeof(event), .iType = pInfo->iType, .iFlags = pInfo->iFlags, .fTime = pInfo->fTime,
+		.iKey = pInfo->iKey, .iNativeKey = pInfo->iNativeKey, .iScanCode = pInfo->iScanCode,
+		.iModifiers = pInfo->iModifiers, .iPointerId = pInfo->iPointerId,
+		.iButton = pInfo->iButton, .iButtons = pInfo->iButtons,
+		.fX = pInfo->fX, .fY = pInfo->fY, .fDX = pInfo->fDX, .fDY = pInfo->fDY,
+		.iCodepoint = pInfo->iCodepoint, .sText = (const char*)pText, .iTextSize = (int)iTextSize,
+		.iCursor = pInfo->iCursor, .iSelectStart = pInfo->iSelectStart, .iSelectEnd = pInfo->iSelectEnd,
+		.bReplacementRange = pInfo->bReplacementRange, .iReplacementStart = pInfo->iReplacementStart,
+		.iReplacementEnd = pInfo->iReplacementEnd, .iAttribute = pInfo->iAttribute
+	};
+	return xgeInputEventPost(&event);
 }
 
 int xgeInputEventPendingCount(void)
