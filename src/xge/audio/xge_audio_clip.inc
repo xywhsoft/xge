@@ -10,16 +10,23 @@ typedef struct __xge_clip_sound {
     xge_audio_clip *clip;
 } __xge_clip_sound;
 
+static int __xgeAudioClipDecodeError(ma_result result)
+{
+    return result==MA_OUT_OF_MEMORY ? XGE_ERROR_OUT_OF_MEMORY : XGE_ERROR_AUDIO_FAILED;
+}
+
 int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip **out)
 {
     if(out)*out=NULL;
     if(!desc||!out||!desc->data||!desc->bytes)return XGE_ERROR_INVALID_ARGUMENT;
-    uint64_t limit=desc->max_decoded_bytes?desc->max_decoded_bytes:64u*1024u*1024u;
+    const xge_audio_clip_decode_t input=*desc;
+    uint64_t limit=input.max_decoded_bytes?input.max_decoded_bytes:64u*1024u*1024u;
     if(limit>512u*1024u*1024u||limit>SIZE_MAX)return XGE_ERROR_INVALID_ARGUMENT;
-    if(desc->cancelled&&desc->cancelled(desc->user))return XGE_ERROR_INVALID_STATE;
+    if(input.cancelled&&input.cancelled(input.user))return XGE_ERROR_INVALID_STATE;
     ma_decoder decoder;
     ma_decoder_config config=ma_decoder_config_init(ma_format_f32,0,0);
-    if(ma_decoder_init_memory(desc->data,desc->bytes,&config,&decoder)!=MA_SUCCESS)return XGE_ERROR_AUDIO_FAILED;
+    ma_result opened=ma_decoder_init_memory(input.data,input.bytes,&config,&decoder);
+    if(opened!=MA_SUCCESS)return __xgeAudioClipDecodeError(opened);
     ma_format format;ma_uint32 channels=0,rate=0;int error=XGE_ERROR_AUDIO_FAILED;
     xge_audio_clip *clip=NULL;
     if(ma_decoder_get_data_format(&decoder,&format,&channels,&rate,NULL,0)!=MA_SUCCESS||
@@ -32,11 +39,12 @@ int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip 
     clip->samples=xrtMalloc((size_t)capacity*channels*sizeof(float));
     if(!clip->samples){error=XGE_ERROR_OUT_OF_MEMORY;goto done;}
     for(;;){
-        if(desc->cancelled&&desc->cancelled(desc->user)){error=XGE_ERROR_INVALID_STATE;goto done;}
+        if(input.cancelled&&input.cancelled(input.user)){error=XGE_ERROR_INVALID_STATE;goto done;}
         if(frames==capacity){
             if(capacity==maximum){float extra[32];ma_uint64 got=0;
                 ma_result r=ma_decoder_read_pcm_frames(&decoder,extra,1,&got);
-                if(!got&&(r==MA_SUCCESS||r==MA_AT_END))break;
+                if(r!=MA_SUCCESS&&r!=MA_AT_END){error=__xgeAudioClipDecodeError(r);goto done;}
+                if(!got)break;
                 error=XGE_ERROR_OUT_OF_MEMORY;goto done;
             }
             uint64_t next=capacity>maximum/2?maximum:capacity*2;
@@ -45,11 +53,12 @@ int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip 
         }
         ma_uint64 count=capacity-frames,got=0;if(count>4096)count=4096;
         ma_result r=ma_decoder_read_pcm_frames(&decoder,clip->samples+(size_t)frames*channels,count,&got);
-        if(got>count||(r!=MA_SUCCESS&&r!=MA_AT_END))goto done;
+        if(r!=MA_SUCCESS&&r!=MA_AT_END){error=__xgeAudioClipDecodeError(r);goto done;}
+        if(got>count)goto done;
         frames+=got;if(!got||r==MA_AT_END)break;
     }
     if(!frames)goto done;
-    if(desc->cancelled&&desc->cancelled(desc->user)){error=XGE_ERROR_INVALID_STATE;goto done;}
+    if(input.cancelled&&input.cancelled(input.user)){error=XGE_ERROR_INVALID_STATE;goto done;}
     clip->info=(xge_audio_clip_info_t){channels,rate,frames,frames*channels*sizeof(float)};
     /* Shrinking is optional. Discard only its allocation diagnostic, while
      * preserving any error already present before this optional operation. */
@@ -85,6 +94,13 @@ int xgeAudioClipAddRef(xge_audio_clip *clip)
     uint32_t before=xrtAtomic32Load(&clip->references,XMEMORY_RELAXED);
     for(;;){if(!before||before==UINT32_MAX)return XGE_ERROR_INVALID_STATE;
         if(xrtAtomic32CompareExchange(&clip->references,&before,before+1,XMEMORY_RELAXED,XMEMORY_RELAXED))return XGE_OK;}
+}
+int xgeAudioClipShareOwned(xge_audio_clip *clip,xge_audio_clip **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    int status=xgeAudioClipAddRef(clip);
+    *out=status==XGE_OK ? clip : NULL;
+    return status;
 }
 void xgeAudioClipFree(xge_audio_clip *clip)
 {if(clip&&xrtAtomic32FetchSub(&clip->references,1,XMEMORY_ACQ_REL)==1){xrtFree(clip->samples);xrtFree(clip);}}

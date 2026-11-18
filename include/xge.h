@@ -2516,7 +2516,9 @@ XGE_API int xgeAudioUnitChecked(void);
 XGE_API int xgeAudioIsReady(void);
 /* Immutable interleaved float PCM. Decode/info/samples/ref/free need no window,
  * audio device or engine init and may run on CPU workers with owned references.
- * Decode copies its input; error sets *out=NULL. Cancellation reports INVALID_STATE. */
+ * Decode snapshots the descriptor before invoking cancellation. Encoded data
+ * must stay valid and unchanged until return, and the clip owns the resulting
+ * PCM. Error sets *out=NULL. Cancellation reports INVALID_STATE. */
 XGE_API int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t *desc,xge_audio_clip **out);
 /* 读取不可变音频剪辑的格式、声道、采样率与帧数信息。 */
 XGE_API xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip *clip);
@@ -2527,6 +2529,9 @@ XGE_API const float *xgeAudioClipSamples(const xge_audio_clip *clip); /* Borrowe
 XGE_API int xgeAudioClipGetSamples(const xge_audio_clip *clip,const float **samples,size_t *count);
 /* 增加音频剪辑引用计数。 */
 XGE_API int xgeAudioClipAddRef(xge_audio_clip *clip);
+/* Acquire an independent reference to the same PCM without copying samples.
+ * On failure *out is cleared. Release the result with xgeAudioClipFree. */
+XGE_API int xgeAudioClipShareOwned(xge_audio_clip *clip,xge_audio_clip **out);
 /* 释放一个音频剪辑引用，最后一个引用负责销毁资源。 */
 XGE_API void xgeAudioClipFree(xge_audio_clip *clip);
 /* Audio control thread; sound must be zero initialized/freed. Independent

@@ -779,6 +779,8 @@ int xgeAudioClipDecodeMemory(const xge_audio_clip_decode_t* d,xge_audio_clip** o
 xge_audio_clip_info_t xgeAudioClipInfo(const xge_audio_clip* c) { (void)c;return (xge_audio_clip_info_t){0}; }
 const float* xgeAudioClipSamples(const xge_audio_clip* c) { (void)c;return NULL; }
 int xgeAudioClipAddRef(xge_audio_clip* c) { (void)c;return XGE_ERROR_UNSUPPORTED; }
+int xgeAudioClipShareOwned(xge_audio_clip* clip,xge_audio_clip** out)
+{(void)clip;if(out)*out=NULL;return XGE_ERROR_UNSUPPORTED;}
 void xgeAudioClipFree(xge_audio_clip* c) { (void)c; }
 int xgeSoundFromClip(xge_sound s,const xge_sound_clip_desc_t* d) { (void)s;(void)d;return XGE_ERROR_UNSUPPORTED; }
 int xgeAudioInit(void) { return XGE_ERROR_UNSUPPORTED; }
