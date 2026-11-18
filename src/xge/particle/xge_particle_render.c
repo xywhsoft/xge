@@ -30,6 +30,7 @@ struct xge_particle_renderer_t
 	xge_particle_definition cachedDefinition;
 	xp_binding *cachedBindings[XGE_PARTICLE_MAX_EMITTERS];
 	const xge_rect_t *view;
+	uint64_t creatorThread;
 	int busy, overflow;
 };
 static xp_binding_key xp_binding_key_make(xge_particle_definition definition, int emitter)
@@ -54,7 +55,7 @@ static void xp_binding_free(xp_binding *binding)
 	xgeParticleDefinitionFree(binding->definition);
 	memset(binding, 0, sizeof(*binding));
 }
-int xgeParticleRendererCreate(xge_particle_renderer *out, uint32_t capacity, uint32_t batchCapacity)
+static int xp_renderer_create(xge_particle_renderer *out, uint32_t capacity, uint32_t batchCapacity, bool owned)
 {
 	xge_particle_renderer r;
 	if (!out)
@@ -62,9 +63,21 @@ int xgeParticleRendererCreate(xge_particle_renderer *out, uint32_t capacity, uin
 	*out = NULL;
 	if (!capacity || capacity > 1000000 || !batchCapacity || batchCapacity > 65536)
 		return XGE_ERROR_INVALID_ARGUMENT;
+	if (owned)
+	{
+		int status = __xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+		if (status != XGE_OK)
+			return status;
+	}
 	r = (xge_particle_renderer)xrtCalloc(1, sizeof(*r));
 	if (!r)
+	{
+		if (owned)
+			(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
 		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if (owned)
+		r->creatorThread = xrtThreadCurrentId();
 	r->capacity = capacity;
 	r->batchCapacity = batchCapacity;
 	xrtMapInit(&r->lookup, sizeof(size_t));
@@ -78,11 +91,35 @@ int xgeParticleRendererCreate(xge_particle_renderer *out, uint32_t capacity, uin
 	*out = r;
 	return XGE_OK;
 }
-void xgeParticleRendererFree(xge_particle_renderer r)
+int xgeParticleRendererCreate(xge_particle_renderer *out, uint32_t capacity, uint32_t batchCapacity)
+{
+	return xp_renderer_create(out, capacity, batchCapacity, false);
+}
+int xgeParticleRendererCreateOwned(xge_particle_renderer *out, uint32_t capacity, uint32_t batchCapacity)
+{
+	return xp_renderer_create(out, capacity, batchCapacity, true);
+}
+static bool xp_renderer_on_thread(xge_particle_renderer r)
+{
+	return !r->creatorThread || r->creatorThread == xrtThreadCurrentId();
+}
+int xgeParticleRendererReleaseOwnerChecked(xge_particle_renderer r, bool *consumed)
 {
 	size_t i;
-	if (!r || r->busy)
-		return;
+	if (!consumed)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	*consumed = false;
+	if (!r)
+	{
+		*consumed = true;
+		return XGE_OK;
+	}
+	if (!xp_renderer_on_thread(r))
+		return XGE_ERROR_INVALID_STATE;
+	if (r->busy)
+		return XGE_ERROR_BUSY;
+	r->busy = 1;
+	const bool owned = r->creatorThread != 0;
 	for (i = 0; i < r->bindings.Count; i++)
 		xp_binding_free(&((xp_binding *)r->bindings.Data)[i]);
 	xgeSpriteBatchFree(&r->batch);
@@ -91,17 +128,26 @@ void xgeParticleRendererFree(xge_particle_renderer r)
 	xrtArrayUnit(&r->bindings);
 	xrtArrayUnit(&r->items);
 	xrtFree(r);
+	*consumed = true;
+	return owned ? __xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime) : XGE_OK;
 }
-int xgeParticleRendererBind(xge_particle_renderer r, xge_particle_definition d, int emitter,
+int xgeParticleRendererFreeChecked(xge_particle_renderer r)
+{
+	bool consumed;
+	return xgeParticleRendererReleaseOwnerChecked(r, &consumed);
+}
+void xgeParticleRendererFree(xge_particle_renderer r)
+{
+	(void)xgeParticleRendererFreeChecked(r);
+}
+static int xp_renderer_bind(xge_particle_renderer r, xge_particle_definition d, int emitter,
                             xge_texture texture, const xge_material_t *material)
 {
 	xp_binding binding, *old;
 	size_t index;
 	xp_binding_key key = xp_binding_key_make(d, emitter);
-	if (!r || !d || emitter < 0 || emitter >= xgeParticleDefinitionCount(d))
+	if (!d || emitter < 0 || emitter >= xgeParticleDefinitionCount(d))
 		return XGE_ERROR_INVALID_ARGUMENT;
-	if (r->busy)
-		return XGE_ERROR_INVALID_STATE;
 	if (!texture && material)
 		texture = material->pTexture;
 	if (texture && texture->iRefCount <= 0)
@@ -110,6 +156,11 @@ int xgeParticleRendererBind(xge_particle_renderer r, xge_particle_definition d, 
 	                 (material->pTexture && material->pTexture != texture) ||
 	                 (material->pTexture2 && material->pTexture2->iRefCount <= 0) ||
 	                 (material->pTexture3 && material->pTexture3->iRefCount <= 0)))
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if (r->creatorThread && ((texture && !xgeTextureIsOwned(texture)) ||
+	    (material && (!material->pShader->_pStorageOwner ||
+	                 (material->pTexture2 && !xgeTextureIsOwned(material->pTexture2)) ||
+	                 (material->pTexture3 && !xgeTextureIsOwned(material->pTexture3))))))
 		return XGE_ERROR_INVALID_ARGUMENT;
 	memset(&binding, 0, sizeof(binding));
 	xgeMaterialInit(&binding.material);
@@ -162,13 +213,26 @@ int xgeParticleRendererBind(xge_particle_renderer r, xge_particle_definition d, 
 	((xp_binding *)r->bindings.Data)[index] = binding;
 	return XGE_OK;
 }
+int xgeParticleRendererBind(xge_particle_renderer r, xge_particle_definition d, int emitter,
+                            xge_texture texture, const xge_material_t *material)
+{
+	if (!r)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if (!xp_renderer_on_thread(r) || r->busy)
+		return XGE_ERROR_INVALID_STATE;
+	r->busy = 1;
+	int status = xp_renderer_bind(r, d, emitter, texture, material);
+	r->busy = 0;
+	return status;
+}
 int xgeParticleRendererUnbind(xge_particle_renderer r, xge_particle_definition d)
 {
 	size_t i;
 	if (!r || !d)
 		return XGE_ERROR_INVALID_ARGUMENT;
-	if (r->busy)
+	if (!xp_renderer_on_thread(r) || r->busy)
 		return XGE_ERROR_INVALID_STATE;
+	r->busy = 1;
 	for (i = 0; i < r->bindings.Count; i++)
 	{
 		xp_binding *b = &((xp_binding *)r->bindings.Data)[i];
@@ -179,6 +243,7 @@ int xgeParticleRendererUnbind(xge_particle_renderer r, xge_particle_definition d
 			xp_binding_free(b);
 		}
 	}
+	r->busy = 0;
 	return XGE_OK;
 }
 static int xp_render_collect(const xge_particle_snapshot_t *s, void *user)
@@ -255,23 +320,13 @@ static int xp_render_compare(const void *left, const void *right)
 		return a->order < b->order ? -1 : 1;
 	return a->serial < b->serial ? -1 : a->serial > b->serial;
 }
-int xgeParticleRender(xge_particle_renderer r, xge_particle_world w, const xge_rect_t *view)
+static int xp_renderer_draw(xge_particle_renderer r, xge_particle_world w, const xge_rect_t *view)
 {
 	static const unsigned char white[4] = {255, 255, 255, 255};
 	size_t i;
 	int result, oldBlend, blend = -1;
 	xp_binding *binding = NULL;
 	xge_texture texture = NULL;
-	if (!r || !w ||
-	    (view && (!isfinite(view->fX) || !isfinite(view->fY) || !isfinite(view->fW) || !isfinite(view->fH) ||
-	              view->fW < 0 || view->fH < 0)))
-		return XGE_ERROR_INVALID_ARGUMENT;
-	if (r->busy || w->busy)
-		return XGE_ERROR_INVALID_STATE;
-	if (!g_xge.bGraphicsRunning)
-		return XGE_ERROR_NOT_INITIALIZED;
-	if (g_xge.bRenderThreadEnabled)
-		return XGE_ERROR_UNSUPPORTED;
 	if (!r->white.iRefCount)
 	{
 		result = xgeTextureCreateRGBA(&r->white, 1, 1, white);
@@ -284,23 +339,17 @@ int xgeParticleRender(xge_particle_renderer r, xge_particle_world w, const xge_r
 		if (result != XGE_OK)
 			return result;
 	}
-	r->busy = 1;
 	r->world = w;
 	r->view = view;
 	r->overflow = 0;
 	r->cachedDefinition = NULL;
 	xrtArrayClear(&r->items);
 	xgeSpriteBatchClear(&r->batch);
-	result = xgeParticleVisit(w, xp_render_collect, r);
+	result = xp_visit_particles(w, xp_render_collect, r);
 	if (r->overflow)
 		result = XGE_ERROR_BUFFER_TOO_SMALL;
 	if (result != XGE_OK)
-	{
-		r->busy = 0;
-		r->world = NULL;
-		r->view = NULL;
 		return result;
-	}
 	xrtArraySort(&r->items, xp_render_compare);
 	result = xgeFlush();
 	oldBlend = xgeBlendGet();
@@ -331,8 +380,30 @@ int xgeParticleRender(xge_particle_renderer r, xge_particle_world w, const xge_r
 	/* Do not keep an extra borrowed application texture alive after unbinding. */
 	(void)xgeSpriteBatchSetTexture(&r->batch, &r->white);
 	xgeBlendSet(oldBlend);
+	return result;
+}
+int xgeParticleRender(xge_particle_renderer r, xge_particle_world w, const xge_rect_t *view)
+{
+	if (!r || !w ||
+	    (view && (!isfinite(view->fX) || !isfinite(view->fY) || !isfinite(view->fW) || !isfinite(view->fH) ||
+	              view->fW < 0 || view->fH < 0)))
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if (!xp_renderer_on_thread(r) || r->busy)
+		return XGE_ERROR_INVALID_STATE;
+	xp_world_frame frame;
+	int result = xp_world_enter(w, &frame);
+	if (result != XGE_OK)
+		return result;
+	if (w->busy)
+		return xp_world_end(&frame, XGE_ERROR_INVALID_STATE);
+	if (!g_xge.bGraphicsRunning)
+		return xp_world_end(&frame, XGE_ERROR_NOT_INITIALIZED);
+	if (g_xge.bRenderThreadEnabled)
+		return xp_world_end(&frame, XGE_ERROR_UNSUPPORTED);
+	r->busy = 1;
+	result = xp_renderer_draw(r, w, view);
 	r->busy = 0;
 	r->world = NULL;
 	r->view = NULL;
-	return result;
+	return xp_world_end(&frame, result);
 }

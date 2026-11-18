@@ -4222,6 +4222,11 @@ XGE_API int xgeParticleSweepRect(xge_vec2_t tFrom, xge_vec2_t tTo, float fRadius
 /* Renderer holds references to definitions, textures and shader resources.
  * Their caller-owned C structs must remain alive until unbound/renderer destruction. */
 XGE_API int xgeParticleRendererCreate(xge_particle_renderer* ppRenderer, uint32_t iCapacity, uint32_t iBatchCapacity);
+/* Creator-thread renderer. Holds a graphics lifetime reservation and only binds
+ * textures and shaders with refcounted storage. The material is snapshotted. */
+XGE_API int xgeParticleRendererCreateOwned(xge_particle_renderer* ppRenderer, uint32_t iCapacity, uint32_t iBatchCapacity);
+XGE_API int xgeParticleRendererReleaseOwnerChecked(xge_particle_renderer pRenderer, bool* pConsumed);
+XGE_API int xgeParticleRendererFreeChecked(xge_particle_renderer pRenderer);
 /* 释放粒子渲染器。 */
 XGE_API void xgeParticleRendererFree(xge_particle_renderer pRenderer);
 /* 为定义的指定发射器绑定纹理/材质。 */

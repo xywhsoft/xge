@@ -1300,15 +1300,14 @@ int xgeParticlePrewarm(xge_particle_world w, xge_particle_effect h, float second
 	w->busy = 0;
 	XP_WORLD_RETURN(status);
 }
-int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *user)
+static int xp_visit_particles(xge_particle_world w, xge_particle_visit_proc visit, void *user)
 {
-	XP_WORLD_ENTER(w);
 	size_t i, j;
 	int keep = 1;
 	if (!w || !visit)
-		XP_WORLD_RETURN(XGE_ERROR_INVALID_ARGUMENT);
+		return XGE_ERROR_INVALID_ARGUMENT;
 	if (w->busy)
-		XP_WORLD_RETURN(XGE_ERROR_INVALID_STATE);
+		return XGE_ERROR_INVALID_STATE;
 	w->busy = 1;
 	for (i = 0; i < w->effects.Count && keep; i++)
 	{
@@ -1323,7 +1322,12 @@ int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *
 		}
 	}
 	w->busy = 0;
-	XP_WORLD_RETURN(XGE_OK);
+	return XGE_OK;
+}
+int xgeParticleVisit(xge_particle_world w, xge_particle_visit_proc visit, void *user)
+{
+	XP_WORLD_ENTER(w);
+	XP_WORLD_RETURN(xp_visit_particles(w, visit, user));
 }
 int xgeParticleBounds(xge_particle_world w, xge_particle_effect h, xge_rect_t *bounds)
 {
