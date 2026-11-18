@@ -1,5 +1,6 @@
 #include "xge3d_internal.h"
 #include "xge_clock.h"
+#include "xge_graphics_internal.h"
 #if XGE3D_ENABLE_MODEL
 #define CGLTF_IMPLEMENTATION
 #include "extlibs/cgltf/cgltf.h"
@@ -21,7 +22,12 @@ struct xge3d_model {
     xarray primitives, ranges, images, materials, textures;
     xmap texture_cache;
     uint64_t parser_bytes, buffer_bytes;
+    uint64_t owner_thread;
 };
+static bool d3_model_thread(const xge3d_model *model)
+{
+    return !model->owner_thread || model->owner_thread==xrtThreadCurrentId();
+}
 typedef union d3_gltf_allocation { max_align_t alignment; size_t bytes; } d3_gltf_allocation;
 static void *d3_gltf_alloc(void *user, cgltf_size size)
 {
@@ -405,9 +411,13 @@ static int d3_materials(xge3d_model *m)
     xrtArrayClear(&m->images);
     return XGE_OK;
 }
-void xge3dModelFree(xge3d_model *m)
+static int d3_model_release(xge3d_model *m,bool *consumed)
 {
-    if (!m || --m->refs) return;
+    if(!m)return XGE_OK;
+    if(!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(consumed)*consumed=true;
+    if(--m->refs)return XGE_OK;
+    bool managed=m->owner_thread!=0;
     for (size_t i=0;i<m->primitives.Count;++i)
         xge3dMeshFree(((d3_primitive*)xrtArrayGet(&m->primitives,i))->mesh);
     for (size_t i=0;i<m->images.Count;++i) xgeImageFree(xrtArrayGet(&m->images,i));
@@ -420,6 +430,28 @@ void xge3dModelFree(xge3d_model *m)
     if(m->data)for(size_t i=0;i<m->data->buffers_count;++i)
         if(m->data->buffers[i].uri)xrtFree(m->data->buffers[i].data);
     cgltf_free(m->data); xgeResourceFree(&m->source); xrtFree(m);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dModelFree(xge3d_model *m){(void)d3_model_release(m,NULL);}
+int xge3dModelReleaseOwnerChecked(xge3d_model *m,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return m&&m->owner_thread?d3_model_release(m,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dModelReleaseChecked(xge3d_model *m)
+{
+    bool consumed;
+    return xge3dModelReleaseOwnerChecked(m,&consumed);
+}
+int xge3dModelShareOwned(xge3d_model *m,xge3d_model **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m || !m->owner_thread)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_model_retain(m))return XGE_ERROR_INVALID_STATE;
+    *out=m;
+    return XGE_OK;
 }
 struct xge3d_model_retirement {xge3d_model *model;uint64_t owner;size_t phase,index,operations,total;int completed;};
 int xge3dModelRetireBegin(xge3d_model **owned,xge3d_model_retirement **out)
@@ -427,7 +459,7 @@ int xge3dModelRetireBegin(xge3d_model **owned,xge3d_model_retirement **out)
     if(!out){return XGE_ERROR_INVALID_ARGUMENT;}*out=NULL;
     if(!owned){return XGE_ERROR_INVALID_ARGUMENT;}if(!*owned)return XGE_OK;
     if(!__xge3dContext())return XGE_ERROR_INVALID_STATE;
-    xge3d_model *m=*owned;if(m->retiring)return XGE_ERROR_INVALID_STATE;
+    xge3d_model *m=*owned;if(m->retiring||!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
     if(m->refs>1){xge3dModelFree(m);*owned=NULL;return XGE_OK;}
     xge3d_model_retirement *r=xrtMalloc(sizeof(*r));if(!r)return XGE_ERROR_OUT_OF_MEMORY;
     memset(r,0,sizeof(*r));r->model=m;r->owner=xrtThreadCurrentId();r->total=m->materials.Count+m->primitives.Count+m->textures.Count;
@@ -462,7 +494,10 @@ int xge3dModelRetireInfo(const xge3d_model_retirement *r,xge3d_retirement_info_t
 int xge3dModelRetireFree(xge3d_model_retirement *r)
 {
     if(!r){return XGE_OK;}if(!r->completed&&r->owner!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
-    xge3dModelFree(r->model);xrtFree(r);return XGE_OK;
+    bool consumed=false;
+    int status=d3_model_release(r->model,&consumed);
+    if(consumed)xrtFree(r);
+    return status;
 }
 static int d3_model_load(xge_resource_t *source, const char *uri, xge3d_model **out,const d3_model_io *io)
 {
@@ -525,15 +560,31 @@ done:
     if (result==XGE_OK) *out=m; else {if(getenv("XGE3D_MODEL_TRACE"))fprintf(stderr,"MODEL_LOAD stage=%s result=%d uri=%s\n",stage,result,uri?uri:"");xge3dModelFree(m);}
     return result;
 }
-int xge3dModelLoad(const char *uri, xge3d_model **out)
+static int d3_model_load_path(const char *uri,xge3d_model **out,bool detach_provider)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
     if (!uri) return XGE_ERROR_INVALID_ARGUMENT;
     xge_resource_t source={0}; int result=xgeResourceLoad(uri,&source);
+    if(result==XGE_OK && detach_provider && source.free){
+        xge_resource_t copy={0};
+        xerror *ambient=xrtTakeError();
+        result=xgeResourceLoadMemory(source.pData,source.iSize,&copy);
+        xerror *first=result!=XGE_OK?xrtTakeError():NULL;
+        xgeResourceFree(&source);
+        if(first)xrtSetErrorTake(first);
+        if(result==XGE_OK && xrtGetError())result=XGE_ERROR_RESOURCE_FAILED;
+        if(xrtGetError())xrtErrorFree(ambient);
+        else xrtSetErrorTake(ambient);
+        source=copy;
+    }
     if (result==XGE_OK) result=d3_model_load(&source,uri,out,NULL);
     xgeResourceFree(&source);
     return result;
+}
+int xge3dModelLoad(const char *uri, xge3d_model **out)
+{
+    return d3_model_load_path(uri,out,false);
 }
 int xge3dModelLoadMemory(const void *bytes, size_t size, const char *base, xge3d_model **out)
 {
@@ -544,6 +595,82 @@ int xge3dModelLoadMemory(const void *bytes, size_t size, const char *base, xge3d
     if (result==XGE_OK) result=d3_model_load(&source,base,out,NULL);
     xgeResourceFree(&source);
     return result;
+}
+
+/* Each asset keeps its own lease when a scene reparents or copies a node
+ * out of the original instance. These temporary references publish no views. */
+static int d3_model_own_assets(xge3d_model *m)
+{
+    for(size_t i=0;i<m->primitives.Count;++i){
+        d3_primitive *part=xrtArrayGet(&m->primitives,i);
+        xge3d_mesh *owner=NULL;
+        int status=xge3dMeshShareOwned(part->mesh,&owner);
+        if(status!=XGE_OK)return status;
+        xge3dMeshFree(owner);
+    }
+    for(size_t i=0;i<m->materials.Count;++i){
+        xge3d_material *value=*(xge3d_material**)xrtArrayGet(&m->materials,i),*owner=NULL;
+        int status=xge3dMaterialShareOwned(value,&owner);
+        if(status!=XGE_OK)return status;
+        xge3dMaterialFree(owner);
+    }
+    for(size_t i=0;i<m->textures.Count;++i){
+        xge3d_texture *value=*(xge3d_texture**)xrtArrayGet(&m->textures,i),*owner=NULL;
+        int status=xge3dTextureShareOwned(value,&owner);
+        if(status!=XGE_OK)return status;
+        xge3dTextureFree(owner);
+    }
+    return XGE_OK;
+}
+static int d3_model_load_begin(xge3d_decode_budget *budget,xallocationscope *scope)
+{
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    if(budget && !xrtAllocationBudgetEnter(budget,scope)){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return XGE_ERROR_INVALID_ARGUMENT;
+    }
+    return XGE_OK;
+}
+static int d3_model_load_finish(xge3d_model *m,int status,xge3d_decode_budget *budget,
+    xallocationscope *scope,xge3d_model **out)
+{
+    if(budget){
+        if(status!=XGE_OK && scope->Rejections)status=XGE_ERROR_OUT_OF_MEMORY;
+        xrtAllocationBudgetLeave(scope);
+    }
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    m->owner_thread=xrtThreadCurrentId();
+    status=d3_model_own_assets(m);
+    if(status==XGE_OK)*out=m;
+    else xge3dModelFree(m);
+    return status;
+}
+int xge3dModelLoadOwned(const char *uri,xge3d_decode_budget *budget,xge3d_model **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xallocationscope scope={0};
+    int status=d3_model_load_begin(budget,&scope);
+    if(status!=XGE_OK)return status;
+    xge3d_model *model=NULL;
+    status=d3_model_load_path(uri,&model,true);
+    return d3_model_load_finish(model,status,budget,&scope,out);
+}
+int xge3dModelLoadMemoryOwned(const void *data,size_t size,const char *base_uri,
+    xge3d_decode_budget *budget,xge3d_model **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xallocationscope scope={0};
+    int status=d3_model_load_begin(budget,&scope);
+    if(status!=XGE_OK)return status;
+    xge3d_model *model=NULL;
+    status=xge3dModelLoadMemory(data,size,base_uri,&model);
+    return d3_model_load_finish(model,status,budget,&scope,out);
 }
 #if XGE3D_ENABLE_ASYNC
 int d3_model_load_io(const char *uri,const d3_model_io *io,xge3d_model **out)
@@ -576,19 +703,48 @@ xge3d_model_info_t xge3dModelInfo(const xge3d_model *m)
     return m ? (xge3d_model_info_t){m->data->nodes_count,m->primitives.Count,m->data->materials_count,
         m->data->animations_count,m->data->skins_count,m->truncated_weight_vertices} : (xge3d_model_info_t){0};
 }
-struct cgltf_data *d3_model_data(const xge3d_model *m) { return m&&!m->retiring ? m->data : NULL; }
-int d3_model_retain(xge3d_model *m) { if (!m || m->retiring || m->refs==UINT32_MAX) return 0;++m->refs;return 1; }
+int xge3dModelInfoChecked(const xge3d_model *m,xge3d_model_info_t *out)
+{
+    if(!m||!out)return XGE_ERROR_INVALID_ARGUMENT;
+    if(m->retiring||!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
+    *out=xge3dModelInfo(m);
+    return XGE_OK;
+}
+struct cgltf_data *d3_model_data(const xge3d_model *m)
+{return m&&!m->retiring&&d3_model_thread(m)?m->data:NULL;}
+int d3_model_retain(xge3d_model *m)
+{if(!m||m->retiring||!d3_model_thread(m)||m->refs==UINT32_MAX)return 0;++m->refs;return 1;}
 #if XGE3D_ENABLE_ANIMATION
 size_t xge3dModelSkinJointNode(const xge3d_model *m,size_t skin,size_t joint)
 {
-    if (!m || m->retiring || skin>=m->data->skins_count || joint>=m->data->skins[skin].joints_count) return SIZE_MAX;
+    if (!m || m->retiring || !d3_model_thread(m) || skin>=m->data->skins_count ||
+        joint>=m->data->skins[skin].joints_count) return SIZE_MAX;
     return cgltf_node_index(m->data,m->data->skins[skin].joints[joint]);
 }
 #endif
 const char *xge3dModelNodeName(const xge3d_model *m, size_t index)
 { return m && !m->retiring && index<m->data->nodes_count ? m->data->nodes[index].name : NULL; }
+int xge3dModelNodeNameChecked(const xge3d_model *m,size_t index,const char **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(m->retiring||!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
+    *out=xge3dModelNodeName(m,index);
+    return XGE_OK;
+}
 const xge3d_material *xge3dModelMaterial(const xge3d_model *m, size_t index)
 { return m && !m->retiring && index<m->data->materials_count ? *(xge3d_material**)xrtArrayConstGet(&m->materials,index) : NULL; }
+int xge3dModelMaterialOwned(const xge3d_model *m,size_t index,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m || !m->owner_thread)return XGE_ERROR_INVALID_ARGUMENT;
+    if(m->retiring||!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(index>=m->data->materials_count)return XGE_OK;
+    xge3d_material *material=*(xge3d_material**)xrtArrayConstGet(&m->materials,index);
+    return xge3dMaterialShareOwned(material,out);
+}
 static int d3_selected(const cgltf_data *data, const cgltf_node *node)
 {
     while (node->parent) node=node->parent;

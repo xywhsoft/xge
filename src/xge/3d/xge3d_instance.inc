@@ -27,6 +27,7 @@ int xge3dModelLoadMemoryBudget(const void *data,size_t size,const char *base,xge
 int xge3dModelMemoryInfo(const xge3d_model *m,xge3d_asset_memory_t *out)
 {
     if(!m||m->retiring||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_model_thread(m))return XGE_ERROR_INVALID_STATE;
     xge3d_asset_memory_t info={.size=sizeof(info),.source_bytes=(uint64_t)m->source.iSize,.parser_bytes=m->parser_bytes+m->buffer_bytes};
     info.cpu_storage_bytes=sizeof(*m)+info.source_bytes+info.parser_bytes+
         d3_array_storage(&m->primitives)+d3_array_storage(&m->ranges)+d3_array_storage(&m->images)+
@@ -53,6 +54,7 @@ int xge3dModelMemoryInfo(const xge3d_model *m,xge3d_asset_memory_t *out)
 int xge3dModelResourceInfo(const xge3d_model *model,xge3d_resource_info_t *out)
 {
     if(!model||!out||out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
+    if(model->retiring||!d3_model_thread(model))return XGE_ERROR_INVALID_STATE;
     *out=(xge3d_resource_info_t){.size=sizeof(*out),.references=model->refs};
     for(size_t i=0;i<model->primitives.Count;++i){const d3_primitive *p=xrtArrayConstGet(&model->primitives,i);
         xge3d_resource_info_t part={.size=sizeof(part)};xge3dMeshResourceInfo(p->mesh,&part);

@@ -4783,10 +4783,13 @@ XGE_API int xge3dModelRetireInfo(const xge3d_model_retirement *token,xge3d_retir
 XGE_API int xge3dModelRetireFree(xge3d_model_retirement *token);
 /* 返回模型的节点、图元、材质、动画与蒙皮信息。 */
 XGE_API xge3d_model_info_t xge3dModelInfo(const xge3d_model *model);
+XGE_API int xge3dModelInfoChecked(const xge3d_model *model,xge3d_model_info_t *out);
 /* Borrowed material; valid while the model or its instance remains alive. */
 XGE_API const xge3d_material *xge3dModelMaterial(const xge3d_model *model, size_t index);
+XGE_API int xge3dModelMaterialOwned(const xge3d_model *model,size_t index,xge3d_material **out);
 /* 借用指定源节点的 UTF-8 名称。 */
 XGE_API const char *xge3dModelNodeName(const xge3d_model *model, size_t index);
+XGE_API int xge3dModelNodeNameChecked(const xge3d_model *model,size_t index,const char **out);
 #if XGE3D_ENABLE_ANIMATION
 /* SIZE_MAX for invalid indices; result is a source node index. */
 XGE_API size_t xge3dModelSkinJointNode(const xge3d_model *model, size_t skin, size_t joint);
@@ -5091,6 +5094,16 @@ typedef struct xge3d_asset_memory_t {
     size_t size;
     uint64_t cpu_storage_bytes, gpu_required_bytes, source_bytes, parser_bytes;
 } xge3d_asset_memory_t;
+/* Managed loads use the resource URI rules of the raw API. A NULL budget
+ * selects unlimited decoding. Provider-owned input is detached before parsing.
+ * Loaded assets are creator-thread resources. Scene nodes retain their assets
+ * independently, including when moved outside the original instance root. */
+XGE_API int xge3dModelLoadOwned(const char *uri,xge3d_decode_budget *budget,xge3d_model **out);
+XGE_API int xge3dModelLoadMemoryOwned(const void *data,size_t size,const char *base_uri,
+    xge3d_decode_budget *budget,xge3d_model **out);
+XGE_API int xge3dModelShareOwned(xge3d_model *model,xge3d_model **out);
+XGE_API int xge3dModelReleaseOwnerChecked(xge3d_model *model,bool *consumed);
+XGE_API int xge3dModelReleaseChecked(xge3d_model *model);
 /* 在共享解码配额约束下从 URI 加载模型。 */
 XGE_API int xge3dModelLoadBudget(const char *uri,xge3d_decode_budget *budget,xge3d_model **out);
 /* 在共享解码配额约束下从内存加载模型。 */
