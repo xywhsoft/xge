@@ -119,7 +119,7 @@ static int __xgeRenderCommandPush(const xge_render_command_t* pCommand)
 	return XGE_OK;
 }
 
-static int __xgeRenderCommandDraw(const xge_draw_t* pDraw)
+static int __xgeRenderCommandDraw(const xge_draw_t* pDraw, bool bChecked)
 {
 	xge_render_command_t tCommand;
 	int iRet;
@@ -131,7 +131,8 @@ static int __xgeRenderCommandDraw(const xge_draw_t* pDraw)
 	tCommand.iType = XGE_RENDER_COMMAND_DRAW;
 	tCommand.u.tDraw = *pDraw;
 	if ( tCommand.u.tDraw.pTexture->iBackendId == 0 ) {
-		(void)xgeTextureUploadQueue(tCommand.u.tDraw.pTexture);
+		iRet = xgeTextureUploadQueue(tCommand.u.tDraw.pTexture);
+		if ( bChecked && iRet != XGE_OK ) return iRet;
 	}
 
 	__xgeRenderCommandLock();

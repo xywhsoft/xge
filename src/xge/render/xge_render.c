@@ -36,10 +36,10 @@ void xgeDrawPx(xge_texture pTexture, int iX, int iY)
 
 void xgeDrawEx(const xge_draw_t* pDraw)
 {
-	(void)__xgeRenderCommandDraw(pDraw);
+	(void)__xgeRenderCommandDraw(pDraw, false);
 }
 
-typedef void (*xge_nine_patch_draw_proc)(const xge_draw_t* pDraw, void* pUser);
+static int __xgeRenderRectFinite(xge_rect_t tRect);
 
 static float __xgeNinePatchClamp01(float fValue)
 {
@@ -130,37 +130,24 @@ void xgeNinePatchSetColor(xge_nine_patch pPatch, uint32_t iColor)
 	pPatch->iColor = iColor;
 }
 
-static uint32_t __xgeNinePatchMulColor(uint32_t iA, uint32_t iB)
-{
-	uint32_t r;
-	uint32_t g;
-	uint32_t b;
-	uint32_t a;
-
-	r = (uint32_t)XGE_COLOR_GET_R(iA) * (uint32_t)XGE_COLOR_GET_R(iB) / 255u;
-	g = (uint32_t)XGE_COLOR_GET_G(iA) * (uint32_t)XGE_COLOR_GET_G(iB) / 255u;
-	b = (uint32_t)XGE_COLOR_GET_B(iA) * (uint32_t)XGE_COLOR_GET_B(iB) / 255u;
-	a = (uint32_t)XGE_COLOR_GET_A(iA) * (uint32_t)XGE_COLOR_GET_A(iB) / 255u;
-	return XGE_COLOR_RGBA(r, g, b, a);
-}
-
-static void __xgeNinePatchDrawStretchPiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iColor, uint32_t iFlags, xge_nine_patch_draw_proc procDraw, void* pUser)
+static int __xgeNinePatchDrawStretchPiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iFlags, bool bChecked)
 {
 	xge_draw_t tDraw;
 
-	if ( (pPatch == NULL) || (procDraw == NULL) || (pPatch->pTexture == NULL) || (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
-		return;
+	if ( tSrc.fW <= 0.0f || tSrc.fH <= 0.0f || tDst.fW <= 0.0f || tDst.fH <= 0.0f ) {
+		return XGE_OK;
 	}
 	memset(&tDraw, 0, sizeof(tDraw));
 	tDraw.pTexture = pPatch->pTexture;
 	tDraw.tSrc = tSrc;
 	tDraw.tDst = tDst;
-	tDraw.iColor = iColor;
+	tDraw.iColor = pPatch->iColor;
 	tDraw.iFlags = iFlags;
-	procDraw(&tDraw, pUser);
+	int iRet = __xgeRenderCommandDraw(&tDraw, bChecked);
+	return bChecked ? iRet : XGE_OK;
 }
 
-static void __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iColor, uint32_t iFlags, xge_nine_patch_draw_proc procDraw, void* pUser)
+static int __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iFlags, bool bChecked)
 {
 	xge_rect_t tTileSrc;
 	xge_rect_t tTileDst;
@@ -172,7 +159,7 @@ static void __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect
 	const int iTileLimit = 16384;
 
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
-		return;
+		return XGE_OK;
 	}
 	iTileCount = 0;
 	for ( fY = 0.0f; fY < tDst.fH; fY += tSrc.fH ) {
@@ -182,12 +169,16 @@ static void __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect
 		}
 		for ( fX = 0.0f; fX < tDst.fW; fX += tSrc.fW ) {
 			if ( iTileCount++ >= iTileLimit ) {
-				/* Keep pathological source dimensions bounded while preserving the
-				 * remaining destination coverage. */
-				tTileSrc = tSrc;
-				tTileDst = (xge_rect_t){tDst.fX + fX, tDst.fY + fY, tDst.fW - fX, tDst.fH - fY};
-				__xgeNinePatchDrawStretchPiece(pPatch, tTileSrc, tTileDst, iColor, iFlags, procDraw, pUser);
-				return;
+				/* The unfilled area can be L-shaped. Finish the current
+				 * row separately before stretching across the rows below. */
+				if ( fX > 0.0f ) {
+					tTileDst = (xge_rect_t){tDst.fX + fX, tDst.fY + fY, tDst.fW - fX, fTileH};
+					int iRet = __xgeNinePatchDrawStretchPiece(pPatch, tSrc, tTileDst, iFlags, bChecked);
+					if ( iRet != XGE_OK ) return iRet;
+					fY += fTileH;
+				}
+				tTileDst = (xge_rect_t){tDst.fX, tDst.fY + fY, tDst.fW, tDst.fH - fY};
+				return __xgeNinePatchDrawStretchPiece(pPatch, tSrc, tTileDst, iFlags, bChecked);
 			}
 			fTileW = tSrc.fW;
 			if ( fX + fTileW > tDst.fW ) {
@@ -200,18 +191,17 @@ static void __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect
 			tTileDst.fY = tDst.fY + fY;
 			tTileDst.fW = fTileW;
 			tTileDst.fH = fTileH;
-			__xgeNinePatchDrawStretchPiece(pPatch, tTileSrc, tTileDst, iColor, iFlags, procDraw, pUser);
+			int iRet = __xgeNinePatchDrawStretchPiece(pPatch, tTileSrc, tTileDst, iFlags, bChecked);
+			if ( iRet != XGE_OK ) return iRet;
 		}
 	}
+	return XGE_OK;
 }
 
-static void __xgeNinePatchDrawPiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iColor, uint32_t iFlags, int bTile, xge_nine_patch_draw_proc procDraw, void* pUser)
+static int __xgeNinePatchDrawPiece(const xge_nine_patch_t* pPatch, xge_rect_t tSrc, xge_rect_t tDst, uint32_t iFlags, bool bTile, bool bChecked)
 {
-	if ( bTile ) {
-		__xgeNinePatchDrawTilePiece(pPatch, tSrc, tDst, iColor, iFlags, procDraw, pUser);
-	} else {
-		__xgeNinePatchDrawStretchPiece(pPatch, tSrc, tDst, iColor, iFlags, procDraw, pUser);
-	}
+	return bTile ? __xgeNinePatchDrawTilePiece(pPatch, tSrc, tDst, iFlags, bChecked) :
+		__xgeNinePatchDrawStretchPiece(pPatch, tSrc, tDst, iFlags, bChecked);
 }
 
 static void __xgeNinePatchScaleFixed(float fTotal, float* pA, float* pB, float* pMid)
@@ -233,9 +223,8 @@ static void __xgeNinePatchScaleFixed(float fTotal, float* pA, float* pB, float* 
 	}
 }
 
-static void __xgeNinePatchDrawInternal(const xge_nine_patch_t* pPatch, xge_rect_t tDst, uint32_t iFlags, uint32_t iDrawColor, xge_nine_patch_draw_proc procDraw, void* pUser)
+static int __xgeNinePatchDrawInternal(xge_nine_patch_t tPatch, xge_rect_t tDst, uint32_t iFlags, bool bChecked)
 {
-	xge_nine_patch_t tPatch;
 	xge_rect_t tSrc;
 	xge_rect_t arrSrc[3][3];
 	xge_rect_t arrDst[3][3];
@@ -249,22 +238,14 @@ static void __xgeNinePatchDrawInternal(const xge_nine_patch_t* pPatch, xge_rect_
 	float fTopH;
 	float fBottomH;
 	float fMidH;
-	uint32_t iColor;
 	int i;
 	int j;
 
-	if ( (pPatch == NULL) || (pPatch->pTexture == NULL) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) || (procDraw == NULL) ) {
-		return;
+	if ( !tPatch.pTexture || tDst.fW <= 0.0f || tDst.fH <= 0.0f ||
+		XGE_COLOR_GET_A(tPatch.iColor) == 0 ) {
+		return XGE_OK;
 	}
-	tPatch = *pPatch;
 	__xgeNinePatchNormalize(&tPatch);
-	if ( XGE_COLOR_GET_A(tPatch.iColor) == 0 ) {
-		return;
-	}
-	iColor = __xgeNinePatchMulColor(tPatch.iColor, iDrawColor);
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return;
-	}
 	tSrc = tPatch.tSrc;
 	if ( tSrc.fW == 0.0f ) {
 		tSrc.fW = (float)tPatch.pTexture->iWidth;
@@ -272,12 +253,15 @@ static void __xgeNinePatchDrawInternal(const xge_nine_patch_t* pPatch, xge_rect_
 	if ( tSrc.fH == 0.0f ) {
 		tSrc.fH = (float)tPatch.pTexture->iHeight;
 	}
-	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) ) {
-		return;
+	if ( bChecked && (!isfinite(tSrc.fX + tSrc.fW) || !isfinite(tSrc.fY + tSrc.fH)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tSrc.fW <= 0.0f || tSrc.fH <= 0.0f ) {
+		return XGE_OK;
 	}
 	if ( tPatch.bEasyMode ) {
-		__xgeNinePatchDrawPiece(&tPatch, tSrc, tDst, iColor, iFlags, tPatch.iMode == XGE_NINE_PATCH_TILE, procDraw, pUser);
-		return;
+		return __xgeNinePatchDrawPiece(&tPatch, tSrc, tDst, iFlags,
+			tPatch.iMode == XGE_NINE_PATCH_TILE, bChecked);
 	}
 	arrSrcX[0] = tSrc.fX;
 	arrSrcX[1] = tSrc.fX + tSrc.fW * tPatch.fX1;
@@ -311,20 +295,42 @@ static void __xgeNinePatchDrawInternal(const xge_nine_patch_t* pPatch, xge_rect_
 			arrDst[j][i].fY = arrDstY[j];
 			arrDst[j][i].fW = arrDstX[i + 1] - arrDstX[i];
 			arrDst[j][i].fH = arrDstY[j + 1] - arrDstY[j];
-			__xgeNinePatchDrawPiece(&tPatch, arrSrc[j][i], arrDst[j][i], iColor, iFlags, (tPatch.iMode == XGE_NINE_PATCH_TILE) && !((i == 0 || i == 2) && (j == 0 || j == 2)), procDraw, pUser);
+			bool bTile = tPatch.iMode == XGE_NINE_PATCH_TILE &&
+				!((i == 0 || i == 2) && (j == 0 || j == 2));
+			int iRet = __xgeNinePatchDrawPiece(&tPatch, arrSrc[j][i], arrDst[j][i], iFlags, bTile, bChecked);
+			if ( iRet != XGE_OK ) return iRet;
 		}
 	}
-}
-
-static void __xgeNinePatchDrawEngineProc(const xge_draw_t* pDraw, void* pUser)
-{
-	(void)pUser;
-	xgeDrawEx(pDraw);
+	return XGE_OK;
 }
 
 void xgeNinePatchDraw(const xge_nine_patch_t* pPatch, xge_rect_t tDst, uint32_t iFlags)
 {
-	__xgeNinePatchDrawInternal(pPatch, tDst, iFlags, XGE_COLOR_RGBA(255, 255, 255, 255), __xgeNinePatchDrawEngineProc, NULL);
+	if ( pPatch ) (void)__xgeNinePatchDrawInternal(*pPatch, tDst, iFlags, false);
+}
+
+xge_nine_patch_style_t xgeNinePatchStyleDefault(void)
+{
+	return (xge_nine_patch_style_t){{0, 0, 0, 0}, 0, 0, 1, 1,
+		XGE_COLOR_RGBA(255, 255, 255, 255), XGE_NINE_PATCH_STRETCH};
+}
+
+int xgeTextureDrawNinePatch(xge_texture pTexture, const xge_nine_patch_style_t* pStyle, xge_rect_t tDst, uint32_t iFlags)
+{
+	if ( !pTexture || !pStyle || !__xgeRenderRectFinite(pStyle->tSource) ||
+		!__xgeRenderRectFinite(tDst) || !isfinite(tDst.fX + tDst.fW) || !isfinite(tDst.fY + tDst.fH) ||
+		pStyle->tSource.fW < 0 || pStyle->tSource.fH < 0 || tDst.fW < 0 || tDst.fH < 0 ||
+		!isfinite(pStyle->fX1) || !isfinite(pStyle->fY1) || !isfinite(pStyle->fX2) || !isfinite(pStyle->fY2) ||
+		(pStyle->iMode != XGE_NINE_PATCH_STRETCH && pStyle->iMode != XGE_NINE_PATCH_TILE) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	int iRet = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( iRet != XGE_OK ) return iRet;
+	if ( pTexture->iRefCount <= 0 ) return XGE_ERROR_INVALID_STATE;
+
+	xge_nine_patch_t tPatch = {pTexture, pStyle->tSource, pStyle->fX1, pStyle->fY1,
+		pStyle->fX2, pStyle->fY2, pStyle->iColor, pStyle->iMode, 0};
+	return __xgeNinePatchDrawInternal(tPatch, tDst, iFlags, true);
 }
 
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw)

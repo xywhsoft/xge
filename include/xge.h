@@ -962,6 +962,14 @@ struct xge_nine_patch_t {
 	int bEasyMode;
 };
 
+/* Reusable nine-slice configuration. It does not hold a texture reference. */
+typedef struct xge_nine_patch_style_t {
+	xge_rect_t tSource;
+	float fX1, fY1, fX2, fY2;
+	uint32_t iColor;
+	int iMode;
+} xge_nine_patch_style_t;
+
 typedef struct xge_vertex_t {
 	float fX;
 	float fY;
@@ -3089,6 +3097,12 @@ XGE_API void xgeNinePatchSetMode(xge_nine_patch pPatch, int iMode);
 XGE_API void xgeNinePatchSetColor(xge_nine_patch pPatch, uint32_t iColor);
 /* 绘制九宫格到目标矩形。 */
 XGE_API void xgeNinePatchDraw(const xge_nine_patch_t* pPatch, xge_rect_t tDst, uint32_t iFlags);
+/* Whole texture, no border, stretch, opaque white. */
+XGE_API xge_nine_patch_style_t xgeNinePatchStyleDefault(void);
+/* Creator thread. Zero source extent selects the texture extent. Finite
+ * normalized cuts are clamped and sorted. Each submitted piece retains the
+ * texture via the draw queue. On failure the already queued prefix remains. */
+XGE_API int xgeTextureDrawNinePatch(xge_texture pTexture, const xge_nine_patch_style_t* pStyle, xge_rect_t tDst, uint32_t iFlags);
 /* 创建精灵批（绑定纹理与容量）。 */
 XGE_API int xgeSpriteBatchInit(xge_sprite_batch pBatch, xge_texture pTexture, int iCapacity, uint32_t iFlags);
 /* 释放精灵批。 */

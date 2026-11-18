@@ -452,7 +452,7 @@ static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
 static int __xgeRenderCommandFlushThreaded(void);
 static void __xgeRenderThreadJoin(void);
-static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
+static int __xgeRenderCommandDraw(const xge_draw_t* pDraw, bool bChecked);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
 static void __xgeRenderRequestInternal(void);
 static int __xgeInputEventQueueReserve(int iCapacity);
