@@ -53,6 +53,7 @@ typedef struct doc_model_outcome {int status;xerror* error;} doc_model_outcome;
 extern const doc_model_type doc_model_document_type,doc_model_snapshot_type;
 extern const doc_model_type doc_model_change_type,doc_model_transaction_type;
 extern const doc_model_type doc_model_prepare_type,doc_model_fragment_type,doc_model_index_type;
+extern const doc_model_type doc_model_matches_type,doc_model_markdown_losses_type;
 void doc_model_init(doc_model_lifetime*,const doc_model_type*,struct doc_allocator*);
 bool doc_model_owned(const doc_model_lifetime*);
 static inline bool doc_model_typed(const doc_model_lifetime* root,const doc_model_type* type)
@@ -65,6 +66,27 @@ int doc_model_share_acquire(doc_model_lifetime*,const doc_model_type*);
         int status=source ? doc_model_share_acquire(&source->owned,&Kind):XUI_ERROR_INVALID_ARGUMENT; \
         if(status==XUI_OK)*output=source; \
         return status; \
+    }
+/* Immutable POD result models have no child ownership edges. */
+#define DOC_MODEL_POD_RESULT_FUNCTIONS(Prefix,Handle,Kind) \
+    XUI_API int Prefix##AddRef(Handle source) { \
+        return source && doc_model_typed(&source->owned,&Kind) ? \
+            doc_model_add_ref(&source->owned):XUI_ERROR_INVALID_ARGUMENT; \
+    } \
+    DOC_MODEL_SHARE_FUNCTION(Prefix##ShareOwned,Handle,Kind) \
+    XUI_API int Prefix##ReleaseOwnerChecked(Handle source,bool* consumed) { \
+        if(!source || !doc_model_typed(&source->owned,&Kind)){ \
+            if(consumed)*consumed=false; \
+            return XUI_ERROR_INVALID_ARGUMENT; \
+        } \
+        return doc_model_release(&source->owned,consumed); \
+    } \
+    XUI_API int Prefix##ReleaseChecked(Handle source) { \
+        bool consumed=false;return Prefix##ReleaseOwnerChecked(source,&consumed); \
+    } \
+    XUI_API xrtownershipref Prefix##Ownership(Handle source) { \
+        return source && doc_model_typed(&source->owned,&Kind) ? \
+            doc_model_reference(&source->owned):(xrtownershipref){0}; \
     }
 int doc_model_admit(const doc_model_lifetime*);
 bool doc_model_readable(const doc_model_lifetime*);

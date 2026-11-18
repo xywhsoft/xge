@@ -128,12 +128,11 @@ int doc_plain_project_position(const doc_plain_projection* p, const xui_doc_posi
     }
     *out = p->bytes; return XUI_OK;
 }
-XUI_API int xuiDocumentSnapshotFind(xui_document_snapshot snapshot, uint32_t domain, const char* pattern, uint64_t length,
-    const xui_doc_range_t* scope, xui_doc_range_t* matches, uint64_t capacity, uint64_t* total)
+static int doc_snapshot_find_literal(xui_document_snapshot snapshot, uint32_t domain, const char* pattern,
+    uint64_t length, const xui_doc_range_t* scope, doc_query_rows* rows)
 {
-    doc_plain_projection p; uint64_t *prefix = NULL, first = 0, last, i, j = 0, count = 0; int result;
-    if (total) *total = 0;
-    if (!snapshot || !total || (!matches && capacity) || !length || !doc_utf8(pattern, length)) return XUI_ERROR_INVALID_ARGUMENT;
+    doc_plain_projection p; uint64_t *prefix = NULL, first = 0, last, i, j = 0; int result;
+    if (!snapshot || !length || !doc_utf8(pattern, length)) return XUI_ERROR_INVALID_ARGUMENT;
     if (length > SIZE_MAX / sizeof(*prefix)) return XUI_DOC_ERROR_LIMIT;
     result = doc_plain_project(snapshot, domain, &p); if (result != XUI_OK) return result;
     last = p.bytes;
@@ -152,13 +151,29 @@ XUI_API int xuiDocumentSnapshotFind(xui_document_snapshot snapshot, uint32_t dom
         while (j && p.text[i] != pattern[j]) j = prefix[j - 1];
         if (p.text[i] == pattern[j]) j++;
         if (j == length) {
-            if (count < capacity) { matches[count].tAnchor = doc_plain_unproject(&p, i + 1 - length, 1); matches[count].tCaret = doc_plain_unproject(&p, i + 1, 0); }
-            count++; j = 0;
+            xui_doc_range_t* match = doc_query_rows_next(rows, sizeof(*match));
+            if (rows->status != XUI_OK) { result = rows->status; goto done; }
+            if (match) {
+                match->tAnchor = doc_plain_unproject(&p, i + 1 - length, 1);
+                match->tCaret = doc_plain_unproject(&p, i + 1, 0);
+            }
+            j = 0;
         }
     }
-    *total = count;
 done:
     doc_free(prefix); doc_plain_projection_free(&p); return result;
+}
+
+XUI_API int xuiDocumentSnapshotFind(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t length, const xui_doc_range_t* scope,
+    xui_doc_range_t* matches, uint64_t capacity, uint64_t* total)
+{
+    if (total) *total = 0;
+    if (!total || (!matches && capacity)) return XUI_ERROR_INVALID_ARGUMENT;
+    doc_query_rows rows = {.items = matches, .capacity = capacity};
+    int status = doc_snapshot_find_literal(snapshot, domain, pattern, length, scope, &rows);
+    if (status == XUI_OK) *total = rows.count;
+    return status;
 }
 static int doc_regex_error(int fallback)
 {
@@ -168,10 +183,9 @@ static int doc_regex_error(int fallback)
         return XUI_DOC_ERROR_LIMIT;
     return fallback;
 }
-XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t domain,
+static int doc_snapshot_find_ex(xui_document_snapshot snapshot, uint32_t domain,
     const char* pattern, uint64_t pattern_bytes, uint32_t flags,
-    const xui_doc_range_t* scope, xui_doc_range_t* matches,
-    uint64_t capacity, uint64_t* total)
+    const xui_doc_range_t* scope, doc_query_rows* rows)
 {
     doc_plain_projection projection;
     xregexconfig config;
@@ -179,17 +193,16 @@ XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t d
     xregexmatcher* matcher = NULL;
     xstrview expression, text;
     char* escaped = NULL;
-    uint64_t first = 0, last, count = 0;
+    uint64_t first = 0, last;
     size_t escaped_bytes = 0;
     xregexresult state;
     int result;
-    if (total) *total = 0;
     if (flags & ~(XUI_DOC_FIND_REGEX | XUI_DOC_FIND_IGNORE_CASE |
             XUI_DOC_FIND_WHOLE_WORD))
         return XUI_ERROR_INVALID_ARGUMENT;
-    if (!flags) return xuiDocumentSnapshotFind(snapshot, domain, pattern,
-        pattern_bytes, scope, matches, capacity, total);
-    if (!snapshot || !total || (!matches && capacity) || !pattern_bytes ||
+    if (!flags) return doc_snapshot_find_literal(snapshot, domain, pattern,
+        pattern_bytes, scope, rows);
+    if (!snapshot || !pattern_bytes ||
             pattern_bytes > SIZE_MAX || !doc_utf8(pattern, pattern_bytes))
         return XUI_ERROR_INVALID_ARGUMENT;
     expression = (xstrview){pattern, (size_t)pattern_bytes};
@@ -240,21 +253,92 @@ XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t d
                 (int)end, XUI_INTERNAL_WORD_NATURAL))) {
             state = xrtRegexMatcherNext(matcher); continue;
         }
-        if (count == UINT64_MAX) { result = XUI_DOC_ERROR_LIMIT; goto done_regex; }
-        if (count < capacity) {
-            matches[count].tAnchor = doc_plain_unproject(&projection, begin, 1);
-            matches[count].tCaret = begin == end ? matches[count].tAnchor :
+        xui_doc_range_t* match = doc_query_rows_next(rows, sizeof(*match));
+        if (rows->status != XUI_OK) { result = rows->status; goto done_regex; }
+        if (match) {
+            match->tAnchor = doc_plain_unproject(&projection, begin, 1);
+            match->tCaret = begin == end ? match->tAnchor :
                 doc_plain_unproject(&projection, end, 0);
         }
-        count++;
         state = xrtRegexMatcherNext(matcher);
     }
     if (state == XREGEX_ERROR) result = doc_regex_error(XUI_ERROR_INVALID_STATE);
-    else *total = count;
 done_regex:
     xrtRegexMatcherFree(matcher);
     doc_plain_projection_free(&projection);
     return result;
+}
+
+XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t pattern_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, xui_doc_range_t* matches,
+    uint64_t capacity, uint64_t* total)
+{
+    if (total) *total = 0;
+    if (!total || (!matches && capacity)) return XUI_ERROR_INVALID_ARGUMENT;
+    doc_query_rows rows = {.items = matches, .capacity = capacity};
+    int status = doc_snapshot_find_ex(snapshot, domain, pattern, pattern_bytes, flags, scope, &rows);
+    if (status == XUI_OK) *total = rows.count;
+    return status;
+}
+
+struct xui_doc_matches_t {
+    atomic_uint refs;
+    doc_model_lifetime owned;
+    const xui_doc_range_t* ranges;
+    size_t count;
+};
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_matches_t);
+
+static int doc_matches_finish(void* object)
+{
+    xui_document_matches matches = object;
+    doc_free((void*)matches->ranges);
+    return XUI_OK;
+}
+
+const doc_model_type doc_model_matches_type = {DOC_MODEL_ALLOCATED, NULL, NULL, NULL, doc_matches_finish};
+DOC_MODEL_POD_RESULT_FUNCTIONS(xuiDocumentMatches, xui_document_matches, doc_model_matches_type)
+
+XUI_API int xuiDocumentMatchesGetRanges(xui_document_matches matches,
+    const xui_doc_range_t** ranges, size_t* count)
+{
+    if (ranges) *ranges = NULL;
+    if (count) *count = 0;
+    if (!matches || !ranges || !count || !doc_model_typed(&matches->owned, &doc_model_matches_type))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!doc_model_readable(&matches->owned)) return XUI_ERROR_INVALID_STATE;
+    *ranges = matches->ranges;
+    *count = matches->count;
+    return XUI_OK;
+}
+
+XUI_API int xuiDocumentSnapshotFindOwned(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t pattern_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, xui_document_matches* out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    if (!snapshot || !doc_model_typed(&snapshot->owned, &doc_model_snapshot_type))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!doc_model_readable(&snapshot->owned)) return XUI_ERROR_INVALID_STATE;
+    doc_allocator* allocator = snapshot->state->allocator;
+    doc_query_rows rows = {.allocator = allocator};
+    int status = doc_snapshot_find_ex(snapshot, domain, pattern, pattern_bytes, flags, scope, &rows);
+    if (status == XUI_OK) {
+        xui_document_matches matches = doc_alloc(allocator, sizeof(*matches));
+        if (matches) {
+            atomic_init(&matches->refs, 1);
+            doc_model_init(&matches->owned, &doc_model_matches_type, allocator);
+            matches->count = (size_t)rows.count;
+            matches->ranges = rows.items;
+            *out = matches;
+            return XUI_OK;
+        }
+        status = XUI_ERROR_OUT_OF_MEMORY;
+    }
+    doc_free(rows.items);
+    return status;
 }
 static int doc_template_append(doc_allocator* allocator, char** output,
     size_t* length, size_t* capacity, const char* data, size_t bytes)

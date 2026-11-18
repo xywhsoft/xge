@@ -15,6 +15,8 @@ typedef struct xui_document_t* xui_document;
 typedef struct xui_doc_snapshot_t* xui_document_snapshot;
 typedef struct xui_doc_transaction_t* xui_document_transaction;
 typedef struct xui_doc_change_set_t* xui_document_change_set;
+typedef struct xui_doc_matches_t* xui_document_matches;
+typedef struct xui_doc_markdown_losses_t* xui_document_markdown_losses;
 typedef struct xui_doc_prepare_t* xui_document_prepare;
 typedef struct xui_doc_fragment_t* xui_document_fragment;
 typedef struct xui_doc_source_index_t* xui_document_source_index;
@@ -883,6 +885,17 @@ XUI_API int xuiDocumentOpenFileOwned(const char* path, uint32_t format, const xu
 XUI_API int xuiDocumentSnapshotAnalyzeMarkdownConversion(
     xui_document_snapshot snapshot, uint32_t dialect,
     xui_doc_markdown_loss_t* losses, uint64_t capacity, uint64_t* total);
+/* An owned result from one analysis of a default-provenance Rich snapshot.
+ * Its immutable records remain valid while the result is retained. */
+XUI_API int xuiDocumentSnapshotCollectMarkdownLosses(
+    xui_document_snapshot snapshot, uint32_t dialect, xui_document_markdown_losses* out);
+XUI_API int xuiDocumentMarkdownLossesAddRef(xui_document_markdown_losses losses);
+XUI_API int xuiDocumentMarkdownLossesShareOwned(xui_document_markdown_losses losses, xui_document_markdown_losses* out);
+XUI_API int xuiDocumentMarkdownLossesReleaseOwnerChecked(xui_document_markdown_losses losses, bool* consumed);
+XUI_API int xuiDocumentMarkdownLossesReleaseChecked(xui_document_markdown_losses losses);
+XUI_API xrtownershipref xuiDocumentMarkdownLossesOwnership(xui_document_markdown_losses losses);
+XUI_API int xuiDocumentMarkdownLossesGetEntries(xui_document_markdown_losses losses,
+    const xui_doc_markdown_loss_t** entries, size_t* count);
 /* Explicit lossless Rich -> Markdown conversion. On any reported loss or
  * semantic round-trip mismatch, returns UNREPRESENTABLE and no document.
  * The independent result is clean, editable and retains its Markdown source. */
@@ -1179,6 +1192,18 @@ XUI_API int xuiDocumentSnapshotFindEx(xui_document_snapshot snapshot, uint32_t d
     const char* pattern, uint64_t pattern_bytes, uint32_t flags,
     const xui_doc_range_t* scope, xui_doc_range_t* matches,
     uint64_t capacity, uint64_t* total);
+/* All non-overlapping results from one search of a default-provenance
+ * snapshot. The immutable ranges retain their original revision identity. */
+XUI_API int xuiDocumentSnapshotFindOwned(xui_document_snapshot snapshot, uint32_t domain,
+    const char* pattern, uint64_t pattern_bytes, uint32_t flags,
+    const xui_doc_range_t* scope, xui_document_matches* out);
+XUI_API int xuiDocumentMatchesAddRef(xui_document_matches matches);
+XUI_API int xuiDocumentMatchesShareOwned(xui_document_matches matches, xui_document_matches* out);
+XUI_API int xuiDocumentMatchesReleaseOwnerChecked(xui_document_matches matches, bool* consumed);
+XUI_API int xuiDocumentMatchesReleaseChecked(xui_document_matches matches);
+XUI_API xrtownershipref xuiDocumentMatchesOwnership(xui_document_matches matches);
+XUI_API int xuiDocumentMatchesGetRanges(xui_document_matches matches,
+    const xui_doc_range_t** ranges, size_t* count);
 /* Replace every match in one atomic root transaction. An unsupported structural
  * boundary poisons the entire transaction; no partial replacement is published. */
 XUI_API int xuiDocumentTxnReplaceAll(xui_document_transaction transaction,

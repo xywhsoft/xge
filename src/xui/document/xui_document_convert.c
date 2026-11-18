@@ -5,8 +5,7 @@
 typedef struct doc_md_loss_scan {
     doc_state* state;
     uint32_t dialect;
-    xui_doc_markdown_loss_t* items;
-    uint64_t capacity, count;
+    doc_query_rows rows;
     uint32_t reasons_union;
 } doc_md_loss_scan;
 
@@ -27,15 +26,14 @@ static void doc_md_loss_append(doc_md_loss_scan* scan, const doc_node* node, uin
 {
     if (!reasons) return;
     scan->reasons_union |= reasons;
-    if (scan->count < scan->capacity) {
-        xui_doc_markdown_loss_t* item = &scan->items[scan->count];
+    xui_doc_markdown_loss_t* item = doc_query_rows_next(&scan->rows, sizeof(*item));
+    if (item) {
         *item = (xui_doc_markdown_loss_t){0};
         item->iSize = sizeof(*item);
         item->iNodeKind = node->kind;
         item->iNodeId = node->id;
         item->iReasons = reasons;
     }
-    scan->count++;
 }
 
 static uint32_t doc_md_loss_node(doc_md_loss_scan* scan, const doc_node* n)
@@ -177,7 +175,7 @@ static void doc_md_loss_walk(doc_md_loss_scan* scan, uint64_t id)
     doc_node* n = doc_index_get(scan->state->index, id);
     uint64_t i;
     doc_md_loss_append(scan, n, doc_md_loss_node(scan, n));
-    for (i = 0; i < doc_seq_size(n->children); i++)
+    for (i = 0; scan->rows.status == XUI_OK && i < doc_seq_size(n->children); i++)
         doc_md_loss_walk(scan, doc_seq_get_id(n->children, i));
 }
 
@@ -267,7 +265,8 @@ XUI_API int xuiDocumentSnapshotConvertToMarkdownWithPolicy(
     if (!accepted_reasons) return xuiDocumentSnapshotConvertToMarkdown(snapshot, dialect, out);
     scan.state = snapshot->state; scan.dialect = dialect;
     doc_md_loss_walk(&scan, DOC_ROOT);
-    if (!scan.count) return xuiDocumentSnapshotConvertToMarkdown(snapshot, dialect, out);
+    if (scan.rows.status != XUI_OK) return scan.rows.status;
+    if (!scan.rows.count) return xuiDocumentSnapshotConvertToMarkdown(snapshot, dialect, out);
     if (scan.reasons_union & ~accepted_reasons) return XUI_DOC_ERROR_UNREPRESENTABLE;
 
     desc.iSize = sizeof(desc); desc.iProfile = XUI_DOCUMENT_RICH;
@@ -311,7 +310,8 @@ XUI_API int xuiDocumentSnapshotConvertToMarkdown(
     if (!out || !doc_md_conversion_input(snapshot, dialect)) return XUI_ERROR_INVALID_ARGUMENT;
     scan.state = snapshot->state; scan.dialect = dialect;
     doc_md_loss_walk(&scan, DOC_ROOT);
-    if (scan.count) return XUI_DOC_ERROR_UNREPRESENTABLE;
+    if (scan.rows.status != XUI_OK) return scan.rows.status;
+    if (scan.rows.count) return XUI_DOC_ERROR_UNREPRESENTABLE;
 
     desc.iSize = sizeof(desc); desc.iProfile = XUI_DOCUMENT_MARKDOWN;
     desc.iMarkdownDialect = dialect; desc.bDisableHistory = 1;
@@ -348,29 +348,100 @@ done:
     return result;
 }
 
+static int doc_snapshot_analyze_markdown(xui_document_snapshot snapshot, uint32_t dialect,
+    doc_md_loss_scan* scan)
+{
+    xui_document converted = NULL;
+    int result;
+    scan->state = snapshot->state;
+    scan->dialect = dialect;
+    doc_md_loss_walk(scan, DOC_ROOT);
+    if (scan->rows.status != XUI_OK) return scan->rows.status;
+    if (!scan->rows.count) {
+        result = xuiDocumentSnapshotConvertToMarkdown(snapshot, dialect, &converted);
+        xuiDocumentRelease(converted);
+        if (result == XUI_DOC_ERROR_UNREPRESENTABLE) {
+            doc_md_loss_append(scan, doc_index_get(scan->state->index, DOC_ROOT),
+                XUI_DOC_MD_LOSS_ROUNDTRIP);
+        } else if (result != XUI_OK) return result;
+    }
+    return scan->rows.status;
+}
+
 XUI_API int xuiDocumentSnapshotAnalyzeMarkdownConversion(
     xui_document_snapshot snapshot, uint32_t dialect,
     xui_doc_markdown_loss_t* losses, uint64_t capacity, uint64_t* total)
 {
-    doc_md_loss_scan scan = {0};
-    xui_document converted = NULL;
-    int result;
     if (total) *total = 0;
     if (!total || (!losses && capacity) || !doc_md_conversion_input(snapshot, dialect))
         return XUI_ERROR_INVALID_ARGUMENT;
-    scan.state = snapshot->state; scan.dialect = dialect;
-    scan.items = losses; scan.capacity = capacity;
-    doc_md_loss_walk(&scan, DOC_ROOT);
-    if (!scan.count) {
-        result = xuiDocumentSnapshotConvertToMarkdown(snapshot, dialect, &converted);
-        xuiDocumentRelease(converted);
-        if (result == XUI_DOC_ERROR_UNREPRESENTABLE) {
-            doc_md_loss_append(&scan, doc_index_get(scan.state->index, DOC_ROOT),
-                XUI_DOC_MD_LOSS_ROUNDTRIP);
-        } else if (result != XUI_OK) return result;
+    doc_md_loss_scan scan = {.rows = {.items = losses, .capacity = capacity}};
+    int status = doc_snapshot_analyze_markdown(snapshot, dialect, &scan);
+    if (status != XUI_OK) return status;
+    *total = scan.rows.count;
+    return capacity < *total && losses ? XUI_ERROR_BUFFER_TOO_SMALL : XUI_OK;
+}
+
+struct xui_doc_markdown_losses_t {
+    atomic_uint refs;
+    doc_model_lifetime owned;
+    const xui_doc_markdown_loss_t* entries;
+    size_t count;
+};
+DOC_MODEL_ASSERT_LAYOUT(struct xui_doc_markdown_losses_t);
+
+static int doc_markdown_losses_finish(void* object)
+{
+    xui_document_markdown_losses losses = object;
+    doc_free((void*)losses->entries);
+    return XUI_OK;
+}
+
+const doc_model_type doc_model_markdown_losses_type = {
+    DOC_MODEL_ALLOCATED, NULL, NULL, NULL, doc_markdown_losses_finish
+};
+DOC_MODEL_POD_RESULT_FUNCTIONS(xuiDocumentMarkdownLosses, xui_document_markdown_losses,
+    doc_model_markdown_losses_type)
+
+XUI_API int xuiDocumentMarkdownLossesGetEntries(xui_document_markdown_losses losses,
+    const xui_doc_markdown_loss_t** entries, size_t* count)
+{
+    if (entries) *entries = NULL;
+    if (count) *count = 0;
+    if (!losses || !entries || !count || !doc_model_typed(&losses->owned, &doc_model_markdown_losses_type))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!doc_model_readable(&losses->owned)) return XUI_ERROR_INVALID_STATE;
+    *entries = losses->entries;
+    *count = losses->count;
+    return XUI_OK;
+}
+
+XUI_API int xuiDocumentSnapshotCollectMarkdownLosses(
+    xui_document_snapshot snapshot, uint32_t dialect, xui_document_markdown_losses* out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    if (!doc_md_conversion_input(snapshot, dialect) ||
+        !doc_model_typed(&snapshot->owned, &doc_model_snapshot_type))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if (!doc_model_readable(&snapshot->owned)) return XUI_ERROR_INVALID_STATE;
+    doc_allocator* allocator = snapshot->state->allocator;
+    doc_md_loss_scan scan = {.rows = {.allocator = allocator}};
+    int status = doc_snapshot_analyze_markdown(snapshot, dialect, &scan);
+    if (status == XUI_OK) {
+        xui_document_markdown_losses losses = doc_alloc(allocator, sizeof(*losses));
+        if (losses) {
+            atomic_init(&losses->refs, 1);
+            doc_model_init(&losses->owned, &doc_model_markdown_losses_type, allocator);
+            losses->count = (size_t)scan.rows.count;
+            losses->entries = scan.rows.items;
+            *out = losses;
+            return XUI_OK;
+        }
+        status = XUI_ERROR_OUT_OF_MEMORY;
     }
-    *total = scan.count;
-    return capacity < scan.count && losses ? XUI_ERROR_BUFFER_TOO_SMALL : XUI_OK;
+    doc_free(scan.rows.items);
+    return status;
 }
 
 XUI_API int xuiDocumentSnapshotAnalyzeRichConversion(

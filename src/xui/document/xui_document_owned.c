@@ -26,7 +26,8 @@ static bool modelType(const doc_model_type* type)
 {
     return type==&doc_model_document_type || type==&doc_model_snapshot_type ||
         type==&doc_model_change_type || type==&doc_model_transaction_type ||
-        type==&doc_model_prepare_type || type==&doc_model_fragment_type || type==&doc_model_index_type;
+        type==&doc_model_prepare_type || type==&doc_model_fragment_type || type==&doc_model_index_type ||
+        type==&doc_model_matches_type || type==&doc_model_markdown_losses_type;
 }
 bool doc_model_owned(const doc_model_lifetime* root)
 {return root && modelType(root->ops);}

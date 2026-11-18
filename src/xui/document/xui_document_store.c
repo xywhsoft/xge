@@ -44,6 +44,20 @@ void* doc_realloc(doc_allocator* a, void* pointer, size_t bytes)
     doc_free(pointer); return next;
 }
 
+int doc_query_rows_grow(doc_query_rows* rows, size_t stride)
+{
+    size_t limit = (SIZE_MAX - sizeof(doc_allocation)) / stride;
+    if (rows->count > limit) return XUI_DOC_ERROR_LIMIT;
+    size_t capacity = (size_t)rows->capacity;
+    size_t next = capacity < 8 ? (limit < 8 ? limit : 8) :
+        (capacity >= limit - capacity ? limit : capacity * 2);
+    void* grown = doc_realloc(rows->allocator, rows->items, next * stride);
+    if (!grown) return XUI_ERROR_OUT_OF_MEMORY;
+    rows->items = grown;
+    rows->capacity = next;
+    return XUI_OK;
+}
+
 void doc_allocator_retain(doc_allocator* a) { if (a) atomic_fetch_add(&a->refs, 1); }
 void doc_allocator_release(doc_allocator* a)
 {

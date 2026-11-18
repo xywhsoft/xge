@@ -357,6 +357,31 @@ static inline void doc_txn_copy_builder(struct xui_doc_transaction_t* target,con
 void* doc_alloc(doc_allocator*, size_t);
 void* doc_realloc(doc_allocator*, void*, size_t);
 void doc_free(void*);
+
+/* A fixed caller buffer stores a prefix. An allocator selects a growing
+ * unpublished result whose rows become the immutable backing on success. */
+typedef struct doc_query_rows {
+    void* items;
+    uint64_t capacity, count;
+    doc_allocator* allocator;
+    int status;
+} doc_query_rows;
+int doc_query_rows_grow(doc_query_rows*, size_t stride);
+static inline void* doc_query_rows_next(doc_query_rows* rows, size_t stride)
+{
+    if (rows->status != XUI_OK) return NULL;
+    if (rows->count == UINT64_MAX) {
+        rows->status = XUI_DOC_ERROR_LIMIT;
+        return NULL;
+    }
+    uint64_t index = rows->count++;
+    if (index >= rows->capacity) {
+        if (!rows->allocator) return NULL;
+        rows->status = doc_query_rows_grow(rows, stride);
+        if (rows->status != XUI_OK) return NULL;
+    }
+    return (char*)rows->items + (size_t)index * stride;
+}
 void doc_memory_tag(void*, unsigned);
 void doc_memory_current(doc_state*, doc_state*);
 void doc_memory_history(doc_history*, int);
