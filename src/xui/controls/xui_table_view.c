@@ -4325,6 +4325,27 @@ XUI_API const xui_table_view_column_t* xuiTableViewGetColumn(xui_widget pWidget,
 	return &pData->arrColumns[iColumn];
 }
 
+XUI_API int xuiTableViewGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL || pColumn == NULL || iColumn < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iColumn >= pData->iColumnCount ) return XUI_ERROR_NOT_FOUND;
+	const xui_table_view_column_t* pSource = &pData->arrColumns[iColumn];
+	*pColumn = (xui_table_column_desc_t){
+		.tSettings = {
+			.iId = pSource->iId,
+			.fWidth = pSource->fWidth, .fMinWidth = pSource->fMinWidth, .fMaxWidth = pSource->fMaxWidth,
+			.bVisible = pSource->bVisible, .bVisibleSet = pSource->bVisibleSet,
+			.bResizable = pSource->bResizable, .bResizableSet = pSource->bResizableSet,
+			.iAlign = pSource->iAlign, .iType = pSource->iType,
+			.bHasStyle = pSource->bHasStyle, .iBackgroundColor = pSource->iBackgroundColor,
+			.iTextColor = pSource->iTextColor, .iGridColor = pSource->iGridColor
+		},
+		.sId = pSource->sId, .sTitle = pSource->sTitle, .tRect = pSource->tRect
+	};
+	return XUI_OK;
+}
+
 XUI_API float xuiTableViewGetColumnWidth(xui_widget pWidget, int iColumn)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
@@ -4795,6 +4816,33 @@ XUI_API int xuiTableViewSetColumnsCopy(xui_widget widget,
     xuiInternalOperationLeave(context);
     __xuiTableColumnStorageRelease(storage);
     return result;
+}
+
+int xuiInternalTableColumnsExpand(xui_table_view_column_t* pOutput, const xui_table_column_desc_t* pColumns, int iCount)
+{
+	if ( iCount < 0 || iCount > XUI_TABLE_VIEW_COLUMN_CAPACITY || (iCount && pColumns == NULL) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	for ( int i = 0; i < iCount; ++i ) {
+		const xui_table_column_settings_t* pSettings = &pColumns[i].tSettings;
+		pOutput[i] = (xui_table_view_column_t){
+			.iId = pSettings->iId, .sId = pColumns[i].sId, .sTitle = pColumns[i].sTitle,
+			.fWidth = pSettings->fWidth, .fMinWidth = pSettings->fMinWidth, .fMaxWidth = pSettings->fMaxWidth,
+			.bVisible = pSettings->bVisible, .bVisibleSet = pSettings->bVisibleSet,
+			.bResizable = pSettings->bResizable, .bResizableSet = pSettings->bResizableSet,
+			.iAlign = pSettings->iAlign, .iType = pSettings->iType,
+			.bHasStyle = pSettings->bHasStyle, .iBackgroundColor = pSettings->iBackgroundColor,
+			.iTextColor = pSettings->iTextColor, .iGridColor = pSettings->iGridColor
+		};
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount)
+{
+	xui_table_view_column_t columns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int status = xuiInternalTableColumnsExpand(columns, pColumns, iCount);
+	if ( status != XUI_OK ) return status;
+	return xuiTableViewSetColumnsCopy(pWidget, columns, iCount);
 }
 
 XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)

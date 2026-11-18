@@ -2195,6 +2195,19 @@ XUI_API int xuiTableGridSetColumnsCopy(xui_widget widget,
     return result;
 }
 
+XUI_API int xuiTableGridSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount)
+{
+	xui_table_view_column_t columns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int status = xuiInternalTableColumnsExpand(columns, pColumns, iCount);
+	if ( status != XUI_OK ) return status;
+	return xuiTableGridSetColumnsCopy(pWidget, columns, iCount);
+}
+
+XUI_API int xuiTableGridGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn)
+{
+	return xuiTableViewGetColumnDescriptor(xuiTableGridGetTableView(pWidget), iColumn, pColumn);
+}
+
 XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
 {
 	xui_context pContext;

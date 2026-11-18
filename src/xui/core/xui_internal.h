@@ -54,6 +54,7 @@ int xuiInternalTextEditCreatePart(xui_widget pOwner,xui_widget* ppWidget,const x
 int xuiInternalButtonCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_button_desc_t* pDesc);
 int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_view_desc_t* pDesc);
 int xuiInternalTableGridCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_table_grid_desc_t* pDesc);
+int xuiInternalTableColumnsExpand(xui_table_view_column_t* pOutput, const xui_table_column_desc_t* pColumns, int iCount);
 int xuiInternalLabelCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_label_desc_t* pDesc);
 int xuiInternalImageCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_image_desc_t* pDesc);
 int xuiInternalMenuCreatePart(xui_widget pOwner,xui_widget* ppWidget,const xui_menu_desc_t* pDesc);

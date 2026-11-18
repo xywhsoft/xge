@@ -4662,6 +4662,33 @@ struct xui_table_view_column_t {
 	xui_rect_t tRect;
 };
 
+/* Values accepted by the descriptor setters. The same fields are reported
+ * by the getters after the table has resolved its native column defaults. */
+typedef struct xui_table_column_settings_t {
+	int iId;
+	float fWidth;
+	float fMinWidth;
+	float fMaxWidth;
+	int bVisible;
+	int bVisibleSet;
+	int bResizable;
+	int bResizableSet;
+	int iAlign;
+	int iType;
+	int bHasStyle;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	uint32_t iGridColor;
+} xui_table_column_settings_t;
+
+typedef struct xui_table_column_desc_t {
+	xui_table_column_settings_t tSettings;
+	const char* sId;
+	const char* sTitle;
+	/* Computed geometry returned by the getter. Setters ignore this field. */
+	xui_rect_t tRect;
+} xui_table_column_desc_t;
+
 struct xui_table_view_row_t {
 	float fHeight;
 	int bSelected;
@@ -11621,6 +11648,11 @@ XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const
 XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
 /* Copies descriptor and sId/sTitle text. Callback/user pointer lifetimes remain caller-owned. */
 XUI_API int xuiTableViewSetColumnsCopy(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
+/* Replace columns, copying the ID and title strings before returning. */
+XUI_API int xuiTableViewSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount);
+/* Copy scalar settings and geometry. The text pointers are borrowed until
+ * the next column replacement or widget destruction. */
+XUI_API int xuiTableViewGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn);
 /* 批量设置行数据（立即模式，结构内容会复制）。 */
 XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount);
 /* 设置虚拟化适配器（count + cell 回调，按需取值）。回调在调用线程同步执行；
@@ -11813,6 +11845,11 @@ XUI_API xui_widget xuiTableGridGetTableView(xui_widget pWidget);
 XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
 /* Copies descriptor and sId/sTitle text. Callback/user pointer lifetimes remain caller-owned. */
 XUI_API int xuiTableGridSetColumnsCopy(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
+/* Replace columns, copying the ID and title strings before returning. */
+XUI_API int xuiTableGridSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount);
+/* Copy scalar settings and geometry. The text pointers are borrowed until
+ * the next column replacement or widget destruction. */
+XUI_API int xuiTableGridGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn);
 /* 批量设置行数据。 */
 XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount);
 /* 设置虚拟化适配器（行数 + 单元格取值 + 写回）。 */
