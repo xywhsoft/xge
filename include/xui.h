@@ -8506,6 +8506,9 @@ XUI_API int xuiCodeEditGetCompletionCount(xui_widget pWidget);
 XUI_API int xuiCodeEditGetCompletionSelected(xui_widget pWidget);
 /* 取补全弹层控件；未打开返回 NULL。 */
 XUI_API xui_widget xuiCodeEditGetCompletionPopupWidget(xui_widget pWidget);
+/* Reads the document version and UTF-8 caret offset for a completion request.
+ * A multi-selection or a nonempty selection cannot start a request. */
+XUI_API int xuiCodeEditGetCompletionPosition(xui_widget pWidget, uint32_t* pDocumentVersion, int* pOffset);
 /* 批量替换补全条目（提供者填充用）。 */
 XUI_API int xuiCodeEditApplyCompletionItems(xui_widget pWidget, uint32_t iDocumentVersion,
 	int iOffset, const xui_code_completion_item_t* pItems, int iItemCount);

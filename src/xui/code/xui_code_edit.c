@@ -4210,10 +4210,20 @@ static xui_code_completion_owned_item_t* __xuiCodeEditCompletionVisibleItem(
 	return &pData->pCompletionItems[iSourceIndex];
 }
 
+static int __xuiCodeEditCompletionCaret(xui_code_edit_data_t* pData, int* pCaret)
+{
+	xui_code_selection_t tSelection;
+	memset(&tSelection, 0, sizeof(tSelection));
+	if ( xuiCodeSelectionGetCount(pData->pSelection) != 1 ||
+	     xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ||
+	     tSelection.iAnchorOffset != tSelection.iCaretOffset ) return XUI_ERROR_UNSUPPORTED;
+	*pCaret = tSelection.iCaretOffset;
+	return XUI_OK;
+}
+
 static int __xuiCodeEditCompletionPrefix(xui_code_edit_data_t* pData, int* pStart, int* pCaret,
 	char* sPrefix, int iPrefixCapacity)
 {
-	xui_code_selection_t tSelection;
 	char ch;
 	int iStart;
 	int iCaret;
@@ -4221,11 +4231,8 @@ static int __xuiCodeEditCompletionPrefix(xui_code_edit_data_t* pData, int* pStar
 	if ( pData == NULL || pStart == NULL || pCaret == NULL || sPrefix == NULL || iPrefixCapacity <= 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	memset(&tSelection, 0, sizeof(tSelection));
-	if ( xuiCodeSelectionGetCount(pData->pSelection) != 1 ||
-	     xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ||
-	     tSelection.iAnchorOffset != tSelection.iCaretOffset ) return XUI_ERROR_UNSUPPORTED;
-	iCaret = tSelection.iCaretOffset;
+	int iRet = __xuiCodeEditCompletionCaret(pData, &iCaret);
+	if ( iRet != XUI_OK ) return iRet;
 	iStart = iCaret;
 	while ( iStart > 0 ) {
 		if ( xuiCodeDocumentGetByte(pData->pDocument, iStart - 1, &ch) != XUI_OK ) break;
@@ -7877,6 +7884,20 @@ XUI_API xui_widget xuiCodeEditGetCompletionPopupWidget(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? pData->pCompletionPopup : NULL;
+}
+
+XUI_API int xuiCodeEditGetCompletionPosition(xui_widget pWidget, uint32_t* pDocumentVersion, int* pOffset)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || pDocumentVersion == NULL || pOffset == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+
+	int iCaret;
+	int iRet = __xuiCodeEditCompletionCaret(pData, &iCaret);
+	if ( iRet != XUI_OK ) return iRet;
+
+	*pDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
+	*pOffset = iCaret;
+	return XUI_OK;
 }
 
 XUI_API int xuiCodeEditApplyCompletionItems(xui_widget pWidget, uint32_t iDocumentVersion,
