@@ -4843,6 +4843,12 @@ XGE_API int xge3dLoaderCreate(const xge3d_loader_desc_t *desc,xge3d_loader **out
 /* Cancel all, wait for the CPU worker and release private resources. Free may
  * wait for indivisible file/provider reads; call before destroying the context. */
 XGE_API int xge3dLoaderFree(xge3d_loader *loader);
+/* Managed loaders hold a graphics lease. Their worker detaches legacy provider
+ * buffers before decoding, and Take transfers a managed model. Closing on a
+ * different thread or with a different active GPU context leaves the loader
+ * intact for retry. Provider reads must still be safe on the worker. */
+XGE_API int xge3dLoaderCreateOwned(const xge3d_loader_desc_t *desc,xge3d_loader **out);
+XGE_API int xge3dLoaderReleaseOwnerChecked(xge3d_loader *loader,bool *consumed);
 /* 提交异步 3D 模型加载请求并返回请求句柄。 */
 XGE_API int xge3dLoaderRequest(xge3d_loader *loader,const char *uri,xge3d_request_t *out_request);
 /* 查询异步加载请求的阶段、错误与上传进度。 */

@@ -1,5 +1,6 @@
 #include "xge_clock.h"
 #include "xge3d_internal.h"
+#include "xge_graphics_internal.h"
 #include <limits.h>
 #if XGE3D_ENABLE_ASYNC
 typedef struct d3_request {
@@ -11,6 +12,7 @@ typedef struct d3_request {
 } d3_request;
 struct xge3d_loader {
     uint64_t id,owner;size_t capacity;uint32_t flags;int stopping;
+    bool managed;
     xmutex mutex;xcond condition;xthread *worker;xslotmap slots;xarray requests;
     xge3d_decode_budget *budget;
 };
@@ -73,9 +75,11 @@ static int32 d3_loader_worker(void *user)
         r->running=1;r->state=XGE3D_REQUEST_LOADING;xrtMutexUnlock(&l->mutex);
         d3_model_io io={d3_request_read,d3_request_cancelled,r};xge3d_model *model=NULL;
         xallocationscope scope={0};int scoped=l->budget&&xrtAllocationBudgetEnter(l->budget,&scope);
-        int result=l->budget&&!scoped?XGE_ERROR_INVALID_STATE:d3_model_load_io(r->uri,&io,&model);
+        xrtClearError();
+        int result=l->budget&&!scoped?XGE_ERROR_INVALID_STATE:d3_model_load_io(r->uri,&io,l->managed,&model);
         int quota_failed=scope.Rejections!=0;if(scoped)xrtAllocationBudgetLeave(&scope);
         if(result&&quota_failed)result=XGE_ERROR_OUT_OF_MEMORY;
+        xrtClearError();
         xge3d_asset_memory_t memory={.size=sizeof(memory)};
         if(!result&&model)result=xge3dModelMemoryInfo(model,&memory);
         if(result&&model){xge3dModelFree(model);model=NULL;}
@@ -96,13 +100,14 @@ static int32 d3_loader_worker(void *user)
     }
     return 0;
 }
-int xge3dLoaderCreate(const xge3d_loader_desc_t *desc,xge3d_loader **out)
+static int d3_loader_create(const xge3d_loader_desc_t *desc,bool managed,xge3d_loader **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;xge3d_loader_desc_t d=desc ? *desc : (xge3d_loader_desc_t){0};
     if (d.max_requests>1024 || (d.flags&~XGE3D_LOADER_RESOURCE_PROVIDERS)) return XGE_ERROR_INVALID_ARGUMENT;
     xge3d_loader *l=xrtMalloc(sizeof(*l));if (!l) return XGE_ERROR_OUT_OF_MEMORY;
     memset(l,0,sizeof(*l));l->capacity=d.max_requests ? d.max_requests : 64;l->flags=d.flags;l->owner=xrtThreadCurrentId();
+    l->managed=managed;
     l->id=xrtAtomic64FetchAdd(&d3_loader_ids,1,XMEMORY_RELAXED)+1;
     if (!l->id) {xrtFree(l);return XGE_ERROR_INVALID_STATE;}
     xrtSlotMapInit(&l->slots);xrtArrayInit(&l->requests,sizeof(d3_request*));
@@ -112,16 +117,54 @@ int xge3dLoaderCreate(const xge3d_loader_desc_t *desc,xge3d_loader **out)
     if (!l->worker) {xrtCondUnit(&l->condition);xrtMutexUnit(&l->mutex);xrtFree(l);return XGE_ERROR_OUT_OF_MEMORY;}
     *out=l;return XGE_OK;
 }
-int xge3dLoaderFree(xge3d_loader *l)
+int xge3dLoaderCreate(const xge3d_loader_desc_t *desc,xge3d_loader **out)
+{
+    return d3_loader_create(desc,false,out);
+}
+int xge3dLoaderCreateOwned(const xge3d_loader_desc_t *desc,xge3d_loader **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=d3_loader_create(desc,true,out);
+    if(status!=XGE_OK)(void)xgeInternalGraphicsOwnerRelease();
+    return status;
+}
+static int d3_loader_free(xge3d_loader *l,bool *consumed)
 {
     if (!l) return XGE_OK;
     if (!d3_owner(l)) return XGE_ERROR_INVALID_STATE;
-    xrtMutexLock(&l->mutex);l->stopping=1;
+    xrtMutexLock(&l->mutex);
+    bool managed=l->managed;
+    uint64_t context=managed?__xge3dContext():0;
+    for(size_t i=0;context && i<l->requests.Count;++i){
+        const d3_request *r=*(d3_request**)xrtArrayGet(&l->requests,i);
+        if(r->upload.context && r->upload.context!=context &&
+            (r->model || (r->retirement && !r->retire_ready))){
+            xrtMutexUnlock(&l->mutex);
+            return XGE_ERROR_INVALID_STATE;
+        }
+    }
+    l->stopping=1;
     for (size_t i=0;i<l->requests.Count;++i) xrtAtomic32Store(&(*(d3_request**)xrtArrayGet(&l->requests,i))->cancelled,1,XMEMORY_RELEASE);
     xrtCondSignal(&l->condition);xrtMutexUnlock(&l->mutex);
     xrtThreadWait(l->worker);xrtThreadDestroy(l->worker);
     for (size_t i=0;i<l->requests.Count;++i) d3_request_free(*(d3_request**)xrtArrayGet(&l->requests,i));
-    xrtArrayUnit(&l->requests);xrtSlotMapUnit(&l->slots);xrtCondUnit(&l->condition);xrtMutexUnit(&l->mutex);xrtAllocationBudgetFree(l->budget);xrtFree(l);return XGE_OK;
+    xrtArrayUnit(&l->requests);xrtSlotMapUnit(&l->slots);xrtCondUnit(&l->condition);xrtMutexUnit(&l->mutex);xrtAllocationBudgetFree(l->budget);xrtFree(l);
+    if(consumed)*consumed=true;
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+int xge3dLoaderFree(xge3d_loader *l)
+{
+    return d3_loader_free(l,NULL);
+}
+int xge3dLoaderReleaseOwnerChecked(xge3d_loader *l,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    if(!l || !l->managed)return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_loader_free(l,consumed);
 }
 int xge3dLoaderSetDecodeBudget(xge3d_loader *l,xge3d_decode_budget *budget)
 {
@@ -188,7 +231,19 @@ int xge3dLoaderTake(xge3d_loader *l,xge3d_request_t h,xge3d_model **out)
     xrtMutexLock(&l->mutex);d3_request *r=d3_request_get(l,h);int result=XGE_OK;
     if (!r) result=XGE_ERROR_INVALID_ARGUMENT;
     else if (r->state!=XGE3D_REQUEST_READY) result=XGE_ERROR_INVALID_STATE;
-    else {*out=r->model;r->model=NULL;xrtSlotMapRemove(&l->slots,h.slot,NULL);d3_request_remove(l,r);}
+    else if(l->managed){
+        if(r->upload.context && r->upload.context!=__xge3dContext())result=XGE_ERROR_INVALID_STATE;
+        else {
+            /* READY is immutable to the worker. GPU admission should not
+             * block it from publishing other CPU-decoded requests. */
+            xrtMutexUnlock(&l->mutex);
+            result=d3_model_adopt(r->model);
+            if(result!=XGE_OK)xge3dModelFree(r->model);
+            xrtMutexLock(&l->mutex);
+            if(result!=XGE_OK){r->model=NULL;r->state=XGE3D_REQUEST_FAILED;r->result=result;}
+        }
+    }
+    if(result==XGE_OK){*out=r->model;r->model=NULL;xrtSlotMapRemove(&l->slots,h.slot,NULL);d3_request_remove(l,r);}
     xrtMutexUnlock(&l->mutex);if (result==XGE_OK) d3_request_free(r);return result;
 }
 int xge3dLoaderPump(xge3d_loader *l,const xge3d_upload_budget_t *budget,xge3d_upload_stats_t *out)
@@ -224,6 +279,10 @@ int xge3dLoaderPump(xge3d_loader *l,const xge3d_upload_budget_t *budget,xge3d_up
             if (p->state==XGE3D_REQUEST_CPU_READY || p->state==XGE3D_REQUEST_UPLOADING) {r=p;++index;break;}
         }
         xrtMutexUnlock(&l->mutex);if (!r) break;
+        if(l->managed && r->upload.context && r->upload.context!=__xge3dContext()){
+            if(out)*out=stats;
+            return XGE_ERROR_INVALID_STATE;
+        }
         int complete=0,result=d3_model_upload_step(r->model,&r->upload,budget,&stats,deadline,&complete);
         if (result==XGE_ERROR_NOT_INITIALIZED) {if (out) *out=stats;return result;}
         xrtMutexLock(&l->mutex);

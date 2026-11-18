@@ -560,12 +560,12 @@ done:
     if (result==XGE_OK) *out=m; else {if(getenv("XGE3D_MODEL_TRACE"))fprintf(stderr,"MODEL_LOAD stage=%s result=%d uri=%s\n",stage,result,uri?uri:"");xge3dModelFree(m);}
     return result;
 }
-static int d3_model_load_path(const char *uri,xge3d_model **out,bool detach_provider)
+static int d3_model_load_path(const char *uri,const d3_model_io *io,bool detach_provider,xge3d_model **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
     if (!uri) return XGE_ERROR_INVALID_ARGUMENT;
-    xge_resource_t source={0}; int result=xgeResourceLoad(uri,&source);
+    xge_resource_t source={0}; int result=d3_read(uri,&source,io);
     if(result==XGE_OK && detach_provider && source.free){
         xge_resource_t copy={0};
         xerror *ambient=xrtTakeError();
@@ -578,13 +578,13 @@ static int d3_model_load_path(const char *uri,xge3d_model **out,bool detach_prov
         else xrtSetErrorTake(ambient);
         source=copy;
     }
-    if (result==XGE_OK) result=d3_model_load(&source,uri,out,NULL);
+    if (result==XGE_OK) result=d3_model_load(&source,uri,out,io);
     xgeResourceFree(&source);
     return result;
 }
 int xge3dModelLoad(const char *uri, xge3d_model **out)
 {
-    return d3_model_load_path(uri,out,false);
+    return d3_model_load_path(uri,NULL,false,out);
 }
 int xge3dModelLoadMemory(const void *bytes, size_t size, const char *base, xge3d_model **out)
 {
@@ -657,7 +657,7 @@ int xge3dModelLoadOwned(const char *uri,xge3d_decode_budget *budget,xge3d_model 
     int status=d3_model_load_begin(budget,&scope);
     if(status!=XGE_OK)return status;
     xge3d_model *model=NULL;
-    status=d3_model_load_path(uri,&model,true);
+    status=d3_model_load_path(uri,NULL,true,&model);
     return d3_model_load_finish(model,status,budget,&scope,out);
 }
 int xge3dModelLoadMemoryOwned(const void *data,size_t size,const char *base_uri,
@@ -673,11 +673,20 @@ int xge3dModelLoadMemoryOwned(const void *data,size_t size,const char *base_uri,
     return d3_model_load_finish(model,status,budget,&scope,out);
 }
 #if XGE3D_ENABLE_ASYNC
-int d3_model_load_io(const char *uri,const d3_model_io *io,xge3d_model **out)
+int d3_model_load_io(const char *uri,const d3_model_io *io,bool detach_provider,xge3d_model **out)
 {
-    *out=NULL;xge_resource_t source={0};int result=d3_read(uri,&source,io);
-    if (result==XGE_OK) result=d3_model_load(&source,uri,out,io);
-    xgeResourceFree(&source);return result;
+    return d3_model_load_path(uri,io,detach_provider,out);
+}
+
+/* The ready model stays private to the GPU thread through promotion. On
+ * failure the caller frees it there, including any already managed assets. */
+int d3_model_adopt(xge3d_model *model)
+{
+    if(!model || model->owner_thread || model->source.free)return XGE_ERROR_INVALID_STATE;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    model->owner_thread=xrtThreadCurrentId();
+    return d3_model_own_assets(model);
 }
 size_t d3_model_resource_count(const xge3d_model *m,int stage)
 {return stage==0 ? m->textures.Count : stage==1 ? m->primitives.Count : 0;}

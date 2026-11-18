@@ -259,7 +259,8 @@ typedef struct d3_model_io {
 } d3_model_io;
 #if XGE3D_ENABLE_ASYNC
 typedef struct d3_upload_cursor { size_t resource,offset;int stage;uint64_t uploaded,total,context; } d3_upload_cursor;
-int d3_model_load_io(const char *uri,const d3_model_io *io,xge3d_model **out);
+int d3_model_load_io(const char *uri,const d3_model_io *io,bool detach_provider,xge3d_model **out);
+int d3_model_adopt(xge3d_model *model);
 size_t d3_model_resource_count(const xge3d_model *model,int stage);
 void *d3_model_resource(const xge3d_model *model,int stage,size_t index);
 uint64_t d3_model_upload_bytes(const xge3d_model *model);
