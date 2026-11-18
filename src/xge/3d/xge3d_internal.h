@@ -235,6 +235,7 @@ struct xge3d_texture {
     uint32_t refs, id;
     uint64_t context;
     size_t prepare_offset;int prepare_partial;
+    bool immutable;
     uint64_t owner_thread;
 };
 static inline bool d3_texture_thread(const xge3d_texture *texture)
@@ -246,6 +247,7 @@ struct xge3d_material {
     xge3d_shader *shader;float parameters[16];
 #endif
     uint32_t refs;
+    bool immutable;
     uint64_t owner_thread;
     xge3d_material_desc_t desc;
 };
@@ -272,6 +274,7 @@ int d3_model_retain(xge3d_model *model);
 #if XGE3D_ENABLE_CACHE
 int d3_model_share_textures(xge3d_model *model,int (*intern)(xge3d_texture *,xge3d_texture **,void *),void *user);
 int d3_model_cache_bytes(const xge3d_model *model,uint64_t *cpu,uint64_t *gpu);
+void d3_model_freeze_assets(xge3d_model *model);
 #endif
 int d3_mesh_detach_gpu(xge3d_mesh *mesh);
 int d3_texture_detach_gpu(xge3d_texture *texture);

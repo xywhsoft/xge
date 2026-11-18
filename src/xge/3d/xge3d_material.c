@@ -357,7 +357,7 @@ int xge3dMaterialGetParams(const xge3d_material *m,xge3d_material_params_t *out)
 int xge3dMaterialSetParams(xge3d_material *m,const xge3d_material_params_t *params)
 {
     if(!m)return XGE_ERROR_INVALID_ARGUMENT;
-    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     int status=d3_material_validate_params(params);
     if(status==XGE_OK)memcpy(&m->desc,params,sizeof(*params));
     return status;
@@ -375,7 +375,7 @@ int xge3dMaterialSetMap(xge3d_material *m,int slot,xge3d_texture *texture,
     const xge3d_texture_mapping_t *mapping)
 {
     if(!m)return XGE_ERROR_INVALID_ARGUMENT;
-    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     xge3d_texture_mapping_t v=mapping?*mapping:xge3dTextureMappingDefault();
     xge3d_texture_binding_t next={texture,v.texcoord,{v.offset[0],v.offset[1]},
         {v.scale[0],v.scale[1]},v.rotation};
@@ -400,7 +400,7 @@ int xge3dMaterialMapTextureOwned(const xge3d_material *m,int slot,xge3d_texture 
 int xge3dMaterialSetDesc(xge3d_material *m,const xge3d_material_desc_t *d)
 {
     if(!m){return XGE_ERROR_INVALID_ARGUMENT;}
-    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     int result=d3_material_validate(d);if(result){return result;}
     int i=0;for(;i<XGE3D_MAP_COUNT;++i){if(d->maps[i].texture&&!d3_texture_retain(d->maps[i].texture)){break;}}
     if(i!=XGE3D_MAP_COUNT){while(i--){xge3dTextureFree(d->maps[i].texture);}return XGE_ERROR_INVALID_STATE;}
@@ -422,7 +422,7 @@ int xge3dTextureUpdate(xge3d_texture *t,int x,int y,int width,int height,const v
 {
     if(!t||!pixels||x<0||y<0||width<=0||height<=0||x>t->width-width||y>t->height-height||
         width>INT_MAX/4||stride<width*4||(size_t)stride>SIZE_MAX/(size_t)height){return XGE_ERROR_INVALID_ARGUMENT;}
-    if(!d3_texture_thread(t))return XGE_ERROR_INVALID_STATE;
+    if(!d3_texture_thread(t)||t->immutable)return XGE_ERROR_INVALID_STATE;
     if(t->target){return XGE_ERROR_UNSUPPORTED;}
     if(t->prepare_partial){return XGE_ERROR_INVALID_STATE;}
     if(t->id){

@@ -5244,7 +5244,11 @@ XGE_API xge3d_cache_desc_t xge3dCacheDefault(void);
  * Provider URIs are exact strings. The provider registry must remain stable
  * until CacheFree completes. The worker is created lazily on first Request. */
 XGE_API int xge3dCacheCreate(const xge3d_cache_desc_t *desc,xge3d_cache **out);
+/* Managed cache and models keep independent graphics owners. Shared assets
+ * published by this cache reject in-place mutation. */
+XGE_API int xge3dCacheCreateOwned(const xge3d_cache_desc_t *desc,xge3d_cache **out);
 XGE_API int xge3dCacheFree(xge3d_cache *cache);
+XGE_API int xge3dCacheReleaseOwnerChecked(xge3d_cache *cache,bool *consumed);
 /* Returns an owned model reference. Shared models/materials/textures are treated
  * as immutable; instance node colors/material overrides remain independent. */
 XGE_API int xge3dCacheLoad(xge3d_cache *cache,const char *uri,xge3d_model **out);

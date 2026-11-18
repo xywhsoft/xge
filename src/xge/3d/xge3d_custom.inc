@@ -93,7 +93,7 @@ int xge3dShaderReleaseOwnerChecked(xge3d_shader *s,bool *consumed)
 int xge3dMaterialSetShader(xge3d_material *m,xge3d_shader *s,const float parameters[16])
 {
     if(!m)return XGE_ERROR_INVALID_ARGUMENT;
-    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     if(parameters){for(int i=0;i<16;++i){if(!isfinite(parameters[i])){return XGE_ERROR_INVALID_ARGUMENT;}}}
     if(s && !d3_shader_retain(s))return XGE_ERROR_INVALID_STATE;
     xge3d_shader *old=m->shader;m->shader=s;if(parameters){memcpy(m->parameters,parameters,sizeof(m->parameters));}else memset(m->parameters,0,sizeof(m->parameters));xge3dShaderFree(old);return XGE_OK;

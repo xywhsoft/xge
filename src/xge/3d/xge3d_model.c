@@ -784,6 +784,15 @@ int d3_model_cache_bytes(const xge3d_model *m,uint64_t *cpu,uint64_t *gpu)
         int w=t->width,h=t->height;*gpu-=(uint64_t)w*h*4;if(t->sampler.min_filter>=0x2700)while(w>1||h>1){w=w>1?w/2:1;h=h>1?h/2:1;*gpu-=(uint64_t)w*h*4;}}
     return XGE_OK;
 }
+void d3_model_freeze_assets(xge3d_model *m)
+{
+    for(size_t i=0;i<m->primitives.Count;++i)
+        ((d3_primitive*)xrtArrayGet(&m->primitives,i))->mesh->immutable=true;
+    for(size_t i=0;i<m->materials.Count;++i)
+        (*(xge3d_material**)xrtArrayGet(&m->materials,i))->immutable=true;
+    for(size_t i=0;i<m->textures.Count;++i)
+        (*(xge3d_texture**)xrtArrayGet(&m->textures,i))->immutable=true;
+}
 #endif
 #include "xge3d_instance.inc"
 #endif
