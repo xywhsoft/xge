@@ -1441,6 +1441,10 @@ XUI_API void xuiDocumentChangeSetRetain(xui_document_change_set change);
 XUI_API void xuiDocumentChangeSetRelease(xui_document_change_set change);
 /* Read a committed change set's operations and revisions. */
 XUI_API int xuiDocumentChangeSetGetInfo(xui_document_change_set change, xui_doc_change_info_t* out);
+/* Borrow the contiguous, immutable operation array. An owning reference to
+ * the change set keeps both the array and its elements alive. */
+XUI_API int xuiDocumentChangeSetGetOperations(xui_document_change_set change,
+    const xui_doc_operation_t** operations, size_t* count);
 /* Input and output may alias. Semantic positions follow semantic operations;
  * SOURCE positions follow byte patches. Only exact mappings return EXACT. */
 XUI_API int xuiDocumentMapPosition(xui_document_change_set change, const xui_doc_position_t* before, xui_doc_position_t* after, int* mapping);

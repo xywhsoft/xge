@@ -828,6 +828,15 @@ XUI_API int xuiDocumentChangeSetGetInfo(xui_document_change_set c, xui_doc_chang
     out->iDomain = c->domain; out->iInputGeneration = c->input_generation;
     return XUI_OK;
 }
+XUI_API int xuiDocumentChangeSetGetOperations(xui_document_change_set change,
+    const xui_doc_operation_t** operations, size_t* count)
+{
+    if (!change || !operations || !count) return XUI_ERROR_INVALID_ARGUMENT;
+    if (change->count > SIZE_MAX / sizeof(*change->ops)) return XUI_ERROR_LIMIT_EXCEEDED;
+    *operations = change->ops;
+    *count = (size_t)change->count;
+    return XUI_OK;
+}
 doc_history* doc_history_prepare(xui_document_transaction t, doc_history* old)
 {
     doc_history* h = doc_alloc(t->draft->allocator, sizeof(*h));
