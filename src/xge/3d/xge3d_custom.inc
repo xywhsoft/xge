@@ -22,24 +22,86 @@ int xge3dShaderCreate(const xge3d_shader_desc_t *d,xge3d_shader **out)
 #endif
     xrtFree(vs);xrtFree(fs);if(result){xge3dShaderFree(s);return result;}d3_program_locations(&s->program);*out=s;return XGE_OK;
 }
-void xge3dShaderFree(xge3d_shader *s)
+static bool d3_shader_thread(const xge3d_shader *s)
 {
-    if(!s||--s->refs){return;}if(s->context==__xge3dContext()){xgeShaderFree(&s->program.shader);
+    return !s->owner_thread || s->owner_thread==xrtThreadCurrentId();
+}
+static bool d3_shader_retain(xge3d_shader *s)
+{
+    if(!d3_shader_thread(s)||s->refs==UINT32_MAX)return false;
+    ++s->refs;
+    return true;
+}
+static int d3_shader_release(xge3d_shader *s,bool *consumed)
+{
+    if(!s)return XGE_OK;
+    bool managed=s->owner_thread!=0;
+    if(!d3_shader_thread(s))return XGE_ERROR_INVALID_STATE;
+    uint64_t current=s->refs==1?__xge3dContext():0;
+    if(managed && current && s->context!=current)return XGE_ERROR_INVALID_STATE;
+    if(consumed)*consumed=true;
+    if(--s->refs)return XGE_OK;
+    if(s->context==current){
+        xgeShaderFree(&s->program.shader);
 #if XGE3D_ENABLE_SHADOW
         xgeShaderFree(&s->program.depth_shader);
 #endif
-    }xrtFree(s);
+    }
+    xrtFree(s);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dShaderFree(xge3d_shader *s){(void)d3_shader_release(s,NULL);}
+
+int xge3dShaderCreateOwned(const xge3d_shader_desc_t *desc,xge3d_shader **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=xge3dShaderCreate(desc,out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
+int xge3dShaderShareOwned(xge3d_shader *s,xge3d_shader **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!s)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_shader_retain(s))return XGE_ERROR_INVALID_STATE;
+    if(!s->owner_thread){
+        int status=s->context==__xge3dContext()
+            ? xgeInternalGraphicsOwnerAcquire():XGE_ERROR_INVALID_STATE;
+        if(status!=XGE_OK){
+            --s->refs;
+            return status;
+        }
+        s->owner_thread=xrtThreadCurrentId();
+    }
+    *out=s;
+    return XGE_OK;
+}
+int xge3dShaderReleaseOwnerChecked(xge3d_shader *s,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return s&&s->owner_thread?d3_shader_release(s,consumed):XGE_ERROR_INVALID_ARGUMENT;
 }
 int xge3dMaterialSetShader(xge3d_material *m,xge3d_shader *s,const float parameters[16])
 {
-    if(!m){return XGE_ERROR_INVALID_ARGUMENT;}if(parameters){for(int i=0;i<16;++i){if(!isfinite(parameters[i])){return XGE_ERROR_INVALID_ARGUMENT;}}}
-    if(s){if(s->refs==UINT32_MAX){return XGE_ERROR_INVALID_STATE;}++s->refs;}
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(parameters){for(int i=0;i<16;++i){if(!isfinite(parameters[i])){return XGE_ERROR_INVALID_ARGUMENT;}}}
+    if(s && !d3_shader_retain(s))return XGE_ERROR_INVALID_STATE;
     xge3d_shader *old=m->shader;m->shader=s;if(parameters){memcpy(m->parameters,parameters,sizeof(m->parameters));}else memset(m->parameters,0,sizeof(m->parameters));xge3dShaderFree(old);return XGE_OK;
 }
 static int d3_select_program(xge3d_renderer *r,const xge3d_node_data *n)
 {
     xge3d_shader *s=n->material?n->material->shader:NULL;
-    if(s&&s->context!=r->context){return XGE_ERROR_INVALID_STATE;}r->program=s?&s->program:&r->base;return XGE_OK;
+    if(s&&(!d3_shader_thread(s)||s->context!=r->context)){return XGE_ERROR_INVALID_STATE;}r->program=s?&s->program:&r->base;return XGE_OK;
 }
 static void d3_custom_bounds(const xge3d_node_data *n,xge3d_mat4_t world,xge3d_aabb_t *box)
 {
@@ -52,4 +114,37 @@ static void d3_custom_bounds(const xge3d_node_data *n,xge3d_mat4_t world,xge3d_a
     for(int i=0;i<3;++i){double margin=n->material->shader->margin*scale*(fabs(world.m[i])+fabs(world.m[4+i])+fabs(world.m[8+i]));
         (&box->min.x)[i]-=(float)margin;(&box->max.x)[i]+=(float)margin;}
 }
+#else
+int xge3dShaderCreateOwned(const xge3d_shader_desc_t *desc,xge3d_shader **out)
+{
+    (void)desc;
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    return XGE_ERROR_UNSUPPORTED;
+}
+int xge3dShaderShareOwned(xge3d_shader *shader,xge3d_shader **out)
+{
+    (void)shader;
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    return XGE_ERROR_UNSUPPORTED;
+}
+int xge3dShaderReleaseOwnerChecked(xge3d_shader *shader,bool *consumed)
+{
+    (void)shader;
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return XGE_ERROR_UNSUPPORTED;
+}
+int xge3dMaterialSetShader(xge3d_material *material,xge3d_shader *shader,const float parameters[16])
+{
+    (void)material;(void)shader;(void)parameters;
+    return XGE_ERROR_UNSUPPORTED;
+}
 #endif
+
+int xge3dShaderReleaseChecked(xge3d_shader *s)
+{
+    bool consumed;
+    return xge3dShaderReleaseOwnerChecked(s,&consumed);
+}

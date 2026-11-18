@@ -446,9 +446,19 @@ int xge3dNodeSetMaterial(xge3d_scene *s, xge3d_node_t node, xge3d_material *mate
     return XGE_OK;
 }
 
+int xge3dNodeGetMaterialOwned(xge3d_scene *s,xge3d_node_t node,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xge3d_node_data *n=d3_node(s,node);
+    if(!n)return XGE_ERROR_INVALID_ARGUMENT;
+    return n->material?xge3dMaterialShareOwned(n->material,out):XGE_OK;
+}
+
 int xge3dNodeSetMaterialTree(xge3d_scene *s,xge3d_node_t handle,xge3d_material *material)
 {
     xge3d_node_data *root=d3_node(s,handle);if(!root)return XGE_ERROR_INVALID_ARGUMENT;
+    if(material && !d3_material_thread(material))return XGE_ERROR_INVALID_STATE;
     xrtArrayClear(&s->scratch);
     for(xge3d_node_data *n=root;n;n=d3_subtree_next(n,root)){
         if(n->mesh&&n->material!=material&&!xrtArrayPush(&s->scratch,&n))return XGE_ERROR_OUT_OF_MEMORY;

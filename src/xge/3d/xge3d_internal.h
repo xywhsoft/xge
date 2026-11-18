@@ -216,13 +216,22 @@ struct xge3d_texture {
     size_t prepare_offset;int prepare_partial;
     uint64_t owner_thread;
 };
+static inline bool d3_texture_thread(const xge3d_texture *texture)
+{
+    return !texture->owner_thread || texture->owner_thread==xrtThreadCurrentId();
+}
 struct xge3d_material {
 #if XGE3D_ENABLE_SHADER
     xge3d_shader *shader;float parameters[16];
 #endif
     uint32_t refs;
+    uint64_t owner_thread;
     xge3d_material_desc_t desc;
 };
+static inline bool d3_material_thread(const xge3d_material *material)
+{
+    return !material->owner_thread || material->owner_thread==xrtThreadCurrentId();
+}
 #if XGE3D_ENABLE_DYNAMIC
 struct xge3d_target {
     xge_texture_t texture;

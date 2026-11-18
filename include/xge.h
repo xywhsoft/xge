@@ -4301,6 +4301,16 @@ typedef struct xge3d_material_desc_t {
     int alpha_mode, double_sided, unlit;
     xge3d_texture_binding_t maps[XGE3D_MAP_COUNT];
 } xge3d_material_desc_t;
+/* Pointer-free material factors and texture coordinates. */
+typedef struct xge3d_material_params_t {
+    float base_color[4], metallic, roughness, emissive[3];
+    float normal_scale, occlusion_strength, alpha_cutoff;
+    int alpha_mode, double_sided, unlit;
+} xge3d_material_params_t;
+typedef struct xge3d_texture_mapping_t {
+    int texcoord;
+    float offset[2], scale[2], rotation;
+} xge3d_texture_mapping_t;
 typedef struct xge3d_mesh_desc_t {
     const xge3d_vertex_t *vertices;
     size_t vertex_count;
@@ -4551,6 +4561,10 @@ XGE_API int xge3dTextureCreate(const xge3d_texture_desc_t *desc, xge3d_texture *
  * The final reference releases the engine lease, including renderer references. */
 XGE_API int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t bytes,
     int srgb,const xge3d_sampler_t *sampler,xge3d_texture **out);
+XGE_API int xge3dTextureShareOwned(xge3d_texture *texture,xge3d_texture **out);
+/* Bounds the last row by bytes. A stride of zero uses tightly packed RGBA8. */
+XGE_API int xge3dTextureUpdateRGBA(xge3d_texture *texture,int x,int y,int width,int height,
+    const void *pixels,size_t bytes,int stride);
 XGE_API int xge3dTextureReleaseOwnerChecked(xge3d_texture *texture,bool *consumed);
 XGE_API int xge3dTextureReleaseChecked(xge3d_texture *texture);
 /* 释放一个 3D 纹理引用。 */
@@ -4559,12 +4573,27 @@ XGE_API void xge3dTextureFree(xge3d_texture *texture);
 XGE_API xge3d_material_desc_t xge3dMaterialDefault(void);
 /* 按描述创建材质并持有其中的纹理引用。 */
 XGE_API int xge3dMaterialCreate(const xge3d_material_desc_t *desc, xge3d_material **out);
+/* Managed material, on the graphics creator thread. NULL selects defaults.
+ * Maps and shaders retain independent native references. */
+XGE_API xge3d_material_params_t xge3dMaterialParamsDefault(void);
+XGE_API xge3d_texture_mapping_t xge3dTextureMappingDefault(void);
+XGE_API int xge3dMaterialCreateOwned(const xge3d_material_params_t *params,xge3d_material **out);
+XGE_API int xge3dMaterialShareOwned(xge3d_material *material,xge3d_material **out);
+XGE_API int xge3dMaterialReleaseOwnerChecked(xge3d_material *material,bool *consumed);
+XGE_API int xge3dMaterialReleaseChecked(xge3d_material *material);
+XGE_API int xge3dMaterialGetParams(const xge3d_material *material,xge3d_material_params_t *out);
+XGE_API int xge3dMaterialSetParams(xge3d_material *material,const xge3d_material_params_t *params);
+XGE_API int xge3dMaterialGetMapping(const xge3d_material *material,int slot,xge3d_texture_mapping_t *out);
+XGE_API int xge3dMaterialSetMap(xge3d_material *material,int slot,xge3d_texture *texture,
+    const xge3d_texture_mapping_t *mapping);
+XGE_API int xge3dMaterialMapTextureOwned(const xge3d_material *material,int slot,xge3d_texture **out);
 /* 释放一个材质引用。 */
 XGE_API void xge3dMaterialFree(xge3d_material *material);
 /* 读取材质描述，其中纹理指针为借用引用。 */
 XGE_API int xge3dMaterialGetDesc(const xge3d_material *material, xge3d_material_desc_t *out);
 /* 为节点设置材质并由节点持有相应引用。 */
 XGE_API int xge3dNodeSetMaterial(xge3d_scene *scene, xge3d_node_t node, xge3d_material *material);
+XGE_API int xge3dNodeGetMaterialOwned(xge3d_scene *scene,xge3d_node_t node,xge3d_material **out);
 /* Apply to mesh nodes under root, including imported multi-primitive children.
  * Unrelated scene nodes are unchanged. Validation/allocation failure publishes
  * no changes; NULL assigns the default material to the selected mesh nodes,
@@ -5278,19 +5307,23 @@ XGE_API int xge3dSceneMoveShape(xge3d_scene *scene,const xge3d_shape_t *shape,co
     xge3d_motion_result_t *out);
 #endif
 
-#if XGE3D_ENABLE_SHADER
 typedef struct xge3d_shader xge3d_shader;
 typedef struct xge3d_shader_desc_t {
     uint32_t size;
     const char *vertex,*surface; /* NULL = identity. Function contracts in guide. */
     float bounds_margin; /* Nonnegative local displacement bound, incl shadows. */
 } xge3d_shader_desc_t;
+#if XGE3D_ENABLE_SHADER
 /* Compile on context thread. The same hooks feed normal/skinned/instanced and
  * shadow programs. Four vec4 xge3dParams uniforms are copied per material. */
 XGE_API int xge3dShaderCreate(const xge3d_shader_desc_t *desc,xge3d_shader **out);
 XGE_API void xge3dShaderFree(xge3d_shader *shader);
-XGE_API int xge3dMaterialSetShader(xge3d_material *material,xge3d_shader *shader,const float parameters[16]);
 #endif
+XGE_API int xge3dShaderCreateOwned(const xge3d_shader_desc_t *desc,xge3d_shader **out);
+XGE_API int xge3dShaderShareOwned(xge3d_shader *shader,xge3d_shader **out);
+XGE_API int xge3dShaderReleaseOwnerChecked(xge3d_shader *shader,bool *consumed);
+XGE_API int xge3dShaderReleaseChecked(xge3d_shader *shader);
+XGE_API int xge3dMaterialSetShader(xge3d_material *material,xge3d_shader *shader,const float parameters[16]);
 
 #if XGE3D_ENABLE_BILLBOARD
 #define XGE3D_BILLBOARD_ALPHA 0

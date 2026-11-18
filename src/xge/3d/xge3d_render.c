@@ -119,7 +119,7 @@ typedef struct d3_program {
 #endif
 } d3_program;
 #if XGE3D_ENABLE_SHADER
-struct xge3d_shader {d3_program program;uint32_t refs;uint64_t context;float margin;};
+struct xge3d_shader {d3_program program;uint32_t refs;uint64_t context,owner_thread;float margin;};
 #endif
 struct xge3d_renderer {
 #if XGE3D_ENABLE_DEBUG_DRAW || XGE3D_ENABLE_BILLBOARD
@@ -342,6 +342,7 @@ int xge3dTexturePrepare(xge3d_texture *texture,const xge3d_upload_budget_t *budg
 {
     xge3d_upload_stats_t stats={0};if(out){*out=stats;}
     if(!texture||!budget){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_texture_thread(texture))return XGE_ERROR_INVALID_STATE;
 #if XGE3D_ENABLE_DYNAMIC
     if(texture->target){if(texture->target->context!=__xge3dContext()){return XGE_ERROR_INVALID_STATE;}stats.completed=1;if(out){*out=stats;}return XGE_OK;}
 #endif

@@ -7,6 +7,7 @@
 int xge3dTextureResourceInfo(const xge3d_texture *texture,xge3d_resource_info_t *out)
 {
     if(!texture||!out||out->size!=sizeof(*out)){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_texture_thread(texture))return XGE_ERROR_INVALID_STATE;
     *out=(xge3d_resource_info_t){.size=sizeof(*out),.references=texture->refs,.textures=1};
 #if XGE3D_ENABLE_DYNAMIC
     if(texture->target){return XGE_OK;} /* View owns no separate pixel storage. */
@@ -28,7 +29,7 @@ static int d3_wrap(int w)
 
 int d3_texture_retain(xge3d_texture *t)
 {
-    if (!t || (t->owner_thread && t->owner_thread!=xrtThreadCurrentId()) ||
+    if (!t || !d3_texture_thread(t) ||
         t->refs==UINT32_MAX) {return 0;}
     ++t->refs; return 1;
 }
@@ -65,9 +66,41 @@ int xge3dTextureReleaseChecked(xge3d_texture *t)
     bool consumed;
     return xge3dTextureReleaseOwnerChecked(t,&consumed);
 }
+int xge3dTextureShareOwned(xge3d_texture *t,xge3d_texture **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!t)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_texture_retain(t))return XGE_ERROR_INVALID_STATE;
+    if(!t->owner_thread){
+        int status=XGE_OK;
+        if(t->context && t->context!=__xge3dContext())status=XGE_ERROR_INVALID_STATE;
+        else {
+#if XGE3D_ENABLE_DYNAMIC
+            if(t->target){
+                uint64_t thread=xrtThreadCurrentId();
+                if(t->target->owner_thread && t->target->owner_thread!=thread)
+                    status=XGE_ERROR_INVALID_STATE;
+                else if(!t->target->owner_thread){
+                    status=xgeInternalGraphicsOwnerAcquire();
+                    if(status==XGE_OK)t->target->owner_thread=thread;
+                }
+            } else
+#endif
+                status=xgeInternalGraphicsOwnerAcquire();
+        }
+        if(status!=XGE_OK){
+            --t->refs;
+            return status;
+        }
+        t->owner_thread=xrtThreadCurrentId();
+    }
+    *out=t;
+    return XGE_OK;
+}
 int d3_texture_detach_gpu(xge3d_texture *t)
 {
-    if(!t||t->refs!=1){return XGE_ERROR_INVALID_STATE;}
+    if(!t||!d3_texture_thread(t)||t->refs!=1){return XGE_ERROR_INVALID_STATE;}
     if(t->id){if(!__xge3dContext()||t->context!=__xge3dContext()){return XGE_ERROR_INVALID_STATE;}xge_glDeleteTextures(1,&t->id);}
     t->id=0;t->context=0;t->prepare_offset=0;t->prepare_partial=0;return XGE_OK;
 }
@@ -128,6 +161,7 @@ int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t b
 /* Called only inside a renderer's saved GL state, on its context thread. */
 int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
 {
+    if(!d3_texture_thread(t))return XGE_ERROR_INVALID_STATE;
 #if XGE3D_ENABLE_DYNAMIC
     if(t->target){
         if(t->target->context!=__xge3dContext()){return XGE_ERROR_INVALID_STATE;}
@@ -172,19 +206,65 @@ xge3d_material_desc_t xge3dMaterialDefault(void)
 }
 int d3_material_retain(xge3d_material *m)
 {
-    if (!m || m->refs==UINT32_MAX) {return 0;}
+    if (!m || !d3_material_thread(m) || m->refs==UINT32_MAX) {return 0;}
     ++m->refs; return 1;
 }
-void xge3dMaterialFree(xge3d_material *m)
+static int d3_material_release(xge3d_material *m,bool *consumed)
 {
-    if (!m || --m->refs) {return;}
+    if(!m)return XGE_OK;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    if(consumed)*consumed=true;
+    if(--m->refs)return XGE_OK;
+    bool managed=m->owner_thread!=0;
     for (int i=0;i<XGE3D_MAP_COUNT;++i) {xge3dTextureFree(m->desc.maps[i].texture);}
 #if XGE3D_ENABLE_SHADER
     xge3dShaderFree(m->shader);
 #endif
     xrtFree(m);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
 }
-static int d3_material_validate(const xge3d_material_desc_t *d)
+void xge3dMaterialFree(xge3d_material *m){(void)d3_material_release(m,NULL);}
+int xge3dMaterialReleaseOwnerChecked(xge3d_material *m,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return m&&m->owner_thread?d3_material_release(m,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dMaterialReleaseChecked(xge3d_material *m)
+{
+    bool consumed;
+    return xge3dMaterialReleaseOwnerChecked(m,&consumed);
+}
+int xge3dMaterialShareOwned(xge3d_material *m,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_retain(m))return XGE_ERROR_INVALID_STATE;
+    if(!m->owner_thread){
+        int status=xgeInternalGraphicsOwnerAcquire();
+        if(status!=XGE_OK){
+            --m->refs;
+            return status;
+        }
+        m->owner_thread=xrtThreadCurrentId();
+    }
+    *out=m;
+    return XGE_OK;
+}
+
+/* The public value record is the numeric prefix, before pointer alignment. */
+_Static_assert(offsetof(xge3d_material_desc_t,unlit)==offsetof(xge3d_material_params_t,unlit) &&
+    sizeof(xge3d_material_params_t)<=offsetof(xge3d_material_desc_t,maps),
+    "material parameters must match the native numeric prefix");
+static xge3d_material_params_t d3_material_params(const xge3d_material_desc_t *desc)
+{
+    xge3d_material_params_t params;
+    memcpy(&params,desc,sizeof(params));
+    return params;
+}
+
+static int d3_material_validate_params(const xge3d_material_params_t *d)
 {
     if (!d || !isfinite(d->metallic) || d->metallic<0 || d->metallic>1 ||
         !isfinite(d->roughness) || d->roughness<0 || d->roughness>1 ||
@@ -195,16 +275,28 @@ static int d3_material_validate(const xge3d_material_desc_t *d)
     for (int i=0;i<4;++i) {if (!isfinite(d->base_color[i]) || d->base_color[i]<0 || d->base_color[i]>1)
         {return XGE_ERROR_INVALID_ARGUMENT;}}
     for (int i=0;i<3;++i) {if (!isfinite(d->emissive[i]) || d->emissive[i]<0) {return XGE_ERROR_INVALID_ARGUMENT;}}
-    for (int i=0;i<XGE3D_MAP_COUNT;++i) {
-        const xge3d_texture_binding_t *b=&d->maps[i];
-#if XGE3D_ENABLE_DYNAMIC
-        if(b->texture&&b->texture->target&&i!=XGE3D_MAP_BASE_COLOR&&i!=XGE3D_MAP_EMISSIVE){return XGE_ERROR_UNSUPPORTED;}
-#endif
-        if (b->texcoord<0 || b->texcoord>1 || !isfinite(b->rotation)) {return XGE_ERROR_INVALID_ARGUMENT;}
-        for (int j=0;j<2;++j) {if (!isfinite(b->offset[j]) || !isfinite(b->scale[j]))
-            {return XGE_ERROR_INVALID_ARGUMENT;}}
-    }
     return XGE_OK;
+}
+static int d3_material_validate_map(int slot,const xge3d_texture_binding_t *map)
+{
+    if(slot<0 || slot>=XGE3D_MAP_COUNT)return XGE_ERROR_INVALID_ARGUMENT;
+#if XGE3D_ENABLE_DYNAMIC
+    if(map->texture && map->texture->target && slot!=XGE3D_MAP_BASE_COLOR && slot!=XGE3D_MAP_EMISSIVE)
+        return XGE_ERROR_UNSUPPORTED;
+#endif
+    if(map->texcoord<0 || map->texcoord>1 || !isfinite(map->rotation))return XGE_ERROR_INVALID_ARGUMENT;
+    for(int axis=0;axis<2;++axis)if(!isfinite(map->offset[axis]) || !isfinite(map->scale[axis]))
+        return XGE_ERROR_INVALID_ARGUMENT;
+    return XGE_OK;
+}
+static int d3_material_validate(const xge3d_material_desc_t *d)
+{
+    if(!d)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_material_params_t params=d3_material_params(d);
+    int status=d3_material_validate_params(&params);
+    for(int slot=0;status==XGE_OK && slot<XGE3D_MAP_COUNT;++slot)
+        status=d3_material_validate_map(slot,&d->maps[slot]);
+    return status;
 }
 int xge3dMaterialCreate(const xge3d_material_desc_t *d, xge3d_material **out)
 {
@@ -225,12 +317,90 @@ int xge3dMaterialCreate(const xge3d_material_desc_t *d, xge3d_material **out)
 int xge3dMaterialGetDesc(const xge3d_material *m, xge3d_material_desc_t *out)
 {
     if (!m || !out) {return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
     *out=m->desc; return XGE_OK;
+}
+
+xge3d_material_params_t xge3dMaterialParamsDefault(void)
+{
+    xge3d_material_desc_t desc=xge3dMaterialDefault();
+    return d3_material_params(&desc);
+}
+xge3d_texture_mapping_t xge3dTextureMappingDefault(void)
+{
+    return (xge3d_texture_mapping_t){.scale={1,1}};
+}
+int xge3dMaterialCreateOwned(const xge3d_material_params_t *params,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xge3d_material_desc_t desc=xge3dMaterialDefault();
+    if(params)memcpy(&desc,params,sizeof(*params));
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=xge3dMaterialCreate(&desc,out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
+int xge3dMaterialGetParams(const xge3d_material *m,xge3d_material_params_t *out)
+{
+    if(!m||!out)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    *out=d3_material_params(&m->desc);
+    return XGE_OK;
+}
+int xge3dMaterialSetParams(xge3d_material *m,const xge3d_material_params_t *params)
+{
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    int status=d3_material_validate_params(params);
+    if(status==XGE_OK)memcpy(&m->desc,params,sizeof(*params));
+    return status;
+}
+int xge3dMaterialGetMapping(const xge3d_material *m,int slot,xge3d_texture_mapping_t *out)
+{
+    if(!m||!out||slot<0||slot>=XGE3D_MAP_COUNT)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    const xge3d_texture_binding_t *map=&m->desc.maps[slot];
+    *out=(xge3d_texture_mapping_t){map->texcoord,{map->offset[0],map->offset[1]},
+        {map->scale[0],map->scale[1]},map->rotation};
+    return XGE_OK;
+}
+int xge3dMaterialSetMap(xge3d_material *m,int slot,xge3d_texture *texture,
+    const xge3d_texture_mapping_t *mapping)
+{
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    xge3d_texture_mapping_t v=mapping?*mapping:xge3dTextureMappingDefault();
+    xge3d_texture_binding_t next={texture,v.texcoord,{v.offset[0],v.offset[1]},
+        {v.scale[0],v.scale[1]},v.rotation};
+    int status=d3_material_validate_map(slot,&next);
+    if(status!=XGE_OK)return status;
+    if(texture && !d3_texture_retain(texture))return XGE_ERROR_INVALID_STATE;
+    xge3d_texture *old=m->desc.maps[slot].texture;
+    m->desc.maps[slot]=next;
+    xge3dTextureFree(old);
+    return XGE_OK;
+}
+int xge3dMaterialMapTextureOwned(const xge3d_material *m,int slot,xge3d_texture **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m||slot<0||slot>=XGE3D_MAP_COUNT)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    xge3d_texture *texture=m->desc.maps[slot].texture;
+    return texture?xge3dTextureShareOwned(texture,out):XGE_OK;
 }
 #if XGE3D_ENABLE_DYNAMIC
 int xge3dMaterialSetDesc(xge3d_material *m,const xge3d_material_desc_t *d)
 {
-    if(!m){return XGE_ERROR_INVALID_ARGUMENT;}int result=d3_material_validate(d);if(result){return result;}
+    if(!m){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    int result=d3_material_validate(d);if(result){return result;}
     int i=0;for(;i<XGE3D_MAP_COUNT;++i){if(d->maps[i].texture&&!d3_texture_retain(d->maps[i].texture)){break;}}
     if(i!=XGE3D_MAP_COUNT){while(i--){xge3dTextureFree(d->maps[i].texture);}return XGE_ERROR_INVALID_STATE;}
     xge3d_material_desc_t old=m->desc;m->desc=*d;
@@ -251,6 +421,7 @@ int xge3dTextureUpdate(xge3d_texture *t,int x,int y,int width,int height,const v
 {
     if(!t||!pixels||x<0||y<0||width<=0||height<=0||x>t->width-width||y>t->height-height||
         width>INT_MAX/4||stride<width*4||(size_t)stride>SIZE_MAX/(size_t)height){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_texture_thread(t))return XGE_ERROR_INVALID_STATE;
     if(t->target){return XGE_ERROR_UNSUPPORTED;}
     if(t->prepare_partial){return XGE_ERROR_INVALID_STATE;}
     if(t->id){
@@ -270,6 +441,23 @@ int xge3dTextureUpdate(xge3d_texture *t,int x,int y,int width,int height,const v
     return XGE_OK;
 }
 #endif
+
+int xge3dTextureUpdateRGBA(xge3d_texture *texture,int x,int y,int width,int height,
+    const void *pixels,size_t bytes,int stride)
+{
+#if XGE3D_ENABLE_DYNAMIC
+    if(!texture || width<=0 || width>INT_MAX/4 || height<=0 || !pixels)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    int row=width*4;
+    if(!stride)stride=row;
+    if(stride<row || bytes<(size_t)row || (size_t)(height-1)>(bytes-row)/(size_t)stride)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dTextureUpdate(texture,x,y,width,height,pixels,stride);
+#else
+    (void)texture;(void)x;(void)y;(void)width;(void)height;(void)pixels;(void)bytes;(void)stride;
+    return XGE_ERROR_UNSUPPORTED;
+#endif
+}
 
 int xge3dTextureFromTargetOwned(xge3d_target *target,xge3d_texture **out)
 {
