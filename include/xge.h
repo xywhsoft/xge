@@ -4231,6 +4231,7 @@ XGE_API int xgeActionsResetChecked(xge_actions *actions);
  * a node destroys descendants. Reparenting retains the local matrix. */
 typedef struct xge3d_scene xge3d_scene;
 typedef struct xge3d_mesh xge3d_mesh;
+typedef struct xge3d_mesh_geometry xge3d_mesh_geometry;
 typedef struct xge3d_renderer xge3d_renderer;
 typedef struct xge3d_target xge3d_target;
 typedef struct xge3d_texture xge3d_texture;
@@ -4520,6 +4521,21 @@ XGE_API int xge3dMeshCreateU32Owned(const xge3d_vertex_t *vertices,size_t vertex
 XGE_API int xge3dMeshShareOwned(xge3d_mesh *mesh,xge3d_mesh **out);
 XGE_API int xge3dMeshReleaseOwnerChecked(xge3d_mesh *mesh,bool *consumed);
 XGE_API int xge3dMeshReleaseChecked(xge3d_mesh *mesh);
+/* Retain the current CPU geometry of a managed mesh on its creator thread.
+ * The arrays stay readable across mesh updates and release. The geometry has
+ * its own CPU lifetime. It does not retain the mesh or its GPU resources. */
+XGE_API int xge3dMeshAcquireGeometry(xge3d_mesh *mesh,xge3d_mesh_geometry **out);
+XGE_API int xge3dMeshGeometryAddRef(xge3d_mesh_geometry *geometry);
+XGE_API int xge3dMeshGeometryReleaseChecked(xge3d_mesh_geometry *geometry);
+XGE_API int xge3dMeshGeometryVertices(const xge3d_mesh_geometry *geometry,
+    const xge3d_vertex_t **data,size_t *count);
+/* Both index accessors return empty for non-indexed geometry. On indexed
+ * geometry, requesting the other width fails with XGE_ERROR_INVALID_ARGUMENT. */
+XGE_API int xge3dMeshGeometryIndicesU16(const xge3d_mesh_geometry *geometry,
+    const uint16_t **data,size_t *count);
+XGE_API int xge3dMeshGeometryIndicesU32(const xge3d_mesh_geometry *geometry,
+    const uint32_t **data,size_t *count);
+XGE_API int xge3dMeshGeometryIndexBits(const xge3d_mesh_geometry *geometry);
 /* 用新描述替换网格 CPU 数据并使 GPU 上传状态失效。 */
 XGE_API int xge3dMeshUpdate(xge3d_mesh *mesh, const xge3d_mesh_desc_t *desc);
 XGE_API int xge3dMeshUpdateU16(xge3d_mesh *mesh,const xge3d_vertex_t *vertices,size_t vertex_count,

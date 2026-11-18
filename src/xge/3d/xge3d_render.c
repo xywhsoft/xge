@@ -470,6 +470,118 @@ int d3_mesh_retain(xge3d_mesh *m)
     return 1;
 }
 
+struct xge3d_mesh_geometry {
+    xarray vertices, indices;
+    uint64_t owner_thread;
+    uint32_t refs;
+    int index_bits;
+    bool detached;
+};
+
+static void d3_mesh_geometry_release(xge3d_mesh_geometry *geometry)
+{
+    if (--geometry->refs) return;
+    if (geometry->detached) {
+        xrtArrayUnit(&geometry->vertices);
+        xrtArrayUnit(&geometry->indices);
+    }
+    xrtFree(geometry);
+}
+
+static bool d3_mesh_geometry_thread(const xge3d_mesh_geometry *geometry)
+{
+    return geometry->owner_thread == xrtThreadCurrentId();
+}
+
+int xge3dMeshAcquireGeometry(xge3d_mesh *mesh, xge3d_mesh_geometry **out)
+{
+    if (!out) return XGE_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    if (!mesh) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!mesh->owner_thread || !d3_mesh_thread(mesh)) return XGE_ERROR_INVALID_STATE;
+
+    xge3d_mesh_geometry *geometry = mesh->geometry;
+    if (geometry) {
+        if (geometry->refs == UINT32_MAX) return XGE_ERROR_INVALID_STATE;
+        ++geometry->refs;
+    } else {
+        geometry = xrtMalloc(sizeof(*geometry));
+        if (!geometry) return XGE_ERROR_OUT_OF_MEMORY;
+        *geometry = (xge3d_mesh_geometry){
+            .vertices = mesh->vertices, .indices = mesh->indices,
+            .owner_thread = mesh->owner_thread, .refs = 2, .index_bits = mesh->index_bits
+        };
+        mesh->geometry = geometry;
+    }
+    *out = geometry;
+    return XGE_OK;
+}
+
+int xge3dMeshGeometryAddRef(xge3d_mesh_geometry *geometry)
+{
+    if (!geometry) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!d3_mesh_geometry_thread(geometry) || geometry->refs == UINT32_MAX)
+        return XGE_ERROR_INVALID_STATE;
+    ++geometry->refs;
+    return XGE_OK;
+}
+
+int xge3dMeshGeometryReleaseChecked(xge3d_mesh_geometry *geometry)
+{
+    if (!geometry) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!d3_mesh_geometry_thread(geometry)) return XGE_ERROR_INVALID_STATE;
+    d3_mesh_geometry_release(geometry);
+    return XGE_OK;
+}
+
+int xge3dMeshGeometryVertices(const xge3d_mesh_geometry *geometry,
+    const xge3d_vertex_t **data, size_t *count)
+{
+    if (!geometry || !data || !count) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!d3_mesh_geometry_thread(geometry)) return XGE_ERROR_INVALID_STATE;
+    *data = (const xge3d_vertex_t*)geometry->vertices.Data;
+    *count = geometry->vertices.Count;
+    return XGE_OK;
+}
+
+static int d3_mesh_geometry_indices(const xge3d_mesh_geometry *geometry, int width,
+    const void **data, size_t *count)
+{
+    if (!geometry) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!d3_mesh_geometry_thread(geometry)) return XGE_ERROR_INVALID_STATE;
+    if (geometry->index_bits && geometry->index_bits != width) return XGE_ERROR_INVALID_ARGUMENT;
+    *data = geometry->indices.Count ? geometry->indices.Data : NULL;
+    *count = geometry->indices.Count;
+    return XGE_OK;
+}
+
+int xge3dMeshGeometryIndicesU16(const xge3d_mesh_geometry *geometry,
+    const uint16_t **data, size_t *count)
+{
+    if (!data || !count) return XGE_ERROR_INVALID_ARGUMENT;
+    const void *indices;
+    int status = d3_mesh_geometry_indices(geometry, 16, &indices, count);
+    if (status == XGE_OK) *data = indices;
+    return status;
+}
+
+int xge3dMeshGeometryIndicesU32(const xge3d_mesh_geometry *geometry,
+    const uint32_t **data, size_t *count)
+{
+    if (!data || !count) return XGE_ERROR_INVALID_ARGUMENT;
+    const void *indices;
+    int status = d3_mesh_geometry_indices(geometry, 32, &indices, count);
+    if (status == XGE_OK) *data = indices;
+    return status;
+}
+
+int xge3dMeshGeometryIndexBits(const xge3d_mesh_geometry *geometry)
+{
+    if (!geometry) return XGE_ERROR_INVALID_ARGUMENT;
+    if (!d3_mesh_geometry_thread(geometry)) return XGE_ERROR_INVALID_STATE;
+    return geometry->index_bits;
+}
+
 static int d3_mesh_release(xge3d_mesh *m,bool *consumed)
 {
     if(!m)return XGE_OK;
@@ -487,7 +599,15 @@ static int d3_mesh_release(xge3d_mesh *m,bool *consumed)
         if (m->vbo) {xge_glDeleteBuffers(1,&m->vbo);}
         if (m->ibo) {xge_glDeleteBuffers(1,&m->ibo);}
     }
-    xrtArrayUnit(&m->vertices); xrtArrayUnit(&m->indices);
+    if (m->geometry) {
+        /* Update disposes of the previous mesh via this same path. Existing
+         * readers take ownership of those two allocations without copying. */
+        m->geometry->detached = true;
+        d3_mesh_geometry_release(m->geometry);
+    } else {
+        xrtArrayUnit(&m->vertices);
+        xrtArrayUnit(&m->indices);
+    }
 #if XGE3D_ENABLE_ANIMATION
     xrtArrayUnit(&m->joint_bounds);
 #endif

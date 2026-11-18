@@ -116,6 +116,7 @@ struct xge3d_mesh {
     struct d3_triangle_bvh *collision_bvh;
 #endif
     xarray vertices, indices;
+    xge3d_mesh_geometry *geometry;
 #if XGE3D_ENABLE_ANIMATION
     xarray joint_bounds;
 #endif
