@@ -115,9 +115,13 @@ struct xge3d_mesh {
     xge3d_aabb_t bounds;
     uint32_t refs, vao, vbo, ibo;
     int index_bits;
-    uint64_t context, version;
+    uint64_t context, version, owner_thread;
     size_t prepare_offset;int prepare_partial;
 };
+static inline bool d3_mesh_thread(const xge3d_mesh *mesh)
+{
+    return !mesh->owner_thread || mesh->owner_thread==xrtThreadCurrentId();
+}
 int d3_node_bounds(xge3d_scene *scene,xge3d_node_data *node,xge3d_aabb_t *out);
 int d3_frustum_box(xge3d_mat4_t matrix,xge3d_aabb_t box);
 void d3_set_local(xge3d_scene *scene,xge3d_node_data *node,xge3d_mat4_t matrix);

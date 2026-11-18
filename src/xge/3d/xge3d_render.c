@@ -268,6 +268,7 @@ static void d3_mesh_attributes(void)
 }
 static int d3_mesh_upload(xge3d_mesh *m, uint64_t *bytes)
 {
+    if(!d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
     int result=d3_ready();
     if (result!=XGE_OK) {return result;}
     if (m->context && m->context!=__xge3dContext()) {return XGE_ERROR_INVALID_STATE;}
@@ -301,6 +302,7 @@ int xge3dMeshPrepare(xge3d_mesh *m,const xge3d_upload_budget_t *budget,xge3d_upl
 {
     xge3d_upload_stats_t stats={0};if(out){*out=stats;}
     if(!m||!budget){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
     uint64_t context=__xge3dContext();if(m->context&&m->context!=context){return XGE_ERROR_INVALID_STATE;}
     if(m->vao&&!m->prepare_partial){stats.completed=1;if(out){*out=stats;}return XGE_OK;}
     if(!budget->bytes||!budget->operations){return XGE_OK;}
@@ -462,17 +464,24 @@ int d3_model_upload_step(xge3d_model *model,d3_upload_cursor *c,const xge3d_uplo
 
 int d3_mesh_retain(xge3d_mesh *m)
 {
-    if (!m || m->refs==UINT32_MAX) {return 0;}
+    if (!m || !d3_mesh_thread(m) || m->refs==UINT32_MAX) {return 0;}
     ++m->refs;
     return 1;
 }
-void xge3dMeshFree(xge3d_mesh *m)
+
+static int d3_mesh_release(xge3d_mesh *m,bool *consumed)
 {
-    if (!m || --m->refs) {return;}
+    if(!m)return XGE_OK;
+    bool managed=m->owner_thread!=0;
+    if(managed && !d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
+    uint64_t current=m->refs==1 && m->context ? __xge3dContext():0;
+    if(managed && current && m->context!=current)return XGE_ERROR_INVALID_STATE;
+    if(consumed)*consumed=true;
+    if(--m->refs)return XGE_OK;
 #if XGE3D_ENABLE_COLLISION
     d3_triangle_bvh_free(m->collision_bvh);
 #endif
-    if (m->context && m->context==__xge3dContext()) {
+    if (m->context && m->context==current) {
         if (m->vao) {xge_glDeleteVertexArrays(1,&m->vao);}
         if (m->vbo) {xge_glDeleteBuffers(1,&m->vbo);}
         if (m->ibo) {xge_glDeleteBuffers(1,&m->ibo);}
@@ -482,10 +491,46 @@ void xge3dMeshFree(xge3d_mesh *m)
     xrtArrayUnit(&m->joint_bounds);
 #endif
     xrtFree(m);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+
+void xge3dMeshFree(xge3d_mesh *m){(void)d3_mesh_release(m,NULL);}
+
+int xge3dMeshReleaseOwnerChecked(xge3d_mesh *m,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return m&&m->owner_thread?d3_mesh_release(m,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+
+int xge3dMeshReleaseChecked(xge3d_mesh *m)
+{
+    bool consumed;
+    return xge3dMeshReleaseOwnerChecked(m,&consumed);
+}
+
+int xge3dMeshShareOwned(xge3d_mesh *m,xge3d_mesh **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!m)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_mesh_retain(m))return XGE_ERROR_INVALID_STATE;
+    if(!m->owner_thread){
+        uint64_t current=__xge3dContext();
+        int status=m->context && m->context!=current
+            ? XGE_ERROR_INVALID_STATE:xgeInternalGraphicsOwnerAcquire();
+        if(status!=XGE_OK){
+            --m->refs;
+            return status;
+        }
+        m->owner_thread=xrtThreadCurrentId();
+    }
+    *out=m;
+    return XGE_OK;
 }
 int d3_mesh_detach_gpu(xge3d_mesh *m)
 {
-    if(!m||m->refs!=1){return XGE_ERROR_INVALID_STATE;}
+    if(!m||!d3_mesh_thread(m)||m->refs!=1){return XGE_ERROR_INVALID_STATE;}
     if(m->vao||m->vbo||m->ibo){
         if(!__xge3dContext()||m->context!=__xge3dContext()){return XGE_ERROR_INVALID_STATE;}
         if(m->vao){xge_glDeleteVertexArrays(1,&m->vao);}
@@ -552,19 +597,60 @@ int xge3dMeshCreate(const xge3d_mesh_desc_t *d, xge3d_mesh **out)
     *out=m;
     return XGE_OK;
 }
+static xge3d_mesh_desc_t d3_mesh_desc(const xge3d_vertex_t *vertices,size_t vertex_count,
+    const void *indices,size_t index_count,int index_bits)
+{
+    return (xge3d_mesh_desc_t){vertices,vertex_count,index_count?indices:NULL,index_count,
+        index_count?index_bits:0};
+}
+
+static int d3_mesh_create_owned(const xge3d_mesh_desc_t *desc,xge3d_mesh **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=xge3dMeshCreate(desc,out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
+
+int xge3dMeshCreateOwned(const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint16_t *indices,size_t index_count,xge3d_mesh **out)
+{
+    xge3d_mesh_desc_t desc=d3_mesh_desc(vertices,vertex_count,indices,index_count,16);
+    return d3_mesh_create_owned(&desc,out);
+}
+
+int xge3dMeshCreateU32Owned(const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint32_t *indices,size_t index_count,xge3d_mesh **out)
+{
+    xge3d_mesh_desc_t desc=d3_mesh_desc(vertices,vertex_count,indices,index_count,32);
+    return d3_mesh_create_owned(&desc,out);
+}
+
 int xge3dMeshResourceInfo(const xge3d_mesh *mesh,xge3d_resource_info_t *out)
 {
     if(!mesh||!out||out->size!=sizeof(*out)){return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_mesh_thread(mesh))return XGE_ERROR_INVALID_STATE;
     *out=(xge3d_resource_info_t){.size=sizeof(*out),.vertices=mesh->vertices.Count,.indices=mesh->indices.Count,.references=mesh->refs};
     out->cpu_payload_bytes=mesh->vertices.Count*sizeof(xge3d_vertex_t)+mesh->indices.Count*(mesh->index_bits/8);
-    if(mesh->vbo){out->gpu_payload_bytes+=mesh->vertices.Count*sizeof(xge3d_vertex_t);}
-    if(mesh->ibo){out->gpu_payload_bytes+=mesh->indices.Count*(mesh->index_bits/8);}return XGE_OK;
+    if(!mesh->owner_thread || mesh->context==__xge3dContext()){
+        if(mesh->vbo){out->gpu_payload_bytes+=mesh->vertices.Count*sizeof(xge3d_vertex_t);}
+        if(mesh->ibo){out->gpu_payload_bytes+=mesh->indices.Count*(mesh->index_bits/8);}
+    }
+    return XGE_OK;
 }
 int xge3dMeshAddRef(xge3d_mesh *mesh)
 {return !mesh?XGE_ERROR_INVALID_ARGUMENT:d3_mesh_retain(mesh)?XGE_OK:XGE_ERROR_INVALID_STATE;}
 int xge3dMeshUpdate(xge3d_mesh *m, const xge3d_mesh_desc_t *desc)
 {
     if (!m) {return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
     if (m->context && m->context!=__xge3dContext()) {return XGE_ERROR_INVALID_STATE;}
     xge3d_mesh *next=NULL;
     int result=xge3dMeshCreate(desc,&next);
@@ -572,17 +658,52 @@ int xge3dMeshUpdate(xge3d_mesh *m, const xge3d_mesh_desc_t *desc)
     xge3d_mesh previous=*m;
     uint32_t refs=m->refs;
     *m=*next; m->refs=refs;m->version=previous.version+1;
+    m->owner_thread=previous.owner_thread;previous.owner_thread=0;
     xrtAtomic64FetchAdd(&d3_geometry_version,1,XMEMORY_RELEASE);
     *next=previous; next->refs=1;
     xge3dMeshFree(next);
     return XGE_OK;
 }
 
+int xge3dMeshUpdateU16(xge3d_mesh *mesh,const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint16_t *indices,size_t index_count)
+{
+    xge3d_mesh_desc_t desc=d3_mesh_desc(vertices,vertex_count,indices,index_count,16);
+    return xge3dMeshUpdate(mesh,&desc);
+}
+
+int xge3dMeshUpdateU32(xge3d_mesh *mesh,const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint32_t *indices,size_t index_count)
+{
+    xge3d_mesh_desc_t desc=d3_mesh_desc(vertices,vertex_count,indices,index_count,32);
+    return xge3dMeshUpdate(mesh,&desc);
+}
+
 int xge3dMeshGetData(const xge3d_mesh *m, xge3d_mesh_desc_t *out)
 {
     if (!m || !out) {return XGE_ERROR_INVALID_ARGUMENT;}
+    if(!d3_mesh_thread(m))return XGE_ERROR_INVALID_STATE;
     *out=(xge3d_mesh_desc_t){(const xge3d_vertex_t*)m->vertices.Data,m->vertices.Count,
         m->indices.Count ? m->indices.Data : NULL,m->indices.Count,m->index_bits};
+    return XGE_OK;
+}
+
+int xge3dMeshVertexAt(const xge3d_mesh *mesh,size_t index,xge3d_vertex_t *out)
+{
+    if(!mesh || !out)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_mesh_thread(mesh))return XGE_ERROR_INVALID_STATE;
+    if(index>=mesh->vertices.Count)return XGE_ERROR_NOT_FOUND;
+    *out=((const xge3d_vertex_t*)mesh->vertices.Data)[index];
+    return XGE_OK;
+}
+
+int xge3dMeshIndexAt(const xge3d_mesh *mesh,size_t index,uint32_t *out)
+{
+    if(!mesh || !out)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_mesh_thread(mesh))return XGE_ERROR_INVALID_STATE;
+    if(index>=mesh->indices.Count)return XGE_ERROR_NOT_FOUND;
+    *out=mesh->index_bits==16 ? ((const uint16_t*)mesh->indices.Data)[index]
+        : ((const uint32_t*)mesh->indices.Data)[index];
     return XGE_OK;
 }
 

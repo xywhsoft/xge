@@ -4483,8 +4483,22 @@ XGE_API int xge3dNodeSetVisible(xge3d_scene *scene, xge3d_node_t node, int visib
  * its reference with MeshFree. GPU upload/update/release and scene destruction
  * with uploaded meshes must run on the owning context thread. */
 XGE_API int xge3dMeshCreate(const xge3d_mesh_desc_t *desc, xge3d_mesh **out);
+/* Managed meshes reserve the graphics lifetime until the last native owner
+ * releases them. Calls and references are confined to the graphics creator
+ * thread. A NULL index array with count zero selects non-indexed triangles. */
+XGE_API int xge3dMeshCreateOwned(const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint16_t *indices,size_t index_count,xge3d_mesh **out);
+XGE_API int xge3dMeshCreateU32Owned(const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint32_t *indices,size_t index_count,xge3d_mesh **out);
+XGE_API int xge3dMeshShareOwned(xge3d_mesh *mesh,xge3d_mesh **out);
+XGE_API int xge3dMeshReleaseOwnerChecked(xge3d_mesh *mesh,bool *consumed);
+XGE_API int xge3dMeshReleaseChecked(xge3d_mesh *mesh);
 /* 用新描述替换网格 CPU 数据并使 GPU 上传状态失效。 */
 XGE_API int xge3dMeshUpdate(xge3d_mesh *mesh, const xge3d_mesh_desc_t *desc);
+XGE_API int xge3dMeshUpdateU16(xge3d_mesh *mesh,const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint16_t *indices,size_t index_count);
+XGE_API int xge3dMeshUpdateU32(xge3d_mesh *mesh,const xge3d_vertex_t *vertices,size_t vertex_count,
+    const uint32_t *indices,size_t index_count);
 /* 释放一个网格引用，最终 GPU 释放须在所属上下文线程执行。 */
 XGE_API void xge3dMeshFree(xge3d_mesh *mesh);
 /* 为节点设置网格并由节点持有相应引用。 */
@@ -4879,10 +4893,15 @@ XGE_API int xge3dSceneRaycast(xge3d_scene *scene, const xge3d_ray_t *ray,
     float max_distance, xge3d_hit_t *out);
 /* Borrowed immutable CPU geometry, valid until mesh update or final release. */
 XGE_API int xge3dMeshGetData(const xge3d_mesh *mesh, xge3d_mesh_desc_t *out);
+XGE_API int xge3dMeshVertexAt(const xge3d_mesh *mesh,size_t index,xge3d_vertex_t *out);
+XGE_API int xge3dMeshIndexAt(const xge3d_mesh *mesh,size_t index,uint32_t *out);
 /* 返回网格在模型局部空间中的轴对齐边界。 */
 XGE_API int xge3dMeshGetBounds(const xge3d_mesh *mesh, xge3d_aabb_t *out);
 /* Borrowed immutable mesh, invalidated by node replacement/deletion. */
 XGE_API int xge3dNodeGetMesh(xge3d_scene *scene, xge3d_node_t node, const xge3d_mesh **out);
+/* Returns NULL with XGE_OK when the node has no mesh. If the mesh came
+ * from the raw C API, its outstanding references must remain on this thread. */
+XGE_API int xge3dNodeGetMeshOwned(xge3d_scene *scene,xge3d_node_t node,xge3d_mesh **out);
 /* Conservative world bounds; descendants are optional, visibility is ignored.
  * Empty geometry returns NOT_FOUND. Skin bounds follow the current pose. */
 XGE_API int xge3dNodeGetBounds(xge3d_scene *scene, xge3d_node_t node, int descendants, xge3d_aabb_t *out);

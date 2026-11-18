@@ -15,13 +15,25 @@ static int d3_ray_valid(const xge3d_ray_t *r,float max,xge3d_vec3_t *direction)
 int xge3dMeshGetBounds(const xge3d_mesh *mesh,xge3d_aabb_t *out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
-    *out=(xge3d_aabb_t){0};if (!mesh) return XGE_ERROR_INVALID_ARGUMENT;*out=mesh->bounds;return XGE_OK;
+    *out=(xge3d_aabb_t){0};
+    if(!mesh)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_mesh_thread(mesh))return XGE_ERROR_INVALID_STATE;
+    *out=mesh->bounds;
+    return XGE_OK;
 }
 int xge3dNodeGetMesh(xge3d_scene *scene,xge3d_node_t node,const xge3d_mesh **out)
 {
     if (!out) return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;xge3d_node_data *n=d3_node(scene,node);if (!n) return XGE_ERROR_INVALID_ARGUMENT;
     *out=n->mesh;return *out ? XGE_OK : XGE_ERROR_NOT_FOUND;
+}
+int xge3dNodeGetMeshOwned(xge3d_scene *scene,xge3d_node_t node,xge3d_mesh **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xge3d_node_data *n=d3_node(scene,node);
+    if(!n)return XGE_ERROR_INVALID_ARGUMENT;
+    return n->mesh?xge3dMeshShareOwned(n->mesh,out):XGE_OK;
 }
 static int d3_transform_box(xge3d_aabb_t box,xge3d_mat4_t world,xge3d_aabb_t *out,int *found)
 {
