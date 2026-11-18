@@ -1,4 +1,5 @@
 #include "xge3d_internal.h"
+#include "xge_graphics_internal.h"
 #include "xge_gl.h"
 #include <limits.h>
 
@@ -11,7 +12,8 @@ int xge3dTextureResourceInfo(const xge3d_texture *texture,xge3d_resource_info_t 
     if(texture->target){return XGE_OK;} /* View owns no separate pixel storage. */
 #endif
     out->cpu_payload_bytes=(uint64_t)texture->width*texture->height*4;
-    if(texture->id){int width=texture->width,height=texture->height;out->gpu_payload_bytes=out->cpu_payload_bytes;
+    if(texture->id && (!texture->owner_thread || texture->context==__xge3dContext())){
+        int width=texture->width,height=texture->height;out->gpu_payload_bytes=out->cpu_payload_bytes;
         if(!texture->prepare_partial&&texture->sampler.min_filter>=0x2700){while(width>1||height>1){width=width>1?width/2:1;height=height>1?height/2:1;out->gpu_payload_bytes+=(uint64_t)width*height*4;}}}
     return XGE_OK;
 }
@@ -26,17 +28,42 @@ static int d3_wrap(int w)
 
 int d3_texture_retain(xge3d_texture *t)
 {
-    if (!t || t->refs==UINT32_MAX) {return 0;}
+    if (!t || (t->owner_thread && t->owner_thread!=xrtThreadCurrentId()) ||
+        t->refs==UINT32_MAX) {return 0;}
     ++t->refs; return 1;
 }
-void xge3dTextureFree(xge3d_texture *t)
+static int d3_texture_release(xge3d_texture *t,bool *consumed)
 {
-    if (!t || --t->refs) {return;}
+    if(!t)return XGE_OK;
+    bool managed=t->owner_thread!=0;
+    if(managed){
+        if(t->owner_thread!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
+        uint64_t current=__xge3dContext();
+        if(t->refs==1 && t->id && current && t->context!=current)
+            return XGE_ERROR_INVALID_STATE;
+        /* With no active context on the creator thread, window teardown
+         * has already reclaimed the GL object. Release the CPU owner. */
+    }
+    if(consumed)*consumed=true;
+    if(--t->refs)return XGE_OK;
 #if XGE3D_ENABLE_DYNAMIC
-    if(t->target){xge3dTargetFree(t->target);xrtFree(t);return;}
+    if(t->target){xge3dTargetFree(t->target);xrtFree(t);return XGE_OK;}
 #endif
     if (t->id && t->context==__xge3dContext()) {xge_glDeleteTextures(1,&t->id);}
     xrtArrayUnit(&t->pixels); xrtFree(t);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dTextureFree(xge3d_texture *t){(void)d3_texture_release(t,NULL);}
+int xge3dTextureReleaseOwnerChecked(xge3d_texture *t,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return t&&t->owner_thread?d3_texture_release(t,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dTextureReleaseChecked(xge3d_texture *t)
+{
+    bool consumed;
+    return xge3dTextureReleaseOwnerChecked(t,&consumed);
 }
 int d3_texture_detach_gpu(xge3d_texture *t)
 {
@@ -73,6 +100,30 @@ int xge3dTextureCreate(const xge3d_texture_desc_t *d, xge3d_texture **out)
     for (int y=0;y<t->height;++y) {memcpy(t->pixels.Data+(size_t)y*t->width*4,
         (const unsigned char*)image->pPixels+(size_t)y*image->iStride,(size_t)t->width*4);}
     *out=t; return XGE_OK;
+}
+
+int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t bytes,
+    int srgb,const xge3d_sampler_t *sampler,xge3d_texture **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!pixels||width<=0||height<=0||width>INT_MAX/4 ||
+        (size_t)height>SIZE_MAX/(size_t)(width*4) ||
+        bytes<(size_t)(width*4)*(size_t)height)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    xge_image_t image={.iWidth=width,.iHeight=height,.iStride=width*4,
+        .iFormat=XGE_PIXEL_RGBA8,.pPixels=(void*)pixels};
+    xge3d_texture_desc_t desc={.image=&image,.srgb=srgb};
+    if(sampler)desc.sampler=*sampler;
+    status=xge3dTextureCreate(&desc,out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
 }
 /* Called only inside a renderer's saved GL state, on its context thread. */
 int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)

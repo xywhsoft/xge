@@ -1,5 +1,6 @@
 #include "xge_clock.h"
 #include "xge3d_internal.h"
+#include "xge_graphics_internal.h"
 #include "xge_gl.h"
 #include <limits.h>
 #include <float.h>
@@ -152,6 +153,7 @@ struct xge3d_renderer {
     d3_instance_palette instances[D3_INSTANCE_PASSES];
     int texture_limit;
     uint64_t context;
+    uint64_t owner_thread;
 };
 
 #define D3_TEXTURE_UNITS 11
@@ -766,12 +768,36 @@ int xge3dRendererCreate(xge3d_renderer **out)
     *out=r;
     return XGE_OK;
 }
+
+int xge3dRendererCreateOwned(xge3d_renderer **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    status=xge3dRendererCreate(out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
 #if XGE3D_ENABLE_ANIMATION
 size_t xge3dRendererMaxJoints(const xge3d_renderer *r) {return r ? r->max_joints : 0;}
 #endif
-void xge3dRendererFree(xge3d_renderer *r)
+static int d3_renderer_release(xge3d_renderer *r,bool *consumed)
 {
-    if (!r) {return;}
+    if(!r)return XGE_OK;
+    bool managed=r->owner_thread!=0;
+    if(managed){
+        if(r->owner_thread!=xrtThreadCurrentId())return XGE_ERROR_INVALID_STATE;
+        uint64_t current=__xge3dContext();
+        if(current && r->context!=current)return XGE_ERROR_INVALID_STATE;
+        /* Sokol can end the window before the language callback unwinds.
+         * The context has reclaimed GL storage, so only CPU cleanup remains. */
+    }
+    if(consumed)*consumed=true;
     r->program=&r->base;
 #if XGE3D_ENABLE_DEBUG_DRAW || XGE3D_ENABLE_BILLBOARD
     d3_stream_free(r);
@@ -795,6 +821,28 @@ void xge3dRendererFree(xge3d_renderer *r)
     xrtArrayUnit(&r->pass_draws);xrtArrayUnit(&r->batches);xrtArrayUnit(&r->matrices);
     for (int i=0;i<D3_INSTANCE_PASSES;++i) {xrtArrayUnit(&r->instances[i].matrices);}
     xrtFree(r);
+    return managed?xgeInternalGraphicsOwnerRelease():XGE_OK;
+}
+void xge3dRendererFree(xge3d_renderer *r){(void)d3_renderer_release(r,NULL);}
+int xge3dRendererReleaseOwnerChecked(xge3d_renderer *r,bool *consumed)
+{
+    if(!consumed)return XGE_ERROR_INVALID_ARGUMENT;
+    *consumed=false;
+    return r&&r->owner_thread?d3_renderer_release(r,consumed):XGE_ERROR_INVALID_ARGUMENT;
+}
+int xge3dRendererReleaseChecked(xge3d_renderer *r)
+{
+    bool consumed;
+    return xge3dRendererReleaseOwnerChecked(r,&consumed);
+}
+
+int xge3dRenderFrame(xge3d_renderer *r,xge3d_scene *s,
+    const xge3d_camera_t *camera,const float clear_color[4],uint32_t clear_flags,
+    float exposure,xge3d_render_stats_t *stats)
+{
+    xge3d_render_desc_t frame={.camera=camera,.clear_flags=clear_flags,.exposure=exposure};
+    if(clear_color)memcpy(frame.clear_color,clear_color,sizeof(frame.clear_color));
+    return xge3dRender(r,s,&frame,stats);
 }
 
 int xge3dTargetCreate(int width, int height, xge3d_target **out)

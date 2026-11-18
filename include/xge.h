@@ -4533,6 +4533,12 @@ XGE_API int xge3dTerrainRaycast(const xge3d_terrain *terrain,int lod,const xge3d
  * glTF metallic/roughness factors and identity UV transforms. GetDesc borrows
  * texture pointers. Release all uploaded references on the context thread. */
 XGE_API int xge3dTextureCreate(const xge3d_texture_desc_t *desc, xge3d_texture **out);
+/* Managed straight-alpha RGBA8 texture. Copies exactly width*height*4 bytes.
+ * The final reference releases the engine lease, including renderer references. */
+XGE_API int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t bytes,
+    int srgb,const xge3d_sampler_t *sampler,xge3d_texture **out);
+XGE_API int xge3dTextureReleaseOwnerChecked(xge3d_texture *texture,bool *consumed);
+XGE_API int xge3dTextureReleaseChecked(xge3d_texture *texture);
 /* 释放一个 3D 纹理引用。 */
 XGE_API void xge3dTextureFree(xge3d_texture *texture);
 /* 返回符合 glTF 金属度/粗糙度工作流的默认材质描述。 */
@@ -4565,6 +4571,10 @@ XGE_API int xge3dEnvironmentSetIBL(xge3d_environment *environment, const xge3d_i
 /* Renderer/targets require the active context. All GPU objects must be freed
  * before context destruction. Existing targets remain valid if resize fails. */
 XGE_API int xge3dRendererCreate(xge3d_renderer **out);
+/* Managed renderer that keeps the creator's graphics context alive. */
+XGE_API int xge3dRendererCreateOwned(xge3d_renderer **out);
+XGE_API int xge3dRendererReleaseOwnerChecked(xge3d_renderer *renderer,bool *consumed);
+XGE_API int xge3dRendererReleaseChecked(xge3d_renderer *renderer);
 /* 释放 3D 渲染器及其内部 GPU 资源。 */
 XGE_API void xge3dRendererFree(xge3d_renderer *renderer);
 /* 创建指定像素尺寸的离屏 3D 渲染目标。 */
@@ -4581,6 +4591,11 @@ XGE_API int xge3dTargetReadPixels(xge3d_target *target, void *rgba, size_t size,
 /* 使用给定相机、目标和环境描述渲染场景并可返回统计。 */
 XGE_API int xge3dRender(xge3d_renderer *renderer, xge3d_scene *scene,
     const xge3d_render_desc_t *desc, xge3d_render_stats_t *stats);
+/* Draw to the active viewport with flat frame options. Extended target,
+ * atmosphere and lighting inputs are supplied by xge3dRender. */
+XGE_API int xge3dRenderFrame(xge3d_renderer *renderer,xge3d_scene *scene,
+    const xge3d_camera_t *camera,const float clear_color[4],uint32_t clear_flags,
+    float exposure,xge3d_render_stats_t *stats);
 #if XGE3D_ENABLE_FXAA
 #define XGE3D_AA_NONE 0
 #define XGE3D_AA_FXAA 1
@@ -5259,6 +5274,21 @@ typedef struct xge3d_billboard_t {
  * Camera-facing quads, straight linear color; no depth writes or shadow casting. */
 XGE_API xge3d_billboard_t xge3dBillboardDefault(void);
 XGE_API int xge3dBillboardsSet(xge3d_renderer *renderer,const xge3d_billboard_t *items,size_t count);
+
+typedef struct xge3d_billboard_color_t { float r,g,b,a; } xge3d_billboard_color_t;
+typedef struct xge3d_billboard_uv_t { float u,v,width,height; } xge3d_billboard_uv_t;
+typedef struct xge3d_billboard_geometry_t {
+    xge3d_vec3_t position;
+    float width,height,rotation;
+    xge3d_billboard_color_t color;
+    xge3d_billboard_uv_t uv;
+    int blend,depth_test;
+} xge3d_billboard_geometry_t;
+XGE_API xge3d_billboard_geometry_t xge3dBillboardGeometryDefault(void);
+/* Same persistent queue and validation as BillboardsSet. Each element uses
+ * the selected texture, retained by the renderer on successful submission. */
+XGE_API int xge3dBillboardsSetGeometry(xge3d_renderer *renderer,
+    const xge3d_billboard_geometry_t *items,size_t count,xge3d_texture *texture);
 #endif
 
 #if XGE3D_ENABLE_PARTICLES
@@ -5284,6 +5314,17 @@ XGE_API int xge3dParticlesInfo(const xge3d_particles *particles,xge3d_particle_i
  * returns required count and BUFFER_TOO_SMALL. Submit to BillboardsSet to retain. */
 XGE_API int xge3dParticlesBillboards(const xge3d_particles *particles,xge3d_texture *texture,int blend,
     xge3d_billboard_t *items,size_t capacity,size_t *count);
+typedef struct xge3d_billboard_batch xge3d_billboard_batch;
+/* An independent CPU-only snapshot of the live particles. Rows are immutable
+ * and valid for as long as a batch reference is held. */
+XGE_API int xge3dParticlesCollectBillboards(const xge3d_particles *particles,int blend,
+    xge3d_billboard_batch **out);
+XGE_API int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch);
+XGE_API void xge3dBillboardBatchFree(xge3d_billboard_batch *batch);
+XGE_API int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
+    const xge3d_billboard_geometry_t **items,size_t *count);
+XGE_API int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *texture);
 #endif
 
 /* 将 TRS 变换转换为 4x4 仿射矩阵。 */

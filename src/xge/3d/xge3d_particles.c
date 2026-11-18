@@ -1,7 +1,14 @@
 #include "xge3d_internal.h"
 #if XGE3D_ENABLE_PARTICLES
+#include <limits.h>
+
 typedef struct d3_particle {xge3d_vec3_t position,velocity;float age,life,rotation;} d3_particle;
 struct xge3d_particles {xge3d_particle_desc_t desc;xarray live;uint32_t random;double emission;uint64_t emitted,dropped;};
+struct xge3d_billboard_batch {
+    atomic_uint refs;
+    size_t count;
+    xge3d_billboard_geometry_t items[];
+};
 static float particle_random(xge3d_particles *p){uint32_t x=p->random;x^=x<<13;x^=x>>17;x^=x<<5;p->random=x;return (x>>8)*(1.0f/16777216.0f);}
 xge3d_particle_desc_t xge3dParticlesDefault(void)
 {
@@ -57,16 +64,88 @@ int xge3dParticlesUpdate(xge3d_particles *p,float dt,int emit)
 }
 int xge3dParticlesInfo(const xge3d_particles *p,xge3d_particle_info_t *out)
 {if(!p||!out||out->size!=sizeof(*out)){return XGE_ERROR_INVALID_ARGUMENT;}*out=(xge3d_particle_info_t){sizeof(*out),(uint32_t)p->live.Count,p->emitted,p->dropped};return XGE_OK;}
+
+static inline xge3d_billboard_geometry_t particle_billboard(
+    const xge3d_particle_desc_t *desc,const d3_particle *particle,int blend)
+{
+    float t=particle->age/particle->life;
+    float extent=desc->size_start+(desc->size_end-desc->size_start)*t;
+    float color[4];
+    for(int i=0;i<4;++i)
+        color[i]=desc->color_start[i]+(desc->color_end[i]-desc->color_start[i])*t;
+    uint64_t frame=(uint64_t)((double)particle->age*desc->fps)%((uint32_t)desc->columns*desc->rows);
+    return (xge3d_billboard_geometry_t){
+        .position=particle->position,.width=extent,.height=extent,.rotation=particle->rotation,
+        .color={color[0],color[1],color[2],color[3]},
+        .uv={(float)(frame%desc->columns)/desc->columns,(float)(frame/desc->columns)/desc->rows,
+             1.0f/desc->columns,1.0f/desc->rows},
+        .blend=blend,.depth_test=1
+    };
+}
+
 int xge3dParticlesBillboards(const xge3d_particles *p,xge3d_texture *texture,int blend,xge3d_billboard_t *items,size_t capacity,size_t *count)
 {
     if(!p||!count||(capacity&&!items)||(blend!=0&&blend!=1)){return XGE_ERROR_INVALID_ARGUMENT;}*count=p->live.Count;
-    size_t n=capacity<p->live.Count?capacity:p->live.Count;const xge3d_particle_desc_t *d=&p->desc;
-    for(size_t i=0;i<n;++i){const d3_particle *v=(const d3_particle*)p->live.Data+i;float t=v->age/v->life;
-        xge3d_billboard_t b=xge3dBillboardDefault();b.position=v->position;b.width=b.height=d->size_start+(d->size_end-d->size_start)*t;b.rotation=v->rotation;
-        for(int j=0;j<4;++j){b.color[j]=d->color_start[j]+(d->color_end[j]-d->color_start[j])*t;}
-        uint64_t frame=(uint64_t)((double)v->age*d->fps)%((uint32_t)d->columns*d->rows);
-        b.uv[0]=(float)(frame%d->columns)/d->columns;b.uv[1]=(float)(frame/d->columns)/d->rows;b.uv[2]=1.0f/d->columns;b.uv[3]=1.0f/d->rows;
-        b.texture=texture;b.blend=blend;items[i]=b;
-    }return items&&capacity<p->live.Count?XGE_ERROR_BUFFER_TOO_SMALL:XGE_OK;
+    size_t n=capacity<p->live.Count?capacity:p->live.Count;
+    const d3_particle *live=(const d3_particle*)p->live.Data;
+    for(size_t i=0;i<n;++i){
+        xge3d_billboard_geometry_t geometry=particle_billboard(&p->desc,live+i,blend);
+        items[i]=d3_billboard_native(&geometry,texture);
+    }
+    return items&&capacity<p->live.Count?XGE_ERROR_BUFFER_TOO_SMALL:XGE_OK;
+}
+
+int xge3dParticlesCollectBillboards(const xge3d_particles *p,int blend,xge3d_billboard_batch **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!p||(blend!=XGE3D_BILLBOARD_ALPHA&&blend!=XGE3D_BILLBOARD_ADD))
+        return XGE_ERROR_INVALID_ARGUMENT;
+    size_t count=p->live.Count;
+    if(count>(SIZE_MAX-sizeof(xge3d_billboard_batch))/sizeof(xge3d_billboard_geometry_t))
+        return XGE_ERROR_OUT_OF_MEMORY;
+    xge3d_billboard_batch *batch=xrtMalloc(sizeof(*batch)+count*sizeof(batch->items[0]));
+    if(!batch)return XGE_ERROR_OUT_OF_MEMORY;
+    atomic_init(&batch->refs,1);
+    batch->count=count;
+    const d3_particle *live=(const d3_particle*)p->live.Data;
+    for(size_t i=0;i<count;++i)
+        batch->items[i]=particle_billboard(&p->desc,live+i,blend);
+    *out=batch;
+    return XGE_OK;
+}
+
+int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch)
+{
+    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
+    unsigned refs=atomic_load_explicit(&batch->refs,memory_order_relaxed);
+    do {
+        if(!refs||refs==UINT_MAX)return XGE_ERROR_INVALID_STATE;
+    } while(!atomic_compare_exchange_weak_explicit(&batch->refs,&refs,refs+1,
+        memory_order_relaxed,memory_order_relaxed));
+    return XGE_OK;
+}
+
+void xge3dBillboardBatchFree(xge3d_billboard_batch *batch)
+{
+    if(batch&&atomic_fetch_sub_explicit(&batch->refs,1,memory_order_acq_rel)==1)xrtFree(batch);
+}
+
+int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
+    const xge3d_billboard_geometry_t **items,size_t *count)
+{
+    if(items)*items=NULL;
+    if(count)*count=0;
+    if(!batch||!items||!count)return XGE_ERROR_INVALID_ARGUMENT;
+    *items=batch->count?batch->items:NULL;
+    *count=batch->count;
+    return XGE_OK;
+}
+
+int xge3dBillboardsSetBatch(xge3d_renderer *renderer,
+    const xge3d_billboard_batch *batch,xge3d_texture *texture)
+{
+    if(!batch)return XGE_ERROR_INVALID_ARGUMENT;
+    return xge3dBillboardsSetGeometry(renderer,batch->items,batch->count,texture);
 }
 #endif

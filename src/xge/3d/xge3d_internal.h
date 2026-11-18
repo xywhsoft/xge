@@ -7,6 +7,20 @@
 #include <string.h>
 #include <stdatomic.h>
 
+#if XGE3D_ENABLE_BILLBOARD
+static inline xge3d_billboard_t d3_billboard_native(
+    const xge3d_billboard_geometry_t *geometry,xge3d_texture *texture)
+{
+    return (xge3d_billboard_t){
+        .position=geometry->position,.width=geometry->width,.height=geometry->height,
+        .rotation=geometry->rotation,
+        .color={geometry->color.r,geometry->color.g,geometry->color.b,geometry->color.a},
+        .uv={geometry->uv.u,geometry->uv.v,geometry->uv.width,geometry->uv.height},
+        .texture=texture,.blend=geometry->blend,.depth_test=geometry->depth_test
+    };
+}
+#endif
+
 typedef struct xge3d_node_data {
 #if XGE3D_ENABLE_SCENE
     char *name;void *user_data;
@@ -196,6 +210,7 @@ struct xge3d_texture {
     uint32_t refs, id;
     uint64_t context;
     size_t prepare_offset;int prepare_partial;
+    uint64_t owner_thread;
 };
 struct xge3d_material {
 #if XGE3D_ENABLE_SHADER
