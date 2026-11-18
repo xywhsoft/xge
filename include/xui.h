@@ -3081,10 +3081,13 @@ typedef int (*xui_list_view_item_proc)(xui_widget_t* pWidget, int iIndex, xui_dr
 typedef const char* (*xui_list_view_text_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
 /* MessageList event callbacks run synchronously on the UI thread and may
  * mutate or destroy the list or its context. pEvent and pEvent->pNode are
- * borrowed only for the duration of the callback. */
+ * borrowed only for the duration of the callback. The node descriptor and
+ * its text remain a snapshot throughout the callback, including after a
+ * nested event, replacement, or destruction. pNode may be NULL. */
 typedef void (*xui_message_list_event_proc)(xui_widget_t* pWidget, const xui_message_list_event_t* pEvent, void* pUser);
-/* The node snapshot is read-only and borrowed for this synchronous render
- * call. Mutating or destroying the list safely aborts the current render. */
+/* The read-only node descriptor and its text remain valid throughout this
+ * synchronous callback. Mutating or destroying the list safely aborts the
+ * current render. */
 typedef int (*xui_message_list_node_renderer_proc)(xui_widget_t* pWidget, int iIndex, const xui_message_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 /* TreeView callbacks run on the UI thread. Selection and context callbacks may
  * destroy the widget or its context. */

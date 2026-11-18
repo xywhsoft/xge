@@ -27,9 +27,46 @@ static void __xuiMessageListEvent(xui_widget pWidget, const xui_message_list_eve
 	if ( pEvent->iEvent == XUI_MESSAGE_EVENT_SCROLL ) pCounts[2]++;
 }
 
+static int __xuiMessageListSameNode(const xui_message_node_t* pNode,
+	const xui_message_node_t* pExpected)
+{
+	return pNode != NULL && pNode->iType == pExpected->iType &&
+		strcmp(pNode->sId, pExpected->sId) == 0 &&
+		strcmp(pNode->sSender, pExpected->sSender) == 0 &&
+		strcmp(pNode->sTime, pExpected->sTime) == 0 &&
+		strcmp(pNode->sText, pExpected->sText) == 0 &&
+		strcmp(pNode->sParentId, pExpected->sParentId ? pExpected->sParentId : "") == 0 &&
+		strcmp(pNode->sTitle, pExpected->sTitle ? pExpected->sTitle : "") == 0;
+}
+
+typedef struct xui_message_list_copy_state_t {
+	const xui_message_node_t* pExpected;
+	int iCount;
+	int iPassed;
+} xui_message_list_copy_state_t;
+
+static void __xuiMessageListNestedCopy(xui_widget pWidget,
+	const xui_message_list_event_t* pEvent, void* pUser)
+{
+	xui_message_list_copy_state_t* pState = (xui_message_list_copy_state_t*)pUser;
+	if ( pEvent->iEvent != XUI_MESSAGE_EVENT_COPY ||
+	     !__xuiMessageListSameNode(pEvent->pNode, pState->pExpected) ) return;
+	int iCount = ++pState->iCount;
+	if ( iCount == 1 ) {
+		if ( xuiMessageListCopySelection(pWidget) != XUI_OK ) return;
+	} else if ( xuiMessageListAppendNodeText(pWidget, pEvent->pNode->sId, " appended") != XUI_OK ||
+	            xuiMessageListUpdateNodeText(pWidget, pEvent->pNode->sId, "new text") != XUI_OK ||
+	            xuiMessageListSetNodeTitle(pWidget, pEvent->pNode->sId, "new title") != XUI_OK ) {
+		return;
+	}
+	pState->iPassed += __xuiMessageListSameNode(pEvent->pNode, pState->pExpected);
+}
+
 typedef struct xui_message_list_destroy_state_t {
 	xui_widget* ppWidget;
+	const xui_message_node_t* pExpected;
 	int iCount;
+	int iPassed;
 } xui_message_list_destroy_state_t;
 
 static void __xuiMessageListDestroyOnSelect(xui_widget pWidget,
@@ -38,7 +75,9 @@ static void __xuiMessageListDestroyOnSelect(xui_widget pWidget,
 	xui_message_list_destroy_state_t* pState = (xui_message_list_destroy_state_t*)pUser;
 	if ( pEvent == NULL || pState == NULL || pEvent->iEvent != XUI_MESSAGE_EVENT_SELECT ) return;
 	pState->iCount++;
+	if ( xuiMessageListClear(pWidget) != XUI_OK ) return;
 	(void)xuiWidgetDestroy(pWidget);
+	pState->iPassed = __xuiMessageListSameNode(pEvent->pNode, pState->pExpected);
 	if ( pState->ppWidget != NULL ) *pState->ppWidget = NULL;
 }
 
@@ -298,6 +337,17 @@ int main(void)
 	XUI_TEST_CHECK(xuiMessageListGetSelectedText(pDialog, NULL, 0) > 1, "selected text");
 	iRet = xuiMessageListCopySelection(pDialog);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestProxyGetClipboardText(&tState)[0] != 0, "copy selected text");
+	{
+		xui_message_list_copy_state_t tCopy = {&arrNodes[0], 0, 0};
+		XUI_TEST_CHECK(xuiMessageListSetEvent(pDialog, __xuiMessageListNestedCopy, &tCopy) == XUI_OK &&
+			xuiMessageListCopySelection(pDialog) == XUI_OK &&
+			tCopy.iCount == 2 && tCopy.iPassed == 2,
+			"nested copy callbacks retain the same node text through replacement");
+		XUI_TEST_CHECK(xuiMessageListSetEvent(pDialog, __xuiMessageListEvent, arrEvents) == XUI_OK &&
+			xuiMessageListUpdateNodeText(pDialog, arrNodes[0].sId, arrNodes[0].sText) == XUI_OK &&
+			xuiMessageListSetNodeTitle(pDialog, arrNodes[0].sId, arrNodes[0].sTitle) == XUI_OK,
+			"restore list state after nested copy");
+	}
 	XUI_TEST_CHECK(xuiMessageListClearTextSelection(pDialog) == XUI_OK,
 		"clear selection before multi-touch drag");
 	tWorld = xuiWidgetGetWorldRect(pDialog);
@@ -534,6 +584,7 @@ int main(void)
 		xuiMessageListSetNodes(pProbe, &arrNodes[0], 1) == XUI_OK,
 		"destroy callback probe setup");
 	tDestroy.ppWidget = &pProbe;
+	tDestroy.pExpected = &arrNodes[0];
 	XUI_TEST_CHECK(xuiMessageListSetEvent(pProbe, __xuiMessageListDestroyOnSelect, &tDestroy) == XUI_OK &&
 		xuiLayout(pContext) == XUI_OK, "destroy callback registration");
 	tWorld = xuiWidgetGetWorldRect(pProbe);
@@ -543,8 +594,8 @@ int main(void)
 		tWorld.fX + tContent.fX + tRect.fX + 4.0f,
 		tWorld.fY + tContent.fY + tRect.fY + 4.0f,
 		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT) == XUI_OK &&
-		xuiDispatchPendingEvents(pContext) == XUI_OK && pProbe == NULL && tDestroy.iCount == 1,
-		"event callback may destroy message list safely");
+		xuiDispatchPendingEvents(pContext) == XUI_OK && pProbe == NULL && tDestroy.iCount == 1 && tDestroy.iPassed,
+		"event callback retains the complete node through clear and destruction");
 	XUI_TEST_CHECK(xuiInputPointerUp(pContext, 10.0f, 10.0f,
 		XUI_POINTER_BUTTON_LEFT, 0) == XUI_OK && xuiDispatchPendingEvents(pContext) == XUI_OK,
 		"input remains usable after message list destruction");

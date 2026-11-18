@@ -116,6 +116,12 @@ typedef struct xui_message_document_anchor_t {
 	int bPrefixApplied;
 } xui_message_document_anchor_t;
 
+typedef struct xui_message_node_scope_t {
+	struct xui_message_node_scope_t* pPrevious;
+	const xui_message_node_t* pNode;
+	unsigned iRetiredText;
+} xui_message_node_scope_t;
+
 typedef struct xui_message_list_data_t {
     xui_context pContext;
     xui_text_shape_t tCaretShape;
@@ -132,6 +138,7 @@ typedef struct xui_message_list_data_t {
 	xui_message_list_colors_t tColors;
 	xui_message_list_event_proc onEvent;
 	void* pEventUser;
+	xui_message_node_scope_t* pNodeScope;
 	xui_message_list_node_renderer_proc onRenderNode;
 	void* pRenderNodeUser;
 	float fScrollY;
@@ -650,14 +657,59 @@ static char* __xuiMessageDup(const char* sText)
 	return sCopy;
 }
 
-static int __xuiMessageReplace(char** ppText, const char* sText)
+static const size_t g_arrNodeTextOffsets[] = {
+	offsetof(xui_message_node_t, sId),
+	offsetof(xui_message_node_t, sSender),
+	offsetof(xui_message_node_t, sTime),
+	offsetof(xui_message_node_t, sText),
+	offsetof(xui_message_node_t, sParentId),
+	offsetof(xui_message_node_t, sTitle),
+};
+
+static const char* __xuiMessageScopeText(const xui_message_node_scope_t* pScope, size_t i)
+{
+	const char* sText;
+	memcpy(&sText, (const unsigned char*)pScope->pNode + g_arrNodeTextOffsets[i], sizeof(sText));
+	return sText;
+}
+
+static void __xuiMessageReleaseText(xui_message_list_data_t* pData, char* sText)
+{
+	xui_message_node_scope_t* pOwner = NULL;
+	unsigned iBit = 0;
+	xui_message_node_scope_t* pScope = pData != NULL ? pData->pNodeScope : NULL;
+	if ( sText == NULL ) return;
+	/* Retire to the oldest synchronous callback still observing this buffer. */
+	for ( ; pScope != NULL; pScope = pScope->pPrevious ) {
+		for ( size_t i = 0; i < sizeof(g_arrNodeTextOffsets) / sizeof(g_arrNodeTextOffsets[0]); i++ ) {
+			if ( __xuiMessageScopeText(pScope, i) == sText ) {
+				pOwner = pScope;
+				iBit = 1u << i;
+				break;
+			}
+		}
+	}
+	if ( pOwner != NULL ) pOwner->iRetiredText |= iBit;
+	else xrtFree(sText);
+}
+
+static void __xuiMessageEndNodeScope(xui_message_list_data_t* pData, const xui_message_node_scope_t* pScope)
+{
+	pData->pNodeScope = pScope->pPrevious;
+	for ( size_t i = 0; pScope->iRetiredText >> i; i++ ) {
+		if ( pScope->iRetiredText & (1u << i) )
+			xrtFree((void*)__xuiMessageScopeText(pScope, i));
+	}
+}
+
+static int __xuiMessageReplace(xui_message_list_data_t* pData, char** ppText, const char* sText)
 {
 	char* sCopy;
 	if ( ppText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( strlen(__xuiMessageText(sText)) > INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	sCopy = __xuiMessageDup(sText);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( *ppText != NULL ) xrtFree(*ppText);
+	__xuiMessageReleaseText(pData, *ppText);
 	*ppText = sCopy;
 	return XUI_OK;
 }
@@ -910,7 +962,7 @@ static int __xuiMessageBindingToggle(xui_message_document_binding_t* binding,xui
     int status=__xuiMessageBindingCallbackBegin(binding,&scope,&binding->tTaskOwner,&snapshot);if(status!=XUI_OK)return status;
     callback(binding->pList,id,checked,user);return __xuiMessageBindingCallbackEnd(binding,&scope,&snapshot);
 }
-static void __xuiMessageFreeNode(xui_message_node_data_t* pNode)
+static void __xuiMessageFreeNode(xui_message_list_data_t* pData, xui_message_node_data_t* pNode)
 {
 	if ( pNode == NULL ) return;
 	__xuiMessageAccessibleClearText(pNode);
@@ -920,12 +972,12 @@ static void __xuiMessageFreeNode(xui_message_node_data_t* pNode)
 	if ( pNode->pTextLayout != NULL ) xuiTextLayoutDestroy(pNode->pTextLayout);
 	if ( pNode->pTitleLayout != NULL ) xuiTextLayoutDestroy(pNode->pTitleLayout);
 	if ( pNode->arrTextCarets != NULL ) xrtFree(pNode->arrTextCarets);
-	if ( pNode->sId != NULL ) xrtFree(pNode->sId);
-	if ( pNode->sSender != NULL ) xrtFree(pNode->sSender);
-	if ( pNode->sTime != NULL ) xrtFree(pNode->sTime);
-	if ( pNode->sText != NULL ) xrtFree(pNode->sText);
-	if ( pNode->sParentId != NULL ) xrtFree(pNode->sParentId);
-	if ( pNode->sTitle != NULL ) xrtFree(pNode->sTitle);
+	__xuiMessageReleaseText(pData, pNode->sId);
+	__xuiMessageReleaseText(pData, pNode->sSender);
+	__xuiMessageReleaseText(pData, pNode->sTime);
+	__xuiMessageReleaseText(pData, pNode->sText);
+	__xuiMessageReleaseText(pData, pNode->sParentId);
+	__xuiMessageReleaseText(pData, pNode->sTitle);
 	memset(pNode, 0, sizeof(*pNode));
 }
 
@@ -960,13 +1012,13 @@ static int __xuiMessageCopyNode(xui_message_node_data_t* pDst, const xui_message
 	pDst->iFlags = pSrc->iFlags;
 	pDst->pUser = pSrc->pUser;
 	pDst->iAuxiliaryKind = __xuiMessageNodeHasExtension(pSrc) ? pSrc->iAuxiliaryKind : 0;
-	iRet = __xuiMessageReplace(&pDst->sId, pSrc->sId);
-	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sSender, pSrc->sSender);
-	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sTime, pSrc->sTime);
-	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sText, pSrc->sText);
-	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sParentId, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sParentId : NULL);
-	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sTitle, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sTitle : NULL);
-	if ( iRet != XUI_OK ) __xuiMessageFreeNode(pDst);
+	iRet = __xuiMessageReplace(NULL, &pDst->sId, pSrc->sId);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(NULL, &pDst->sSender, pSrc->sSender);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(NULL, &pDst->sTime, pSrc->sTime);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(NULL, &pDst->sText, pSrc->sText);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(NULL, &pDst->sParentId, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sParentId : NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(NULL, &pDst->sTitle, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sTitle : NULL);
+	if ( iRet != XUI_OK ) __xuiMessageFreeNode(NULL, pDst);
 	return iRet;
 }
 
@@ -1037,7 +1089,7 @@ static void __xuiMessageClearData(xui_message_list_data_t* pData)
 	xrtFree(pData->tPendingDocumentAnchor.arrMeasuredPrefix);
 	memset(&pData->tPendingDocumentAnchor, 0, sizeof(pData->tPendingDocumentAnchor));
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		__xuiMessageFreeNode(&pData->arrNodes[i]);
+		__xuiMessageFreeNode(pData, &pData->arrNodes[i]);
 	}
 	if ( pData->mapNodeIds.ValueSize != 0 ) xrtMapClear(&pData->mapNodeIds);
 	pData->iNodeCount = 0;
@@ -2641,6 +2693,7 @@ static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData
 	xui_context pContext;
 	xui_message_list_event_t tEvent;
 	xui_message_node_t tNode;
+	xui_message_node_scope_t tScope;
 	if ( pData == NULL || pData->onEvent == NULL ) return 1;
 	pContext = xuiWidgetGetContext(pWidget);
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -2652,6 +2705,8 @@ static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData
 		tNode = __xuiMessagePublicNode(&pData->arrNodes[iIndex]);
 		tEvent.pNode = &tNode;
 		tEvent.iNodeType = tNode.iType;
+		tScope = (xui_message_node_scope_t){pData->pNodeScope, &tNode, 0};
+		pData->pNodeScope = &tScope;
 	}
 	if ( pInput != NULL ) {
 		tEvent.fX = pInput->fX;
@@ -2660,6 +2715,7 @@ static int __xuiMessageNotify(xui_widget pWidget, xui_message_list_data_t* pData
 		tEvent.iModifiers = pInput->iModifiers;
 	}
 	XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onEvent, xui_message_list_event_proc, pData->pEventUser, pWidget, &tEvent);
+	if ( tEvent.pNode != NULL ) __xuiMessageEndNodeScope(pData, &tScope);
 	return __xuiMessageListAlive(pContext, pWidget, pData);
 }
 
@@ -4046,7 +4102,7 @@ static int __xuiMessageCacheRenderImpl(xui_widget pWidget, xui_draw_context pDra
 	uint32_t iAvatarColor;
 	uint32_t iTextColor;
 	int i;
-	int iHandled;
+	int iHandled = 0;
 	int iRet;
 	(void)iStateId;
 	(void)pUser;
@@ -4076,10 +4132,14 @@ static int __xuiMessageCacheRenderImpl(xui_widget pWidget, xui_draw_context pDra
 			xui_message_list_node_renderer_proc callback = pData->onRenderNode;
 			void* user = pData->pRenderNodeUser;
 			xui_callback_snapshot_t snapshot = {0};
+			xui_message_node_scope_t tScope = {pData->pNodeScope, &tPublicNode, 0};
+			pData->pNodeScope = &tScope;
 			iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderNode, &user, &snapshot);
-			if ( iRet != XUI_OK ) return iRet;
-			iHandled = callback(pWidget, i, &tPublicNode, pDraw, tNode, (i == pData->iSelected ? XUI_WIDGET_STATE_ACTIVE : 0) | (i == pData->iHover ? XUI_WIDGET_STATE_HOVER : 0), user);
-			iRet = xuiInternalCallbackSnapshotEnd(&snapshot, iHandled < 0 ? iHandled : XUI_OK);
+			if ( iRet == XUI_OK ) {
+				iHandled = callback(pWidget, i, &tPublicNode, pDraw, tNode, (i == pData->iSelected ? XUI_WIDGET_STATE_ACTIVE : 0) | (i == pData->iHover ? XUI_WIDGET_STATE_HOVER : 0), user);
+				iRet = xuiInternalCallbackSnapshotEnd(&snapshot, iHandled < 0 ? iHandled : XUI_OK);
+			}
+			__xuiMessageEndNodeScope(pData, &tScope);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( !__xuiMessageListAlive(pContext, pWidget, pData) ) return XUI_OK;
 			if ( pData->arrNodes != arrNodes || pData->iChangeCount != iChangeCount ) return XUI_OK;
@@ -4547,7 +4607,7 @@ static int xuiMessageListAddNodeImpl(xui_widget pWidget, const xui_message_node_
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMessageIndexNodeId(pData, pData->iNodeCount);
 	if ( iRet != XUI_OK ) {
-		__xuiMessageFreeNode(&pData->arrNodes[pData->iNodeCount]);
+		__xuiMessageFreeNode(pData, &pData->arrNodes[pData->iNodeCount]);
 		return iRet;
 	}
 	pData->arrNodes[pData->iNodeCount].iAccessibleId = ++pData->iNextAccessibleId;
@@ -4873,7 +4933,7 @@ XUI_API int xuiMessageListGetNodeDocumentTableSelection(xui_widget pWidget,
 	return XUI_OK;
 }
 
-static int __xuiMessageAppendText(char** ppText, const char* sText)
+static int __xuiMessageAppendText(xui_message_list_data_t* pData, char** ppText, const char* sText)
 {
 	char* sNew;
 	const char* sOld;
@@ -4891,7 +4951,7 @@ static int __xuiMessageAppendText(char** ppText, const char* sText)
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memcpy(sNew, sOld, iOldLen);
 	memcpy(sNew + iOldLen, sText, iAddLen + 1u);
-	if ( *ppText != NULL ) xrtFree(*ppText);
+	__xuiMessageReleaseText(pData, *ppText);
 	*ppText = sNew;
 	return XUI_OK;
 }
@@ -4929,7 +4989,7 @@ static int xuiMessageListUpdateNodeTextImpl(xui_widget pWidget, const char* sId,
 	if ( strcmp(__xuiMessageText(pData->arrNodes[iIndex].sText),
 		__xuiMessageText(sText)) == 0 ) return XUI_OK;
 	__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
-	iRet = __xuiMessageReplace(&pData->arrNodes[iIndex].sText, sText);
+	iRet = __xuiMessageReplace(pData, &pData->arrNodes[iIndex].sText, sText);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiMessageClampNodeSelection(pData, iIndex);
 	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
@@ -4956,7 +5016,7 @@ static int xuiMessageListAppendNodeTextImpl(xui_widget pWidget, const char* sId,
 	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sText[0] == 0 ) return XUI_OK;
 	__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
-	iRet = __xuiMessageAppendText(&pData->arrNodes[iIndex].sText, sText);
+	iRet = __xuiMessageAppendText(pData, &pData->arrNodes[iIndex].sText, sText);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiMessageClampNodeSelection(pData, iIndex);
 	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
@@ -4983,7 +5043,7 @@ static int xuiMessageListSetNodeTitleImpl(xui_widget pWidget, const char* sId, c
 	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( strcmp(__xuiMessageText(pData->arrNodes[iIndex].sTitle),
 		__xuiMessageText(sTitle)) == 0 ) return XUI_OK;
-	iRet = __xuiMessageReplace(&pData->arrNodes[iIndex].sTitle, sTitle);
+	iRet = __xuiMessageReplace(pData, &pData->arrNodes[iIndex].sTitle, sTitle);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->arrNodes[iIndex].sTitleLayoutSource = NULL;
 	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData, iIndex);
@@ -5456,14 +5516,18 @@ XUI_API int xuiMessageListCopySelection(xui_widget pWidget)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiMessageBuildAnySelectedText(pData, &sText);
 	if ( iRet != XUI_OK ) return iRet;
-	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	pProxy = xuiInternalContextGetProxy(pContext);
 	if ( pProxy == NULL || pProxy->clipboardSetText == NULL ) {
 		xrtFree(sText);
 		return XUI_ERROR_UNSUPPORTED;
 	}
+	xuiInternalOperationEnter(pContext);
 	iRet = pProxy->clipboardSetText(pProxy, sText);
 	xrtFree(sText);
-	if ( iRet == XUI_OK ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_COPY, pData->iSelected, NULL);
+	if ( iRet == XUI_OK && __xuiMessageListAlive(pContext, pWidget, pData) )
+		(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_COPY, pData->iSelected, NULL);
+	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
@@ -5609,7 +5673,7 @@ static int __xuiMessageAppendImportedNode(xui_message_list_data_t* pData, const 
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiMessageIndexNodeId(pData, pData->iNodeCount);
 	if ( iRet != XUI_OK ) {
-		__xuiMessageFreeNode(&pData->arrNodes[pData->iNodeCount]);
+		__xuiMessageFreeNode(pData, &pData->arrNodes[pData->iNodeCount]);
 		return iRet;
 	}
 	pData->iNodeCount++;
@@ -5732,7 +5796,7 @@ static int xuiMessageListImportTextImpl(xui_widget pWidget, const char* sText)
 	pData->iNodeCount = 0;
 	pData->iDocumentNodeCount = 0;
 	pData->iNodeCapacity = 0;
-	while ( iOldNodeCount > 0 ) __xuiMessageFreeNode(&arrOldNodes[--iOldNodeCount]);
+	while ( iOldNodeCount > 0 ) __xuiMessageFreeNode(pData, &arrOldNodes[--iOldNodeCount]);
 	if ( arrOldNodes != NULL ) xrtFree(arrOldNodes);
 	if ( pData->mapNodeIds.ValueSize != 0 ) xrtMapUnit(&pData->mapNodeIds);
 	pData->arrNodes = tImported.arrNodes;
