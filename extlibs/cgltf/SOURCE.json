@@ -3,6 +3,12 @@
   "tag": "v1.15",
   "commit": "360db1a95480fe102ae9c69b27c5d101167ff5ba",
   "license": "MIT",
+  "localPatches": [{
+    "file": "cgltf.h",
+    "description": "Publish parser array counts only after allocation succeeds and preserve attribute allocation errors.",
+    "sha256": "6969133f34cb23c9f8bb588bf9acc0990955537f2e5302849602ff7d3dab0dfd",
+    "bytes": 202995
+  }],
   "files": {
     "cgltf.h": {
       "url": "https://raw.githubusercontent.com/jkuhlmann/cgltf/360db1a95480fe102ae9c69b27c5d101167ff5ba/cgltf.h",

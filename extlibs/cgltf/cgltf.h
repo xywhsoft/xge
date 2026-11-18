@@ -2925,14 +2925,15 @@ static int cgltf_parse_json_attribute_list(cgltf_options* options, jsmntok_t con
 		return CGLTF_ERROR_JSON;
 	}
 
-	*out_attributes_count = tokens[i].size;
-	*out_attributes = (cgltf_attribute*)cgltf_calloc(options, sizeof(cgltf_attribute), *out_attributes_count);
-	++i;
-
-	if (!*out_attributes)
+	cgltf_size count = tokens[i].size;
+	cgltf_attribute* attributes = (cgltf_attribute*)cgltf_calloc(options, sizeof(cgltf_attribute), count);
+	if (!attributes)
 	{
 		return CGLTF_ERROR_NOMEM;
 	}
+	*out_attributes = attributes;
+	*out_attributes_count = count;
+	++i;
 
 	for (cgltf_size j = 0; j < *out_attributes_count; ++j)
 	{
@@ -2941,7 +2942,7 @@ static int cgltf_parse_json_attribute_list(cgltf_options* options, jsmntok_t con
 		i = cgltf_parse_json_string(options, tokens, i, json_chunk, &(*out_attributes)[j].name);
 		if (i < 0)
 		{
-			return CGLTF_ERROR_JSON;
+			return i;
 		}
 
 		cgltf_parse_attribute_type((*out_attributes)[j].name, &(*out_attributes)[j].type, &(*out_attributes)[j].index);
@@ -3225,8 +3226,13 @@ static int cgltf_parse_json_material_mappings(cgltf_options* options, jsmntok_t 
 				return k;
 			}
 
+			cgltf_material_mapping* mappings = (cgltf_material_mapping*)cgltf_calloc(options, sizeof(cgltf_material_mapping), mappings_offset);
+			if (!mappings)
+			{
+				return CGLTF_ERROR_NOMEM;
+			}
+			out_prim->mappings = mappings;
 			out_prim->mappings_count = mappings_offset;
-			out_prim->mappings = (cgltf_material_mapping*)cgltf_calloc(options, sizeof(cgltf_material_mapping), out_prim->mappings_count);
 
 			mappings_offset = 0;
 			i = cgltf_parse_json_material_mapping_data(options, tokens, i + 1, json_chunk, out_prim->mappings, &mappings_offset);
