@@ -3362,6 +3362,39 @@ XGE_API int xgeShapeExStrokeNonScalingGet(xge_shape_ex pShape, int* pNonScaling)
 XGE_API int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDashCount, float fDashOffset);
 /* 输出虚线模式视图与偏移。 */
 XGE_API int xgeShapeExStrokeDashGet(xge_shape_ex pShape, const float** ppDashPattern, int* pDashCount, float* pDashOffset);
+/* CPU-only snapshots with independent storage. Capture follows the shape's
+ * usual caller-serialization rule. Read and release on the capturing thread.
+ * Returned arrays are immutable while a snapshot reference is held. */
+typedef struct xge_shape_path_snapshot xge_shape_path_snapshot;
+typedef struct xge_shape_gradient_snapshot xge_shape_gradient_snapshot;
+typedef struct xge_shape_dash_snapshot xge_shape_dash_snapshot;
+
+typedef struct xge_shape_gradient_info_t {
+	int iType, iUnits, iSpread;
+	float fX1, fY1, fX2, fY2;
+	float fRadius, fFocalX, fFocalY, fFocalRadius;
+	xge_shape_ex_matrix_t tTransform;
+} xge_shape_gradient_info_t;
+
+XGE_API int xgeShapeExCapturePath(xge_shape_ex pShape, xge_shape_path_snapshot** ppOut);
+XGE_API int xgeShapePathSnapshotAddRef(xge_shape_path_snapshot* pSnapshot);
+XGE_API int xgeShapePathSnapshotReleaseChecked(xge_shape_path_snapshot* pSnapshot);
+XGE_API int xgeShapePathSnapshotCommands(const xge_shape_path_snapshot* pSnapshot, const uint8_t** ppData, size_t* pCount);
+XGE_API int xgeShapePathSnapshotPoints(const xge_shape_path_snapshot* pSnapshot, const xge_vec2_t** ppData, size_t* pCount);
+/* Return NOT_FOUND for solid paint. Stops retain the original source order
+ * and offsets. For radial paint (fX1,fY1) is the center. */
+XGE_API int xgeShapeExCaptureFillGradient(xge_shape_ex pShape, xge_shape_gradient_snapshot** ppOut);
+XGE_API int xgeShapeExCaptureStrokeGradient(xge_shape_ex pShape, xge_shape_gradient_snapshot** ppOut);
+XGE_API int xgeShapeGradientSnapshotAddRef(xge_shape_gradient_snapshot* pSnapshot);
+XGE_API int xgeShapeGradientSnapshotReleaseChecked(xge_shape_gradient_snapshot* pSnapshot);
+XGE_API int xgeShapeGradientSnapshotInfo(const xge_shape_gradient_snapshot* pSnapshot, xge_shape_gradient_info_t* pInfo);
+XGE_API int xgeShapeGradientSnapshotStops(const xge_shape_gradient_snapshot* pSnapshot, const xge_shape_ex_color_stop_t** ppData, size_t* pCount);
+/* A shape without a dash pattern yields an empty snapshot. */
+XGE_API int xgeShapeExCaptureStrokeDash(xge_shape_ex pShape, xge_shape_dash_snapshot** ppOut);
+XGE_API int xgeShapeDashSnapshotAddRef(xge_shape_dash_snapshot* pSnapshot);
+XGE_API int xgeShapeDashSnapshotReleaseChecked(xge_shape_dash_snapshot* pSnapshot);
+XGE_API int xgeShapeDashSnapshotOffset(const xge_shape_dash_snapshot* pSnapshot, float* pOffset);
+XGE_API int xgeShapeDashSnapshotPattern(const xge_shape_dash_snapshot* pSnapshot, const float** ppData, size_t* pCount);
 /* 设置路径裁剪区间 [fBegin,fEnd]（路径动画）；bSimultaneous 双向同步。 */
 XGE_API int xgeShapeExTrimPath(xge_shape_ex pShape, float fBegin, float fEnd, int bSimultaneous);
 /* 输出路径裁剪区间与启用状态。 */

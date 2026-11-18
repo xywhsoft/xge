@@ -11668,7 +11668,7 @@ int xgeShapeExStrokeNonScalingGet(xge_shape_ex pShape, int* pNonScaling)
 
 int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDashCount, float fDashOffset)
 {
-	float* pCopy;
+	float* pCopy = NULL;
 	int i;
 
 	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExFloatFinite(fDashOffset) ||
@@ -11683,23 +11683,19 @@ int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDa
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	if ( iDashCount != 0 ) {
+		if ( (size_t)iDashCount > SIZE_MAX / sizeof(*pCopy) ) return XGE_ERROR_OUT_OF_MEMORY;
+		pCopy = (float*)xrtMalloc((size_t)iDashCount * sizeof(*pCopy));
+		if ( pCopy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+		for ( i = 0; i < iDashCount; i++ ) {
+			pCopy[i] = pDashPattern[i] < 0.0f ? 0.0f : pDashPattern[i];
+		}
+	}
 	xrtFree(pShape->pDashPattern);
-	pShape->pDashPattern = NULL;
-	pShape->iDashCount = 0;
-	pShape->fDashOffset = fDashOffset;
-	__xgeShapeExEnsureStrokeState(pShape);
-	if ( iDashCount == 0 ) {
-		return XGE_OK;
-	}
-	pCopy = (float*)xrtMalloc((size_t)iDashCount * sizeof(*pCopy));
-	if ( pCopy == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	for ( i = 0; i < iDashCount; i++ ) {
-		pCopy[i] = pDashPattern[i] < 0.0f ? 0.0f : pDashPattern[i];
-	}
 	pShape->pDashPattern = pCopy;
 	pShape->iDashCount = iDashCount;
+	pShape->fDashOffset = fDashOffset;
+	__xgeShapeExEnsureStrokeState(pShape);
 	return XGE_OK;
 }
 
@@ -11717,6 +11713,179 @@ int xgeShapeExStrokeDashGet(xge_shape_ex pShape, const float** ppDashPattern, in
 	if ( pDashOffset != NULL ) {
 		if ( pShape->bStrokeStateCreated ) *pDashOffset = pShape->fDashOffset;
 	}
+	return XGE_OK;
+}
+
+typedef struct xge_shape_snapshot_owner {
+	uint64_t iThread;
+	uint32_t iRefs;
+} xge_shape_snapshot_owner;
+
+struct xge_shape_path_snapshot {
+	xge_shape_snapshot_owner tOwner;
+	size_t iCommandCount, iPointCount;
+	xge_vec2_t aPoints[];
+};
+
+struct xge_shape_gradient_snapshot {
+	xge_shape_snapshot_owner tOwner;
+	xge_shape_gradient_info_t tInfo;
+	size_t iCount;
+	xge_shape_ex_color_stop_t aStops[];
+};
+
+struct xge_shape_dash_snapshot {
+	xge_shape_snapshot_owner tOwner;
+	size_t iCount;
+	float fOffset;
+	float aPattern[];
+};
+
+static void* __xgeShapeSnapshotAllocate(size_t iHeader, size_t iCount, size_t iStride, size_t iTail)
+{
+	if ( iTail > SIZE_MAX - iHeader || iCount > (SIZE_MAX - iHeader - iTail) / iStride ) return NULL;
+	return xrtMalloc(iHeader + iCount * iStride + iTail);
+}
+
+#define XGE_SHAPE_SNAPSHOT_OWNER(Type, Prefix) \
+int Prefix##AddRef(Type* pSnapshot) \
+{ \
+	if ( !pSnapshot ) return XGE_ERROR_INVALID_ARGUMENT; \
+	if ( pSnapshot->tOwner.iThread != xrtThreadCurrentId() || pSnapshot->tOwner.iRefs == UINT32_MAX ) \
+		return XGE_ERROR_INVALID_STATE; \
+	++pSnapshot->tOwner.iRefs; \
+	return XGE_OK; \
+} \
+int Prefix##ReleaseChecked(Type* pSnapshot) \
+{ \
+	if ( !pSnapshot ) return XGE_ERROR_INVALID_ARGUMENT; \
+	if ( pSnapshot->tOwner.iThread != xrtThreadCurrentId() ) return XGE_ERROR_INVALID_STATE; \
+	if ( !--pSnapshot->tOwner.iRefs ) xrtFree(pSnapshot); \
+	return XGE_OK; \
+}
+XGE_SHAPE_SNAPSHOT_OWNER(xge_shape_path_snapshot, xgeShapePathSnapshot)
+XGE_SHAPE_SNAPSHOT_OWNER(xge_shape_gradient_snapshot, xgeShapeGradientSnapshot)
+XGE_SHAPE_SNAPSHOT_OWNER(xge_shape_dash_snapshot, xgeShapeDashSnapshot)
+#undef XGE_SHAPE_SNAPSHOT_OWNER
+
+int xgeShapeExCapturePath(xge_shape_ex pShape, xge_shape_path_snapshot** ppOut)
+{
+	if ( !ppOut ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppOut = NULL;
+	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+
+	size_t iPoints = (size_t)pShape->iPointCount;
+	size_t iCommands = (size_t)pShape->iCommandCount;
+	xge_shape_path_snapshot* pSnapshot = __xgeShapeSnapshotAllocate(sizeof(*pSnapshot),
+		iPoints, sizeof(*pSnapshot->aPoints), iCommands);
+	if ( !pSnapshot ) return XGE_ERROR_OUT_OF_MEMORY;
+	pSnapshot->tOwner = (xge_shape_snapshot_owner){xrtThreadCurrentId(), 1};
+	pSnapshot->iPointCount = iPoints;
+	pSnapshot->iCommandCount = iCommands;
+	if ( iPoints ) memcpy(pSnapshot->aPoints, pShape->pPoints, iPoints * sizeof(*pSnapshot->aPoints));
+	if ( iCommands ) memcpy((uint8_t*)pSnapshot->aPoints + iPoints * sizeof(*pSnapshot->aPoints),
+		pShape->pCommands, iCommands);
+	*ppOut = pSnapshot;
+	return XGE_OK;
+}
+
+static int __xgeShapeExCaptureGradient(xge_shape_ex pShape, int bStroke, xge_shape_gradient_snapshot** ppOut)
+{
+	if ( !ppOut ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppOut = NULL;
+	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+	const int iType = bStroke ? pShape->iStrokeType : pShape->iFillType;
+	if ( iType == XGE_SHAPE_EX_PAINT_SOLID ) return XGE_ERROR_NOT_FOUND;
+	const int bRadial = iType == XGE_SHAPE_EX_PAINT_RADIAL_GRADIENT;
+	size_t iCount = (size_t)(bStroke ? pShape->iStrokeStopCount : pShape->iFillStopCount);
+	const xge_shape_ex_color_stop_t* pStops = bStroke ? pShape->pStrokeSourceStops : pShape->pFillSourceStops;
+	xge_shape_gradient_snapshot* pSnapshot = __xgeShapeSnapshotAllocate(sizeof(*pSnapshot),
+		iCount, sizeof(*pSnapshot->aStops), 0);
+	if ( !pSnapshot ) return XGE_ERROR_OUT_OF_MEMORY;
+	pSnapshot->tOwner = (xge_shape_snapshot_owner){xrtThreadCurrentId(), 1};
+	pSnapshot->iCount = iCount;
+	pSnapshot->tInfo = (xge_shape_gradient_info_t){
+		.iType = iType,
+		.iUnits = bStroke ? pShape->iStrokeGradientUnits : pShape->iFillGradientUnits,
+		.iSpread = bStroke ? pShape->iStrokeGradientSpread : pShape->iFillGradientSpread,
+		.fX1 = bStroke ? pShape->fStrokeX1 : pShape->fFillX1,
+		.fY1 = bStroke ? pShape->fStrokeY1 : pShape->fFillY1,
+		.fX2 = bStroke ? pShape->fStrokeX2 : pShape->fFillX2,
+		.fY2 = bStroke ? pShape->fStrokeY2 : pShape->fFillY2,
+		.fRadius = bRadial ? (bStroke ? pShape->fStrokeR : pShape->fFillR) : 0,
+		.fFocalX = bRadial ? (bStroke ? pShape->fStrokeFX : pShape->fFillFX) : 0,
+		.fFocalY = bRadial ? (bStroke ? pShape->fStrokeFY : pShape->fFillFY) : 0,
+		.fFocalRadius = bRadial ? (bStroke ? pShape->fStrokeFR : pShape->fFillFR) : 0,
+		.tTransform = bStroke ? pShape->tStrokeGradientTransform : pShape->tFillGradientTransform
+	};
+	if ( iCount ) memcpy(pSnapshot->aStops, pStops, iCount * sizeof(*pSnapshot->aStops));
+	*ppOut = pSnapshot;
+	return XGE_OK;
+}
+
+int xgeShapeExCaptureFillGradient(xge_shape_ex pShape, xge_shape_gradient_snapshot** ppOut)
+{
+	return __xgeShapeExCaptureGradient(pShape, 0, ppOut);
+}
+
+int xgeShapeExCaptureStrokeGradient(xge_shape_ex pShape, xge_shape_gradient_snapshot** ppOut)
+{
+	return __xgeShapeExCaptureGradient(pShape, 1, ppOut);
+}
+
+int xgeShapeExCaptureStrokeDash(xge_shape_ex pShape, xge_shape_dash_snapshot** ppOut)
+{
+	if ( !ppOut ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppOut = NULL;
+	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+
+	size_t iCount = (size_t)pShape->iDashCount;
+	xge_shape_dash_snapshot* pSnapshot = __xgeShapeSnapshotAllocate(sizeof(*pSnapshot),
+		iCount, sizeof(*pSnapshot->aPattern), 0);
+	if ( !pSnapshot ) return XGE_ERROR_OUT_OF_MEMORY;
+	pSnapshot->tOwner = (xge_shape_snapshot_owner){xrtThreadCurrentId(), 1};
+	pSnapshot->iCount = iCount;
+	pSnapshot->fOffset = pShape->bStrokeStateCreated ? pShape->fDashOffset : 0;
+	if ( iCount ) memcpy(pSnapshot->aPattern, pShape->pDashPattern, iCount * sizeof(*pSnapshot->aPattern));
+	*ppOut = pSnapshot;
+	return XGE_OK;
+}
+
+#define XGE_SHAPE_SNAPSHOT_ITEMS(Function, Snapshot, Item, Count, Data) \
+int Function(const Snapshot* pSnapshot, const Item** ppData, size_t* pCount) \
+{ \
+	if ( !ppData || !pCount ) return XGE_ERROR_INVALID_ARGUMENT; \
+	*ppData = NULL; \
+	*pCount = 0; \
+	if ( !pSnapshot ) return XGE_ERROR_INVALID_ARGUMENT; \
+	if ( pSnapshot->tOwner.iThread != xrtThreadCurrentId() ) return XGE_ERROR_INVALID_STATE; \
+	*pCount = pSnapshot->Count; \
+	if ( *pCount ) *ppData = Data; \
+	return XGE_OK; \
+}
+XGE_SHAPE_SNAPSHOT_ITEMS(xgeShapePathSnapshotCommands, xge_shape_path_snapshot, uint8_t,
+	iCommandCount, (const uint8_t*)pSnapshot->aPoints + pSnapshot->iPointCount * sizeof(*pSnapshot->aPoints))
+XGE_SHAPE_SNAPSHOT_ITEMS(xgeShapePathSnapshotPoints, xge_shape_path_snapshot, xge_vec2_t,
+	iPointCount, pSnapshot->aPoints)
+XGE_SHAPE_SNAPSHOT_ITEMS(xgeShapeGradientSnapshotStops, xge_shape_gradient_snapshot, xge_shape_ex_color_stop_t,
+	iCount, pSnapshot->aStops)
+XGE_SHAPE_SNAPSHOT_ITEMS(xgeShapeDashSnapshotPattern, xge_shape_dash_snapshot, float,
+	iCount, pSnapshot->aPattern)
+#undef XGE_SHAPE_SNAPSHOT_ITEMS
+
+int xgeShapeGradientSnapshotInfo(const xge_shape_gradient_snapshot* pSnapshot, xge_shape_gradient_info_t* pInfo)
+{
+	if ( !pSnapshot || !pInfo ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pSnapshot->tOwner.iThread != xrtThreadCurrentId() ) return XGE_ERROR_INVALID_STATE;
+	*pInfo = pSnapshot->tInfo;
+	return XGE_OK;
+}
+
+int xgeShapeDashSnapshotOffset(const xge_shape_dash_snapshot* pSnapshot, float* pOffset)
+{
+	if ( !pSnapshot || !pOffset ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pSnapshot->tOwner.iThread != xrtThreadCurrentId() ) return XGE_ERROR_INVALID_STATE;
+	*pOffset = pSnapshot->fOffset;
 	return XGE_OK;
 }
 
