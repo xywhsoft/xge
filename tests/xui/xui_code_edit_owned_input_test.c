@@ -28,6 +28,8 @@ typedef struct input_owner {
     int previews;
     int commits;
     int mode;
+    int source;
+    const char* text;
     const xerror* failure;
 } input_owner;
 
@@ -60,7 +62,13 @@ static int respond(xui_widget editor,const xui_code_input_event_t* event,
     xui_code_input_response_t* response,void* user)
 {
     input_owner* owner=user;
-    assert(owner->refs==3 && event->iSource==XUI_CODE_INPUT_SOURCE_KEYBOARD && event->iTextSize==1);
+    assert(owner->refs==3 && event->iSource==owner->source);
+    if(owner->text){
+        assert((size_t)event->iTextSize==strlen(owner->text) &&
+            !memcmp(event->sText,owner->text,(size_t)event->iTextSize));
+    }else{
+        assert(event->iTextSize==1);
+    }
     xui_call_scope_t scope={0}, rejected={0};
     assert(xuiCallScopeBeginManaged(owner->context,&scope)==XUI_OK);
     assert(xuiCallScopeBeginManaged(owner->context,&rejected)==XUI_ERROR_BUSY);
@@ -128,6 +136,9 @@ int main(void)
     desc.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED;
     assert(xuiCreateEx(&desc,&context)==XUI_OK);
     assert(xuiSetProxy(context,&proxy.tProxy)==XUI_OK);
+    xui_font font=NULL;
+    assert(proxy.tProxy.fontLoadFile(&proxy.tProxy,&font,"fixture.ttf",14,0)==XUI_OK);
+    assert(xuiSetDefaultFont(context,font)==XUI_OK);
     xui_widget editor=NULL;
     assert(xuiCodeEditCreate(context,&editor,NULL)==XUI_OK);
     assert(xuiSetRootWidget(context,editor)==XUI_OK);
@@ -137,7 +148,7 @@ int main(void)
     assert(xuiLayout(context)==XUI_OK);
     assert(xrtMemDebugEnabled() || xrtMemDebugEnable(true));
 
-    input_owner state={.context=context,.refs=1,.mode=1};
+    input_owner state={.context=context,.refs=1,.mode=1,.source=XUI_CODE_INPUT_SOURCE_KEYBOARD};
     const xrtownershipops ops={count,trace};
     const xui_callback_owner_t owner={{&state,&ops},hold,drop};
     assert(xrtMemDebugFailAfter(0));
@@ -168,7 +179,31 @@ int main(void)
     assert(xuiCodeEditSetInputHandler(editor,NULL,NULL)==XUI_OK && state.refs==1);
     assert(dispatch(context,editor,'w')==XUI_OK && !strcmp(xuiCodeEditGetText(editor),"w"));
     assert(state.previews==3 && state.commits==2);
+
+    state.mode=0;
+    state.source=XUI_CODE_INPUT_SOURCE_PASTE;
+    state.text="paste";
+    assert(xuiCodeEditSetInputHandlerOwned(editor,respond,&state,&owner)==XUI_OK);
+    assert(xuiTestProxySetClipboardText(&proxy,"paste")==XUI_OK);
+    xui_event_t key={.iSize=sizeof(key),.iType=XUI_EVENT_KEY_DOWN,.pTarget=editor,
+        .iKey='V',.iModifiers=XUI_MOD_CTRL};
+    assert(xuiDispatchEvent(context,&key)==XUI_OK && !strcmp(xuiCodeEditGetText(editor),"wpaste"));
+    assert(state.previews==4 && state.commits==3);
+
+    state.source=XUI_CODE_INPUT_SOURCE_COMPLETION;
+    state.text="print";
+    assert(xuiCodeEditSetText(editor,"pr")==XUI_OK);
+    assert(xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(editor),document,2,0)==XUI_OK);
+    assert(xuiCodeEditSetCompletionOptions(editor,0,1,16,0.05f)==XUI_OK);
+    xui_code_completion_item_t item={.iSize=sizeof(item),.sLabel="print",.sInsertText="print"};
+    assert(xuiCodeEditApplyCompletionItems(editor,xuiCodeDocumentGetVersion(document),2,&item,1)==XUI_OK);
+    key.iKey=XUI_KEY_ENTER;
+    key.iModifiers=0;
+    assert(xuiDispatchEvent(context,&key)==XUI_OK && !strcmp(xuiCodeEditGetText(editor),"print"));
+    assert(state.previews==5 && state.commits==4);
     xuiDestroy(context);
+    assert(state.refs==1);
+    proxy.tProxy.fontDestroy(&proxy.tProxy,font);
     puts("code_edit_owned_input passed");
     return 0;
 }
