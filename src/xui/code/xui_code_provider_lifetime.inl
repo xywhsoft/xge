@@ -29,6 +29,7 @@ static int __xuiCodeProviderDestroyNow(xui_code_provider_set providers)
     memset(&providers->callbacks,0,sizeof(providers->callbacks));
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     for(int i=0;i<XUI_PROVIDER_ROLES;++i)__xuiCodeProviderRelease(NULL,old[i],&receipt);
+    if (providers->replies) abort(); /* Active scopes retire all reply blocks. */
     providers->iMagic=0;xrtFree(providers);
     return xuiInternalCleanupEnd(NULL,&receipt);
 }
@@ -131,6 +132,7 @@ static int __xuiCodeProviderFinish(xui_code_provider_scope_t* scope,int primary)
     else providers->scopes=scope->_pNext;
     if(scope->_pNext)scope->_pNext->_pPrevious=scope->_pPrevious;
     scope->_pPrevious=NULL;scope->_pNext=NULL;
+    __xuiCodeProviderExpireReplies(providers, scope, -1);
     for(int i=0;i<XUI_PROVIDER_ROLES;++i){
         xui_code_provider_slot_t* node=scope->_pSlots[i];scope->_pSlots[i]=NULL;
         __xuiCodeProviderRelease(scope->pContext,node,&receipt);

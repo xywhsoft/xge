@@ -4580,9 +4580,17 @@ static int __xuiCodeEditShowCompletionInternal(xui_widget pWidget, xui_code_edit
 		sizeof(*pItems) * (size_t)pData->iCompletionMaxItems);
 	if ( pItems == NULL ){iRet=XUI_ERROR_OUT_OF_MEMORY;goto provider_cleanup;}
 	memset(pItems, 0, sizeof(*pItems) * (size_t)pData->iCompletionMaxItems);
+	uint32_t version = xuiCodeDocumentGetVersion(pData->pDocument);
 	iCount = 0;
 	iRet = xuiCodeProviderRequestCompletion(pData->pProviders, pWidget, iCaret, sPrefix,
 		pItems, pData->iCompletionMaxItems, &iCount);
+	if ( iRet == XUI_OK ) {
+		int currentCaret;
+		if ( !xuiInternalWidgetIsValid(pWidget) || version != xuiCodeDocumentGetVersion(pData->pDocument) ||
+		     __xuiCodeEditCompletionCaret(pData, &currentCaret) != XUI_OK || currentCaret != iCaret ) {
+			iRet = XUI_ERROR_INVALID_STATE;
+		}
+	}
 	if ( iRet == XUI_OK && iCount > 0 ) {
 		iRet = __xuiCodeEditOpenCompletionItems(
 			pWidget, pData, iStart, iCaret, sPrefix, pItems, iCount);
@@ -7507,6 +7515,30 @@ XUI_API int xuiCodeEditSetDiagnosticHoverOwned(xui_widget pWidget, xui_code_diag
 	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
 }
 
+XUI_API int xuiCodeEditSetCompletionProviderOwned(xui_widget pWidget,
+    xui_code_completion_reply_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(pWidget);
+    return data ? xuiCodeProviderSetCompletionReplyOwned(data->pProviders, callback, user, owner)
+                : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditSetHoverProviderOwned(xui_widget pWidget,
+    xui_code_hover_reply_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(pWidget);
+    return data ? xuiCodeProviderSetHoverReplyOwned(data->pProviders, callback, user, owner)
+                : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditSetSignatureProviderOwned(xui_widget pWidget,
+    xui_code_signature_reply_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(pWidget);
+    return data ? xuiCodeProviderSetSignatureReplyOwned(data->pProviders, callback, user, owner)
+                : XUI_ERROR_INVALID_ARGUMENT;
+}
+
 XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser)
 {
 	return xuiCodeEditSetDiagnosticHoverOwned(pWidget, onHover, pUser, NULL);
@@ -8627,9 +8659,17 @@ static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_ed
 	memset(&tSelection, 0, sizeof(tSelection));
 	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ){iRet=XUI_ERROR_UNSUPPORTED;goto provider_cleanup;}
 	memset(&tHelp, 0, sizeof(tHelp));
+	uint32_t version = xuiCodeDocumentGetVersion(pData->pDocument);
 	iRet = xuiCodeProviderRequestSignature(pData->pProviders, pWidget,
 		tSelection.iCaretOffset, &tHelp);
 	if ( iRet != XUI_OK ) goto provider_cleanup;
+	xui_code_selection_t current;
+	if ( !xuiInternalWidgetIsValid(pWidget) || version != xuiCodeDocumentGetVersion(pData->pDocument) ||
+	     xuiCodeSelectionGetState(pData->pSelection, &current) != XUI_OK ||
+	     current.iCaretOffset != tSelection.iCaretOffset ) {
+		iRet = XUI_ERROR_INVALID_STATE;
+		goto provider_cleanup;
+	}
 	iRet=xuiCodeEditShowSignatureHelp(pWidget,&tHelp);
 provider_cleanup:
 	{
@@ -8657,6 +8697,34 @@ XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget)
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return pData != NULL && pData->iAssistKind == XUI_CODE_EDIT_ASSIST_SIGNATURE &&
 		pData->pAssistPopup != NULL && xuiPopupIsOpen(pData->pAssistPopup);
+}
+
+XUI_API int xuiCodeEditRequestHoverHint(xui_widget widget, int offset)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+    if (!data || offset < -1) return XUI_ERROR_INVALID_ARGUMENT;
+    if (offset == -1) {
+        xui_code_selection_t selection;
+        int status = xuiCodeSelectionGetState(data->pSelection, &selection);
+        if (status != XUI_OK) return status;
+        offset = selection.iCaretOffset;
+    }
+    int length = xuiCodeDocumentGetLength(data->pDocument);
+    if (offset > length) return XUI_ERROR_INVALID_ARGUMENT;
+    uint32_t version = xuiCodeDocumentGetVersion(data->pDocument);
+
+    xui_code_provider_scope_t scope = {0};
+    int status = xuiCodeProviderSetCallBegin(data->pProviders, &scope);
+    if (status != XUI_OK) return status;
+    xui_code_hover_t hint = {0};
+    status = xuiCodeProviderRequestHover(data->pProviders, widget, offset, &hint);
+    if (status == XUI_OK &&
+        (!xuiInternalWidgetIsValid(widget) || version != xuiCodeDocumentGetVersion(data->pDocument))) {
+        status = XUI_ERROR_INVALID_STATE;
+    }
+    if (status == XUI_OK && hint.tRange.iEnd > length) status = XUI_ERROR_INVALID_ARGUMENT;
+    if (status == XUI_OK) status = xuiCodeEditShowHint(widget, &hint);
+    return xuiInternalCodeProviderCallEndRestored(&scope, status, xrtTakeError());
 }
 
 XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint)

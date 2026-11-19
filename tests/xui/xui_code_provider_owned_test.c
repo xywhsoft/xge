@@ -64,6 +64,96 @@ static int command(xui_widget widget,int id,const void* data,int* result,void* r
 {(void)widget;(void)data;assert(id>0);invoked(raw);*result=7;return XUI_OK;}
 static int enabled(xui_widget widget,int id,int* result,void* raw)
 {return command(widget,id,NULL,result,raw);}
+static int completeReply(xui_widget widget,int offset,xui_code_completion_reply_t* reply,void* raw)
+{
+    (void)widget;
+    Owner* owner=raw;
+    assert(offset==0&&strcmp(xuiCodeCompletionReplyGetPrefix(reply),"pr")==0);
+    assert(xuiCodeCompletionReplyGetRemaining(reply)==2);
+    char label[]="print";
+    xui_code_completion_item_t item={.iSize=sizeof(item),.sLabel=label,.sInsertText=label,
+        .sDocumentation="A local reply",.sSortText="",.iUserData=31};
+    int status=xuiCodeCompletionReplyAppendItem(reply,&item);
+    if(status!=XUI_OK)return status;
+    memset(label,'x',sizeof(label)-1);
+    assert(xuiCodeCompletionReplyGetRemaining(reply)==1);
+    assert(xuiCodeCompletionReplyAppendItems(reply,&item,2)==XUI_ERROR_LIMIT_EXCEEDED);
+    invoked(owner);
+    return XUI_OK;
+}
+static int hoverReply(xui_widget widget,int offset,xui_code_hover_reply_t* reply,void* raw)
+{
+    (void)widget;assert(offset==0);
+    char text[]="local hover";
+    xui_code_hover_t value={.iSize=sizeof(value),.tRange={0,3},.sText=text,.sContentType=""};
+    int status=xuiCodeHoverReplySet(reply,&value);
+    if(status!=XUI_OK)return status;
+    value.tRange.iStart=4;
+    assert(xuiCodeHoverReplySet(reply,&value)==XUI_ERROR_INVALID_ARGUMENT);
+    memset(text,'x',sizeof(text)-1);
+    invoked(raw);
+    return XUI_OK;
+}
+static int signatureReply(xui_widget widget,int offset,xui_code_signature_reply_t* reply,void* raw)
+{
+    (void)widget;assert(offset==0);
+    char label[]="print(value)",parameter[]="value";
+    xui_code_signature_parameter_t argument={.iSize=sizeof(argument),.sLabel=parameter,.tLabelRange={6,11}};
+    xui_code_signature_help_t value={.iSize=sizeof(value),.sLabel=label,.pParameters=&argument,
+        .iParameterCount=1,.iActiveParameter=0,.iUserData=73};
+    int status=xuiCodeSignatureReplySet(reply,&value);
+    if(status!=XUI_OK)return status;
+    memset(label,'x',sizeof(label)-1);
+    memset(parameter,'x',sizeof(parameter)-1);
+    argument.tLabelRange=(xui_code_range_t){0,0};
+    invoked(raw);
+    return XUI_OK;
+}
+static void replyStorage(void)
+{
+    xui_code_provider_set model=NULL;
+    assert(xuiCodeProviderSetCreate(&model)==XUI_OK);
+    Owner o;init(&o,model);
+    xui_callback_owner_t cap=capability(&o);
+    assert(xuiCodeProviderSetCompletionReplyOwned(model,completeReply,&o,&cap)==XUI_OK);
+    assert(xuiCodeProviderSetHoverReplyOwned(model,hoverReply,&o,&cap)==XUI_OK);
+    assert(xuiCodeProviderSetSignatureReplyOwned(model,signatureReply,&o,&cap)==XUI_OK&&o.refs==4);
+    xui_code_completion_item_t items[2];
+    int count=99;
+    assert(xuiCodeProviderRequestCompletion(model,NULL,0,"pr",items,2,&count)==XUI_ERROR_INVALID_STATE);
+    assert(count==0&&!items[0].sLabel&&o.calls==0);
+    xui_code_provider_scope_t outer={0}, inner={0};
+    assert(xuiCodeProviderSetCallBegin(model,&outer)==XUI_OK);
+    assert(xuiCodeProviderRequestCompletion(model,NULL,0,"pr",items,2,&count)==XUI_OK);
+    assert(count==1&&strcmp(items[0].sLabel,"print")==0&&strcmp(items[0].sInsertText,"print")==0);
+    assert(strcmp(items[0].sSortText,"")==0&&!items[0].sDetail&&items[0].iUserData==31);
+    const char* retainedLabel=items[0].sLabel;
+    xui_code_hover_t result={0}, nested={0};
+    xui_code_signature_help_t help={0};
+    assert(xuiCodeProviderRequestHover(model,NULL,0,&result)==XUI_OK&&strcmp(result.sText,"local hover")==0);
+    assert(result.sContentType&&result.sContentType[0]=='\0');
+    assert(xuiCodeProviderSetCallBegin(model,&inner)==XUI_OK);
+    assert(xuiCodeProviderRequestHover(model,NULL,0,&nested)==XUI_OK&&nested.sText!=result.sText);
+    assert(xuiCodeProviderRequestSignature(model,NULL,0,&help)==XUI_OK);
+    assert(strcmp(help.sLabel,"print(value)")==0&&help.iUserData==73);
+    assert(help.iParameterCount==1&&strcmp(help.pParameters[0].sLabel,"value")==0&&help.pParameters[0].tLabelRange.iStart==6);
+    assert(xuiCodeProviderSetCallEnd(&inner)==XUI_OK);
+    assert(strcmp(retainedLabel,"print")==0&&strcmp(result.sText,"local hover")==0);
+
+    assert(xrtMemDebugFailAfter(0));
+    assert(xuiCodeProviderRequestCompletion(model,NULL,0,"pr",items,2,&count)==XUI_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();xrtClearError();
+    assert(count==0&&!items[0].sLabel&&strcmp(retainedLabel,"print")==0);
+    o.callAction=4;
+    assert(xuiCodeProviderRequestSignature(model,NULL,0,&help)==XUI_ERROR_CALLBACK_FAILED);
+    assert(!help.sLabel&&help.iActiveParameter==-1&&xrtGetError());
+    xrtClearError();
+    assert(xuiCodeProviderRequestCompletion(model,NULL,0,"pr",items,2,&count)==XUI_OK);
+    assert(count==1&&strcmp(items[0].sLabel,"print")==0);
+    assert(xuiCodeProviderSetCallEnd(&outer)==XUI_OK);
+    assert(xuiCodeProviderSetDestroyChecked(model)==XUI_OK&&o.refs==1&&o.drops==3);
+    puts("Owned Provider replies: local strings, nested scopes, OOM rollback, diagnostic rollback");
+}
 static int install(Owner* owner,int role)
 {
     xui_callback_owner_t cap=capability(owner);
@@ -226,5 +316,6 @@ int main(void)
     marginBind();xmemdebugsnapshot initial;xrtMemDebugSnapshot(&initial);
     roles();balanced(&initial);publication();balanced(&initial);callerGeneration();balanced(&initial);diagnostics();balanced(&initial);
     graphAndHot();balanced(&initial);consumers();balanced(&initial);consumerAllocationPrefixes();balanced(&initial);
+    replyStorage();balanced(&initial);
     puts("Owned Provider: all5 roles, immutable pins, scoped borrows, generation, graph, reentry, errors and consumers passed");return 0;
 }

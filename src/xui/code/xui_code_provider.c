@@ -27,6 +27,9 @@ typedef union xui_code_provider_fn_t {
     xui_code_completion_proc complete;
     xui_code_hover_proc hover;
     xui_code_signature_proc signature;
+    xui_code_completion_reply_proc completeReply;
+    xui_code_hover_reply_proc hoverReply;
+    xui_code_signature_reply_proc signatureReply;
     xui_code_command_proc command;
     xui_code_command_enabled_proc enabled;
 } xui_code_provider_fn_t;
@@ -35,10 +38,12 @@ typedef struct xui_code_provider_slot_t {
     xui_callback_owner_t owner;
     void* user;
     xui_code_provider_fn_t fn;
+    bool reply;
 } xui_code_provider_slot_t;
 struct xui_code_provider_set_t {
     xui_code_provider_callbacks_t callbacks;
     xui_code_provider_slot_t* slots[XUI_PROVIDER_ROLES];
+    struct xui_code_provider_reply_block_t* replies;
     xui_code_provider_scope_t* scopes;
     uint64 nextScopeGeneration;
     uint32_t iMagic;
@@ -64,6 +69,7 @@ static void __xuiCodeProviderRelease(xui_context context,xui_code_provider_slot_
     xui_callback_owner_t owner=node->owner;xrtFree(node);
     xuiInternalCleanupAdd(receipt,xuiInternalCallbackOwnerDropOutcome(context,&owner,receipt->status,receipt->error));
 }
+#include "xui_code_provider_reply.inl"
 #include "xui_code_provider_lifetime.inl"
 #include "xui_code_provider_owned.inl"
 
@@ -140,15 +146,22 @@ XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set providers,xui
     *count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);
     xui_code_completion_proc callback=providers->callbacks.onComplete;void* user=providers->callbacks.pCompleteUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_COMPLETE];
-    if(selected){callback=selected->fn.complete;user=selected->user;}
+    bool reply = selected && selected->reply;
+    if(selected){callback=reply ? NULL : selected->fn.complete;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_COMPLETE,selected,&borrow);
     if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_COMPLETE,selected))status=XUI_ERROR_INVALID_STATE;
-    if(status==XUI_OK && !callback)status=XUI_ERROR_UNSUPPORTED;
+    if(status==XUI_OK && !callback && !reply)status=XUI_ERROR_UNSUPPORTED;
+    xui_code_completion_reply_t response={.items=items,.prefix=prefix ? prefix : "",.capacity=capacity};
     if(status==XUI_OK){
         __xuiCodeProviderCallbackBegin(&scope);
-        status=callback(widget,offset,prefix?prefix:"",items,capacity,count,user);
+        if (reply) {
+            status=selected->fn.completeReply(widget,offset,&response,user);
+            *count=response.count;
+        } else {
+            status=callback(widget,offset,prefix?prefix:"",items,capacity,count,user);
+        }
         __xuiCodeProviderCallbackEnd(&scope);
         if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
         if(status==XUI_OK && (*count<0 || *count>capacity || !__xuiCodeProviderCompletionItemsValid(items,*count)))status=XUI_ERROR_INVALID_STATE;
@@ -156,6 +169,10 @@ XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set providers,xui
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_COMPLETE,selected))status=XUI_ERROR_INVALID_STATE;
     status=__xuiCodeProviderFinish(&scope,status);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_COMPLETE,selected))status=XUI_ERROR_INVALID_STATE;
+    if (reply && status==XUI_OK)
+        __xuiCodeProviderSaveReply(providers,borrow.caller,XUI_PROVIDER_COMPLETE,response.blocks);
+    else
+        __xuiCodeReplyFree(response.blocks);
     if(status!=XUI_OK){*count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);}
     return status;
 }
@@ -168,20 +185,33 @@ XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set providers,xui_widg
     xui_code_hover_t value={0};value.iSize=sizeof(value);
     xui_code_hover_proc callback=providers->callbacks.onHover;void* user=providers->callbacks.pHoverUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_HOVER];
-    if(selected){callback=selected->fn.hover;user=selected->user;}
+    bool reply = selected && selected->reply;
+    if(selected){callback=reply ? NULL : selected->fn.hover;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_HOVER,selected,&borrow);
     if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_HOVER,selected))status=XUI_ERROR_INVALID_STATE;
-    if(status==XUI_OK && !callback)status=XUI_ERROR_UNSUPPORTED;
+    if(status==XUI_OK && !callback && !reply)status=XUI_ERROR_UNSUPPORTED;
+    xui_code_hover_reply_t response={0};
     if(status==XUI_OK){
-        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,offset,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        __xuiCodeProviderCallbackBegin(&scope);
+        if (reply) {
+            status=selected->fn.hoverReply(widget,offset,&response,user);
+            value=response.value;
+        } else {
+            status=callback(widget,offset,&value,user);
+        }
+        __xuiCodeProviderCallbackEnd(&scope);
         if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
         if(status==XUI_OK && !xuiInternalCodeProviderHoverValid(&value))status=XUI_ERROR_INVALID_STATE;
     }
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_HOVER,selected))status=XUI_ERROR_INVALID_STATE;
     status=__xuiCodeProviderFinish(&scope,status);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_HOVER,selected))status=XUI_ERROR_INVALID_STATE;
+    if (reply && status==XUI_OK)
+        __xuiCodeProviderSaveReply(providers,borrow.caller,XUI_PROVIDER_HOVER,response.block);
+    else
+        __xuiCodeReplyFree(response.block);
     if(status==XUI_OK){value.iSize=sizeof(value);*output=value;}
     return status;
 }
@@ -194,20 +224,33 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_
     xui_code_signature_help_t value={0};value.iSize=sizeof(value);value.iActiveParameter=-1;
     xui_code_signature_proc callback=providers->callbacks.onSignature;void* user=providers->callbacks.pSignatureUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_SIGNATURE];
-    if(selected){callback=selected->fn.signature;user=selected->user;}
+    bool reply = selected && selected->reply;
+    if(selected){callback=reply ? NULL : selected->fn.signature;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_SIGNATURE,selected,&borrow);
     if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_SIGNATURE,selected))status=XUI_ERROR_INVALID_STATE;
-    if(status==XUI_OK && !callback)status=XUI_ERROR_UNSUPPORTED;
+    if(status==XUI_OK && !callback && !reply)status=XUI_ERROR_UNSUPPORTED;
+    xui_code_signature_reply_t response={0};
     if(status==XUI_OK){
-        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,offset,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        __xuiCodeProviderCallbackBegin(&scope);
+        if (reply) {
+            status=selected->fn.signatureReply(widget,offset,&response,user);
+            value=response.value;
+        } else {
+            status=callback(widget,offset,&value,user);
+        }
+        __xuiCodeProviderCallbackEnd(&scope);
         if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
         if(status==XUI_OK && !xuiInternalCodeProviderSignatureValid(&value))status=XUI_ERROR_INVALID_STATE;
     }
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_SIGNATURE,selected))status=XUI_ERROR_INVALID_STATE;
     status=__xuiCodeProviderFinish(&scope,status);
     if(status==XUI_OK && selected && !__xuiCodeProviderBorrowValid(&borrow,providers,XUI_PROVIDER_SIGNATURE,selected))status=XUI_ERROR_INVALID_STATE;
+    if (reply && status==XUI_OK)
+        __xuiCodeProviderSaveReply(providers,borrow.caller,XUI_PROVIDER_SIGNATURE,response.block);
+    else
+        __xuiCodeReplyFree(response.block);
     if(status==XUI_OK){value.iSize=sizeof(value);*output=value;}
     return status;
 }

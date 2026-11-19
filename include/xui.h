@@ -2922,6 +2922,12 @@ struct xui_code_placeholder_t {
 	uint32_t iFlags;
 };
 
+typedef struct xui_code_completion_reply_t xui_code_completion_reply_t;
+typedef int (*xui_code_completion_reply_proc)(xui_widget_t* pWidget, int iOffset, xui_code_completion_reply_t* pReply, void* pUser);
+typedef struct xui_code_hover_reply_t xui_code_hover_reply_t;
+typedef int (*xui_code_hover_reply_proc)(xui_widget_t* pWidget, int iOffset, xui_code_hover_reply_t* pReply, void* pUser);
+typedef struct xui_code_signature_reply_t xui_code_signature_reply_t;
+typedef int (*xui_code_signature_reply_proc)(xui_widget_t* pWidget, int iOffset, xui_code_signature_reply_t* pReply, void* pUser);
 typedef int (*xui_code_completion_proc)(xui_widget_t* pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser);
 typedef int (*xui_code_hover_proc)(xui_widget_t* pWidget, int iOffset, xui_code_hover_t* pHover, void* pUser);
 typedef void (*xui_code_diagnostic_hover_proc)(xui_widget_t* pWidget, const xui_code_diagnostic_hit_t* pHit, void* pUser);
@@ -8345,6 +8351,21 @@ XUI_API int xuiCodeProviderSetHoverOwned(xui_code_provider_set pProviders,xui_co
 XUI_API int xuiCodeProviderSetSignatureOwned(xui_code_provider_set pProviders,xui_code_signature_proc onSignature,void* pUser,const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeProviderSetCommandOwned(xui_code_provider_set pProviders,xui_code_command_proc onCommand,void* pUser,const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeProviderSetCommandEnabledOwned(xui_code_provider_set pProviders,xui_code_command_enabled_proc onEnabled,void* pUser,const xui_callback_owner_t* pOwner);
+/* Transactional native replies. The reply pointer and its input views are
+ * valid only during the callback. Copying helpers preserve the preceding reply
+ * on failure. Owned results live in the requesting scope until that scope
+ * ends or a successful reply replaces its result for the same role.
+ * The previous raw callback interfaces still take borrowed C results. */
+XUI_API const char* xuiCodeCompletionReplyGetPrefix(const xui_code_completion_reply_t* reply);
+XUI_API int xuiCodeCompletionReplyGetRemaining(const xui_code_completion_reply_t* reply);
+XUI_API int xuiCodeCompletionReplyAppendItems(xui_code_completion_reply_t* reply, const xui_code_completion_item_t* items, int count);
+XUI_API int xuiCodeCompletionReplyAppendItem(xui_code_completion_reply_t* reply, const xui_code_completion_item_t* item);
+XUI_API int xuiCodeHoverReplySet(xui_code_hover_reply_t* reply, const xui_code_hover_t* hover);
+XUI_API int xuiCodeSignatureReplySet(xui_code_signature_reply_t* reply, const xui_code_signature_help_t* help);
+XUI_API int xuiCodeProviderSetCompletionReplyOwned(xui_code_provider_set pProviders, xui_code_completion_reply_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeProviderSetHoverReplyOwned(xui_code_provider_set pProviders, xui_code_hover_reply_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeProviderSetSignatureReplyOwned(xui_code_provider_set pProviders, xui_code_signature_reply_proc callback, void* user, const xui_callback_owner_t* owner);
+
 /* 请求指定前缀的补全项（同步调用注册的提供者）。pItems 在回调前清零，
  * 每个槽位的 iSize 会预置为当前结构大小。 */
 XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount);
@@ -8548,6 +8569,9 @@ XUI_API int xuiCodeEditFindDiagnostic(xui_widget widget, float x, float y, xui_c
 /* 注册诊断悬停提示回调。 */
 /* The hit and its text remain valid through the invocation; NULL means leave.
  * Replacement publishes the new handler before notifying the old handler. */
+XUI_API int xuiCodeEditSetCompletionProviderOwned(xui_widget pWidget, xui_code_completion_reply_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeEditSetHoverProviderOwned(xui_widget pWidget, xui_code_hover_reply_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeEditSetSignatureProviderOwned(xui_widget pWidget, xui_code_signature_reply_proc callback, void* user, const xui_callback_owner_t* owner);
 XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser);
 XUI_API int xuiCodeEditSetDiagnosticHoverOwned(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取 token 缓冲（词法缓存，编辑器持有）。 */
@@ -8648,6 +8672,9 @@ XUI_API int xuiCodeEditCloseSignatureHelp(xui_widget pWidget);
 /* 签名帮助是否打开。 */
 XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget);
 /* 在偏移处显示悬浮提示。 */
+/* Ask the installed hover provider and show its answer at a document byte offset.
+ * An offset of -1 uses the caret. */
+XUI_API int xuiCodeEditRequestHoverHint(xui_widget pWidget, int offset);
 XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint);
 /* 关闭悬浮提示。 */
 XUI_API int xuiCodeEditCloseHint(xui_widget pWidget);
