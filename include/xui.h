@@ -9040,10 +9040,17 @@ XUI_API int xuiInputSetBorderWidth(xui_widget pWidget, float fBorderWidth);
 XUI_API float xuiInputGetBorderWidth(xui_widget pWidget);
 /* 添加侧边装饰（图标/按钮/矢量图）；*ppDecoration 可空输出句柄。 */
 XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decoration* ppDecoration, const xui_input_decoration_desc_t* pDesc);
+/* The Input owns the decoration. The owned forms keep a compatible managed
+ * Surface and one shared callback owner until replacement or removal. */
+XUI_API int xuiInputDecorationAddOwned(xui_widget pWidget, int iSide, xui_input_decoration* ppDecoration,
+	const xui_input_decoration_desc_t* pDesc, const xui_callback_owner_t* pOwner);
 /* 覆盖装饰描述。 */
 XUI_API int xuiInputDecorationSet(xui_widget pWidget, xui_input_decoration pDecoration, const xui_input_decoration_desc_t* pDesc);
+XUI_API int xuiInputDecorationSetOwned(xui_widget pWidget, xui_input_decoration pDecoration,
+	const xui_input_decoration_desc_t* pDesc, const xui_callback_owner_t* pOwner);
 /* 移除装饰。 */
 XUI_API int xuiInputDecorationRemove(xui_widget pWidget, xui_input_decoration pDecoration);
+XUI_API int xuiInputDecorationRemoveFromOwner(xui_input_decoration pDecoration);
 /* 清空指定侧全部装饰。 */
 XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide);
 /* 读取指定侧装饰数。 */
@@ -9059,6 +9066,9 @@ XUI_API int xuiInputDecorationLifetimeWatch(xui_input_decoration pDecoration,
 	xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* Read the widget-local bounds from the most recent Input layout. */
 XUI_API int xuiInputDecorationGetBounds(xui_input_decoration pDecoration, xui_rect_t* pRect);
+/* A synchronous description. Callback slots and borrowed legacy Surfaces
+ * are omitted. Text and managed Surface remain valid within the call scope. */
+XUI_API int xuiInputDecorationDescribe(xui_input_decoration pDecoration, xui_input_decoration_desc_t* pDesc);
 /* 按命令 id 设置右键菜单标题。 */
 XUI_API int xuiInputSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
 /* 按命令 id 读取菜单标题。 */
