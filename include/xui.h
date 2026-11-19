@@ -3115,6 +3115,9 @@ typedef int (*xui_list_view_item_proc)(xui_widget_t* pWidget, int iIndex, xui_dr
 /* UI-thread, read-only provider. Text is borrowed until the next provider call;
  * NULL means empty. Do not mutate/destroy the list from this callback. */
 typedef const char* (*xui_list_view_text_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
+/* Transfers an XRT-owned UTF-8 span. Non-NULL Data stores Size bytes and a
+ * trailing NUL at Data[Size]. {NULL,0} supplies an empty label. */
+typedef xstrview (*xui_list_view_text_owned_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
 /* MessageList event callbacks run synchronously on the UI thread and may
  * mutate or destroy the list or its context. pEvent and pEvent->pNode are
  * borrowed only for the duration of the callback. The node descriptor and
@@ -11633,12 +11636,21 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
  * allocated only on demand. Switching from owned SetItems releases its old
  * copied strings synchronously. */
 XUI_API int xuiListViewSetVirtualItems(xui_widget pWidget, int iCount, xui_list_view_text_proc onText, void* pUser);
+/* Retains the provider owner until replacement or list destruction. A NULL
+ * provider supplies empty labels. Recursive reads from the active provider
+ * report Busy. A provider may replace the source or close the widget. */
+XUI_API int xuiListViewSetVirtualItemsOwned(xui_widget pWidget, int iCount, xui_list_view_text_owned_proc onText,
+	void* pUser, const xui_callback_owner_t* pOwner);
 /* 按位数组设置条目启用状态。 */
 XUI_API int xuiListViewSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iCount);
 /* 读取条目数。 */
 XUI_API int xuiListViewGetItemCount(xui_widget pWidget);
-/* 按索引读取条目文本。 */
+/* 按索引读取条目文本。For an owned provider the returned C string is valid
+ * until the next legacy text read, source replacement or widget destruction. */
 XUI_API const char* xuiListViewGetItemText(xui_widget pWidget, int iIndex);
+/* Returns an XRT-owned, terminated UTF-8 span; release *psText with xrtFree.
+ * Invalid indices report INVALID_ARGUMENT. Failure clears both outputs. */
+XUI_API int xuiListViewGetItemTextOwned(xui_widget pWidget, int iIndex, char** psText, size_t* piSize);
 /* 按索引查询启用状态。 */
 XUI_API int xuiListViewIsItemEnabled(xui_widget pWidget, int iIndex);
 /* 设置字体。 */
