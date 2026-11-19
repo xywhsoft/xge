@@ -48,6 +48,7 @@ static int __xuiCodeMarginSetCallback(xui_code_margin_model model,int id,int rol
         if(held)xuiInternalCleanupAdd(&receipt,xuiInternalCallbackOwnerDropOutcome(scope.pContext,&node->owner,receipt.status,receipt.error));
         xrtFree(node);
     }
+    if (status == XUI_OK && role == 1) __xuiCodeMarginChanged(model, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
     __xuiCodeMarginReleaseList(scope.pContext,old,&receipt);
     return __xuiCodeMarginFinish(&scope,&receipt);
 }

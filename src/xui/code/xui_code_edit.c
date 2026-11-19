@@ -7530,6 +7530,22 @@ XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget)
 	return (pData != NULL) ? pData->pMargins : NULL;
 }
 
+XUI_API int xuiCodeEditSetMarginRenderCallbackOwned(xui_widget pWidget, int iId,
+    xui_code_margin_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiCodeMarginModelSetRenderCallbackOwned(pData->pMargins, iId, onRender, pUser, pOwner);
+}
+
+XUI_API int xuiCodeEditSetMarginEventCallbackOwned(xui_widget pWidget, int iId,
+    xui_code_margin_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiCodeMarginModelSetEventCallbackOwned(pData->pMargins, iId, onEvent, pUser, pOwner);
+}
+
 static int __xuiCodeEditDefaultMarginVisible(xui_code_edit_data_t* pData, int iKind)
 {
 	xui_code_margin_state_t tInfo;

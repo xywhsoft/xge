@@ -38,6 +38,24 @@ static int __xuiCodeMarginReadStatus(xui_code_margin_model model)
         (model->pInternalOwner && !xuiInternalWidgetIsValid(model->pInternalOwner)))return XUI_ERROR_INVALID_STATE;
     return XUI_OK;
 }
+static void __xuiCodeMarginChanged(xui_code_margin_model model, uint32_t flags)
+{
+    xui_widget owner = model->pInternalOwner;
+    if ( owner == NULL || (owner->iDirtyFlags & flags) == flags ) return;
+    xerror* prior = xrtTakeError();
+    if ( xuiWidgetInvalidate(owner, flags) != XUI_OK ) {
+        xrtClearError();
+        (void)xuiInternalContextInvalidateAll(owner->pContext);
+    }
+    xrtClearError();
+    xrtSetErrorTake(prior);
+}
+
+static void __xuiCodeMarginGeometryChanged(xui_code_margin_model model)
+{
+    __xuiCodeMarginChanged(model, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 /* Unlink only while holding the mutation gate. User Drop always runs after
  * the graph update, and a native call scope protects reentrant destruction. */
 static xui_code_margin_slot_t* __xuiCodeMarginDetach(xui_code_margin_model model,int id,int role)
@@ -110,6 +128,15 @@ XUI_API int xuiCodeMarginModelLifetimeWatch(xui_code_margin_model model,xui_life
     if(link->pNext)link->pNext->ppPrevious=&link->pNext;
     model->pLifetimeLinks=link;return XUI_OK;
 }
+XUI_API int xuiCodeMarginModelEditorLifetimeWatch(xui_code_margin_model model,
+    xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidated, void* user)
+{
+    int status = __xuiCodeMarginReadStatus(model);
+    if ( status != XUI_OK ) return status;
+    if ( model->pInternalOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiWidgetLifetimeWatch(model->pInternalOwner, link, invalidated, user);
+}
+
 XUI_API int xuiCodeMarginModelCallBegin(xui_code_margin_model model,xui_code_margin_scope_t* scope)
 {
     if(!scope || scope->pSelf || scope->pModel || scope->pContext || scope->tContext.pSelf)return XUI_ERROR_INVALID_ARGUMENT;
@@ -258,6 +285,7 @@ XUI_API int xuiCodeMarginModelClearChecked(xui_code_margin_model pModel)
     if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
     else {pModel->iCount=0;nodes=__xuiCodeMarginDetach(pModel,0,0);if(!xrtOwnershipScopeEnd(&mutation))abort();}
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    if ( status == XUI_OK ) __xuiCodeMarginGeometryChanged(pModel);
     __xuiCodeMarginReleaseList(scope.pContext,nodes,&receipt);
     return __xuiCodeMarginFinish(&scope,&receipt);
 }
@@ -310,6 +338,7 @@ XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLi
 	pModel->iCapacity = tNew.iCapacity;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
+    __xuiCodeMarginGeometryChanged(pModel);
     __xuiCodeMarginReleaseList(scope.pContext,nodes,&receipt);
     return __xuiCodeMarginFinish(&scope,&receipt);
 
@@ -346,6 +375,7 @@ XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_m
         if(!xrtOwnershipScopeEnd(&mutation))abort();
     }
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,iRet);
+    if ( iRet == XUI_OK ) __xuiCodeMarginGeometryChanged(pModel);
     __xuiCodeMarginReleaseList(scope.pContext,nodes,&receipt);
     return __xuiCodeMarginFinish(&scope,&receipt);
 }
@@ -367,6 +397,7 @@ XUI_API int xuiCodeMarginModelRemove(xui_code_margin_model pModel, int iId)
         if(!xrtOwnershipScopeEnd(&mutation))abort();
     }
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,status);
+    if ( status == XUI_OK ) __xuiCodeMarginGeometryChanged(pModel);
     __xuiCodeMarginReleaseList(scope.pContext,nodes,&receipt);
     return __xuiCodeMarginFinish(&scope,&receipt);
 }
@@ -380,7 +411,11 @@ XUI_API int xuiCodeMarginModelSetWidth(xui_code_margin_model pModel, int iId, fl
 	     (fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
+	if ( pModel->pMargins[iIndex].fWidth == fWidth ) return XUI_OK;
+	if ( pModel->pInternalOwner && pModel->pInternalOwner->pContext->bGuardedCallback )
+		return XUI_ERROR_BUSY;
 	pModel->pMargins[iIndex].fWidth = fWidth;
+	__xuiCodeMarginGeometryChanged(pModel);
 	return XUI_OK;
 }
 
@@ -392,8 +427,12 @@ XUI_API int xuiCodeMarginModelSetVisible(xui_code_margin_model pModel, int iId, 
 	if ( (pModel == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeMarginFind(pModel, iId);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
-	if ( bVisible ) pModel->pMargins[iIndex].iFlags |= XUI_CODE_MARGIN_VISIBLE;
-	else pModel->pMargins[iIndex].iFlags &= ~XUI_CODE_MARGIN_VISIBLE;
+	uint32_t oldFlags = pModel->pMargins[iIndex].iFlags;
+	uint32_t flags = bVisible ? oldFlags | XUI_CODE_MARGIN_VISIBLE : oldFlags & ~XUI_CODE_MARGIN_VISIBLE;
+	if ( flags == oldFlags ) return XUI_OK;
+	if ( pModel->pInternalOwner && pModel->pInternalOwner->pContext->bGuardedCallback ) return XUI_ERROR_BUSY;
+	pModel->pMargins[iIndex].iFlags = flags;
+	__xuiCodeMarginGeometryChanged(pModel);
 	return XUI_OK;
 }
 
@@ -495,6 +534,11 @@ static int __xuiCodeMarginLayout(xui_code_margin_model pModel,xui_rect_t tViewpo
 	if ( iTextLeft > iViewportRight ) iTextLeft = iViewportRight;
 	tTextRect = (xui_rect_t){ iTextLeft, tViewport.fY,
 		iViewportRight - iTextLeft, tViewport.fH };
+	if ( iInfoCapacity == 0 ) {
+		*pInfoCount = iCount;
+		if ( pTextRect != NULL ) *pTextRect = tTextRect;
+		return XUI_OK;
+	}
 	fX = tViewport.fX;
 	iCount = 0;
 	for ( i = 0; i < pModel->iCount; i++ ) {
@@ -521,6 +565,12 @@ XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model model,xui_rect_t view
     int status=__xuiCodeMarginReadStatus(model);if(status!=XUI_OK)return status;
     if(model->slots)return XUI_ERROR_UNSUPPORTED;
     return __xuiCodeMarginLayout(model,viewport,infos,NULL,capacity,count,text);
+}
+
+XUI_API int xuiCodeMarginModelMeasureLayout(xui_code_margin_model model, xui_rect_t viewport,
+    int* count, xui_rect_t* text)
+{
+    return __xuiCodeMarginLayout(model, viewport, NULL, NULL, 0, count, text);
 }
 
 XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit)
@@ -565,6 +615,13 @@ XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t t
 		fCurrentX = fNextX;
 	}
 	return XUI_ERROR_UNSUPPORTED;
+}
+
+XUI_API int xuiCodeMarginModelFindHit(xui_code_margin_model model, xui_rect_t viewport,
+    float x, float y, float lineHeight, float scrollY, xui_code_margin_hit_t* hit)
+{
+    int status = xuiCodeMarginModelHitTest(model, viewport, x, y, lineHeight, scrollY, hit);
+    return status == XUI_ERROR_UNSUPPORTED ? XUI_OK : status;
 }
 
 #include "xui_code_margin_owned.inl"

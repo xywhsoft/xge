@@ -156,6 +156,50 @@ static void dispose(UI* u)
     backend.tProxy.surfaceDestroy(&backend.tProxy,u->target);
     backend.tProxy.fontDestroy(&backend.tProxy,u->font);
 }
+static void countedInvalidation(void* user)
+{
+    ++*(int*)user;
+}
+static void observedGeometry(void)
+{
+    UI u=ui();
+    xui_code_margin_model model=xuiCodeEditGetMargins(u.editor);
+    assert(xuiCodeMarginModelClearChecked(model)==XUI_OK);
+    add(model,10);
+    xui_lifetime_link_t link={0},detached={0};
+    int invalidated=0,detachedCalls=0;
+    assert(xuiCodeMarginModelEditorLifetimeWatch(model,&link,countedInvalidation,&invalidated)==XUI_OK);
+    assert(xuiCodeMarginModelEditorLifetimeWatch(model,&detached,countedInvalidation,&detachedCalls)==XUI_OK);
+    xuiLifetimeUnwatch(&detached);
+    assert(xuiCodeMarginModelDestroyChecked(model)==XUI_ERROR_INVALID_STATE);
+
+    const uint32_t dirty=XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER;
+    xuiWidgetClearDirty(u.editor,dirty);
+    assert(xuiCodeMarginModelSetWidth(model,10,24)==XUI_OK);
+    assert((xuiWidgetGetDirtyFlags(u.editor)&dirty)==dirty);
+    xuiWidgetClearDirty(u.editor,dirty);
+    assert(xuiCodeMarginModelSetWidth(model,10,24)==XUI_OK);
+    assert((xuiWidgetGetDirtyFlags(u.editor)&dirty)==0);
+
+    Owner state={.refs=1,.model=model,.editor=u.editor};
+    xui_callback_owner_t callback=owner(&state);
+    assert(xuiCodeEditSetMarginRenderCallbackOwned(u.editor,10,render,&state,&callback)==XUI_OK);
+    xui_rect_t viewport={0,0,320,180},text={0};
+    int count=0;
+    assert(xuiCodeMarginModelMeasureLayout(model,viewport,&count,&text)==XUI_OK);
+    assert(count==1&&text.fX==24&&text.fW==296);
+    xui_code_margin_hit_t hit={0};
+    assert(xuiCodeMarginModelFindHit(model,viewport,2,24,12,0,&hit)==XUI_OK&&hit.iId==10&&hit.iLine==2);
+    assert(xuiCodeMarginModelFindHit(model,viewport,100,24,12,0,&hit)==XUI_OK&&hit.iId==0);
+    assert(xuiCodeMarginModelFindHit(model,viewport,2,24,0,0,&hit)==XUI_ERROR_INVALID_ARGUMENT);
+
+    xui_call_scope_t scope={0};
+    assert(xuiCallScopeBegin(u.context,&scope)==XUI_OK);
+    assert(xuiWidgetDestroyChecked(u.editor)==XUI_OK);
+    assert(invalidated==1&&detachedCalls==0&&state.refs==2);
+    assert(xuiCallScopeEnd(&scope)==XUI_OK&&state.refs==1);
+    dispose(&u);
+}
 static void frameAndEvent(void)
 {
     for(int mode=0;mode<3;++mode){
@@ -164,8 +208,8 @@ static void frameAndEvent(void)
         Owner a={.refs=1,.model=m,.editor=u.editor},b={.refs=1,.model=m,.editor=u.editor};
         xui_callback_owner_t oa=owner(&a),ob=owner(&b);
         if(mode<2){
-            assert(xuiCodeMarginModelSetRenderCallbackOwned(m,10,render,&a,&oa)==XUI_OK);
-            assert(xuiCodeMarginModelSetRenderCallbackOwned(m,20,render,&b,&ob)==XUI_OK);
+            assert(xuiCodeEditSetMarginRenderCallbackOwned(u.editor,10,render,&a,&oa)==XUI_OK);
+            assert(xuiCodeEditSetMarginRenderCallbackOwned(u.editor,20,render,&b,&ob)==XUI_OK);
             a.callAction=mode==0?1:3;
             xui_call_scope_t checked={0};
             if(mode==1)assert(xuiCallScopeBegin(u.context,&checked)==XUI_OK);
@@ -178,8 +222,8 @@ static void frameAndEvent(void)
                 assert(xuiCallScopeEnd(&checked)==XUI_ERROR_INVALID_STATE&&a.refs==1&&b.refs==1);xrtClearError();
             }
         }else{
-            assert(xuiCodeMarginModelSetEventCallbackOwned(m,10,event,&a,&oa)==XUI_OK);
-            assert(xuiCodeMarginModelSetRenderCallbackOwned(m,10,render,&b,&ob)==XUI_OK);
+            assert(xuiCodeEditSetMarginEventCallbackOwned(u.editor,10,event,&a,&oa)==XUI_OK);
+            assert(xuiCodeEditSetMarginRenderCallbackOwned(u.editor,10,render,&b,&ob)==XUI_OK);
             assert(xuiRender(u.context,u.target,NULL,0)==XUI_OK&&b.calls>0&&!a.calls);
             a.callAction=1;
             assert(xuiInputPointerDown(u.context,10,12,XUI_POINTER_BUTTON_LEFT,XUI_POINTER_BUTTON_LEFT)==XUI_OK);
@@ -223,6 +267,7 @@ int main(void)
 {
     marginBind();xmemdebugsnapshot baseline;xrtMemDebugSnapshot(&baseline);
     publication();balanced(&baseline);cold();balanced(&baseline);frameAndEvent();balanced(&baseline);
+    observedGeometry();balanced(&baseline);
 #if defined(XGE_TEST_STATIC)
     privateFrame();balanced(&baseline);
 #endif

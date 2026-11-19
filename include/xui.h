@@ -8367,6 +8367,9 @@ XUI_API int xuiCodeMarginModelDestroyOwnerChecked(xui_code_margin_model pModel,b
 XUI_API int xuiCodeMarginModelDestroyChecked(xui_code_margin_model pModel);
 XUI_API bool xuiCodeMarginModelOwnershipBusy(xui_code_margin_model pModel);
 XUI_API int xuiCodeMarginModelLifetimeWatch(xui_code_margin_model pModel,xui_lifetime_link_t* pLink,xui_lifetime_invalidate_proc onInvalidate,void* pUser);
+/* Observe the owning CodeEdit. The link is invalidated at logical widget close. */
+XUI_API int xuiCodeMarginModelEditorLifetimeWatch(xui_code_margin_model pModel, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+
 typedef struct xui_code_margin_scope_t {
     struct xui_code_margin_scope_t* pSelf;
     xui_code_margin_model pModel;
@@ -8387,6 +8390,11 @@ XUI_API int xuiCodeMarginModelGetState(xui_code_margin_model pModel,int iIndex,x
 
 /* 移除全部边栏。 */
 XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
+/* Numeric geometry queries remain valid with owned callbacks installed.
+ * FindHit clears the output and returns OK with iId == 0 outside a margin. */
+XUI_API int xuiCodeMarginModelMeasureLayout(xui_code_margin_model pModel, xui_rect_t tViewport, int* pCount, xui_rect_t* pTextRect);
+XUI_API int xuiCodeMarginModelFindHit(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit);
+
 /* 按开关组合装入默认边栏（行号/标记/折叠/诊断）。 */
 XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic);
 /* 添加或按 id 替换自定义边栏；描述按值复制，回调和 pUser 不转移所有权。 */
@@ -8548,6 +8556,9 @@ XUI_API xui_code_token_buffer xuiCodeEditGetTokenBuffer(xui_widget pWidget);
 XUI_API xui_code_provider_set xuiCodeEditGetProviders(xui_widget pWidget);
 /* 取边栏模型（行号/标记/折叠栏，编辑器持有）。 */
 XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget);
+/* The callbacks are installed on the editor's margin model. */
+XUI_API int xuiCodeEditSetMarginRenderCallbackOwned(xui_widget pWidget, int iId, xui_code_margin_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeEditSetMarginEventCallbackOwned(xui_widget pWidget, int iId, xui_code_margin_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取键位映射表（编辑器持有）。 */
 XUI_API xui_code_command_map xuiCodeEditGetCommandMap(xui_widget pWidget);
 /* 取语言注册表（编辑器持有）。 */
