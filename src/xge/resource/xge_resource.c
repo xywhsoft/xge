@@ -9,6 +9,8 @@ typedef struct xge_resource_registration_t {
     xge_callback_node_t* owner;
     void (*releaseUser)(void*);
     bool packed;
+    bool miniProgram;
+    uint64_t readerThread;
     char* scheme;
     char* root;
 } xge_resource_registration_t;
@@ -45,52 +47,40 @@ static int __xgeResourceRegistryPublish(xge_resource_registration_t* entry)
     if(status==XGE_OK){g_xgeResourceProviders[g_xgeResourceProviderCount++]=entry;if(entry->packed)++g_xgeResourcePackCount;}
     (void)xrtSpinUnlock(&g_xgeResourceSpin);return status;
 }
-/* Caller owns user until successful publication. For native bridge providers
- * this hook is the real registration reference, distinct from payload refs. */
-static int __xgeResourceProviderStore(const xge_resource_provider_t* provider,void (*releaseUser)(void*),bool replace,bool* published)
+int xgeResourceProviderAdd(const xge_resource_provider_t* provider)
 {
-    if(published)*published=false;
     if(!provider || !provider->sScheme || !provider->load)return XGE_ERROR_INVALID_ARGUMENT;
     xge_resource_registration_t* entry=xrtCalloc(1,sizeof(*entry));
     if(!entry)return XGE_ERROR_OUT_OF_MEMORY;
     xrtAtomic64Init(&entry->refs,1);entry->raw=*provider;
     entry->scheme=__xgeStrDup(provider->sScheme);
     if(!entry->scheme){xrtFree(entry);return XGE_ERROR_OUT_OF_MEMORY;}
-    entry->releaseUser=releaseUser;
-    xge_resource_registration_t* old=NULL;
-    (void)xrtSpinLock(&g_xgeResourceSpin);int slot=-1;
-    if(replace)for(int i=0;i<g_xgeResourceProviderCount;++i){
-        xge_resource_registration_t* candidate=g_xgeResourceProviders[i];
-        if(!candidate->read && candidate->raw.load==provider->load && candidate->raw.free==provider->free){slot=i;break;}
-    }
-    int status=xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE) ? XGE_ERROR_INVALID_STATE:
-        slot<0 && g_xgeResourceProviderCount==XGE_RESOURCE_PROVIDER_MAX ? XGE_ERROR_RESOURCE_FAILED:XGE_OK;
-    if(status==XGE_OK){if(slot<0)g_xgeResourceProviders[g_xgeResourceProviderCount++]=entry;
-        else {old=g_xgeResourceProviders[slot];g_xgeResourceProviders[slot]=entry;}}
-    (void)xrtSpinUnlock(&g_xgeResourceSpin);
-    if(status!=XGE_OK){entry->releaseUser=NULL;(void)__xgeResourceRegistrationRelease(entry);return status;}
-    if(published)*published=true;
-    return __xgeResourceRegistrationRelease(old);
+    int status=__xgeResourceRegistryPublish(entry);
+    if(status!=XGE_OK)(void)__xgeResourceRegistrationRelease(entry);
+    return status;
 }
-static int __xgeResourceProviderReplaceWithRelease(const xge_resource_provider_t* provider,void (*releaseUser)(void*),bool* published)
-{return __xgeResourceProviderStore(provider,releaseUser,true,published);}
-int xgeResourceProviderAdd(const xge_resource_provider_t* provider)
-{return __xgeResourceProviderStore(provider,NULL,false,NULL);}
 
-static int __xgeResourceRegistryRemove(int (*load)(const char*,void**,int*,void*),void (*freeData)(void*,void*))
+/* The mini-program publisher uses this under the same lock as its bridge
+ * table. Swapping both makes a replacement visible in one transaction. */
+static int __xgeResourceRegistryReplaceMiniLocked(xge_resource_registration_t* entry,
+    xge_resource_registration_t** previous)
 {
-    xge_resource_registration_t* removed[XGE_RESOURCE_PROVIDER_MAX];int count=0,write=0;
-    (void)xrtSpinLock(&g_xgeResourceSpin);
     for(int i=0;i<g_xgeResourceProviderCount;++i){
-        xge_resource_registration_t* entry=g_xgeResourceProviders[i];
-        if(!entry->read && entry->raw.load==load && entry->raw.free==freeData){removed[count++]=entry;if(entry->packed)--g_xgeResourcePackCount;}
-        else g_xgeResourceProviders[write++]=entry;
+        if(!g_xgeResourceProviders[i]->miniProgram)continue;
+        *previous=g_xgeResourceProviders[i];
+        if(entry)g_xgeResourceProviders[i]=entry;
+        else{
+            --g_xgeResourceProviderCount;
+            memmove(g_xgeResourceProviders+i,g_xgeResourceProviders+i+1,
+                (size_t)(g_xgeResourceProviderCount-i)*sizeof(*g_xgeResourceProviders));
+            g_xgeResourceProviders[g_xgeResourceProviderCount]=NULL;
+        }
+        return XGE_OK;
     }
-    memset(g_xgeResourceProviders+write,0,(size_t)(g_xgeResourceProviderCount-write)*sizeof(*g_xgeResourceProviders));
-    g_xgeResourceProviderCount=write;(void)xrtSpinUnlock(&g_xgeResourceSpin);
-    xerror* ambient=xrtTakeError();int status=XGE_OK;xerror* first=NULL;
-    for(int i=0;i<count;++i)__xgeCallbackOutcome(__xgeResourceRegistrationRelease(removed[i]),&status,&first);
-    if(status==XGE_OK)xrtSetErrorTake(ambient);else{xrtErrorFree(ambient);xrtSetErrorTake(first);}return status;
+    if(!entry)return XGE_OK;
+    if(g_xgeResourceProviderCount==XGE_RESOURCE_PROVIDER_MAX)return XGE_ERROR_RESOURCE_FAILED;
+    g_xgeResourceProviders[g_xgeResourceProviderCount++]=entry;
+    return XGE_OK;
 }
 int xgeResourceProviderClearChecked(void)
 {
@@ -256,6 +246,7 @@ static void __xgeResourceFreeRegistration(void* data,void* user)
 }
 static int __xgeResourceRegistrationLoad(xge_resource_registration_t* entry,const char* uri,xge_resource_t* output)
 {
+    if(entry->readerThread && entry->readerThread!=xrtThreadCurrentId())return XGE_ERROR_BUSY;
     char* packPath=NULL;
     if(entry->packed){
         int scheme=__xgeUriSchemeLen(uri);const char* path=scheme>0 ? uri+scheme+3:uri;

@@ -263,7 +263,6 @@ typedef struct xge_context_t {
 	xge_graphics_backend_t tGraphicsBackend;
 	xge_gpu_caps_t tGpuCaps;
 	xge_miniprogram_desc_t tMiniProgramDesc;
-	xge_miniprogram_bridge_t tMiniProgramBridge;
 	int bMiniProgramInitialized;
 	int bAsyncThreadingEnabled;
 	int iSceneUpdateMode;
@@ -2268,6 +2267,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 static void __xgeEmojiGlobalClear(void);
 static int __xgeDragDropUnit(void);
+static int __xgeMiniProgramUnit(bool allowShutdown);
 #if XGE_ENABLE_AUDIO
 static void __xgeAudioUnit(void);
 #endif

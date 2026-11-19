@@ -1,95 +1,126 @@
-typedef struct __xge_miniprogram_bridge_snapshot_t {
-	xge_miniprogram_bridge_t tBridge;
-	int iRefCount;
-} __xge_miniprogram_bridge_snapshot_t;
+typedef struct xge_mini_bridge_state_t {
+	xge_miniprogram_bridge_t raw;
+	xge_miniprogram_owned_bridge_t owned;
+	xge_callback_node_t* owner;
+	uint64_t creatorThread;
+} xge_mini_bridge_state_t;
 
-static void __xgeMiniProgramBridgeSnapshotRelease(__xge_miniprogram_bridge_snapshot_t* pSnapshot)
+/* Registered before or after engine Init, like the resource registry.
+ * The registry lock publishes the provider and bridge together. */
+static xge_mini_bridge_state_t g_xgeMiniBridge;
+static bool g_xgeMiniConfiguring;
+
+static int __xgeMiniRawLoad(const char* uri, void** data, int* size, void* user)
 {
-	if ( pSnapshot == NULL ) return;
-	pSnapshot->iRefCount--;
-	if ( pSnapshot->iRefCount <= 0 ) {
-		xrtFree(pSnapshot);
+	const xge_miniprogram_bridge_t* bridge = user;
+	int status = bridge->load_resource(uri, data, size, bridge->pUser);
+	if ( status != XGE_OK ) {
+		/* The legacy bridge retains responsibility for a failed output. */
+		*data = NULL;
+		*size = 0;
+	} else if ( *data == NULL ) {
+		status = XGE_ERROR_RESOURCE_FAILED;
 	}
+	return status;
 }
 
-static int __xgeMiniProgramResourceLoad(const char* sURI, void** ppData, int* pSize, void* pUser)
+static void __xgeMiniRawFree(void* data, void* user)
 {
-	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
-	xge_miniprogram_bridge_t* pBridge;
-	int iRet;
+	const xge_miniprogram_bridge_t* bridge = user;
+	if ( bridge->free_resource ) bridge->free_resource(data, bridge->pUser);
+	else xrtFree(data);
+}
 
-	if ( (sURI == NULL) || (ppData == NULL) || (pSize == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*ppData = NULL;
-	*pSize = 0;
-	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)pUser;
-	if ( (pSnapshot == NULL) || (pSnapshot->iRefCount <= 0) ) {
-		return XGE_ERROR_INVALID_STATE;
-	}
-	pBridge = &pSnapshot->tBridge;
-	if ( pBridge->load_resource == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	pSnapshot->iRefCount++;
-	iRet = pBridge->load_resource(sURI, ppData, pSize, pBridge->pUser);
-	if ( (iRet != XGE_OK) || (*ppData == NULL) || (*pSize < 0) ) {
-		if ( (iRet == XGE_OK) && (*ppData != NULL) ) {
-			if ( pBridge->free_resource != NULL ) pBridge->free_resource(*ppData, pBridge->pUser);
-			else xrtFree(*ppData);
-		}
-		*ppData = NULL;
-		*pSize = 0;
-		__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
-		return iRet == XGE_OK ? XGE_ERROR_RESOURCE_FAILED : iRet;
+static void __xgeMiniRawDrop(void* bridge)
+{
+	xrtFree(bridge);
+}
+
+static int __xgeMiniPrepareProvider(const xge_mini_bridge_state_t* bridge,
+	xge_resource_registration_t** output)
+{
+	if ( !bridge->raw.load_resource && !bridge->owned.load_resource ) return XGE_OK;
+	xge_resource_registration_t* entry = xrtCalloc(1, sizeof(*entry));
+	if ( !entry ) return XGE_ERROR_OUT_OF_MEMORY;
+	xrtAtomic64Init(&entry->refs, 1);
+	entry->miniProgram = true;
+	*output = entry;
+	entry->scheme = __xgeStrDup("res");
+	if ( !entry->scheme ) return XGE_ERROR_OUT_OF_MEMORY;
+	if ( bridge->owned.load_resource ) {
+		if ( !__xgeCallbackNodePin(bridge->owner) ) return XGE_ERROR_INVALID_STATE;
+		entry->owner = bridge->owner;
+		entry->read = bridge->owned.load_resource;
+		entry->raw.pUser = bridge->owned.pUser;
+		entry->readerThread = bridge->creatorThread;
+	} else {
+		xge_miniprogram_bridge_t* raw = xrtMalloc(sizeof(*raw));
+		if ( !raw ) return XGE_ERROR_OUT_OF_MEMORY;
+		*raw = bridge->raw;
+		entry->raw.load = __xgeMiniRawLoad;
+		entry->raw.free = __xgeMiniRawFree;
+		entry->raw.pUser = raw;
+		entry->releaseUser = __xgeMiniRawDrop;
 	}
 	return XGE_OK;
 }
 
-static void __xgeMiniProgramResourceFree(void* pData, void* pUser)
+static int __xgeMiniConfigBegin(bool allowShutdown)
 {
-	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
-	xge_miniprogram_bridge_t* pBridge;
-
-	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)pUser;
-	if ( pSnapshot == NULL ) {
-		xrtFree(pData);
-		return;
-	}
-	pBridge = &pSnapshot->tBridge;
-	if ( pData != NULL ) {
-		if ( pBridge->free_resource != NULL ) pBridge->free_resource(pData, pBridge->pUser);
-		else xrtFree(pData);
-	}
-	__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
+	if ( !__xgeCallbackActivityEnter(allowShutdown) ) return XGE_ERROR_INVALID_STATE;
+	(void)xrtSpinLock(&g_xgeResourceSpin);
+	bool busy = g_xgeMiniConfiguring;
+	if ( !busy ) g_xgeMiniConfiguring = true;
+	(void)xrtSpinUnlock(&g_xgeResourceSpin);
+	if ( busy ) __xgeCallbackActivityLeave();
+	return busy ? XGE_ERROR_BUSY : XGE_OK;
 }
 
-static void __xgeMiniProgramResourceProviderDrop(void* user)
-{__xgeMiniProgramBridgeSnapshotRelease((__xge_miniprogram_bridge_snapshot_t*)user);}
-static void __xgeMiniProgramResourceProviderRemove(void)
-{(void)__xgeResourceRegistryRemove(__xgeMiniProgramResourceLoad,__xgeMiniProgramResourceFree);}
-
-static int __xgeMiniProgramResourceProviderSet(const xge_miniprogram_bridge_t* pBridge)
+static int __xgeMiniConfigFinish(xge_resource_registration_t* releaseProvider,
+	xge_callback_node_t* releaseOwner, int status, xerror* ambient)
 {
-	xge_resource_provider_t tProvider;
-	__xge_miniprogram_bridge_snapshot_t* pSnapshot;
-	if ( (pBridge == NULL) || (pBridge->load_resource == NULL) ) {
-		__xgeMiniProgramResourceProviderRemove();
-		return XGE_OK;
+	(void)xrtSpinLock(&g_xgeResourceSpin);
+	g_xgeMiniConfiguring = false;
+	(void)xrtSpinUnlock(&g_xgeResourceSpin);
+	xerror* first = status != XGE_OK ? xrtTakeError() : NULL;
+	__xgeCallbackOutcome(XGE_OK, &status, &first);
+	__xgeCallbackOutcome(__xgeResourceRegistrationRelease(releaseProvider), &status, &first);
+	__xgeCallbackOutcome(__xgeCallbackNodeRelease(releaseOwner), &status, &first);
+	__xgeCallbackActivityLeave();
+	xrtSetErrorTake(first);
+	return __xgeResourceOperationFinish(status, ambient);
+}
+
+static int __xgeMiniPublish(xge_mini_bridge_state_t* next,
+	xge_resource_registration_t** provider)
+{
+	xge_resource_registration_t* previous = NULL;
+	(void)xrtSpinLock(&g_xgeResourceSpin);
+	int status = __xgeResourceRegistryReplaceMiniLocked(*provider, &previous);
+	if ( status == XGE_OK ) {
+		if ( next ) {
+			xge_callback_node_t* oldOwner = g_xgeMiniBridge.owner;
+			g_xgeMiniBridge = *next;
+			next->owner = oldOwner;
+		}
+		*provider = previous;
 	}
-	pSnapshot = (__xge_miniprogram_bridge_snapshot_t*)xrtCalloc(1, sizeof(*pSnapshot));
-	if ( pSnapshot == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-	pSnapshot->tBridge = *pBridge;
-	pSnapshot->iRefCount = 1; /* Provider ownership; loaded resources take another ref. */
-	memset(&tProvider, 0, sizeof(tProvider));
-	tProvider.sScheme = "res";
-	tProvider.load = __xgeMiniProgramResourceLoad;
-	tProvider.free = __xgeMiniProgramResourceFree;
-	tProvider.pUser = pSnapshot;
-	bool published=false;
-	int result=__xgeResourceProviderReplaceWithRelease(&tProvider,__xgeMiniProgramResourceProviderDrop,&published);
-	if(!published)__xgeMiniProgramBridgeSnapshotRelease(pSnapshot);
-	return result;
+	(void)xrtSpinUnlock(&g_xgeResourceSpin);
+	return status;
+}
+
+static int __xgeMiniSetBridge(xge_mini_bridge_state_t* next,
+	const xge_callback_owner_t* owner, bool hasCallback)
+{
+	int status = __xgeMiniConfigBegin(false);
+	if ( status != XGE_OK ) return status;
+	xerror* ambient = xrtTakeError();
+	xge_resource_registration_t* provider = NULL;
+	status = __xgeCallbackNodePrepare(hasCallback, false, owner, &next->owner);
+	if ( status == XGE_OK && g_xge.bMiniProgramInitialized )
+		status = __xgeMiniPrepareProvider(next, &provider);
+	if ( status == XGE_OK ) status = __xgeMiniPublish(next, &provider);
+	return __xgeMiniConfigFinish(provider, next->owner, status, ambient);
 }
 
 static int __xgeMiniProgramDimensionsValid(int iWidth, int iHeight, float fDevicePixelRatio)
@@ -111,8 +142,8 @@ static void __xgeMiniProgramSetDimensions(int iWidth, int iHeight, float fDevice
 	int iFramebufferWidth;
 	int iFramebufferHeight;
 
-	iFramebufferWidth = (int)floorf((float)iWidth * fDevicePixelRatio);
-	iFramebufferHeight = (int)floorf((float)iHeight * fDevicePixelRatio);
+	iFramebufferWidth = (int)((double)iWidth * fDevicePixelRatio);
+	iFramebufferHeight = (int)((double)iHeight * fDevicePixelRatio);
 	if ( iFramebufferWidth < 1 ) iFramebufferWidth = 1;
 	if ( iFramebufferHeight < 1 ) iFramebufferHeight = 1;
 	g_xge.iWindowWidth = iWidth;
@@ -136,24 +167,23 @@ int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 	xge_platform_backend_t tPlatform;
 	xge_graphics_backend_t tGraphics;
 
-	if ( pDesc == NULL ) {
+	if ( pDesc == NULL || !isfinite(pDesc->fDevicePixelRatio) ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_miniprogram_desc_t next = *pDesc;
+	if ( next.fDevicePixelRatio <= 0.0f ) next.fDevicePixelRatio = 1.0f;
+	bool sized = next.iWidth > 0 && next.iHeight > 0;
+	if ( sized && !__xgeMiniProgramDimensionsValid(next.iWidth, next.iHeight, next.fDevicePixelRatio) )
 		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	g_xge.tMiniProgramDesc = *pDesc;
-	if ( !isfinite(g_xge.tMiniProgramDesc.fDevicePixelRatio) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.tMiniProgramDesc.fDevicePixelRatio <= 0.0f ) {
-		g_xge.tMiniProgramDesc.fDevicePixelRatio = 1.0f;
-	}
-	if ( g_xge.tMiniProgramDesc.iWidth > 0 && g_xge.tMiniProgramDesc.iHeight > 0 ) {
-		if ( !__xgeMiniProgramDimensionsValid(g_xge.tMiniProgramDesc.iWidth,
-			g_xge.tMiniProgramDesc.iHeight, g_xge.tMiniProgramDesc.fDevicePixelRatio) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		__xgeMiniProgramSetDimensions(g_xge.tMiniProgramDesc.iWidth,
-			g_xge.tMiniProgramDesc.iHeight, g_xge.tMiniProgramDesc.fDevicePixelRatio);
-	}
+
+	int status = __xgeMiniConfigBegin(false);
+	if ( status != XGE_OK ) return status;
+	xerror* ambient = xrtTakeError();
+	xge_resource_registration_t* provider = NULL;
+	status = __xgeMiniPrepareProvider(&g_xgeMiniBridge, &provider);
+	if ( status == XGE_OK ) status = __xgeMiniPublish(NULL, &provider);
+	if ( status != XGE_OK ) return __xgeMiniConfigFinish(provider, NULL, status, ambient);
+
+	g_xge.tMiniProgramDesc = next;
+	if ( sized ) __xgeMiniProgramSetDimensions(next.iWidth, next.iHeight, next.fDevicePixelRatio);
 	memset(&tPlatform, 0, sizeof(tPlatform));
 	tPlatform.iType = XGE_PLATFORM_BACKEND_MINIPROGRAM;
 	tPlatform.sName = "miniprogram";
@@ -162,13 +192,9 @@ int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 	tGraphics.iType = XGE_GPU_BACKEND_WEBGL2;
 	tGraphics.sName = "webgl2";
 	xgeGraphicsBackendSet(&tGraphics);
-	{
-		int iRet = __xgeMiniProgramResourceProviderSet(&g_xge.tMiniProgramBridge);
-		if ( iRet != XGE_OK ) return iRet;
-	}
 	g_xge.bMiniProgramFrameTimeValid = 0;
 	g_xge.bMiniProgramInitialized = 1;
-	return XGE_OK;
+	return __xgeMiniConfigFinish(provider, NULL, XGE_OK, ambient);
 }
 
 int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio)
@@ -185,27 +211,46 @@ int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio)
 	return xgeMiniProgramInit(&tDesc);
 }
 
-void xgeMiniProgramUnit(void)
+static int __xgeMiniProgramUnit(bool allowShutdown)
 {
-	__xgeMiniProgramResourceProviderRemove();
+	int status = __xgeMiniConfigBegin(allowShutdown);
+	if ( status != XGE_OK ) return status;
+	xerror* ambient = xrtTakeError();
+	xge_resource_registration_t* provider = NULL;
+	xge_mini_bridge_state_t next = {0};
+	status = __xgeMiniPublish(&next, &provider);
 	memset(&g_xge.tMiniProgramDesc, 0, sizeof(g_xge.tMiniProgramDesc));
-	memset(&g_xge.tMiniProgramBridge, 0, sizeof(g_xge.tMiniProgramBridge));
 	g_xge.bMiniProgramInitialized = 0;
 	g_xge.bMiniProgramFrameTimeValid = 0;
+	return __xgeMiniConfigFinish(provider, next.owner, status, ambient);
+}
+
+int xgeMiniProgramUnitChecked(void)
+{
+	return __xgeMiniProgramUnit(false);
+}
+
+void xgeMiniProgramUnit(void)
+{
+	if ( xgeMiniProgramUnitChecked() != XGE_OK && !xrtGetError() ) xrtSetErrorKind(XERR_STATE);
 }
 
 int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge)
 {
-	int iRet;
-	if ( pBridge == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( g_xge.bMiniProgramInitialized != 0 ) {
-		iRet = __xgeMiniProgramResourceProviderSet(pBridge);
-		if ( iRet != XGE_OK ) return iRet;
-	}
-	g_xge.tMiniProgramBridge = *pBridge;
-	return XGE_OK;
+	if ( pBridge == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_mini_bridge_state_t next = {.raw = *pBridge};
+	return __xgeMiniSetBridge(&next, NULL, false);
+}
+
+int xgeMiniProgramSetBridgeOwned(const xge_miniprogram_owned_bridge_t* pBridge,
+	const xge_callback_owner_t* pOwner)
+{
+	xge_mini_bridge_state_t next = {0};
+	if ( pBridge ) next.owned = *pBridge;
+	bool hasCallback = next.owned.request_frame || next.owned.load_resource || next.owned.audio_command;
+	if ( hasCallback && (!pOwner || !pOwner->onHold) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( hasCallback ) next.creatorThread = xrtThreadCurrentId();
+	return __xgeMiniSetBridge(&next, pOwner, hasCallback);
 }
 
 int xgeMiniProgramFrame(double fTimeSeconds)
@@ -364,27 +409,62 @@ int xgeMiniProgramText(uint32_t iCodepoint)
 	return XGE_OK;
 }
 
+static int __xgeMiniDispatchBegin(xge_mini_bridge_state_t* bridge, xge_callback_snapshot_t* snapshot)
+{
+	(void)xrtSpinLock(&g_xgeResourceSpin);
+	*bridge = g_xgeMiniBridge;
+	int status = bridge->creatorThread && bridge->creatorThread != xrtThreadCurrentId() ? XGE_ERROR_BUSY : XGE_OK;
+	if ( status == XGE_OK && !__xgeCallbackNodePin(bridge->owner) ) status = XGE_ERROR_INVALID_STATE;
+	(void)xrtSpinUnlock(&g_xgeResourceSpin);
+	if ( status == XGE_OK ) status = __xgeCallbackSnapshotBegin(bridge->owner, false, snapshot);
+	return status;
+}
+
+static int __xgeMiniDispatchFinish(xge_callback_snapshot_t* snapshot, int status, int value, xerror* ambient)
+{
+	xerror* first = status != XGE_OK ? xrtTakeError() : NULL;
+	__xgeCallbackOutcome(XGE_OK, &status, &first);
+	__xgeCallbackOutcome(__xgeCallbackSnapshotEnd(snapshot), &status, &first);
+	__xgeCallbackActivityLeave();
+	xrtSetErrorTake(first);
+	status = __xgeResourceOperationFinish(status, ambient);
+	return status == XGE_OK ? value : status;
+}
+
 int xgeMiniProgramRequestFrame(void)
 {
-	xge_miniprogram_bridge_t* pBridge;
-
-	pBridge = &g_xge.tMiniProgramBridge;
-	if ( pBridge->request_frame == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
+	if ( !__xgeCallbackActivityEnter(false) ) return XGE_ERROR_INVALID_STATE;
+	xerror* ambient = xrtTakeError();
+	xge_mini_bridge_state_t bridge;
+	xge_callback_snapshot_t snapshot = {0};
+	int status = __xgeMiniDispatchBegin(&bridge, &snapshot);
+	int value = 0;
+	if ( status == XGE_OK ) {
+		if ( bridge.owned.request_frame ) value = bridge.owned.request_frame(bridge.owned.pUser);
+		else if ( bridge.raw.request_frame ) value = bridge.raw.request_frame(bridge.raw.pUser);
+		else status = XGE_ERROR_UNSUPPORTED;
+		if ( value < 0 ) status = value;
 	}
-	return pBridge->request_frame(pBridge->pUser);
+	return __xgeMiniDispatchFinish(&snapshot, status, value, ambient);
 }
 
 int xgeMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int iSize)
 {
-	xge_miniprogram_bridge_t* pBridge;
-
-	if ( iSize < 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
+	if ( iSize < 0 || (iSize > 0 && pData == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeCallbackActivityEnter(false) ) return XGE_ERROR_INVALID_STATE;
+	xerror* ambient = xrtTakeError();
+	xge_mini_bridge_state_t bridge;
+	xge_callback_snapshot_t snapshot = {0};
+	int status = __xgeMiniDispatchBegin(&bridge, &snapshot);
+	int value = 0;
+	if ( status == XGE_OK ) {
+		if ( bridge.owned.audio_command ) {
+			xbytesview data = {pData, (size_t)iSize};
+			value = bridge.owned.audio_command(iCommand, iHandle, &data, bridge.owned.pUser);
+		} else if ( bridge.raw.audio_command ) {
+			value = bridge.raw.audio_command(iCommand, iHandle, pData, iSize, bridge.raw.pUser);
+		} else status = XGE_ERROR_UNSUPPORTED;
+		if ( value < 0 ) status = value;
 	}
-	pBridge = &g_xge.tMiniProgramBridge;
-	if ( pBridge->audio_command == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return pBridge->audio_command(iCommand, iHandle, pData, iSize, pBridge->pUser);
+	return __xgeMiniDispatchFinish(&snapshot, status, value, ambient);
 }

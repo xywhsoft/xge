@@ -1245,9 +1245,19 @@ typedef struct xge_miniprogram_bridge_t {
 	int (*request_frame)(void* pUser);
 	int (*load_resource)(const char* sURI, void** ppData, int* pSize, void* pUser);
 	void (*free_resource)(void* pData, void* pUser);
+	/* Synchronous. pData is borrowed for this callback and must be copied if retained. */
 	int (*audio_command)(int iCommand, int iHandle, const void* pData, int iSize, void* pUser);
 	void* pUser;
 } xge_miniprogram_bridge_t;
+
+/* One immutable, owned callback group. The counted payload and resource
+ * arguments are borrowed until their callback returns. */
+typedef struct xge_miniprogram_owned_bridge_t {
+	int (*request_frame)(void* pUser);
+	xge_resource_read_owned_proc load_resource;
+	int (*audio_command)(int iCommand, int iHandle, const xbytesview* pData, void* pUser);
+	void* pUser;
+} xge_miniprogram_owned_bridge_t;
 
 typedef struct xge_egl_desc_t {
 /* 原生显示句柄（EGL NativeDisplayType）。 */
@@ -2371,8 +2381,14 @@ XGE_API int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc);
 XGE_API int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio);
 /* 释放小程序后端。 */
 XGE_API void xgeMiniProgramUnit(void);
+XGE_API int xgeMiniProgramUnitChecked(void);
 /* 注册宿主 JS 桥回调（request_frame/load_resource/audio 等）。 */
 XGE_API int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge);
+/* Install the callback group and replace its res:// provider together.
+ * An empty descriptor with no owner clears the bridge. If retiring the
+ * previous owner fails, the new bridge stays installed. */
+XGE_API int xgeMiniProgramSetBridgeOwned(const xge_miniprogram_owned_bridge_t* pBridge,
+	const xge_callback_owner_t* pOwner);
 /* fTimeSeconds is a finite, monotonic host timestamp in seconds. */
 XGE_API int xgeMiniProgramFrame(double fTimeSeconds);
 /* 通知画布尺寸/像素比变更。 */
@@ -2386,7 +2402,7 @@ XGE_API int xgeMiniProgramTouchOne(int iPhase, int iId, float fX, float fY, floa
 XGE_API int xgeMiniProgramText(uint32_t iCodepoint);
 /* 请求宿主调度下一帧。 */
 XGE_API int xgeMiniProgramRequestFrame(void);
-/* 音频指令转发（实际播放由宿主 JS 侧执行）。 */
+/* 音频指令转发（实际播放由宿主 JS 侧执行）。pData is borrowed for this call. */
 XGE_API int xgeMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int iSize);
 /* 输出 EGL 能力信息。 */
 XGE_API int xgeEGLCapsGet(xge_egl_caps_t* pCaps);

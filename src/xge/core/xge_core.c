@@ -216,6 +216,7 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(__xgeDragDropUnit(),&result,&first);
+	__xgeCallbackOutcome(__xgeMiniProgramUnit(true),&result,&first);
 	__xgeCallbackOutcome(xgeResourceProviderClearChecked(),&result,&first);
 #if XGE_ENABLE_AUDIO
 	/* Configuration may precede Init. Clear it even on a cold Unit; immutable

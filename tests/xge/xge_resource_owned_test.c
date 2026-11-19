@@ -8,6 +8,8 @@
 #include <xge_host_xrt_contract.h>
 #include <assert.h>
 #include <stdio.h>
+#include <limits.h>
+#include <math.h>
 #include <string.h>
 
 typedef struct Owner {xatomic32 refs,calls;int clear,failHold,failDrop,poison;const char* expected;} Owner;
@@ -66,6 +68,91 @@ static int32 registry_reader(void* unused)
 }
 static void check_payload(xge_resource_t* value)
 {assert(value->iSize==3 && value->pData && !memcmp(value->pData,"a\0b",3));}
+static int mini_frame(void* user)
+{
+    Owner* owner=user;
+    xrtAtomic32FetchAdd(&owner->calls,1,XMEMORY_RELAXED);
+    assert(xgeUnitChecked()==XGE_ERROR_INVALID_STATE);
+    if(owner->clear){
+        assert(xgeMiniProgramUnitChecked()==XGE_OK);
+        assert(xrtAtomic32Load(&owner->refs,XMEMORY_RELAXED)==2);
+    }
+    return 7;
+}
+
+static int mini_audio(int command,int handle,const xbytesview* data,void* user)
+{
+    Owner* owner=user;
+    assert(command==1 && handle==23 && data);
+    assert(data->Size==0 || (data->Size==3 && !memcmp(data->Data,"a\0b",3)));
+    return owner->poison ? XGE_ERROR_CALLBACK_FAILED : 9;
+}
+
+static int32 mini_other_thread(void* unused)
+{
+    (void)unused;
+    xge_resource_t output={0};
+    assert(xgeMiniProgramRequestFrame()==XGE_ERROR_BUSY);
+    assert(xgeMiniProgramAudioCommand(1,23,NULL,0)==XGE_ERROR_BUSY);
+    assert(xgeResourceLoad("res://host",&output)==XGE_ERROR_BUSY && !output.pData);
+    return 0;
+}
+
+static void mini_owned_bridge(void)
+{
+    Owner first,second;init(&first);init(&second);
+    first.expected=second.expected="res://host";
+    xge_callback_owner_t one=descriptor(&first),two=descriptor(&second);
+    xge_miniprogram_owned_bridge_t a={mini_frame,read_owned,mini_audio,&first};
+    xge_miniprogram_owned_bridge_t b={mini_frame,read_owned,mini_audio,&second};
+    assert(xgeMiniProgramSetBridgeOwned(&a,NULL)==XGE_ERROR_INVALID_ARGUMENT);
+    assert(xgeMiniProgramSetBridgeOwned(&a,&one)==XGE_OK);
+    assert(xgeMiniProgramInitSimple(64,32,2)==XGE_OK && xgeGetWidth()==128);
+    assert(xgeMiniProgramResize(INT_MAX,1,1)==XGE_OK && xgeGetWidth()==INT_MAX);
+    assert(xgeMiniProgramResize(64,32,2)==XGE_OK && xgeGetWidth()==128);
+    xge_miniprogram_desc_t invalid={.iWidth=15,.iHeight=15,.fDevicePixelRatio=INFINITY};
+    assert(xgeMiniProgramInit(&invalid)==XGE_ERROR_INVALID_ARGUMENT && xgeGetWidth()==128);
+    assert(xgeMiniProgramRequestFrame()==7);
+    assert(xgeMiniProgramAudioCommand(1,23,"a\0b",3)==9);
+    assert(xgeMiniProgramAudioCommand(1,23,NULL,0)==9);
+    assert(xgeMiniProgramAudioCommand(1,23,NULL,2)==XGE_ERROR_INVALID_ARGUMENT);
+    xthread* worker=xrtThreadCreate(mini_other_thread,NULL,0);
+    assert(worker && xrtThreadWait(worker)==XWAIT_OK);xrtThreadDestroy(worker);
+    xge_resource_t value={0};
+    assert(xgeResourceLoad("res://host",&value)==XGE_OK);check_payload(&value);
+    assert(!value.free && xrtAtomic32Load(&first.refs,XMEMORY_RELAXED)==2);
+
+    for(int budget=0;budget<3;++budget){
+        assert(xrtMemDebugFailAfter(budget));
+        assert(xgeMiniProgramSetBridgeOwned(&b,&two)==XGE_ERROR_OUT_OF_MEMORY);
+        assert(xrtMemDebugFailTriggered());xrtMemDebugFailClear();xrtClearError();
+        assert(xrtAtomic32Load(&first.refs,XMEMORY_RELAXED)==2);
+        assert(xrtAtomic32Load(&second.refs,XMEMORY_RELAXED)==1);
+        assert(xgeMiniProgramRequestFrame()==7);
+        xge_resource_t replay={0};
+        assert(xgeResourceLoad("res://host",&replay)==XGE_OK);check_payload(&replay);xgeResourceFree(&replay);
+    }
+    assert(xrtMemDebugFailAfter(0));
+    assert(xgeMiniProgramInitSimple(70,80,2)==XGE_ERROR_OUT_OF_MEMORY);
+    assert(xrtMemDebugFailTriggered());xrtMemDebugFailClear();xrtClearError();
+    assert(xgeGetWidth()==128 && xgeMiniProgramRequestFrame()==7);
+
+    first.failDrop=1;
+    assert(xgeMiniProgramSetBridgeOwned(&b,&two)==XGE_ERROR_INVALID_STATE);
+    assert(xrtAtomic32Load(&first.refs,XMEMORY_RELAXED)==1);
+    assert(xrtAtomic32Load(&second.calls,XMEMORY_RELAXED)==0 && xgeMiniProgramRequestFrame()==7);
+    assert(xrtAtomic32Load(&second.calls,XMEMORY_RELAXED)==1);
+    check_payload(&value);xgeResourceFree(&value);
+    second.poison=1;second.failDrop=1;
+    assert(xgeMiniProgramAudioCommand(1,23,"a\0b",3)==XGE_ERROR_CALLBACK_FAILED);
+    second.clear=1;
+    assert(xgeMiniProgramRequestFrame()==7 && xgeMiniProgramRequestFrame()==XGE_ERROR_UNSUPPORTED);
+    assert(xrtAtomic32Load(&second.refs,XMEMORY_RELAXED)==1);
+    assert(xgeMiniProgramSetBridgeOwned(&a,&one)==XGE_OK && xgeUnitChecked()==XGE_OK);
+    assert(xrtAtomic32Load(&first.refs,XMEMORY_RELAXED)==1 && xgeMiniProgramRequestFrame()==XGE_ERROR_UNSUPPORTED);
+    puts("mini-program host bridge: owned dispatch, replacement, reentry, OOM and checked unit passed");
+}
+
 typedef struct Symbol {const char* name;xge_host_xrt_proc address;} Symbol;
 static const Symbol symbols[]={
 #define XGE_HOST_XRT_SLOT(Name) {#Name,(xge_host_xrt_proc)(Name)},
@@ -145,6 +232,7 @@ int main(void)
     assert(xgeResourceLoad("res://mini",&value)==XGE_OK);check_payload(&value);
     xgeResourceFree(&value);assert(rawFrees==3);
     xgeResourceProviderClear();
+    mini_owned_bridge();
     xge_resource_provider_t parallel={"parallel",read_empty,NULL,NULL};
     xthread* threads[4];for(int i=0;i<4;++i){threads[i]=xrtThreadCreate((ptr)registry_reader,NULL,0);assert(threads[i]);}
     for(int i=0;i<2000;++i){assert(xgeResourceProviderAdd(&parallel)==XGE_OK);assert(xgeResourceProviderClearChecked()==XGE_OK);}
