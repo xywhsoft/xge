@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
+#include "xui_code_fold_state_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -9,13 +10,49 @@
 
 struct xui_code_fold_state_t {
 	xui_code_fold_range_t* pRanges;
+	xui_code_range_t* pHiddenRanges;
+	xui_widget pOwner;
+	const xui_code_fold_owner_ops_t* pOwnerOps;
+	uint64_t iOwnerThread;
 	int iRangeCount;
 	int iRangeCapacity;
-	xui_code_range_t* pHiddenRanges;
 	int iHiddenRangeCount;
 	int iHiddenRangeCapacity;
 	int bHiddenDirty;
 };
+
+static int __xuiCodeFoldStateStatus(xui_code_fold_state state, bool write)
+{
+	if ( state == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( state->pOwner == NULL ) return XUI_OK;
+	if ( state->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return state->pOwnerOps->check(state->pOwner, write);
+}
+
+int xuiInternalCodeFoldStateClaimOwner(xui_code_fold_state state, xui_widget editor,
+	const xui_code_fold_owner_ops_t* ops)
+{
+	if ( state == NULL || editor == NULL || ops == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( state->pOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	state->iOwnerThread = xrtThreadCurrentId();
+	state->pOwnerOps = ops;
+	state->pOwner = editor;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeFoldStateEditorLifetimeWatch(xui_code_fold_state state,
+	xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+	int status = __xuiCodeFoldStateStatus(state, false);
+	if ( status != XUI_OK ) return status;
+	if ( state->pOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return state->pOwnerOps->watch(state->pOwner, link, invalidate, user);
+}
+
+static void __xuiCodeFoldStateNotify(xui_code_fold_state state)
+{
+	if ( state->pOwner != NULL ) state->pOwnerOps->changed(state->pOwner);
+}
 
 static int __xuiCodeFoldStateReserve(xui_code_fold_state pState, int iCapacity)
 {
@@ -150,7 +187,8 @@ static int __xuiCodeFoldStateBuildHidden(xui_code_fold_state pState)
 	int iCollapsedCount;
 	int bMerge;
 
-	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCodeFoldStateStatus(pState, false);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( !pState->bHiddenDirty ) return XUI_OK;
 	iCollapsedCount = 0;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
@@ -204,20 +242,42 @@ XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState)
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeFoldStateDestroy(xui_code_fold_state pState)
+void xuiInternalCodeFoldStateDestroyOwned(xui_code_fold_state pState, xui_widget editor)
 {
-	if ( pState == NULL ) return;
+	if ( pState == NULL || (pState->pOwner != NULL && pState->pOwner != editor) ) return;
 	xrtFree(pState->pRanges);
 	xrtFree(pState->pHiddenRanges);
 	xrtFree(pState);
 }
 
-XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState)
+XUI_API int xuiCodeFoldStateDestroyChecked(xui_code_fold_state state)
 {
-	if ( pState == NULL ) return;
+	if ( state != NULL && state->pOwner != NULL )
+		return state->iOwnerThread == xrtThreadCurrentId() ? XUI_ERROR_INVALID_STATE : XUI_ERROR_BUSY;
+	xuiInternalCodeFoldStateDestroyOwned(state, NULL);
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeFoldStateDestroy(xui_code_fold_state pState)
+{
+	(void)xuiCodeFoldStateDestroyChecked(pState);
+}
+
+XUI_API int xuiCodeFoldStateClearChecked(xui_code_fold_state pState)
+{
+	int status = __xuiCodeFoldStateStatus(pState, true);
+	if ( status != XUI_OK ) return status;
+	if ( pState->iRangeCount == 0 ) return XUI_OK;
 	pState->iRangeCount = 0;
 	pState->iHiddenRangeCount = 0;
 	pState->bHiddenDirty = 0;
+	__xuiCodeFoldStateNotify(pState);
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState)
+{
+	(void)xuiCodeFoldStateClearChecked(pState);
 }
 
 XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code_fold_range_t* pRanges, int iRangeCount)
@@ -225,10 +285,20 @@ XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code
 	int i;
 	int iRet;
 
-	if ( (pState == NULL) || (iRangeCount < 0) || (iRangeCount > 0 && pRanges == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCodeFoldStateStatus(pState, true);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iRangeCount < 0 || (iRangeCount > 0 && pRanges == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bool changed = iRangeCount != pState->iRangeCount;
 	for ( i = 0; i < iRangeCount; i++ ) {
 		if ( !__xuiCodeFoldStateRangeValid(&pRanges[i]) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !changed ) {
+			const xui_code_fold_range_t* old = &pState->pRanges[i];
+			const xui_code_fold_range_t* next = &pRanges[i];
+			changed = old->iStartLine != next->iStartLine || old->iEndLine != next->iEndLine ||
+				old->iLevel != next->iLevel || old->iFlags != (next->iFlags | XUI_CODE_FOLD_HEADER);
+		}
 	}
+	if ( !changed ) return XUI_OK;
 	iRet = __xuiCodeFoldStateReserve(pState, iRangeCount);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < iRangeCount; i++ ) {
@@ -238,6 +308,7 @@ XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code
 	}
 	pState->iRangeCount = iRangeCount;
 	pState->bHiddenDirty = 1;
+	__xuiCodeFoldStateNotify(pState);
 	return XUI_OK;
 }
 
@@ -250,7 +321,10 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 	int iDelta;
 	xui_code_fold_range_t tRange;
 
-	if ( (pState == NULL) || (iStartLine < 0) || (iEndLine < iStartLine) || (iNewEndLine < iStartLine) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeFoldStateStatus(pState, true);
+	if ( status != XUI_OK ) return status;
+	if ( iStartLine < 0 || iEndLine < iStartLine || iNewEndLine < iStartLine ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pState->iRangeCount == 0 ) return XUI_OK;
 	iDelta = iNewEndLine - iEndLine;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
 		tRange = pState->pRanges[i];
@@ -264,6 +338,7 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 			if ( iShiftedEnd < 0 || iShiftedEnd > INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	bool shifted = false;
 	iOut = 0;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
 		tRange = pState->pRanges[i];
@@ -274,30 +349,34 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 		if ( tRange.iStartLine > iEndLine ) {
 			tRange.iStartLine += iDelta;
 			tRange.iEndLine += iDelta;
+			shifted = shifted || iDelta != 0;
 			pState->pRanges[iOut++] = tRange;
 			continue;
 		}
 		if ( (iStartLine > tRange.iStartLine) && (iEndLine < tRange.iEndLine) ) {
 			tRange.iEndLine += iDelta;
+			shifted = shifted || iDelta != 0;
 			if ( __xuiCodeFoldStateRangeValid(&tRange) ) pState->pRanges[iOut++] = tRange;
 		}
 		/* An edit that touches a fold header or closing line invalidates its
 		 * syntax-derived extent. Drop it instead of hiding unrelated lines. */
 	}
+	if ( !shifted && pState->iRangeCount == iOut ) return XUI_OK;
 	pState->iRangeCount = iOut;
 	pState->bHiddenDirty = 1;
+	__xuiCodeFoldStateNotify(pState);
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser)
+int xuiInternalCodeFoldStateBuild(xui_code_fold_state pState, xui_code_document pDocument,
+	xui_code_fold_proc onFold, void* pUser)
 {
 	xui_code_fold_range_t* pRanges;
 	int iCapacity;
-	int iCount;
+	int iCount = 0;
 	int iAttempts;
 	int iRet;
 
-	if ( (pState == NULL) || (pDocument == NULL) || (onFold == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = onFold(pDocument, NULL, 0, &iCount, pUser);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iCount < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -339,14 +418,29 @@ cleanup:
 	return iRet;
 }
 
+XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state state, xui_code_document document,
+	xui_code_fold_proc onFold, void* user)
+{
+	int status = __xuiCodeFoldStateStatus(state, true);
+	if ( status != XUI_OK ) return status;
+	if ( document == NULL || onFold == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( state->pOwner == NULL )
+		return xuiInternalCodeFoldStateBuild(state, document, onFold, user);
+	return state->pOwnerOps->build(state->pOwner, state, document, onFold, user);
+}
+
 XUI_API int xuiCodeFoldStateGetCount(xui_code_fold_state pState)
 {
-	return (pState != NULL) ? pState->iRangeCount : 0;
+	if ( pState == NULL ) return 0;
+	int status = __xuiCodeFoldStateStatus(pState, false);
+	return status == XUI_OK ? pState->iRangeCount : status;
 }
 
 XUI_API int xuiCodeFoldStateGetRange(xui_code_fold_state pState, int iIndex, xui_code_fold_range_t* pRange)
 {
-	if ( (pState == NULL) || (pRange == NULL) || (iIndex < 0) || (iIndex >= pState->iRangeCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeFoldStateStatus(pState, false);
+	if ( status != XUI_OK ) return status;
+	if ( pRange == NULL || iIndex < 0 || iIndex >= pState->iRangeCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiCodeFoldStateCopyOut(pRange, &pState->pRanges[iIndex]);
 	return XUI_OK;
 }
@@ -355,7 +449,9 @@ XUI_API int xuiCodeFoldStateGetRanges(xui_code_fold_state pState, xui_code_fold_
 {
 	int i;
 
-	if ( pState == NULL || pRangeCount == NULL || iRangeCapacity < 0 ||
+	int status = __xuiCodeFoldStateStatus(pState, false);
+	if ( status != XUI_OK ) return status;
+	if ( pRangeCount == NULL || iRangeCapacity < 0 ||
 	     (iRangeCapacity > 0 && pRanges == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pState->iRangeCount; i++ ) {
 		if ( pRanges != NULL && i < iRangeCapacity ) __xuiCodeFoldStateCopyOut(&pRanges[i], &pState->pRanges[i]);
@@ -368,32 +464,42 @@ XUI_API int xuiCodeFoldStateToggleLine(xui_code_fold_state pState, int iLine)
 {
 	int iIndex;
 
-	if ( (pState == NULL) || (iLine < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeFoldStateStatus(pState, true);
+	if ( status != XUI_OK ) return status;
+	if ( iLine < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iIndex = __xuiCodeFoldStateFindHeader(pState, iLine);
 	if ( iIndex < 0 ) return XUI_ERROR_UNSUPPORTED;
 	pState->pRanges[iIndex].iFlags ^= XUI_CODE_FOLD_COLLAPSED;
 	pState->bHiddenDirty = 1;
+	__xuiCodeFoldStateNotify(pState);
+	return XUI_OK;
+}
+
+static int __xuiCodeFoldStateSetCollapsed(xui_code_fold_state pState, bool collapsed)
+{
+	int status = __xuiCodeFoldStateStatus(pState, true);
+	if ( status != XUI_OK ) return status;
+	bool changed = false;
+	for ( int i = 0; i < pState->iRangeCount; i++ ) {
+		uint32_t before = pState->pRanges[i].iFlags;
+		uint32_t after = collapsed ? before | XUI_CODE_FOLD_COLLAPSED : before & ~XUI_CODE_FOLD_COLLAPSED;
+		changed = changed || before != after;
+		pState->pRanges[i].iFlags = after;
+	}
+	if ( !changed ) return XUI_OK;
+	pState->bHiddenDirty = 1;
+	__xuiCodeFoldStateNotify(pState);
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeFoldStateFoldAll(xui_code_fold_state pState)
 {
-	int i;
-
-	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pState->iRangeCount; i++ ) pState->pRanges[i].iFlags |= XUI_CODE_FOLD_COLLAPSED;
-	pState->bHiddenDirty = 1;
-	return XUI_OK;
+	return __xuiCodeFoldStateSetCollapsed(pState, true);
 }
 
 XUI_API int xuiCodeFoldStateUnfoldAll(xui_code_fold_state pState)
 {
-	int i;
-
-	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0; i < pState->iRangeCount; i++ ) pState->pRanges[i].iFlags &= ~XUI_CODE_FOLD_COLLAPSED;
-	pState->bHiddenDirty = 1;
-	return XUI_OK;
+	return __xuiCodeFoldStateSetCollapsed(pState, false);
 }
 
 XUI_API int xuiCodeFoldStateIsLineVisible(xui_code_fold_state pState, int iLine, int* pVisible)
@@ -404,9 +510,9 @@ XUI_API int xuiCodeFoldStateIsLineVisible(xui_code_fold_state pState, int iLine,
 	int iRet;
 
 	if ( (pState == NULL) || (iLine < 0) || (pVisible == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	*pVisible = 1;
 	iRet = __xuiCodeFoldStateBuildHidden(pState);
 	if ( iRet != XUI_OK ) return iRet;
+	*pVisible = 1;
 	iLow = 0;
 	iHigh = pState->iHiddenRangeCount - 1;
 	while ( iLow <= iHigh ) {
@@ -483,6 +589,8 @@ XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLi
 	if ( (pState == NULL) || (iLineCount < 0) || (pLine == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iRow < 0 ) iRow = 0;
 	if ( iLineCount <= 0 ) {
+		iRet = __xuiCodeFoldStateStatus(pState, false);
+		if ( iRet != XUI_OK ) return iRet;
 		*pLine = 0;
 		return XUI_OK;
 	}

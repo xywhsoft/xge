@@ -8265,8 +8265,13 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState);
 /* 释放折叠状态。 */
 XUI_API void xuiCodeFoldStateDestroy(xui_code_fold_state pState);
+/* An attached fold state belongs to its editor and cannot be freed independently. */
+XUI_API int xuiCodeFoldStateDestroyChecked(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateEditorLifetimeWatch(xui_code_fold_state pState,
+    xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user);
 /* 清空折叠记录与范围。 */
 XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateClearChecked(xui_code_fold_state pState);
 /* 设置折叠区间集合（来自 Fold 构建）。 */
 XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code_fold_range_t* pRanges, int iRangeCount);
 /* 编辑后平移折叠区间（行级）。 */
@@ -8557,7 +8562,7 @@ XUI_API int xuiCodeEditSetTokenStyleResolver(xui_widget pWidget, xui_code_token_
 XUI_API int xuiCodeEditSetTokenStyleResolverOwned(xui_widget pWidget, xui_code_token_style_proc onStyle, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API bool xuiCodeEditHasTokenStyleResolver(xui_widget pWidget);
 XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc* pStyle, void** pUser);
-/* 取折叠状态（展开/折叠记录，编辑器持有）。 */
+/* 取折叠状态（展开/折叠记录，编辑器持有）。修改会刷新编辑器布局。 */
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 /* 取注释存储（标记/指示器/诊断，编辑器持有）。 */
 XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget);

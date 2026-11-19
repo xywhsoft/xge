@@ -8,6 +8,7 @@
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_code_command_internal.h"
+#include "xui_code_fold_state_internal.h"
 #include "xui_code_provider_internal.h"
 #include "xui_code_bracket_internal.h"
 
@@ -250,7 +251,8 @@ typedef struct xui_code_edit_data_t {
 	unsigned char* pWrapMeasured;
 	int iWrapIndexCount;
 	uint32_t iWrapDocumentVersion;
-	uint32_t iWrapFoldSignature;
+	uint64_t iFoldRevision;
+	uint64_t iWrapFoldRevision;
 	float fWrapLayoutWidth;
 	xui_font pWrapLayoutFont;
 	int iWrapLayoutTabColumns;
@@ -352,6 +354,7 @@ static int __xuiCodeEditApplyInputAction(xui_widget pWidget, xui_code_edit_data_
 static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_edit_data_t* pData);
 static int __xuiCodeEditCloseAssistInternal(xui_code_edit_data_t* pData);
 static void __xuiCodeEditCancelPointerHover(xui_code_edit_data_t* pData);
+static void __xuiCodeEditFoldChanged(xui_widget editor);
 static void __xuiCodeEditShowCompletionDocumentation(xui_code_edit_data_t* pData,
 	const xui_code_completion_owned_item_t* pItem);
 static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont,
@@ -1992,25 +1995,6 @@ static void __xuiCodeEditWrapTreeSet(xui_code_edit_data_t* pData,
 	}
 }
 
-static uint32_t __xuiCodeEditWrapFoldSignature(xui_code_edit_data_t* pData)
-{
-	xui_code_fold_range_t tRange;
-	uint32_t iHash = 2166136261u;
-	int i;
-	int iCount;
-
-	if ( pData == NULL || pData->pFoldState == NULL ) return iHash;
-	iCount = xuiCodeFoldStateGetCount(pData->pFoldState);
-	for ( i = 0; i < iCount; i++ ) {
-		memset(&tRange, 0, sizeof(tRange));
-		if ( xuiCodeFoldStateGetRange(pData->pFoldState, i, &tRange) != XUI_OK ) continue;
-		iHash = (iHash ^ (uint32_t)tRange.iStartLine) * 16777619u;
-		iHash = (iHash ^ (uint32_t)tRange.iEndLine) * 16777619u;
-		iHash = (iHash ^ tRange.iFlags) * 16777619u;
-	}
-	return iHash;
-}
-
 static void __xuiCodeEditWrapIndexClear(xui_code_edit_data_t* pData)
 {
 	if ( pData == NULL ) return;
@@ -2022,7 +2006,7 @@ static void __xuiCodeEditWrapIndexClear(xui_code_edit_data_t* pData)
 	pData->pWrapMeasured = NULL;
 	pData->iWrapIndexCount = 0;
 	pData->iWrapDocumentVersion = 0u;
-	pData->iWrapFoldSignature = 0u;
+	pData->iWrapFoldRevision = 0u;
 	pData->fWrapLayoutWidth = 0.0f;
 	pData->pWrapLayoutFont = NULL;
 	pData->iWrapLayoutTabColumns = 0;
@@ -2065,7 +2049,6 @@ static int __xuiCodeEditWrapPrepare(xui_widget pWidget,
 	xui_code_range_t tRange;
 	xui_font pFont;
 	uint32_t iVersion;
-	uint32_t iFoldSignature;
 	int iVisibleCount;
 	int iStartLine;
 	int iEndLine;
@@ -2084,16 +2067,15 @@ static int __xuiCodeEditWrapPrepare(xui_widget pWidget,
 	if ( fWrapWidth < 1.0f ) fWrapWidth = 1.0f;
 	pFont = __xuiCodeEditResolveFont(pWidget, pData);
 	iVersion = xuiCodeDocumentGetVersion(pData->pDocument);
-	iFoldSignature = __xuiCodeEditWrapFoldSignature(pData);
 	iVisibleCount = __xuiCodeEditDocumentVisibleLineCount(pData);
 	if ( pData->pWrapRows == NULL || pData->iWrapIndexCount != iVisibleCount ||
-		pData->iWrapFoldSignature != iFoldSignature ||
+		pData->iWrapFoldRevision != pData->iFoldRevision ||
 		fabsf(pData->fWrapLayoutWidth - fWrapWidth) >= 0.01f ||
 		pData->pWrapLayoutFont != pFont ||
 		pData->iWrapLayoutTabColumns != __xuiCodeEditTabColumns(pData) ) {
 		iRet = __xuiCodeEditWrapIndexReset(pData, iVisibleCount);
 		if ( iRet != XUI_OK ) return iRet;
-		pData->iWrapFoldSignature = iFoldSignature;
+		pData->iWrapFoldRevision = pData->iFoldRevision;
 		pData->fWrapLayoutWidth = fWrapWidth;
 		pData->pWrapLayoutFont = pFont;
 		pData->iWrapLayoutTabColumns = __xuiCodeEditTabColumns(pData);
@@ -2525,7 +2507,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
 	xuiCodeLanguageRegistryDestroy(pData->pLanguages);
 	xuiCodeAnnotationStoreDestroy(pData->pAnnotations);
-	xuiCodeFoldStateDestroy(pData->pFoldState);
+	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
 	xuiCodeThemeDestroy(pData->pTheme);
 	xuiInternalCodeSelectionDestroyOwned(pWidget, pData->pSelection);
     if(pData->pDocument)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeDocumentDestroyOwned(pWidget,pData->pDocument));
@@ -3017,6 +2999,45 @@ static int __xuiCodeEditInitCompletion(xui_widget pWidget, xui_code_edit_data_t*
 		__xuiCodeEditCompletionListSelected, pWidget);
 }
 
+static int __xuiCodeEditCheckFoldOwner(xui_widget editor, bool write)
+{
+	if ( !xuiInternalWidgetIsValid(editor) ) return XUI_ERROR_INVALID_STATE;
+	return write && editor->pContext->bGuardedCallback ? XUI_ERROR_BUSY : XUI_OK;
+}
+
+typedef struct xui_code_edit_fold_call_t {
+	xui_context context;
+	xui_code_fold_proc callback;
+	void* user;
+} xui_code_edit_fold_call_t;
+
+static int __xuiCodeEditCallFoldProvider(xui_code_document document, xui_code_fold_range_t* ranges,
+	int capacity, int* count, void* raw)
+{
+	xui_code_edit_fold_call_t* call = raw;
+	call->context->bGuardedCallback = true;
+	int status = call->callback(document, ranges, capacity, count, call->user);
+	call->context->bGuardedCallback = false;
+	return status == XUI_OK && xrtGetError() ? XUI_ERROR_CALLBACK_FAILED : status;
+}
+
+static int __xuiCodeEditBuildFolds(xui_widget editor, xui_code_fold_state state,
+	xui_code_document document, xui_code_fold_proc callback, void* user)
+{
+	if ( xuiCodeEditGetDocument(editor) != document ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context context = editor->pContext;
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(context, &scope);
+	if ( status != XUI_OK ) return status;
+	xui_code_edit_fold_call_t call = {context, callback, user};
+	status = xuiInternalCodeFoldStateBuild(state, document, __xuiCodeEditCallFoldProvider, &call);
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
+static const xui_code_fold_owner_ops_t g_xuiCodeEditFoldOwnerOps = {
+	__xuiCodeEditCheckFoldOwner, xuiWidgetLifetimeWatch, __xuiCodeEditFoldChanged, __xuiCodeEditBuildFolds
+};
+
 static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData, const xui_code_edit_desc_t* pDesc)
 {
 	int iRet;
@@ -3027,6 +3048,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeSelectionClaimOwner(pData->pSelection, pWidget, pData->pDocument);
 	if ( iRet == XUI_OK ) iRet = xuiCodeThemeCreate(&pData->pTheme);
 	if ( iRet == XUI_OK ) iRet = xuiCodeFoldStateCreate(&pData->pFoldState);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeFoldStateClaimOwner(pData->pFoldState, pWidget, &g_xuiCodeEditFoldOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeAnnotationStoreCreate(&pData->pAnnotations);
 	if ( iRet == XUI_OK ) iRet = xuiCodeTokenBufferCreate(&pData->pTokenBuffer);
 	if ( iRet == XUI_OK ) iRet = xuiCodeProviderSetCreate(&pData->pProviders);
@@ -5019,9 +5041,6 @@ static int __xuiCodeEditDispatchMarginEvent(xui_widget pWidget, xui_code_edit_da
     if(!called && pEvent->iType == XUI_EVENT_POINTER_DOWN && tInfo.iKind == XUI_CODE_MARGIN_FOLD ) {
 		iRet = xuiCodeFoldStateToggleLine(pData->pFoldState, tHit.iLine);
 		if ( iRet != XUI_OK && iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
-		if ( iRet == XUI_OK ) {
-			(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		}
 	}
 	if ( pDispatched != NULL ) *pDispatched = 1;
 	return XUI_OK;
@@ -7466,6 +7485,15 @@ XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget,
     if ( pStyle != NULL ) *pStyle = pData->onTokenStyle;
     if ( pUser != NULL ) *pUser = pData->pTokenStyleUser;
     return XUI_OK;
+}
+
+static void __xuiCodeEditFoldChanged(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return;
+	++pData->iFoldRevision;
+	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	__xuiCodeEditCancelPointerHover(pData);
 }
 
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget)
