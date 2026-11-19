@@ -7489,6 +7489,14 @@ static void __xuiCodeEditBuildFindPreview(xui_code_document pDocument, int iOffs
 		     ch == '\r' || ch == '\n' ) break;
 		sPreview[iOut++] = (ch == '\t') ? ' ' : ch;
 	}
+	if ( iOut > 0 && iOut + 1 == iCapacity && ((unsigned char)sPreview[iOut - 1] & 0x80u) ) {
+		int iLast = iOut - 1;
+		uint32 iScalar;
+		while ( iLast > 0 && __xuiCodeEditUtf8Continuation((unsigned char)sPreview[iLast]) ) iLast--;
+		if ( xrtUtf8Decode((xstrview){sPreview + iLast, (size_t)(iOut - iLast)}, &iScalar, NULL) == XUTF_MORE ) {
+			iOut = iLast;
+		}
+	}
 	sPreview[iOut] = '\0';
 }
 

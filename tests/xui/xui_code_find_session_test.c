@@ -1,7 +1,25 @@
+#ifdef XGE_XRT_HOST
+#define XRT_MODULE_ALL
+#ifdef _WIN32
+#define XRT_USE_SHARED
+#endif
+#endif
 #include "xui.h"
 #include "xui_test_proxy.h"
 #include <stdio.h>
 #include <string.h>
+
+#ifdef XGE_XRT_HOST
+#include <xge_host_xrt_contract.h>
+static xge_host_xrt_proc resolve(void* user,const char* name)
+{
+    (void)user;
+#define XGE_HOST_XRT_SLOT(symbol) if(!strcmp(name,#symbol))return (xge_host_xrt_proc)&symbol;
+#include <xge_host_xrt_slots.inc>
+#undef XGE_HOST_XRT_SLOT
+    return NULL;
+}
+#endif
 
 #define CHECK(e) do { ++checks; if(!(e)){fprintf(stderr,"code_find_session:%d: %s\n",__LINE__,#e);failed=1;goto cleanup;} } while(0)
 static xui_widget child(xui_context context,xui_widget w,const char* type,const char* label,int* index)
@@ -31,11 +49,33 @@ int main(void)
     xui_context context=NULL,other=NULL;xui_code_find_scope scope=NULL;
     xui_widget root=NULL,a=NULL,b=NULL,c=NULL; xui_font font=NULL;xui_test_proxy_state_t state;
     xuiTestProxyInit(&state);
-    CHECK(xuiCreate(&context)==XUI_OK && xuiSetProxy(context,&state.tProxy)==XUI_OK);
+#ifdef XGE_XRT_HOST
+    const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
+    CHECK(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
+#endif
+    xui_context_desc_t config;
+    xuiContextDescDefault(&config);
+    config.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED;
+    CHECK(xuiCreateEx(&config,&context)==XUI_OK && xuiSetProxy(context,&state.tProxy)==XUI_OK);
     CHECK(state.tProxy.fontLoadFile(&state.tProxy,&font,"find.ttf",14,0)==XUI_OK && xuiSetDefaultFont(context,font)==XUI_OK);
     CHECK(xuiInputViewport(context,800,600)==XUI_OK && xuiWidgetCreate(context,&root)==XUI_OK && xuiSetRootWidget(context,root)==XUI_OK);
     CHECK(xuiWidgetSetRect(root,(xui_rect_t){0,0,800,600})==XUI_OK && editor(context,root,"alpha\n",&a)==XUI_OK && editor(context,root,"alpha alpha\n",&b)==XUI_OK);
     CHECK(xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,a,"one.c")==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,b,"two.c")==XUI_OK);
+    {
+        char text[162];
+        xui_find_options_t options={0};
+        xui_code_find_result_t result;
+        int count=0;
+        options.iSize=sizeof(options);options.sPattern="alpha";options.iRangeEnd=-1;
+        memcpy(text,"alpha ",6);
+        memset(text+6,'x',152);
+        memcpy(text+158,"\xe4\xbd\xa0",4);
+        CHECK(xuiCodeEditSetText(b,text)==XUI_OK && xuiCodeEditFindAll(b,&options,&count)==XUI_OK && count==1);
+        CHECK(xuiCodeEditGetFindResult(b,0,&result)==XUI_OK && result.iStart==0 && result.iEnd==5 && strlen(result.sPreview)==158);
+        CHECK(xuiCodeFindScopeFindAll(scope,&options,&count)==XUI_OK && count==2);
+        CHECK(xuiCodeFindScopeGetResult(scope,1,&result)==XUI_OK && result.pEditor==b && strlen(result.sPreview)==158);
+        CHECK(xuiCodeEditSetText(b,"alpha alpha\n")==XUI_OK);
+    }
     CHECK(xuiCodeEditOpenReplace(a)==XUI_OK);
     xui_widget window=xuiCodeFindScopeGetFindWindow(scope);
     CHECK(window && window==xuiCodeEditGetFindWindow(a) && window==xuiCodeEditGetFindWindow(b));
