@@ -8201,8 +8201,13 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 XUI_API int xuiCodeAnnotationStoreCreate(xui_code_annotation_store* ppStore);
 /* 释放注释存储。 */
 XUI_API void xuiCodeAnnotationStoreDestroy(xui_code_annotation_store pStore);
+/* An editor owns its store. Only the editor can destroy that store. */
+XUI_API int xuiCodeAnnotationStoreDestroyChecked(xui_code_annotation_store pStore);
 /* 清空全部注释。 */
 XUI_API void xuiCodeAnnotationStoreClear(xui_code_annotation_store pStore);
+XUI_API int xuiCodeAnnotationStoreClearChecked(xui_code_annotation_store pStore);
+XUI_API int xuiCodeAnnotationEditorLifetimeWatch(xui_code_annotation_store pStore,
+    xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc invalidate, void* pUser);
 /* 在行上设置标记（断点/书签类，带提示文本）。 */
 XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLine, int iMarker, uint32_t iFlags, const char* sTooltip, uintptr_t iUserData);
 /* 清除行上指定标记。 */
@@ -8235,6 +8240,32 @@ XUI_API int xuiCodeAnnotationGetDiagnosticsInRange(xui_code_annotation_store pSt
 XUI_API uint32_t xuiCodeAnnotationGetDiagnosticVersion(xui_code_annotation_store pStore);
 /* 编辑后平移注释区间（半开区间；保留未编辑前后缀并保持标记随文本移动）。 */
 XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iStartOffset, int iEndOffset, int iNewEndOffset, int iStartLine, int iEndLine, int iNewEndLine);
+
+/* Immutable query results retain their own text and remain usable on the
+ * creating thread after the store is mutated or destroyed. Borrowed text from
+ * a snapshot lives as long as that snapshot. Diagnostic indices identify the
+ * source set at capture. */
+typedef struct xui_code_annotation_snapshot_t* xui_code_annotation_snapshot;
+typedef struct xui_code_diagnostic_capture_t {
+    xui_code_diagnostic_t tDiagnostic;
+    int iSourceIndex;
+} xui_code_diagnostic_capture_t;
+XUI_API int xuiCodeAnnotationCaptureMarkers(xui_code_annotation_store pStore, int iLine,
+    xui_code_annotation_snapshot* ppSnapshot);
+XUI_API int xuiCodeAnnotationCaptureIndicatorsAt(xui_code_annotation_store pStore, int iOffset,
+    xui_code_annotation_snapshot* ppSnapshot);
+XUI_API int xuiCodeAnnotationCaptureDiagnosticsAt(xui_code_annotation_store pStore, int iOffset,
+    xui_code_annotation_snapshot* ppSnapshot);
+XUI_API int xuiCodeAnnotationCaptureDiagnosticsInRange(xui_code_annotation_store pStore, int iStart,
+    int iEnd, xui_code_annotation_snapshot* ppSnapshot);
+XUI_API void xuiCodeAnnotationSnapshotDestroy(xui_code_annotation_snapshot pSnapshot);
+XUI_API int xuiCodeAnnotationSnapshotGetCount(xui_code_annotation_snapshot pSnapshot);
+XUI_API int xuiCodeAnnotationSnapshotGetMarker(xui_code_annotation_snapshot pSnapshot, int iIndex,
+    xui_code_marker_t* pMarker);
+XUI_API int xuiCodeAnnotationSnapshotGetIndicator(xui_code_annotation_snapshot pSnapshot, int iIndex,
+    xui_code_indicator_t* pIndicator);
+XUI_API int xuiCodeAnnotationSnapshotGetDiagnostic(xui_code_annotation_snapshot pSnapshot, int iIndex,
+    xui_code_diagnostic_capture_t* pDiagnostic);
 /* 创建语言注册表。 */
 XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry);
 /* 释放语言注册表。 */
@@ -8596,6 +8627,11 @@ XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget, xui_code_token_
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 /* 取注释存储（标记/指示器/诊断，编辑器持有）。 */
 XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget);
+/* Mark matches in this editor's own document and store. */
+XUI_API int xuiCodeEditMarkAllPlain(xui_widget widget, const char* pattern,
+    uint32_t flags, int indicator, int* matches);
+XUI_API int xuiCodeEditMarkAllRegex(xui_widget widget, const char* pattern,
+    uint32_t flags, int indicator, int* matches, char* error, int errorCapacity);
 /* 命中测试偏移处诊断。 */
 XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget pWidget, float fX, float fY, xui_code_diagnostic_hit_t* pHit);
 /* Publish a complete diagnostic set for the given document version. A stale

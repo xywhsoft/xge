@@ -20,6 +20,10 @@ struct xui_code_diagnostic_text_t {
 };
 
 struct xui_code_annotation_store_t {
+	xui_widget pOwner;
+	xui_code_document pDocument;
+	const xui_code_annotation_owner_ops_t* pOwnerOps;
+	uint64_t iOwnerThread;
 	xui_code_marker_t* pMarkers;
 	int iMarkerCount;
 	int iMarkerCapacity;
@@ -34,6 +38,47 @@ struct xui_code_annotation_store_t {
 	int iDiagnosticIndexCapacity;
 	uint32_t iDiagnosticVersion;
 };
+
+static int __xuiCodeAnnotationStatus(xui_code_annotation_store store, bool write)
+{
+	if ( store == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( store->pOwner == NULL ) return XUI_OK;
+	if ( store->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return store->pOwnerOps->check(store->pOwner, write);
+}
+
+int xuiInternalCodeAnnotationClaimOwner(xui_code_annotation_store store, xui_widget editor,
+	xui_code_document document, const xui_code_annotation_owner_ops_t* ops)
+{
+	if ( store == NULL || editor == NULL || document == NULL || ops == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( store->pOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	store->pDocument = document;
+	store->pOwnerOps = ops;
+	store->iOwnerThread = xrtThreadCurrentId();
+	store->pOwner = editor;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationEditorLifetimeWatch(xui_code_annotation_store store,
+	xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+	int status = __xuiCodeAnnotationStatus(store, false);
+	if ( status != XUI_OK ) return status;
+	if ( store->pOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return store->pOwnerOps->watch(store->pOwner, link, invalidate, user);
+}
+
+int xuiInternalCodeAnnotationCheckDocument(xui_code_annotation_store store, xui_code_document document)
+{
+	int status = __xuiCodeAnnotationStatus(store, true);
+	if ( status != XUI_OK ) return status;
+	return store->pDocument != NULL && store->pDocument != document ? XUI_ERROR_INVALID_ARGUMENT : XUI_OK;
+}
+
+void xuiInternalCodeAnnotationNotify(xui_code_annotation_store store, bool diagnostics)
+{
+	if ( store->pOwner != NULL ) store->pOwnerOps->changed(store->pOwner, diagnostics);
+}
 
 static char* __xuiCodeAnnotationStrDup(const char* sText)
 {
@@ -337,10 +382,20 @@ XUI_API int xuiCodeAnnotationStoreCreate(xui_code_annotation_store* ppStore)
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeAnnotationStoreDestroy(xui_code_annotation_store pStore)
+static void __xuiCodeAnnotationStoreClear(xui_code_annotation_store pStore)
 {
-	if ( pStore == NULL ) return;
-	xuiCodeAnnotationStoreClear(pStore);
+	bool hadDiagnostics = pStore->iDiagnosticCount > 0;
+	for ( int i = 0; i < pStore->iMarkerCount; i++ ) __xuiCodeAnnotationFreeMarker(&pStore->pMarkers[i]);
+	__xuiCodeAnnotationClearDiagnosticText(pStore);
+	pStore->iMarkerCount = 0;
+	pStore->iIndicatorCount = 0;
+	pStore->iDiagnosticCount = 0;
+	if ( hadDiagnostics ) __xuiCodeAnnotationBumpDiagnosticVersion(pStore);
+}
+
+static void __xuiCodeAnnotationStoreDestroy(xui_code_annotation_store pStore)
+{
+	__xuiCodeAnnotationStoreClear(pStore);
 	xrtFree(pStore->pMarkers);
 	xrtFree(pStore->pIndicators);
 	xrtFree(pStore->pDiagnostics);
@@ -348,19 +403,41 @@ XUI_API void xuiCodeAnnotationStoreDestroy(xui_code_annotation_store pStore)
 	xrtFree(pStore);
 }
 
-XUI_API void xuiCodeAnnotationStoreClear(xui_code_annotation_store pStore)
+void xuiInternalCodeAnnotationDestroyOwned(xui_code_annotation_store store, xui_widget editor)
 {
-	int bHadDiagnostics;
-	int i;
+	if ( store != NULL && (store->pOwner == NULL || store->pOwner == editor) )
+		__xuiCodeAnnotationStoreDestroy(store);
+}
 
-	if ( pStore == NULL ) return;
-	bHadDiagnostics = pStore->iDiagnosticCount > 0;
-	for ( i = 0; i < pStore->iMarkerCount; i++ ) __xuiCodeAnnotationFreeMarker(&pStore->pMarkers[i]);
-	__xuiCodeAnnotationClearDiagnosticText(pStore);
-	pStore->iMarkerCount = 0;
-	pStore->iIndicatorCount = 0;
-	pStore->iDiagnosticCount = 0;
-	if ( bHadDiagnostics ) __xuiCodeAnnotationBumpDiagnosticVersion(pStore);
+XUI_API int xuiCodeAnnotationStoreDestroyChecked(xui_code_annotation_store store)
+{
+	int status = __xuiCodeAnnotationStatus(store, true);
+	if ( status != XUI_OK ) return status;
+	if ( store->pOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	__xuiCodeAnnotationStoreDestroy(store);
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeAnnotationStoreDestroy(xui_code_annotation_store store)
+{
+	if ( store != NULL ) (void)xuiCodeAnnotationStoreDestroyChecked(store);
+}
+
+XUI_API int xuiCodeAnnotationStoreClearChecked(xui_code_annotation_store store)
+{
+	int status = __xuiCodeAnnotationStatus(store, true);
+	if ( status != XUI_OK ) return status;
+	if ( store->iMarkerCount || store->iIndicatorCount || store->iDiagnosticCount ) {
+		bool diagnostics = store->iDiagnosticCount > 0;
+		__xuiCodeAnnotationStoreClear(store);
+		xuiInternalCodeAnnotationNotify(store, diagnostics);
+	}
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeAnnotationStoreClear(xui_code_annotation_store store)
+{
+	if ( store != NULL ) (void)xuiCodeAnnotationStoreClearChecked(store);
 }
 
 XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLine, int iMarker, uint32_t iFlags, const char* sTooltip, uintptr_t iUserData)
@@ -370,7 +447,9 @@ XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLi
 	int i;
 	int iRet;
 
-	if ( (pStore == NULL) || (iLine < 0) || (iMarker <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCodeAnnotationStatus(pStore, true);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iLine < 0 || iMarker <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	sCopy = __xuiCodeAnnotationStrDup(sTooltip);
 	if ( sTooltip != NULL && sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	for ( i = 0; i < pStore->iMarkerCount; i++ ) {
@@ -379,6 +458,7 @@ XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLi
 			pStore->pMarkers[i].sTooltip = sCopy;
 			pStore->pMarkers[i].iFlags = iFlags;
 			pStore->pMarkers[i].iUserData = iUserData;
+			xuiInternalCodeAnnotationNotify(pStore, false);
 			return XUI_OK;
 		}
 	}
@@ -399,6 +479,7 @@ XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLi
 	pMarker->iFlags = iFlags;
 	pMarker->sTooltip = sCopy;
 	pMarker->iUserData = iUserData;
+	xuiInternalCodeAnnotationNotify(pStore, false);
 	return XUI_OK;
 }
 
@@ -406,12 +487,15 @@ XUI_API int xuiCodeAnnotationClearMarker(xui_code_annotation_store pStore, int i
 {
 	int i;
 
-	if ( (pStore == NULL) || (iLine < 0) || (iMarker <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeAnnotationStatus(pStore, true);
+	if ( status != XUI_OK ) return status;
+	if ( iLine < 0 || iMarker <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pStore->iMarkerCount; i++ ) {
 		if ( pStore->pMarkers[i].iLine == iLine && pStore->pMarkers[i].iMarker == iMarker ) {
 			__xuiCodeAnnotationFreeMarker(&pStore->pMarkers[i]);
 			memmove(&pStore->pMarkers[i], &pStore->pMarkers[i + 1], sizeof(pStore->pMarkers[i]) * (size_t)(pStore->iMarkerCount - i - 1));
 			pStore->iMarkerCount--;
+			xuiInternalCodeAnnotationNotify(pStore, false);
 			return XUI_OK;
 		}
 	}
@@ -425,7 +509,9 @@ XUI_API int xuiCodeAnnotationClearMarkers(xui_code_annotation_store pStore, int 
 	int i;
 	int iCleared;
 
-	if ( (pStore == NULL) || (iLine < -1) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeAnnotationStatus(pStore, true);
+	if ( status != XUI_OK ) return status;
+	if ( iLine < -1 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOriginalCount = pStore->iMarkerCount;
 	iCleared = 0;
 	iWrite = 0;
@@ -443,6 +529,7 @@ XUI_API int xuiCodeAnnotationClearMarkers(xui_code_annotation_store pStore, int 
 			sizeof(*pStore->pMarkers) * (size_t)(iOriginalCount - iWrite));
 	}
 	pStore->iMarkerCount = iWrite;
+	if ( iCleared > 0 ) xuiInternalCodeAnnotationNotify(pStore, false);
 	return (iCleared > 0) ? XUI_OK : XUI_ERROR_UNSUPPORTED;
 }
 
@@ -465,7 +552,7 @@ XUI_API int xuiCodeAnnotationGetMarkers(xui_code_annotation_store pStore, int iL
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int iIndicator, int iStyle, int iStart, int iEnd, uint32_t iFlags, uintptr_t iUserData)
+int xuiInternalCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int iIndicator, int iStyle, int iStart, int iEnd, uint32_t iFlags, uintptr_t iUserData)
 {
 	xui_code_indicator_t* pIndicator;
 	int iRet;
@@ -486,6 +573,16 @@ XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int 
 	return XUI_OK;
 }
 
+XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store store, int indicator, int style,
+	int start, int end, uint32_t flags, uintptr_t userData)
+{
+	int status = __xuiCodeAnnotationStatus(store, true);
+	if ( status != XUI_OK ) return status;
+	status = xuiInternalCodeAnnotationSetIndicator(store, indicator, style, start, end, flags, userData);
+	if ( status == XUI_OK ) xuiInternalCodeAnnotationNotify(store, false);
+	return status;
+}
+
 XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, int iIndicator, int iStart, int iEnd)
 {
 	xui_code_indicator_t* pNew;
@@ -499,7 +596,9 @@ XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, in
 	int i;
 	int iCleared;
 
-	if ( (pStore == NULL) || (iIndicator <= 0) || (iStart < 0) || (iEnd <= iStart) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeAnnotationStatus(pStore, true);
+	if ( status != XUI_OK ) return status;
+	if ( iIndicator <= 0 || iStart < 0 || iEnd <= iStart ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCleared = 0;
 	iSplitCount = 0;
 	iRemoveCount = 0;
@@ -536,6 +635,7 @@ XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, in
 			pStore->pIndicators[iWrite++] = tIndicator;
 		}
 		pStore->iIndicatorCount = iWrite;
+		xuiInternalCodeAnnotationNotify(pStore, false);
 		return XUI_OK;
 	}
 	if ( iSplitCount > INT_MAX - pStore->iIndicatorCount ) return XUI_ERROR_LIMIT_EXCEEDED;
@@ -583,10 +683,11 @@ XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, in
 	pStore->pIndicators = pNew;
 	pStore->iIndicatorCount = iFinalCount;
 	pStore->iIndicatorCapacity = iFinalCount;
+	xuiInternalCodeAnnotationNotify(pStore, false);
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store pStore, int iIndicator)
+int xuiInternalCodeAnnotationClearIndicators(xui_code_annotation_store pStore, int iIndicator)
 {
 	int iWrite;
 	int i;
@@ -605,6 +706,15 @@ XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store pStore, i
 	}
 	pStore->iIndicatorCount = iWrite;
 	return (iCleared > 0) ? XUI_OK : XUI_ERROR_UNSUPPORTED;
+}
+
+XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store store, int indicator)
+{
+	int status = __xuiCodeAnnotationStatus(store, true);
+	if ( status != XUI_OK ) return status;
+	status = xuiInternalCodeAnnotationClearIndicators(store, indicator);
+	if ( status == XUI_OK ) xuiInternalCodeAnnotationNotify(store, false);
+	return status;
 }
 
 XUI_API int xuiCodeAnnotationGetIndicatorsAt(xui_code_annotation_store pStore, int iOffset, xui_code_indicator_t* pIndicators, int iIndicatorCapacity, int* pIndicatorCount)
@@ -684,33 +794,42 @@ int xuiInternalCodeAnnotationApplyDiagnostics(xui_code_annotation_store pStore,
 	pStore->pDiagnosticIndex = tNew.pDiagnosticIndex;
 	pStore->iDiagnosticIndexCapacity = tNew.iDiagnosticIndexCapacity;
 	__xuiCodeAnnotationBumpDiagnosticVersion(pStore);
+	xuiInternalCodeAnnotationNotify(pStore, true);
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore,
 	const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount)
 {
-	return xuiInternalCodeAnnotationApplyDiagnostics(pStore, pDiagnostics, iDiagnosticCount, NULL);
+	int status = __xuiCodeAnnotationStatus(pStore, true);
+	if ( status != XUI_OK ) return status;
+	return xuiInternalCodeAnnotationApplyDiagnostics(pStore, pDiagnostics, iDiagnosticCount, pStore->pOwner);
 }
 
 XUI_API int xuiCodeAnnotationClearDiagnostics(xui_code_annotation_store pStore)
 {
-	if ( pStore == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeAnnotationStatus(pStore, true);
+	if ( status != XUI_OK ) return status;
 	if ( pStore->iDiagnosticCount == 0 ) return XUI_OK;
 	__xuiCodeAnnotationClearDiagnosticText(pStore);
 	pStore->iDiagnosticCount = 0;
 	__xuiCodeAnnotationBumpDiagnosticVersion(pStore);
+	xuiInternalCodeAnnotationNotify(pStore, true);
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeAnnotationGetDiagnosticCount(xui_code_annotation_store pStore)
 {
-	return (pStore != NULL) ? pStore->iDiagnosticCount : 0;
+	if ( pStore == NULL ) return 0;
+	int status = __xuiCodeAnnotationStatus(pStore, false);
+	return status == XUI_OK ? pStore->iDiagnosticCount : status;
 }
 
 XUI_API int xuiCodeAnnotationGetDiagnostic(xui_code_annotation_store pStore, int iIndex, xui_code_diagnostic_t* pDiagnostic)
 {
-	if ( (pStore == NULL) || (pDiagnostic == NULL) || (iIndex < 0) || (iIndex >= pStore->iDiagnosticCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeAnnotationStatus(pStore, false);
+	if ( status != XUI_OK ) return status;
+	if ( pDiagnostic == NULL || iIndex < 0 || iIndex >= pStore->iDiagnosticCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiCodeAnnotationCopyDiagnosticOut(pDiagnostic, &pStore->pDiagnostics[iIndex]);
 	return XUI_OK;
 }
@@ -852,6 +971,196 @@ XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iSt
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( bDiagnosticTouched ) __xuiCodeAnnotationBumpDiagnosticVersion(pStore);
+	return XUI_OK;
+}
+
+typedef enum {
+	XUI_ANNOTATION_CAPTURE_MARKERS,
+	XUI_ANNOTATION_CAPTURE_INDICATORS,
+	XUI_ANNOTATION_CAPTURE_DIAGNOSTICS
+} xui_code_annotation_capture_kind_t;
+
+struct xui_code_annotation_snapshot_t {
+	xui_code_diagnostic_text_t* pDiagnosticText;
+	xui_code_annotation_capture_kind_t kind;
+	int count;
+};
+
+_Static_assert(sizeof(struct xui_code_annotation_snapshot_t) % _Alignof(xui_code_marker_t) == 0,
+	"annotation marker capture alignment");
+_Static_assert(sizeof(struct xui_code_annotation_snapshot_t) % _Alignof(xui_code_indicator_t) == 0,
+	"annotation indicator capture alignment");
+_Static_assert(sizeof(struct xui_code_annotation_snapshot_t) % _Alignof(xui_code_diagnostic_t) == 0 &&
+	sizeof(xui_code_diagnostic_t) % _Alignof(int) == 0, "annotation diagnostic capture alignment");
+
+static int __xuiCodeAnnotationSnapshotCreate(xui_code_annotation_capture_kind_t kind,
+	int count, size_t stride, size_t extra, xui_code_annotation_snapshot* out)
+{
+	size_t header = sizeof(**out);
+	if ( extra > SIZE_MAX - header || (size_t)count > (SIZE_MAX - header - extra) / stride )
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	xui_code_annotation_snapshot snapshot = xrtMalloc(header + (size_t)count * stride + extra);
+	if ( snapshot == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	*snapshot = (struct xui_code_annotation_snapshot_t){NULL, kind, count};
+	*out = snapshot;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationCaptureMarkers(xui_code_annotation_store store, int line,
+	xui_code_annotation_snapshot* out)
+{
+	if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	int status = __xuiCodeAnnotationStatus(store, false);
+	if ( status != XUI_OK ) return status;
+	if ( line < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	size_t bytes = 0;
+	int count = 0;
+	for ( int i = 0; i < store->iMarkerCount; ++i ) {
+		const xui_code_marker_t* marker = &store->pMarkers[i];
+		if ( marker->iLine != line ) continue;
+		++count;
+		if ( marker->sTooltip == NULL ) continue;
+		size_t length = strlen(marker->sTooltip);
+		if ( length >= SIZE_MAX - bytes ) return XUI_ERROR_LIMIT_EXCEEDED;
+		bytes += length + 1;
+	}
+	xui_code_annotation_snapshot snapshot;
+	status = __xuiCodeAnnotationSnapshotCreate(XUI_ANNOTATION_CAPTURE_MARKERS, count,
+		sizeof(xui_code_marker_t), bytes, &snapshot);
+	if ( status != XUI_OK ) return status;
+	xui_code_marker_t* markers = (void*)(snapshot + 1);
+	int copied;
+	status = xuiCodeAnnotationGetMarkers(store, line, markers, count, &copied);
+	if ( status != XUI_OK || copied != count ) {
+		xuiCodeAnnotationSnapshotDestroy(snapshot);
+		return status != XUI_OK ? status : XUI_ERROR_INVALID_STATE;
+	}
+	char* text = (void*)(markers + count);
+	for ( int i = 0; i < count; ++i ) {
+		if ( markers[i].sTooltip == NULL ) continue;
+		size_t length = strlen(markers[i].sTooltip) + 1;
+		memcpy(text, markers[i].sTooltip, length);
+		markers[i].sTooltip = text;
+		text += length;
+	}
+	*out = snapshot;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationCaptureIndicatorsAt(xui_code_annotation_store store, int offset,
+	xui_code_annotation_snapshot* out)
+{
+	if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	int status = __xuiCodeAnnotationStatus(store, false);
+	if ( status != XUI_OK ) return status;
+	int count;
+	status = xuiCodeAnnotationGetIndicatorsAt(store, offset, NULL, 0, &count);
+	if ( status != XUI_OK ) return status;
+	xui_code_annotation_snapshot snapshot;
+	status = __xuiCodeAnnotationSnapshotCreate(XUI_ANNOTATION_CAPTURE_INDICATORS, count,
+		sizeof(xui_code_indicator_t), 0, &snapshot);
+	if ( status != XUI_OK ) return status;
+	int copied;
+	status = xuiCodeAnnotationGetIndicatorsAt(store, offset, (void*)(snapshot + 1), count, &copied);
+	if ( status != XUI_OK || copied != count ) {
+		xuiCodeAnnotationSnapshotDestroy(snapshot);
+		return status != XUI_OK ? status : XUI_ERROR_INVALID_STATE;
+	}
+	*out = snapshot;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationCaptureDiagnosticsInRange(xui_code_annotation_store store, int start, int end,
+	xui_code_annotation_snapshot* out)
+{
+	if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	int status = __xuiCodeAnnotationStatus(store, false);
+	if ( status != XUI_OK ) return status;
+	int count;
+	status = xuiCodeAnnotationGetDiagnosticsInRange(store, start, end, NULL, NULL, 0, &count);
+	if ( status != XUI_OK ) return status;
+	xui_code_annotation_snapshot snapshot;
+	status = __xuiCodeAnnotationSnapshotCreate(XUI_ANNOTATION_CAPTURE_DIAGNOSTICS, count,
+		sizeof(xui_code_diagnostic_t) + sizeof(int), 0, &snapshot);
+	if ( status != XUI_OK ) return status;
+	if ( count > 0 ) {
+		xui_code_diagnostic_t* records = (void*)(snapshot + 1);
+		int* indices = (void*)(records + count);
+		int copied;
+		status = xuiCodeAnnotationGetDiagnosticsInRange(store, start, end, records, indices, count, &copied);
+		if ( status == XUI_OK && copied != count ) status = XUI_ERROR_INVALID_STATE;
+		if ( status == XUI_OK ) {
+			xui_code_diagnostic_text_t* text = NULL;
+			status = xuiInternalCodeAnnotationPinDiagnosticText(store, &text);
+			if ( status == XUI_OK ) snapshot->pDiagnosticText = text;
+		}
+		if ( status != XUI_OK ) {
+			xuiCodeAnnotationSnapshotDestroy(snapshot);
+			return status;
+		}
+	}
+	*out = snapshot;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationCaptureDiagnosticsAt(xui_code_annotation_store store, int offset,
+	xui_code_annotation_snapshot* out)
+{
+	if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if ( offset < 0 || offset == INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiCodeAnnotationCaptureDiagnosticsInRange(store, offset, offset + 1, out);
+}
+
+XUI_API void xuiCodeAnnotationSnapshotDestroy(xui_code_annotation_snapshot snapshot)
+{
+	if ( snapshot == NULL ) return;
+	xuiInternalCodeAnnotationUnpinDiagnosticText(snapshot->pDiagnosticText);
+	xrtFree(snapshot);
+}
+
+XUI_API int xuiCodeAnnotationSnapshotGetCount(xui_code_annotation_snapshot snapshot)
+{
+	return snapshot != NULL ? snapshot->count : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static bool __xuiCodeAnnotationSnapshotHas(xui_code_annotation_snapshot snapshot, int index,
+	xui_code_annotation_capture_kind_t kind)
+{
+	return snapshot != NULL && snapshot->kind == kind && index >= 0 && index < snapshot->count;
+}
+
+XUI_API int xuiCodeAnnotationSnapshotGetMarker(xui_code_annotation_snapshot snapshot, int index,
+	xui_code_marker_t* marker)
+{
+	if ( marker == NULL || !__xuiCodeAnnotationSnapshotHas(snapshot, index, XUI_ANNOTATION_CAPTURE_MARKERS) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_code_marker_t* records = (const void*)(snapshot + 1);
+	*marker = records[index];
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationSnapshotGetIndicator(xui_code_annotation_snapshot snapshot, int index,
+	xui_code_indicator_t* indicator)
+{
+	if ( indicator == NULL || !__xuiCodeAnnotationSnapshotHas(snapshot, index, XUI_ANNOTATION_CAPTURE_INDICATORS) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_code_indicator_t* records = (const void*)(snapshot + 1);
+	*indicator = records[index];
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationSnapshotGetDiagnostic(xui_code_annotation_snapshot snapshot, int index,
+	xui_code_diagnostic_capture_t* diagnostic)
+{
+	if ( diagnostic == NULL || !__xuiCodeAnnotationSnapshotHas(snapshot, index, XUI_ANNOTATION_CAPTURE_DIAGNOSTICS) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_code_diagnostic_t* records = (const void*)(snapshot + 1);
+	const int* indices = (const void*)(records + snapshot->count);
+	*diagnostic = (xui_code_diagnostic_capture_t){records[index], indices[index]};
 	return XUI_OK;
 }
 

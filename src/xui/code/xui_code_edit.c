@@ -517,7 +517,7 @@ static void __xuiCodeEditClearFindResults(xui_code_edit_data_t* pData)
 	pData->iFindActiveIndex = -1;
 	memset(&pData->tFindActive, 0, sizeof(pData->tFindActive));
 	if ( pData->pAnnotations != NULL ) {
-		(void)xuiCodeAnnotationClearIndicators(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT);
+		(void)xuiInternalCodeAnnotationClearIndicators(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT);
 	}
 	xui_code_find_window_t* ui = pData->pFindScope ? pData->pFindScope->pFindUi : pData->pFindUi;
 	if (ui != NULL && !ui->bFindResultScopeMode && ui->pFindResultList != NULL)
@@ -2507,7 +2507,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
 	xuiInternalCodeLanguageRegistryDestroyOwned(pData->pLanguages, pWidget);
-	xuiCodeAnnotationStoreDestroy(pData->pAnnotations);
+	xuiInternalCodeAnnotationDestroyOwned(pData->pAnnotations, pWidget);
 	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
 	xuiCodeThemeDestroy(pData->pTheme);
 	xuiInternalCodeSelectionDestroyOwned(pWidget, pData->pSelection);
@@ -3039,7 +3039,7 @@ static const xui_code_fold_owner_ops_t g_xuiCodeEditFoldOwnerOps = {
 	__xuiCodeEditCheckFoldOwner, xuiWidgetLifetimeWatch, __xuiCodeEditFoldChanged, __xuiCodeEditBuildFolds
 };
 
-static int __xuiCodeEditCheckLanguageOwner(xui_widget editor, bool write)
+static int __xuiCodeEditCheckAttachedModel(xui_widget editor, bool write)
 {
 	if ( !xuiInternalWidgetIsValid(editor) ) return XUI_ERROR_INVALID_STATE;
 	if ( !write ) return XUI_OK;
@@ -3063,7 +3063,19 @@ static void __xuiCodeEditLanguageChanged(xui_widget editor, const char* language
 }
 
 static const xui_code_language_owner_ops_t g_xuiCodeEditLanguageOwnerOps = {
-	__xuiCodeEditCheckLanguageOwner, xuiWidgetLifetimeWatch, __xuiCodeEditLanguageChanged
+	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditLanguageChanged
+};
+
+static void __xuiCodeEditAnnotationsChanged(xui_widget editor, bool diagnostics)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(editor);
+	if ( data == NULL ) return;
+	if ( diagnostics ) data->tHoveredDiagnosticRect = (xui_rect_t){0};
+	(void)xuiInternalWidgetInvalidatePaintIfNeeded(editor);
+}
+
+static const xui_code_annotation_owner_ops_t g_xuiCodeEditAnnotationOwnerOps = {
+	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditAnnotationsChanged
 };
 
 static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData, const xui_code_edit_desc_t* pDesc)
@@ -3078,6 +3090,8 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiCodeFoldStateCreate(&pData->pFoldState);
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeFoldStateClaimOwner(pData->pFoldState, pWidget, &g_xuiCodeEditFoldOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeAnnotationStoreCreate(&pData->pAnnotations);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeAnnotationClaimOwner(pData->pAnnotations, pWidget,
+		pData->pDocument, &g_xuiCodeEditAnnotationOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeTokenBufferCreate(&pData->pTokenBuffer);
 	if ( iRet == XUI_OK ) iRet = xuiCodeProviderSetCreate(&pData->pProviders);
 	if ( iRet == XUI_OK ) iRet = xuiCodeMarginModelCreate(&pData->pMargins);
@@ -7538,24 +7552,38 @@ XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget)
 	return (pData != NULL) ? pData->pAnnotations : NULL;
 }
 
+XUI_API int xuiCodeEditMarkAllPlain(xui_widget widget, const char* pattern,
+	uint32_t flags, int indicator, int* matches)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiCodeSearchMarkAllPlain(data->pDocument, data->pAnnotations, pattern, flags, indicator, matches);
+}
+
+XUI_API int xuiCodeEditMarkAllRegex(xui_widget widget, const char* pattern,
+	uint32_t flags, int indicator, int* matches, char* error, int errorCapacity)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiCodeSearchMarkAllRegex(data->pDocument, data->pAnnotations, pattern, flags, indicator,
+		matches, error, errorCapacity);
+}
+
 XUI_API int xuiCodeEditApplyDiagnostics(xui_widget widget,
 	uint32_t documentVersion, const xui_code_diagnostic_t* diagnostics, int count)
 {
 	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
 	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( data->bProducingLineLayout ) return XUI_ERROR_BUSY;
+	int status = __xuiCodeEditCheckAttachedModel(widget, true);
+	if ( status != XUI_OK ) return status;
 	xui_call_scope_t scope = {0};
-	int status = xuiCallScopeBegin(widget->pContext, &scope);
+	status = xuiCallScopeBegin(widget->pContext, &scope);
 	if ( status != XUI_OK ) return status;
 	if ( documentVersion != xuiCodeDocumentGetVersion(data->pDocument) ) {
 		status = XUI_ERROR_INVALID_STATE;
 	} else {
-		uint32_t previous = xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations);
 		status = xuiInternalCodeAnnotationApplyDiagnostics(data->pAnnotations, diagnostics, count, widget);
-		if ( status == XUI_OK && previous != xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations) ) {
-			/* Force the next pointer event to refresh or dismiss the old hover. */
-			data->tHoveredDiagnosticRect = (xui_rect_t){0};
-		}
 	}
 	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
 }
@@ -8154,7 +8182,7 @@ static int __xuiCodeEditUpdateFindResults(xui_widget pWidget, xui_code_edit_data
 	if ( iRet != XUI_OK ) goto cleanup;
 	pData->iFindResultCount = 0;
 	pData->iFindActiveIndex = -1;
-	(void)xuiCodeAnnotationClearIndicators(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT);
+	(void)xuiInternalCodeAnnotationClearIndicators(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT);
 	if ( iCount > 0 ) {
 		iRet = xuiFindCollectText(sText, iTextLength, sPattern, 0, iTextLength,
 			iCollectFlags, pData->pFindResults, iCount,
@@ -8175,7 +8203,7 @@ static int __xuiCodeEditUpdateFindResults(xui_widget pWidget, xui_code_edit_data
 		}
 	}
 	for ( i = 0; i < pData->iFindResultCount; i++ ) {
-		(void)xuiCodeAnnotationSetIndicator(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT, XUI_CODE_INDICATOR_BACKGROUND, pData->pFindResults[i].iStart, pData->pFindResults[i].iEnd, 0u, 0u);
+		(void)xuiInternalCodeAnnotationSetIndicator(pData->pAnnotations, XUI_CODE_INDICATOR_SEARCH_RESULT, XUI_CODE_INDICATOR_BACKGROUND, pData->pFindResults[i].iStart, pData->pFindResults[i].iEnd, 0u, 0u);
 	}
 	iRet = __xuiCodeEditSyncFindResultList(pWidget, pData);
 	if ( iRet == XUI_OK ) {

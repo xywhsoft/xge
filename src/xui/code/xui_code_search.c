@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 #include "xui_code_document_internal.h"
+#include "xui_code_diagnostics_internal.h"
 #include "xui_xrt_port.h"
 
 #include <ctype.h>
@@ -693,28 +694,40 @@ XUI_API int xuiCodeSearchMarkAllPlain(xui_code_document pDocument, xui_code_anno
 
 	if ( pMatchCount != NULL ) *pMatchCount = 0;
 	if ( (pDocument == NULL) || (pStore == NULL) || (sPattern == NULL) || (sPattern[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiInternalCodeAnnotationCheckDocument(pStore, pDocument);
+	if ( iRet != XUI_OK ) return iRet;
 	iIndicator = __xuiCodeSearchIndicatorId(iIndicator);
-	(void)xuiCodeAnnotationClearIndicators(pStore, iIndicator);
+	bool changed = xuiInternalCodeAnnotationClearIndicators(pStore, iIndicator) == XUI_OK;
 	iFlags &= ~XUI_CODE_SEARCH_BACKWARD;
 	iFlags &= ~XUI_CODE_SEARCH_WRAP;
 	iPatternSize = strlen(sPattern);
-	if ( iPatternSize > (size_t)INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	if ( iPatternSize > (size_t)INT_MAX ) {
+		iRet = XUI_ERROR_LIMIT_EXCEEDED;
+		goto notify;
+	}
 	iPatternLength = (int)iPatternSize;
 	iOffset = 0;
 	iCount = 0;
 	for ( ;; ) {
 		iRet = xuiCodeSearchFindPlain(pDocument, sPattern, iOffset, iFlags, &tRange);
 		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
-		if ( iRet != XUI_OK ) return iRet;
-		iRet = xuiCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tRange.iStart, tRange.iEnd, 0u, 0u);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( iCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+		if ( iRet != XUI_OK ) goto notify;
+		iRet = xuiInternalCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tRange.iStart, tRange.iEnd, 0u, 0u);
+		if ( iRet != XUI_OK ) goto notify;
+		changed = true;
+		if ( iCount == INT_MAX ) {
+			iRet = XUI_ERROR_LIMIT_EXCEEDED;
+			goto notify;
+		}
 		iCount++;
 		iOffset = tRange.iEnd;
 		if ( iOffset <= tRange.iStart ) iOffset = tRange.iStart + iPatternLength;
 	}
 	if ( pMatchCount != NULL ) *pMatchCount = iCount;
-	return XUI_OK;
+	iRet = XUI_OK;
+notify:
+	if ( changed ) xuiInternalCodeAnnotationNotify(pStore, false);
+	return iRet;
 }
 
 XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_annotation_store pStore, const char* sPattern, uint32_t iFlags, int iIndicator, int* pMatchCount, char* sError, int iErrorCapacity)
@@ -740,10 +753,12 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 		__xuiCodeSearchSetError(sError, iErrorCapacity, "invalid argument");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = xuiInternalCodeAnnotationCheckDocument(pStore, pDocument);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentCallBegin(pDocument, &scope);
 	if ( iRet != XUI_OK ) return iRet;
 	iIndicator = __xuiCodeSearchIndicatorId(iIndicator);
-	(void)xuiCodeAnnotationClearIndicators(pStore, iIndicator);
+	bool changed = xuiInternalCodeAnnotationClearIndicators(pStore, iIndicator) == XUI_OK;
 	iTextLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iTextLength < 0 || iTextLength == INT_MAX ) {
 		iRet = XUI_ERROR_LIMIT_EXCEEDED;
@@ -764,8 +779,9 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 		if ( iRet != XUI_OK ) goto cleanup;
 		if ( tResult.iEnd > tResult.iStart ) {
 			if ( iCount == INT_MAX ) { iRet = XUI_ERROR_LIMIT_EXCEEDED; goto cleanup; }
-			iRet = xuiCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tResult.iStart, tResult.iEnd, 0u, 0u);
+			iRet = xuiInternalCodeAnnotationSetIndicator(pStore, iIndicator, XUI_CODE_INDICATOR_BACKGROUND, tResult.iStart, tResult.iEnd, 0u, 0u);
 			if ( iRet != XUI_OK ) goto cleanup;
+			changed = true;
 			++iCount;
 			iOffset = tResult.iEnd;
 		} else {
@@ -777,6 +793,7 @@ XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_anno
 	if ( pMatchCount != NULL ) *pMatchCount = iCount;
 	__xuiCodeSearchSetError(sError, iErrorCapacity, "");
 cleanup:
+	if ( changed ) xuiInternalCodeAnnotationNotify(pStore, false);
 	if ( iRet != XUI_OK && sError != NULL && iErrorCapacity > 0 && sError[0] == '\0' ) {
 		__xuiCodeSearchSetError(sError, iErrorCapacity, iRet == XUI_ERROR_OUT_OF_MEMORY ? "out of memory" : "regex match failed");
 	}
