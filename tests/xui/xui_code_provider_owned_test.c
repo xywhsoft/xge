@@ -311,11 +311,104 @@ static void consumerAllocationPrefixes(void)
     }
     printf("Owned Provider consumer allocation prefixes=%u, complete heaps balanced\n",total);
 }
+typedef struct EditorCommand {
+    Owner owner;
+    int calls;
+    bool enabled;
+    bool reenter;
+    bool close;
+} EditorCommand;
+
+static int executeEditorCommand(xui_widget widget,int command,int* handled,void* user)
+{
+    EditorCommand* state=user;
+    assert(widget&&state->owner.refs>1);
+    if(command!=XUI_CODE_COMMAND_USER_BASE)return XUI_ERROR_UNSUPPORTED;
+    ++state->calls;
+    *handled=1;
+    return XUI_OK;
+}
+
+static int enableEditorCommand(xui_widget widget,int command,int* enabled,void* user)
+{
+    EditorCommand* state=user;
+    assert(widget&&state->owner.refs>1);
+    if(state->close){
+        assert(xuiWidgetDestroyChecked(widget)==XUI_OK);
+        return XUI_OK;
+    }
+    if(command!=XUI_CODE_COMMAND_USER_BASE)return XUI_ERROR_UNSUPPORTED;
+    if(state->reenter){
+        bool decided=false,allowed=false,handled=false;
+        assert(xuiCodeEditQueryCommandEnabled(widget,command,&decided,&allowed)==XUI_ERROR_BUSY);
+        assert(xuiCodeEditExecuteCommand(widget,command,&handled)==XUI_ERROR_BUSY);
+        assert(!decided&&!allowed&&!handled);
+    }
+    *enabled=state->enabled;
+    return XUI_OK;
+}
+
+static void commandMapInvalidated(void* user)
+{
+    ++*(int*)user;
+}
+
+static void editorCommands(void)
+{
+    xui_test_proxy_state_t backend;xuiTestProxyInit(&backend);
+    const xui_callback_owner_t backendOwner={{&backendRefs,&backendOps},backendHold,backendDrop};
+    const xui_context_desc_t desc={sizeof(desc),XUI_SYSTEM_FONT_DISABLED,0,0};
+    xui_proxy proxy=NULL;xui_context context=NULL;xui_widget editor=NULL;
+    assert(xuiProxyCreateOwned(&backend.tProxy,&backendOwner,&proxy)==XUI_OK);
+    assert(xuiCreateOwnedEx(proxy,&desc,&context)==XUI_OK);
+    assert(xuiCodeEditCreate(context,&editor,NULL)==XUI_OK&&xuiSetRootWidget(context,editor)==XUI_OK);
+    const int id=XUI_CODE_COMMAND_USER_BASE;
+    bool decided=true,allowed=true,handled=true;
+    assert(xuiCodeEditQueryCommandEnabled(editor,id,&decided,&allowed)==XUI_OK&&!decided&&!allowed);
+    assert(xuiCodeEditExecuteCommand(editor,id,&handled)==XUI_OK&&!handled);
+    EditorCommand state={0};init(&state.owner,xuiCodeEditGetProviders(editor));
+    const xui_callback_owner_t cap=capability(&state.owner);
+    assert(xuiCodeEditSetCommandProviderOwned(editor,executeEditorCommand,&state,&cap)==XUI_OK);
+    assert(xuiCodeEditSetCommandEnabledProviderOwned(editor,enableEditorCommand,&state,&cap)==XUI_OK);
+    assert(state.owner.refs==3);
+
+    xui_code_command_map map=xuiCodeEditGetCommandMap(editor);
+    xui_lifetime_link_t link={0};int invalidated=0;
+    assert(xuiCodeCommandMapEditorLifetimeWatch(map,&link,commandMapInvalidated,&invalidated)==XUI_OK);
+    assert(xuiCodeCommandMapDestroyChecked(map)==XUI_ERROR_INVALID_STATE);
+    assert(xuiCodeCommandMapBind(map,XUI_KEY_F2,XUI_MOD_CTRL,id)==XUI_OK);
+    xui_event_t down={.iSize=sizeof(down),.iType=XUI_EVENT_KEY_DOWN,.pTarget=editor,
+        .iKey=XUI_KEY_F2,.iModifiers=XUI_MOD_CTRL};
+    assert(xuiCodeEditQueryCommandEnabled(editor,id,&decided,&allowed)==XUI_OK&&decided&&!allowed);
+    assert(xuiCodeEditExecuteCommand(editor,id,&handled)==XUI_OK&&!handled);
+    assert(xuiDispatchEvent(context,&down)==XUI_OK&&state.calls==0);
+
+    state.enabled=true;
+    state.reenter=true;
+    assert(xuiCodeEditQueryCommandEnabled(editor,id,&decided,&allowed)==XUI_OK&&decided&&allowed);
+    assert(xuiDispatchEvent(context,&down)==XUI_OK&&state.calls==1);
+    assert(xuiCodeEditExecuteCommand(editor,id,&handled)==XUI_OK&&handled&&state.calls==2);
+    assert(xuiCodeEditExecuteCommand(editor,XUI_CODE_COMMAND_SELECT_ALL,&handled)==XUI_OK&&handled);
+
+    assert(xrtMemDebugFailAfter(0));
+    assert(xuiCodeCommandMapLoadDefaults(map)==XUI_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();xrtClearError();
+    int command=0;
+    assert(xuiCodeCommandMapFind(map,XUI_KEY_F2,XUI_MOD_CTRL,&command)==XUI_OK&&command==id);
+
+    state.close=true;
+    assert(xuiCodeEditOpenMenu(editor,20,20)==XUI_ERROR_INVALID_STATE);
+    assert(invalidated==1&&state.owner.refs==1&&state.owner.drops==2);
+    xrtClearError();
+    assert(xuiDestroyChecked(context)==XUI_OK&&xuiProxyReleaseChecked(proxy)==XUI_OK&&backendRefs==1);
+    puts("Owned Editor commands: guarded dispatch, default fallback, reentry, observed key map and menu close");
+}
 int main(void)
 {
     marginBind();xmemdebugsnapshot initial;xrtMemDebugSnapshot(&initial);
     roles();balanced(&initial);publication();balanced(&initial);callerGeneration();balanced(&initial);diagnostics();balanced(&initial);
     graphAndHot();balanced(&initial);consumers();balanced(&initial);consumerAllocationPrefixes();balanced(&initial);
     replyStorage();balanced(&initial);
+    editorCommands();balanced(&initial);
     puts("Owned Provider: all5 roles, immutable pins, scoped borrows, generation, graph, reentry, errors and consumers passed");return 0;
 }

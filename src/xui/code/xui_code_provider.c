@@ -30,6 +30,7 @@ typedef union xui_code_provider_fn_t {
     xui_code_completion_reply_proc completeReply;
     xui_code_hover_reply_proc hoverReply;
     xui_code_signature_reply_proc signatureReply;
+    xui_code_editor_command_proc editorCommand;
     xui_code_command_proc command;
     xui_code_command_enabled_proc enabled;
 } xui_code_provider_fn_t;
@@ -38,7 +39,7 @@ typedef struct xui_code_provider_slot_t {
     xui_callback_owner_t owner;
     void* user;
     xui_code_provider_fn_t fn;
-    bool reply;
+    bool typed;
 } xui_code_provider_slot_t;
 struct xui_code_provider_set_t {
     xui_code_provider_callbacks_t callbacks;
@@ -146,7 +147,7 @@ XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set providers,xui
     *count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);
     xui_code_completion_proc callback=providers->callbacks.onComplete;void* user=providers->callbacks.pCompleteUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_COMPLETE];
-    bool reply = selected && selected->reply;
+    bool reply = selected && selected->typed;
     if(selected){callback=reply ? NULL : selected->fn.complete;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_COMPLETE,selected,&borrow);
@@ -185,7 +186,7 @@ XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set providers,xui_widg
     xui_code_hover_t value={0};value.iSize=sizeof(value);
     xui_code_hover_proc callback=providers->callbacks.onHover;void* user=providers->callbacks.pHoverUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_HOVER];
-    bool reply = selected && selected->reply;
+    bool reply = selected && selected->typed;
     if(selected){callback=reply ? NULL : selected->fn.hover;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_HOVER,selected,&borrow);
@@ -224,7 +225,7 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_
     xui_code_signature_help_t value={0};value.iSize=sizeof(value);value.iActiveParameter=-1;
     xui_code_signature_proc callback=providers->callbacks.onSignature;void* user=providers->callbacks.pSignatureUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_SIGNATURE];
-    bool reply = selected && selected->reply;
+    bool reply = selected && selected->typed;
     if(selected){callback=reply ? NULL : selected->fn.signature;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_SIGNATURE,selected,&borrow);
@@ -262,10 +263,14 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_wi
     *handled=0;int value=0;
     xui_code_command_proc callback=providers->callbacks.onCommand;void* user=providers->callbacks.pCommandUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_COMMAND];
-    if(selected){callback=selected->fn.command;user=selected->user;}
-    if(status==XUI_OK && !callback)status=XUI_ERROR_UNSUPPORTED;
+    bool typed=selected && selected->typed;
+    if(selected){callback=typed ? NULL : selected->fn.command;user=selected->user;}
+    if(status==XUI_OK && !callback && !typed)status=XUI_ERROR_UNSUPPORTED;
     if(status==XUI_OK){
-        __xuiCodeProviderCallbackBegin(&scope);status=callback(widget,command,data,&value,user);__xuiCodeProviderCallbackEnd(&scope);
+        __xuiCodeProviderCallbackBegin(&scope);
+        status=typed ? selected->fn.editorCommand(widget,command,&value,user)
+                     : callback(widget,command,data,&value,user);
+        __xuiCodeProviderCallbackEnd(&scope);
         if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     }
     status=__xuiCodeProviderFinish(&scope,status);if(status==XUI_OK)*handled=value?1:0;return status;

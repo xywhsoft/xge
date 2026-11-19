@@ -7,6 +7,7 @@
 #include "xui_code_margin_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
+#include "xui_code_command_internal.h"
 #include "xui_code_provider_internal.h"
 #include "xui_code_bracket_internal.h"
 
@@ -125,6 +126,7 @@ typedef struct xui_code_edit_data_t {
 	xui_code_margin_model pMargins;
 	xui_code_margin_entry_t* pMarginLayout;
 	int iMarginLayoutCapacity;
+	bool bCheckingCommandState;
 	xui_code_command_map pCommandMap;
 	xui_code_language_registry pLanguages;
 	xui_code_find_scope pFindScope;
@@ -2501,7 +2503,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	pData->iInlineCompletionCapacity = 0;
 	pData->iReadBufferCapacity = 0;
 	pData->iImeCompositionCapacity = 0;
-	xuiCodeCommandMapDestroy(pData->pCommandMap);
+	xuiInternalCodeCommandMapDestroyOwned(pData->pCommandMap, pWidget);
 	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
 	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
@@ -2626,12 +2628,13 @@ static void __xuiCodeEditMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 	(void)__xuiCodeEditExecuteCommand(pWidget, pData, iCommand, NULL, &bHandled);
 }
 
-static int __xuiCodeEditProviderCommandState(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand, uint32_t iDefaultState, uint32_t* pState)
+static int __xuiCodeEditProviderCommandState(xui_widget widget, xui_code_edit_data_t* data,
+    int command, int* enabled)
 {
-    int enabled=0;
-    int status=xuiCodeProviderCanExecuteCommand(pData->pProviders,pWidget,iCommand,&enabled);
-    if(status==XUI_OK)*pState=enabled ? XUI_MENU_ITEM_ENABLED:0u;
-    else if(status==XUI_ERROR_UNSUPPORTED){*pState=iDefaultState;status=XUI_OK;}
+    if (data->bCheckingCommandState) return XUI_ERROR_BUSY;
+    data->bCheckingCommandState = true;
+    int status = xuiCodeProviderCanExecuteCommand(data->pProviders, widget, command, enabled);
+    data->bCheckingCommandState = false;
     return status;
 }
 
@@ -2706,8 +2709,7 @@ static int __xuiCodeEditUpdateMenu(xui_widget pWidget, xui_code_edit_data_t* pDa
 	arrItems[12].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_GOTO_LINE);
 	arrItems[12].sShortcut = "Ctrl+G";
 	arrItems[12].iType = XUI_MENU_ITEM_NORMAL;
-	int providerStatus=__xuiCodeEditProviderCommandState(pWidget,pData,XUI_CODE_COMMAND_GOTO_LINE,0u,&arrItems[12].iState);
-	if(providerStatus!=XUI_OK)return providerStatus;
+	arrItems[12].iState = 0u;
 	arrItems[12].iValue = 10;
 	arrItems[13].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT);
 	arrItems[13].sShortcut = "Ctrl+/";
@@ -2718,6 +2720,17 @@ static int __xuiCodeEditUpdateMenu(xui_widget pWidget, xui_code_edit_data_t* pDa
 	arrItems[14].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[14].iState = iEnabled;
 	arrItems[14].iValue = 12;
+	bool guard = xuiInternalCodeProviderHasCommandGuard(pData->pProviders);
+	for ( size_t i = 0; i < sizeof(arrItems) / sizeof(arrItems[0]); ++i ) {
+		int command = __xuiCodeEditMenuCommandForValue(arrItems[i].iValue);
+		if ( command == 0 || (!guard && command != XUI_CODE_COMMAND_GOTO_LINE) ) continue;
+		int enabled = 0;
+		int status = __xuiCodeEditProviderCommandState(pWidget, pData, command, &enabled);
+		if ( status == XUI_ERROR_UNSUPPORTED && xrtGetError() == NULL ) continue;
+		if ( status != XUI_OK ) return status;
+		if ( !enabled ) arrItems[i].iState &= ~XUI_MENU_ITEM_ENABLED;
+		else if ( command == XUI_CODE_COMMAND_GOTO_LINE ) arrItems[i].iState |= XUI_MENU_ITEM_ENABLED;
+	}
 	return xuiMenuSetItems(pData->pMenu, arrItems, 15);
 }
 
@@ -3005,6 +3018,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
     if(iRet==XUI_OK)iRet=xuiInternalCodeMarginClaimOwner(pData->pMargins,pWidget);
     if(iRet==XUI_OK)iRet=xuiInternalCodeProviderClaimOwner(pData->pProviders,pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeCommandMapCreate(&pData->pCommandMap);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeCommandMapClaimOwner(pData->pCommandMap, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryCreate(&pData->pLanguages);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryLoadDefaults(pData->pLanguages);
 	if ( iRet == XUI_OK ) {
@@ -3216,6 +3230,13 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 
 	if ( pHandled != NULL ) *pHandled = 0;
 	if ( pData == NULL || iCommand <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bCheckingCommandState ) return XUI_ERROR_BUSY;
+	if ( xuiInternalCodeProviderHasCommandGuard(pData->pProviders) ) {
+		int enabled = 0;
+		int status = __xuiCodeEditProviderCommandState(pWidget, pData, iCommand, &enabled);
+		if ( status == XUI_OK && !enabled ) return XUI_OK;
+		if ( status != XUI_OK && (status != XUI_ERROR_UNSUPPORTED || xrtGetError()) ) return status;
+	}
 	switch ( iCommand ) {
 	case XUI_CODE_COMMAND_OPEN_FIND:
 		iRet = xuiCodeEditOpenFind(pWidget);
@@ -7620,6 +7641,62 @@ XUI_API int xuiCodeEditGetDefaultMargins(xui_widget pWidget, int* pShowLineNumbe
 	return XUI_OK;
 }
 
+XUI_API int xuiCodeEditSetCommandProviderOwned(xui_widget widget,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+    return data ? xuiInternalCodeProviderSetEditorCommand(data->pProviders, callback, user, owner)
+                : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditSetCommandEnabledProviderOwned(xui_widget widget,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+    return data ? xuiInternalCodeProviderSetCommandGuard(data->pProviders, callback, user, owner)
+                : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditQueryCommandEnabled(xui_widget widget, int command, bool* hasDecision, bool* enabled)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+    if (!data || command <= 0 || !hasDecision || !enabled) return XUI_ERROR_INVALID_ARGUMENT;
+    *hasDecision = false;
+    *enabled = false;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(widget->pContext, &scope);
+    if (status != XUI_OK) return status;
+    int allowed = 0;
+    status = __xuiCodeEditProviderCommandState(widget, data, command, &allowed);
+    bool decided = status == XUI_OK;
+    if (status == XUI_ERROR_UNSUPPORTED && xrtGetError() == NULL) status = XUI_OK;
+    status = xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+    if (status == XUI_OK) {
+        *hasDecision = decided;
+        *enabled = decided && allowed != 0;
+    }
+    return status;
+}
+
+XUI_API int xuiCodeEditExecuteCommand(xui_widget widget, int command, bool* handled)
+{
+    xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+    if (!data || command <= 0 || !handled) return XUI_ERROR_INVALID_ARGUMENT;
+    *handled = false;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(widget->pContext, &scope);
+    if (status != XUI_OK) return status;
+    int consumed = 0;
+    status = __xuiCodeEditExecuteCommand(widget, data, command, NULL, &consumed);
+    if (status == XUI_ERROR_UNSUPPORTED && xrtGetError() == NULL) {
+        status = XUI_OK;
+        consumed = 0;
+    }
+    status = xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+    if (status == XUI_OK) *handled = consumed != 0;
+    return status;
+}
+
 XUI_API xui_code_command_map xuiCodeEditGetCommandMap(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
@@ -10083,15 +10160,18 @@ XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY)
 
 	pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL || pData->pMenu == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope = {0};
+	iRet = xuiCallScopeBegin(pWidget->pContext, &scope);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCodeEditUpdateMenu(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		__xuiCodeEditSetError(pData, "CodeEdit menu update failed");
-		return iRet;
+		return xuiInternalCallScopeEndRestored(&scope, iRet, xrtTakeError());
 	}
 	(void)xuiMenuSetSelect(pData->pMenu, __xuiCodeEditMenuSelect, pWidget);
 	iRet = xuiMenuOpenAt(pData->pMenu, pWidget, fX, fY);
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit menu open failed");
-	return iRet;
+	return xuiInternalCallScopeEndRestored(&scope, iRet, xrtTakeError());
 }
 
 XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget)

@@ -2,6 +2,8 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
+#include "xui_code_command_internal.h"
+
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
@@ -9,8 +11,38 @@
 struct xui_code_command_map_t {
 	xui_code_key_binding_t* pBindings;
 	int iCount;
+	xui_widget pInternalOwner;
+	uint64_t iOwnerThread;
 	int iCapacity;
 };
+
+static int __xuiCodeCommandMapStatus(xui_code_command_map map, bool write)
+{
+    if (!map) return XUI_ERROR_INVALID_ARGUMENT;
+    if (!map->pInternalOwner) return XUI_OK;
+    if (map->iOwnerThread != xrtThreadCurrentId()) return XUI_ERROR_BUSY;
+    if (!xuiInternalWidgetIsValid(map->pInternalOwner)) return XUI_ERROR_INVALID_STATE;
+    if (write && map->pInternalOwner->pContext->bGuardedCallback) return XUI_ERROR_BUSY;
+    return XUI_OK;
+}
+
+int xuiInternalCodeCommandMapClaimOwner(xui_code_command_map map, xui_widget editor)
+{
+    if (!map || !xuiInternalWidgetIsValid(editor)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (map->pInternalOwner) return XUI_ERROR_INVALID_STATE;
+    map->iOwnerThread = xrtThreadCurrentId();
+    map->pInternalOwner = editor;
+    return XUI_OK;
+}
+
+XUI_API int xuiCodeCommandMapEditorLifetimeWatch(xui_code_command_map map, xui_lifetime_link_t* link,
+    xui_lifetime_invalidate_proc invalidate, void* user)
+{
+    int status = __xuiCodeCommandMapStatus(map, false);
+    if (status != XUI_OK) return status;
+    if (!map->pInternalOwner) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiWidgetLifetimeWatch(map->pInternalOwner, link, invalidate, user);
+}
 
 typedef struct xui_code_default_binding_t {
 	int iKey;
@@ -111,11 +143,25 @@ XUI_API int xuiCodeCommandMapCreate(xui_code_command_map* ppMap)
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeCommandMapDestroy(xui_code_command_map pMap)
+void xuiInternalCodeCommandMapDestroyOwned(xui_code_command_map map, xui_widget editor)
 {
-	if ( pMap == NULL ) return;
-	xrtFree(pMap->pBindings);
-	xrtFree(pMap);
+    if (!map || (map->pInternalOwner && map->pInternalOwner != editor)) return;
+    xrtFree(map->pBindings);
+    xrtFree(map);
+}
+
+XUI_API int xuiCodeCommandMapDestroyChecked(xui_code_command_map map)
+{
+    if (map && map->pInternalOwner) {
+        return map->iOwnerThread == xrtThreadCurrentId() ? XUI_ERROR_INVALID_STATE : XUI_ERROR_BUSY;
+    }
+    xuiInternalCodeCommandMapDestroyOwned(map, NULL);
+    return XUI_OK;
+}
+
+XUI_API void xuiCodeCommandMapDestroy(xui_code_command_map map)
+{
+    (void)xuiCodeCommandMapDestroyChecked(map);
 }
 
 XUI_API int xuiCodeCommandMapBind(xui_code_command_map pMap, int iKey, uint32_t iModifiers, int iCommand)
@@ -124,6 +170,8 @@ XUI_API int xuiCodeCommandMapBind(xui_code_command_map pMap, int iKey, uint32_t 
 	int iRet;
 	xui_code_key_binding_t* pBinding;
 
+	int status = __xuiCodeCommandMapStatus(pMap, true);
+	if ( status != XUI_OK ) return status;
 	if ( pMap == NULL || !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) || iCommand <= 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -148,6 +196,8 @@ XUI_API int xuiCodeCommandMapUnbind(xui_code_command_map pMap, int iKey, uint32_
 {
 	int i;
 
+	int status = __xuiCodeCommandMapStatus(pMap, true);
+	if ( status != XUI_OK ) return status;
 	if ( pMap == NULL || !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -165,6 +215,8 @@ XUI_API int xuiCodeCommandMapFind(xui_code_command_map pMap, int iKey, uint32_t 
 {
 	int i;
 
+	int status = __xuiCodeCommandMapStatus(pMap, false);
+	if ( status != XUI_OK ) return status;
 	if ( pMap == NULL || pCommand == NULL ||
 	     !__xuiCodeCommandBindingKeyValid(iKey, iModifiers) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -180,11 +232,13 @@ XUI_API int xuiCodeCommandMapFind(xui_code_command_map pMap, int iKey, uint32_t 
 
 XUI_API int xuiCodeCommandMapGetCount(xui_code_command_map pMap)
 {
-	return (pMap != NULL) ? pMap->iCount : 0;
+	return __xuiCodeCommandMapStatus(pMap, false) == XUI_OK ? pMap->iCount : 0;
 }
 
 XUI_API int xuiCodeCommandMapGetBinding(xui_code_command_map pMap, int iIndex, xui_code_key_binding_t* pBinding)
 {
+	int status = __xuiCodeCommandMapStatus(pMap, false);
+	if ( status != XUI_OK ) return status;
 	if ( (pMap == NULL) || (pBinding == NULL) || (iIndex < 0) || (iIndex >= pMap->iCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -199,6 +253,8 @@ XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap)
 	int iCount;
 	int i;
 
+	int status = __xuiCodeCommandMapStatus(pMap, true);
+	if ( status != XUI_OK ) return status;
 	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCount = (int)(sizeof(g_arrXuiCodeDefaultBindings) /
 		sizeof(g_arrXuiCodeDefaultBindings[0]));

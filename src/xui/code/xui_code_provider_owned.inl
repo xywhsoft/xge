@@ -26,7 +26,7 @@ static int __xuiCodeProviderSetRaw(xui_code_provider_set providers,int role,xui_
     xrtSetErrorTake(receipt.error);return __xuiCodeProviderFinish(&scope,receipt.status);
 }
 static int __xuiCodeProviderSetOwned(xui_code_provider_set providers,int role,xui_code_provider_fn_t fn,
-    bool has,bool reply,void* user,const xui_callback_owner_t* incoming)
+    bool has,bool typed,void* user,const xui_callback_owner_t* incoming)
 {
     if(!xuiInternalCallbackOwnerRawValid(incoming)||(!has&&incoming&&incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
     xui_callback_owner_t owner={0};if(incoming)owner=*incoming;
@@ -36,7 +36,7 @@ static int __xuiCodeProviderSetOwned(xui_code_provider_set providers,int role,xu
     if(has){
         node=xrtCalloc(1,sizeof(*node));
         if(!node)status=XUI_ERROR_OUT_OF_MEMORY;
-        else {node->owner=owner;node->user=user;node->fn=fn;node->reply=reply;status=xuiInternalCallbackHoldFresh(&owner,&held);}
+        else {node->owner=owner;node->user=user;node->fn=fn;node->typed=typed;status=xuiInternalCallbackHoldFresh(&owner,&held);}
     }
     if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     xui_code_provider_slot_t* old=NULL;
@@ -86,6 +86,27 @@ XUI_API int xuiCodeProviderSetSignatureReplyOwned(xui_code_provider_set provider
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_SIGNATURE,
         (xui_code_provider_fn_t){.signatureReply = callback}, callback != NULL, true, user, owner);
+}
+
+int xuiInternalCodeProviderSetEditorCommand(xui_code_provider_set providers,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_COMMAND,
+        (xui_code_provider_fn_t){.editorCommand=callback}, callback != NULL, true, user, owner);
+}
+
+int xuiInternalCodeProviderSetCommandGuard(xui_code_provider_set providers,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_ENABLED,
+        (xui_code_provider_fn_t){.enabled=callback}, callback != NULL, true, user, owner);
+}
+
+bool xuiInternalCodeProviderHasCommandGuard(xui_code_provider_set providers)
+{
+    if (!providers) return false;
+    xui_code_provider_slot_t* slot=providers->slots[XUI_PROVIDER_ENABLED];
+    return slot && slot->typed;
 }
 
 typedef struct xui_code_provider_borrow_t {

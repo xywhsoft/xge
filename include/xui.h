@@ -2936,6 +2936,8 @@ typedef int (*xui_code_input_proc)(xui_widget_t* pWidget, const xui_code_input_e
 typedef int (*xui_code_input_owned_proc)(xui_widget_t* pWidget, const xui_code_input_event_t* pEvent, xui_code_input_response_t* pAction, void* pUser);
 typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
+/* Scalar command results. Return XUI_ERROR_UNSUPPORTED to defer. */
+typedef int (*xui_code_editor_command_proc)(xui_widget_t* pWidget, int iCommand, int* pResult, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
 typedef void (*xui_code_find_activate_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
 typedef int (*xui_code_find_activate_owned_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
@@ -8510,6 +8512,10 @@ XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc);
 /* 创建按键-命令映射表。 */
 XUI_API int xuiCodeCommandMapCreate(xui_code_command_map* ppMap);
 /* 释放映射表。 */
+/* A CodeEdit command map follows the widget's logical lifetime. */
+XUI_API int xuiCodeCommandMapDestroyChecked(xui_code_command_map map);
+XUI_API int xuiCodeCommandMapEditorLifetimeWatch(xui_code_command_map map, xui_lifetime_link_t* link,
+    xui_lifetime_invalidate_proc invalidate, void* user);
 XUI_API void xuiCodeCommandMapDestroy(xui_code_command_map pMap);
 /* 装入默认编辑器键位。 */
 XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap);
@@ -8584,6 +8590,16 @@ XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget);
 XUI_API int xuiCodeEditSetMarginRenderCallbackOwned(xui_widget pWidget, int iId, xui_code_margin_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeEditSetMarginEventCallbackOwned(xui_widget pWidget, int iId, xui_code_margin_event_proc onEvent, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取键位映射表（编辑器持有）。 */
+/* These callbacks use the command ID only. Legacy C providers retain their
+ * arbitrary command data. An enabled provider can defer to the native default.
+ * A false decision prevents editor dispatch from running the command. */
+XUI_API int xuiCodeEditSetCommandProviderOwned(xui_widget widget,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeEditSetCommandEnabledProviderOwned(xui_widget widget,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API int xuiCodeEditQueryCommandEnabled(xui_widget widget, int command, bool* hasDecision, bool* enabled);
+/* False means disabled or unhandled. Native failures are returned separately. */
+XUI_API int xuiCodeEditExecuteCommand(xui_widget widget, int command, bool* handled);
 XUI_API xui_code_command_map xuiCodeEditGetCommandMap(xui_widget pWidget);
 /* 取语言注册表（编辑器持有）。 */
 XUI_API xui_code_language_registry xuiCodeEditGetLanguageRegistry(xui_widget pWidget);
