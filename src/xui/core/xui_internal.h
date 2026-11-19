@@ -726,6 +726,7 @@ struct xui_widget_type_t {
 	int bBuiltin;
 	/* Builtin descriptors can retry a partially failed property initialization. */
 	int bStylePropertiesReady;
+	xui_lifetime_link_t* pLifetimeLinks;
 };
 
 typedef struct xui_internal_edit_adapter_t {

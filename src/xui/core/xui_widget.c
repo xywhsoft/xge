@@ -3093,25 +3093,61 @@ static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pTyp
     else __xuiTypeDestroyCallbacks(pWidget,pType);
 }
 
+static void __xuiWidgetTypeDestroy(xui_widget_type pType)
+{
+	pType->iMagic = 0;
+	xuiInternalLifetimeInvalidateAll(&pType->pLifetimeLinks);
+	xrtFree(pType->sName);
+	xrtFree(pType);
+}
+
+static void __xuiStylePropertyEntryDestroy(xui_style_property_entry_t* pEntry)
+{
+	xrtFree(pEntry->sName);
+	__xuiStyleValueReset(&pEntry->tDefaultValue);
+	xrtFree(pEntry);
+}
+
+/* Drop registry references while the type identity is still unique. Existing
+ * rule values own their names and continue to follow ordinary name lookup. */
+static void __xuiStyleRetireWidgetType(xui_context pContext, xui_widget_type pType)
+{
+	int bChanged = __xuiStyleFindRule(pContext, XUI_STYLE_RULE_TYPE, NULL, pType) != NULL;
+	if ( bChanged ) (void)__xuiStyleRuleRemove(pContext, XUI_STYLE_RULE_TYPE, NULL, pType);
+
+	xui_style_property_entry_t** ppEntry = &pContext->pStyleProperties;
+	while ( *ppEntry != NULL ) {
+		xui_style_property_entry_t* pEntry = *ppEntry;
+		if ( pEntry->pWidgetType != pType ) {
+			ppEntry = &pEntry->pNext;
+			continue;
+		}
+		xui_style_property_entry_t** ppId = &pContext->pStylePropertiesById[pEntry->iPropertyId & 255u];
+		while ( *ppId != pEntry ) ppId = &(*ppId)->pIdNext;
+		*ppId = pEntry->pIdNext;
+		xui_style_property_entry_t** ppName = &pContext->pStylePropertiesByName[__xuiStylePropertyNameBucket(pEntry->sName)];
+		while ( *ppName != pEntry ) ppName = &(*ppName)->pNameNext;
+		*ppName = pEntry->pNameNext;
+		*ppEntry = pEntry->pNext;
+		__xuiStylePropertyEntryDestroy(pEntry);
+		bChanged = 1;
+	}
+	/* No live widget has this type or a derived type when unregister succeeds.
+	 * Advance the generation for surviving trees to resolve on the next pass. */
+	if ( bChanged ) {
+		if ( pContext->iStyleUpdateDepth > 0 ) pContext->bStyleDirty = 1;
+		else __xuiStyleBumpGeneration(pContext);
+	}
+}
+
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext)
 {
-	xui_widget_type pType;
-	xui_widget_type pNext;
-
-	if ( !xuiInternalContextIsValid(pContext) ) {
-		return;
+	if ( !xuiInternalContextIsValid(pContext) ) return;
+	while ( pContext->pWidgetTypes != NULL ) {
+		xui_widget_type pType = pContext->pWidgetTypes;
+		pContext->pWidgetTypes = pType->pNext;
+		__xuiWidgetTypeDestroy(pType);
 	}
-	pType = pContext->pWidgetTypes;
-	while ( pType != NULL ) {
-		pNext = pType->pNext;
-		pType->iMagic = 0;
-		if ( pType->sName != NULL ) {
-			xrtFree(pType->sName);
-		}
-		xrtFree(pType);
-		pType = pNext;
-	}
-	pContext->pWidgetTypes = NULL;
 }
 
 void xuiInternalContextDestroyStyles(xui_context pContext)
@@ -3136,11 +3172,7 @@ void xuiInternalContextDestroyStyles(xui_context pContext)
 	pProperty = pContext->pStyleProperties;
 	while ( pProperty != NULL ) {
 		pNextProperty = pProperty->pNext;
-		if ( pProperty->sName != NULL ) {
-			xrtFree(pProperty->sName);
-		}
-		__xuiStyleValueReset(&pProperty->tDefaultValue);
-		xrtFree(pProperty);
+		__xuiStylePropertyEntryDestroy(pProperty);
 		pProperty = pNextProperty;
 	}
 	pContext->pStyleProperties = NULL;
@@ -3425,6 +3457,7 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppType = NULL;
+	if ( pContext->bDestroyPending || pContext->bDestroying ) return XUI_ERROR_INVALID_STATE;
 	if ( (pDesc->iFlags & XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY) != 0 &&
 	     !__xuiCachePolicySupported(pDesc->tCachePolicy.iPolicy) ) {
 		return XUI_ERROR_UNSUPPORTED;
@@ -3477,6 +3510,19 @@ XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_typ
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetTypeLifetimeWatch(xui_widget_type pType, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( !__xuiWidgetTypeValid(pType) || pLink == NULL || onInvalidate == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pType == &g_xuiWidgetBaseType ) {
+		return (pLink->ppPrevious || pLink->pNext || pLink->onInvalidate || pLink->pUser)
+			? XUI_ERROR_INVALID_STATE : XUI_OK;
+	}
+	if ( !xuiInternalContextIsValid(pType->pContext) ||
+	     pType->pContext->bDestroyPending || pType->pContext->bDestroying ) return XUI_ERROR_INVALID_STATE;
+	return xuiInternalLifetimeWatch(&pType->pLifetimeLinks, pLink, onInvalidate, pUser);
+}
+
 XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 {
 	xui_context pContext;
@@ -3490,6 +3536,8 @@ XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 		return XUI_ERROR_ALREADY_INITIALIZED;
 	}
 	pContext = pType->pContext;
+	if ( !xuiInternalContextIsValid(pContext) || pContext->bDestroyPending || pContext->bDestroying )
+		return XUI_ERROR_INVALID_STATE;
 	for ( pScan = pContext->pWidgetTypes; pScan != NULL; pScan = pScan->pNext ) {
 		if ( pScan->pParent == pType ) {
 			return XUI_ERROR_ALREADY_INITIALIZED;
@@ -3503,9 +3551,8 @@ XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 			} else {
 				pContext->pWidgetTypes = pScan->pNext;
 			}
-			pType->iMagic = 0;
-			xrtFree(pType->sName);
-			xrtFree(pType);
+			__xuiStyleRetireWidgetType(pContext, pType);
+			__xuiWidgetTypeDestroy(pType);
 			return XUI_OK;
 		}
 		pPrev = pScan;

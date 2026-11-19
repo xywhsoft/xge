@@ -13368,6 +13368,10 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_type_ownership_trace_proc onTrace);
 /* 注销控件类型（类型未被实例引用时方可成功）。 */
 XUI_API int xuiWidgetUnregisterType(xui_widget_type pType);
+/* Watches expire before a context-owned type is freed. The immutable global
+ * base type accepts an empty link without attaching it to any shared list. */
+XUI_API int xuiWidgetTypeLifetimeWatch(xui_widget_type pType, xui_lifetime_link_t* pLink,
+    xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 按类型名查找已注册类型；未注册返回 NULL。 */
 XUI_API xui_widget_type xuiWidgetFindType(xui_context pContext, const char* sName);
 /* 读取类型名。 */
