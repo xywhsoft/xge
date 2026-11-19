@@ -109,17 +109,20 @@ static int __xgeMiniPublish(xge_mini_bridge_state_t* next,
 	return status;
 }
 
+static void __xgeMiniApplyDesc(const xge_miniprogram_desc_t* desc);
+
 static int __xgeMiniSetBridge(xge_mini_bridge_state_t* next,
-	const xge_callback_owner_t* owner, bool hasCallback)
+	const xge_callback_owner_t* owner, bool hasCallback, const xge_miniprogram_desc_t* desc)
 {
 	int status = __xgeMiniConfigBegin(false);
 	if ( status != XGE_OK ) return status;
 	xerror* ambient = xrtTakeError();
 	xge_resource_registration_t* provider = NULL;
 	status = __xgeCallbackNodePrepare(hasCallback, false, owner, &next->owner);
-	if ( status == XGE_OK && g_xge.bMiniProgramInitialized )
+	if ( status == XGE_OK && (desc || g_xge.bMiniProgramInitialized) )
 		status = __xgeMiniPrepareProvider(next, &provider);
 	if ( status == XGE_OK ) status = __xgeMiniPublish(next, &provider);
+	if ( status == XGE_OK && desc ) __xgeMiniApplyDesc(desc);
 	return __xgeMiniConfigFinish(provider, next->owner, status, ambient);
 }
 
@@ -162,11 +165,21 @@ static void __xgeMiniProgramSetDimensions(int iWidth, int iHeight, float fDevice
 	g_xge.tCamera.tViewport.fH = (float)iFramebufferHeight;
 }
 
+static void __xgeMiniApplyDesc(const xge_miniprogram_desc_t* desc)
+{
+	xge_platform_backend_t platform = {.iType=XGE_PLATFORM_BACKEND_MINIPROGRAM,.sName="miniprogram"};
+	xge_graphics_backend_t graphics = {.iType=XGE_GPU_BACKEND_WEBGL2,.sName="webgl2"};
+	g_xge.tMiniProgramDesc = *desc;
+	if ( desc->iWidth > 0 && desc->iHeight > 0 )
+		__xgeMiniProgramSetDimensions(desc->iWidth, desc->iHeight, desc->fDevicePixelRatio);
+	xgePlatformBackendSet(&platform);
+	xgeGraphicsBackendSet(&graphics);
+	g_xge.bMiniProgramFrameTimeValid = 0;
+	g_xge.bMiniProgramInitialized = 1;
+}
+
 int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 {
-	xge_platform_backend_t tPlatform;
-	xge_graphics_backend_t tGraphics;
-
 	if ( pDesc == NULL || !isfinite(pDesc->fDevicePixelRatio) ) return XGE_ERROR_INVALID_ARGUMENT;
 	xge_miniprogram_desc_t next = *pDesc;
 	if ( next.fDevicePixelRatio <= 0.0f ) next.fDevicePixelRatio = 1.0f;
@@ -180,21 +193,8 @@ int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc)
 	xge_resource_registration_t* provider = NULL;
 	status = __xgeMiniPrepareProvider(&g_xgeMiniBridge, &provider);
 	if ( status == XGE_OK ) status = __xgeMiniPublish(NULL, &provider);
-	if ( status != XGE_OK ) return __xgeMiniConfigFinish(provider, NULL, status, ambient);
-
-	g_xge.tMiniProgramDesc = next;
-	if ( sized ) __xgeMiniProgramSetDimensions(next.iWidth, next.iHeight, next.fDevicePixelRatio);
-	memset(&tPlatform, 0, sizeof(tPlatform));
-	tPlatform.iType = XGE_PLATFORM_BACKEND_MINIPROGRAM;
-	tPlatform.sName = "miniprogram";
-	xgePlatformBackendSet(&tPlatform);
-	memset(&tGraphics, 0, sizeof(tGraphics));
-	tGraphics.iType = XGE_GPU_BACKEND_WEBGL2;
-	tGraphics.sName = "webgl2";
-	xgeGraphicsBackendSet(&tGraphics);
-	g_xge.bMiniProgramFrameTimeValid = 0;
-	g_xge.bMiniProgramInitialized = 1;
-	return __xgeMiniConfigFinish(provider, NULL, XGE_OK, ambient);
+	if ( status == XGE_OK ) __xgeMiniApplyDesc(&next);
+	return __xgeMiniConfigFinish(provider, NULL, status, ambient);
 }
 
 int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio)
@@ -211,18 +211,21 @@ int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio)
 	return xgeMiniProgramInit(&tDesc);
 }
 
-static int __xgeMiniProgramUnit(bool allowShutdown)
+static int __xgeMiniUnitReserved(xerror* ambient)
 {
-	int status = __xgeMiniConfigBegin(allowShutdown);
-	if ( status != XGE_OK ) return status;
-	xerror* ambient = xrtTakeError();
 	xge_resource_registration_t* provider = NULL;
 	xge_mini_bridge_state_t next = {0};
-	status = __xgeMiniPublish(&next, &provider);
+	int status = __xgeMiniPublish(&next, &provider);
 	memset(&g_xge.tMiniProgramDesc, 0, sizeof(g_xge.tMiniProgramDesc));
 	g_xge.bMiniProgramInitialized = 0;
 	g_xge.bMiniProgramFrameTimeValid = 0;
 	return __xgeMiniConfigFinish(provider, next.owner, status, ambient);
+}
+
+static int __xgeMiniProgramUnit(bool allowShutdown)
+{
+	int status = __xgeMiniConfigBegin(allowShutdown);
+	return status == XGE_OK ? __xgeMiniUnitReserved(xrtTakeError()) : status;
 }
 
 int xgeMiniProgramUnitChecked(void)
@@ -239,7 +242,7 @@ int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge)
 {
 	if ( pBridge == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	xge_mini_bridge_state_t next = {.raw = *pBridge};
-	return __xgeMiniSetBridge(&next, NULL, false);
+	return __xgeMiniSetBridge(&next, NULL, false, NULL);
 }
 
 int xgeMiniProgramSetBridgeOwned(const xge_miniprogram_owned_bridge_t* pBridge,
@@ -251,7 +254,7 @@ int xgeMiniProgramSetBridgeOwned(const xge_miniprogram_owned_bridge_t* pBridge,
 	if ( !__xgeCallbackOwnerValid(pOwner) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( hasCallback && (!pOwner || !pOwner->onHold) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( hasCallback ) next.creatorThread = xrtThreadCurrentId();
-	return __xgeMiniSetBridge(&next, hasCallback ? pOwner : NULL, hasCallback);
+	return __xgeMiniSetBridge(&next, hasCallback ? pOwner : NULL, hasCallback, NULL);
 }
 
 int xgeMiniProgramFrame(double fTimeSeconds)
@@ -469,3 +472,10 @@ int xgeMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int
 	}
 	return __xgeMiniDispatchFinish(&snapshot, status, value, ambient);
 }
+
+#if defined(XGE_ENABLE_MINIPROGRAM_JS) && XGE_ENABLE_MINIPROGRAM_JS && defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN_PTHREADS__) || defined(__wasm64__)
+#error XGE mini-program JS bridge requires single-threaded wasm32
+#endif
+#include "platform/miniprogram/xge_miniprogram_wasm.c"
+#endif

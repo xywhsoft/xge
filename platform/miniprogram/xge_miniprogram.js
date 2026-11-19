@@ -2,6 +2,94 @@ const XGE_TOUCH_BEGIN = 1;
 const XGE_TOUCH_MOVE = 2;
 const XGE_TOUCH_END = 4;
 const XGE_TOUCH_CANCEL = 5;
+const INVALID_ARGUMENT = -2;
+const NOT_INITIALIZED = -3;
+const OUT_OF_MEMORY = -5;
+const UNSUPPORTED = -7;
+const INVALID_STATE = -15;
+const CALLBACK_FAILED = -16;
+const RESOURCE = 1;
+const AUDIO = 2;
+const MAX_BYTES = 0x7fffffff;
+const registries = new WeakMap();
+
+function byteView(data) {
+	if (data instanceof Uint8Array) return data;
+	if (data instanceof ArrayBuffer) return new Uint8Array(data);
+	return null;
+}
+
+function statusCode(value) {
+	return Number.isInteger(value) && value === (value | 0) ? value : CALLBACK_FAILED;
+}
+
+function checked(operation, status) {
+	if (status < 0) {
+		const error = new Error(operation + " failed (" + status + ")");
+		error.code = status;
+		throw error;
+	}
+}
+
+// Track offsets before an allocation can detach a borrowed HEAPU8 view.
+function reserveBytes(module, bytes, reserve) {
+	const shared = bytes.buffer === module.HEAPU8.buffer;
+	const offset = bytes.byteOffset;
+	const size = bytes.byteLength;
+	const address = reserve(size) >>> 0;
+	if (!address) return 0;
+	const target = module.HEAPU8;
+	const source = shared ? target.subarray(offset, offset + size) : bytes;
+	target.set(source, address);
+	return address;
+}
+
+function hostRegistry(module) {
+	let registry = registries.get(module);
+	if (registry) return registry;
+	const entries = new Map();
+	const host = {
+		["requestFrame"](id) {
+			const bridge = entries.get(id);
+			if (!bridge) return INVALID_STATE;
+			try { return bridge.requestFrame(); }
+			catch { return CALLBACK_FAILED; }
+		},
+		["loadResource"](id, uri, output) {
+			const bridge = entries.get(id);
+			if (!bridge) return INVALID_STATE;
+			try {
+				const bytes = byteView(bridge.loadResource(uri));
+				if (!bytes || bytes.byteLength > MAX_BYTES) return CALLBACK_FAILED;
+				if (bytes.byteLength === 0) return 0;
+				const address = reserveBytes(module, bytes,
+					size => module._xgeMiniProgramJsResourceReserve(output, size));
+				return address ? 0 : OUT_OF_MEMORY;
+			} catch { return CALLBACK_FAILED; }
+		},
+		["audioCommand"](id, command, handle, data, size) {
+			const bridge = entries.get(id);
+			if (!bridge || !bridge.audioBridge) return UNSUPPORTED;
+			try {
+				const bytes = module.HEAPU8.subarray(data, data + size);
+				return statusCode(bridge.audioBridge(command, handle, bytes));
+			} catch { return CALLBACK_FAILED; }
+		},
+		["retire"](id) {
+			const bridge = entries.get(id);
+			entries.delete(id);
+			if (bridge && bridge.registration === id) {
+				bridge.registration = 0;
+				bridge.running = false;
+				bridge.framePending = null;
+			}
+		}
+	};
+	registry = {entries, nextId: 1};
+	registries.set(module, registry);
+	module["xgeMiniProgramHost"] = host;
+	return registry;
+}
 
 class XgeMiniProgramBridge {
 	constructor(module, options) {
@@ -9,7 +97,8 @@ class XgeMiniProgramBridge {
 		this.canvas = options && options.canvas ? options.canvas : null;
 		this.gl = null;
 		this.running = false;
-		this.framePending = false;
+		this.framePending = null;
+		this.registration = 0;
 		this.resourceLoader = options && options.resourceLoader ? options.resourceLoader : null;
 		this.audioBridge = options && options.audioBridge ? options.audioBridge : null;
 		this.width = 0;
@@ -45,10 +134,13 @@ class XgeMiniProgramBridge {
 		if (!this.canvas) {
 			throw new Error("xge miniprogram canvas is required");
 		}
-		this.width = width || this.canvas.width || 1;
-		this.height = height || this.canvas.height || 1;
-		this.dpr = dpr || 1;
-		this.gl = this.canvas.getContext("webgl2", {
+		const install = this.module && this.module._xgeMiniProgramJsInstall;
+		if (typeof install !== "function" || typeof this.module._xgeMiniProgramJsUnit !== "function" ||
+			typeof this.module._xgeMiniProgramJsResourceReserve !== "function") {
+			throw new Error("missing XGE wasm32 mini-program bridge exports");
+		}
+		const [w, h, ratio] = this._dimensions(width ?? this.canvas.width ?? 1, height ?? this.canvas.height ?? 1, dpr ?? 1);
+		const gl = this.canvas.getContext("webgl2", {
 			alpha: true,
 			antialias: true,
 			depth: true,
@@ -56,53 +148,93 @@ class XgeMiniProgramBridge {
 			premultipliedAlpha: true,
 			preserveDrawingBuffer: false
 		});
-		if (!this.gl) {
+		if (!gl) {
 			throw new Error("xge requires WebGL2 in miniprogram backend");
 		}
-		this.resize(this.width, this.height, this.dpr);
-		const rc = this._ccall("xgeMiniProgramInitSimple", "number", ["number", "number", "number"], [this.width, this.height, this.dpr]);
-		if (rc !== 0) {
-			throw new Error("xgeMiniProgramInitSimple failed: " + rc);
+		const registry = hostRegistry(this.module);
+		if (registry.nextId > 0xffffffff) throw new Error("XGE mini-program registration IDs exhausted");
+		const id = registry.nextId++;
+		registry.entries.set(id, this);
+		const flags = (this.resourceLoader ? RESOURCE : 0) | (this.audioBridge ? AUDIO : 0);
+		const status = install(id, flags, w, h, ratio);
+		// A checked error from the previous owner's retirement can follow publication.
+		if (registry.entries.has(id)) {
+			this.registration = id;
+			this.gl = gl;
+			this._resizeCanvas(w, h, ratio);
 		}
-		return this.gl;
+		checked("install mini-program bridge", status);
+		if (this.registration !== id) checked("install mini-program bridge", INVALID_STATE);
+		return gl;
 	}
 
 	unit() {
-		this.stop();
-		this._ccall("xgeMiniProgramUnit", null, [], []);
+		const id = this.registration;
+		if (id === 0) return;
+		const status = this.module._xgeMiniProgramJsUnit(id);
+		if (status === 0 && this.registration === id) {
+			// An in-flight callback may still own the registered JS entry.
+			this.registration = 0;
+			this.stop();
+		}
+		checked("close mini-program bridge", status);
 	}
 
 	start() {
+		if (!this.registration) checked("start mini-program bridge", NOT_INITIALIZED);
 		this.running = true;
-		this.requestFrame();
+		const status = this.requestFrame();
+		if (status < 0) this.stop();
+		checked("schedule mini-program frame", status);
 	}
 
 	stop() {
 		this.running = false;
-		this.framePending = false;
+		this.framePending = null;
 	}
 
 	requestFrame() {
-		if (this.framePending) {
+		if (!this.running || this.framePending) {
 			return 0;
 		}
-		this.framePending = true;
-		const request = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn) => setTimeout(() => fn(Date.now()), 16);
-		request((time) => {
-			this.framePending = false;
-			if (!this.running) {
-				return;
-			}
-			this._ccall("xgeMiniProgramFrame", "number", ["number"], [(time || 0) / 1000.0]);
-			this.requestFrame();
-		});
+		const ticket = {};
+		this.framePending = ticket;
+		const request = typeof this.canvas.requestAnimationFrame === "function"
+			? this.canvas.requestAnimationFrame.bind(this.canvas)
+			: typeof requestAnimationFrame === "function" ? requestAnimationFrame
+			: fn => setTimeout(() => fn(typeof performance === "object" ? performance.now() : Date.now()), 16);
+		try {
+			request(time => {
+				if (this.framePending !== ticket) return;
+				this.framePending = null;
+				const status = this._ccall("xgeMiniProgramFrame", "number", ["number"], [time / 1000]);
+				if (status < 0) this.stop();
+				checked("run mini-program frame", status);
+				checked("schedule mini-program frame", this.requestFrame());
+			});
+		} catch {
+			this.framePending = null;
+			return CALLBACK_FAILED;
+		}
 		return 0;
 	}
 
-	resize(width, height, dpr) {
-		this.width = Math.max(1, Math.floor(width || 1));
-		this.height = Math.max(1, Math.floor(height || 1));
-		this.dpr = dpr && dpr > 0 ? dpr : 1;
+	_dimensions(width, height, dpr) {
+		const w = Math.max(1, Math.floor(width));
+		const h = Math.max(1, Math.floor(height));
+		const ratio = Math.fround(dpr);
+		if (!Number.isFinite(w) || !Number.isFinite(h) || w > MAX_BYTES || h > MAX_BYTES ||
+			!Number.isFinite(ratio) || ratio <= 0 || w * ratio < 1 || h * ratio < 1 ||
+			w * ratio > MAX_BYTES || h * ratio > MAX_BYTES) {
+			checked("set mini-program canvas size", INVALID_ARGUMENT);
+		}
+		return [w, h, ratio];
+	}
+
+	_resizeCanvas(width, height, dpr) {
+		this.width = width;
+		this.height = height;
+		this.dpr = dpr;
 		if (this.canvas) {
 			this.canvas.width = Math.max(1, Math.floor(this.width * this.dpr));
 			this.canvas.height = Math.max(1, Math.floor(this.height * this.dpr));
@@ -110,10 +242,20 @@ class XgeMiniProgramBridge {
 		if (this.gl) {
 			this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 		}
-		return this._ccall("xgeMiniProgramResize", "number", ["number", "number", "number"], [this.width, this.height, this.dpr]);
+	}
+
+	resize(width, height, dpr) {
+		if (!this.registration) return NOT_INITIALIZED;
+		let size;
+		try { size = this._dimensions(width, height, dpr); }
+		catch { return INVALID_ARGUMENT; }
+		const status = this._ccall("xgeMiniProgramResize", "number", ["number", "number", "number"], size);
+		if (status === 0) this._resizeCanvas(...size);
+		return status;
 	}
 
 	touch(phase, touches) {
+		if (!this.registration) return NOT_INITIALIZED;
 		const list = touches || [];
 		let rc = 0;
 		for (let i = 0; i < list.length; i++) {
@@ -142,6 +284,7 @@ class XgeMiniProgramBridge {
 	}
 
 	text(codepoint) {
+		if (!this.registration) return NOT_INITIALIZED;
 		return this._ccall("xgeMiniProgramText", "number", ["number"], [codepoint]);
 	}
 
@@ -168,26 +311,27 @@ class XgeMiniProgramBridge {
 	}
 
 	audioCommand(command, handle, data) {
-		let bytes = null;
-		let ptr = 0;
-		if (!this.audioBridge) {
-			return -7;
+		if (!this.registration) return NOT_INITIALIZED;
+		if (!this.audioBridge) return UNSUPPORTED;
+		if (command !== (command | 0) || handle !== (handle | 0)) return INVALID_ARGUMENT;
+		const bytes = typeof data === "string" ? new TextEncoder().encode(data) : byteView(data);
+		if (data != null && !bytes) return INVALID_ARGUMENT;
+		const size = bytes ? bytes.byteLength : 0;
+		if (size > MAX_BYTES) return INVALID_ARGUMENT;
+		let address = 0;
+		try {
+			if (size) {
+				reserveBytes(this.module, bytes, size => {
+					address = this._malloc(size) >>> 0;
+					return address;
+				});
+				if (!address) return OUT_OF_MEMORY;
+			}
+			return this._ccall("xgeMiniProgramAudioCommand", "number", ["number", "number", "number", "number"],
+				[command, handle, address, size]);
+		} finally {
+			this._free(address);
 		}
-		const result = this.audioBridge(command, handle, data);
-		if (typeof data === "string") {
-			bytes = new TextEncoder().encode(data);
-		} else if (data instanceof Uint8Array) {
-			bytes = data;
-		} else if (data instanceof ArrayBuffer) {
-			bytes = new Uint8Array(data);
-		}
-		if (bytes && bytes.length > 0) {
-			ptr = this._malloc(bytes.length);
-			this.module.HEAPU8.set(bytes, ptr);
-		}
-		this._ccall("xgeMiniProgramAudioCommand", "number", ["number", "number", "number", "number"], [command, handle, ptr, bytes ? bytes.length : 0]);
-		this._free(ptr);
-		return result;
 	}
 }
 

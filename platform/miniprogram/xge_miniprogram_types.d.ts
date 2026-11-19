@@ -1,7 +1,8 @@
 export interface XgeMiniProgramBridgeOptions {
 	canvas: any;
 	resourceLoader?: (uri: string) => ArrayBuffer | Uint8Array;
-	audioBridge?: (command: number, handle: number, data?: ArrayBuffer | Uint8Array | object) => number;
+	/** Synchronous. Copy the byte view to retain it beyond the callback. */
+	audioBridge?: (command: number, handle: number, data: Uint8Array) => number;
 }
 
 export interface XgeMiniProgramTouch {
@@ -24,7 +25,7 @@ export class XgeMiniProgramBridge {
 	text(codepoint: number): number;
 	attachTextInput(input: any): void;
 	loadResource(uri: string): ArrayBuffer | Uint8Array;
-	audioCommand(command: number, handle: number, data?: ArrayBuffer | Uint8Array | object): number;
+	audioCommand(command: number, handle: number, data?: string | ArrayBuffer | Uint8Array): number;
 }
 
 export const XGE_TOUCH_BEGIN: number;
