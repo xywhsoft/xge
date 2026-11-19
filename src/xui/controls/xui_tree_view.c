@@ -24,6 +24,14 @@ typedef struct xui_tree_view_index_t {
 	int iVisible;
 } xui_tree_view_index_t;
 
+/* An active row snapshot borrows the original text allocation. If a
+ * callback removes that row, the outermost reader inherits the allocation. */
+typedef struct xui_tree_view_text_pin_t {
+	const char* sText;
+	struct xui_tree_view_text_pin_t* pPrevious;
+	bool bRetired;
+} xui_tree_view_text_pin_t;
+
 typedef struct xui_tree_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
@@ -52,6 +60,7 @@ typedef struct xui_tree_view_data_t {
 	void* pRenderItemUser;
 	xui_tree_view_icon_proc onRenderIcon;
 	void* pRenderIconUser;
+	xui_tree_view_text_pin_t* pTextPins;
 	int iSelectedId;
 	int iHoverVisible;
 	int iFocusVisible;
@@ -247,12 +256,15 @@ static char* __xuiTreeViewDupText(const char* sText)
 	return sCopy;
 }
 
-static void __xuiTreeViewFreeNodeText(xui_tree_view_node_t* pNode)
+static void __xuiTreeViewFreeNodeText(xui_tree_view_data_t* pData, xui_tree_view_node_t* pNode)
 {
-	if ( (pNode != NULL) && (pNode->sText != NULL) ) {
-		xrtFree((void*)pNode->sText);
-		pNode->sText = NULL;
-	}
+	if ( pNode == NULL || pNode->sText == NULL ) return;
+	xui_tree_view_text_pin_t* pOwner = NULL;
+	for ( xui_tree_view_text_pin_t* pPin = pData->pTextPins; pPin; pPin = pPin->pPrevious )
+		if ( pPin->sText == pNode->sText ) pOwner = pPin;
+	if ( pOwner ) pOwner->bRetired = true;
+	else xrtFree((void*)pNode->sText);
+	pNode->sText = NULL;
 }
 
 static void __xuiTreeViewInitNodeStorage(xui_tree_view_data_t* pData)
@@ -283,7 +295,7 @@ static void __xuiTreeViewResetNodes(xui_tree_view_data_t* pData)
 {
 	int i;
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
-		__xuiTreeViewFreeNodeText(&pData->arrNodes[i]);
+		__xuiTreeViewFreeNodeText(pData, &pData->arrNodes[i]);
 	}
 	if ( pData->mapNodeIds.ValueSize != 0 ) xrtMapClear(&pData->mapNodeIds);
 	pData->iNodeCount = 0;
@@ -443,6 +455,12 @@ static xui_font __xuiTreeViewStyleFont(xui_widget pWidget, xui_font pBaseFont)
 	return pBaseFont;
 }
 
+static xui_font __xuiTreeViewResolveFont(xui_widget pWidget, xui_tree_view_data_t* pData)
+{
+	xui_font pFont = pData->pFont ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	return __xuiTreeViewStyleFont(pWidget, pFont);
+}
+
 static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData, xui_tree_view_data_t* pResolved)
 {
 	*pResolved = *pData;
@@ -450,8 +468,7 @@ static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData
 	pResolved->fIndent = pData->fBaseIndent;
 	pResolved->fPadding = pData->fBasePadding;
 	pResolved->fBorderWidth = pData->fBaseBorderWidth;
-	pResolved->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
-	pResolved->pFont = __xuiTreeViewStyleFont(pWidget, pResolved->pFont);
+	pResolved->pFont = __xuiTreeViewResolveFont(pWidget, pData);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.border.color", &pResolved->iBorderColor);
 	(void)__xuiTreeViewStyleColor(pWidget, "treeview.focus.color", &pResolved->iFocusColor);
@@ -613,7 +630,7 @@ static int __xuiTreeViewAppendNodeDataTakeText(xui_tree_view_data_t* pData, cons
 	XUI_TREE_VIEW_TEST_COUNT(iIdInserts, 1);
 	pIdIndex = (int*)xrtMapGetOrAdd(&pData->mapNodeIds, xuiXrtBytes(&tNode.iId, sizeof(tNode.iId)), NULL);
 	if ( pIdIndex == NULL ) {
-		if ( !bTakeText ) __xuiTreeViewFreeNodeText(&tNode);
+		if ( !bTakeText ) __xuiTreeViewFreeNodeText(pData, &tNode);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	*pIdIndex = pData->iNodeCount;
@@ -674,7 +691,7 @@ static void __xuiTreeViewRollbackLastNodeData(xui_tree_view_data_t* pData,
 	(void)xrtMapRemove(&pData->mapNodeIds,
 		xuiXrtBytes(&pData->arrNodes[iNode].iId,
 			sizeof(pData->arrNodes[iNode].iId)));
-	__xuiTreeViewFreeNodeText(&pData->arrNodes[iNode]);
+	__xuiTreeViewFreeNodeText(pData, &pData->arrNodes[iNode]);
 	pData->iNodeCount--;
 }
 
@@ -2051,6 +2068,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	iEnd = (int)((fOffsetY + fViewportH) / tResolved.fItemHeight) + 2;
 	if ( iEnd > pData->iVisibleCount ) iEnd = pData->iVisibleCount;
 	for ( i = iStart; i < iEnd; i++ ) {
+		bool bRanPainter = false;
 		iNode = pData->arrVisible[i];
 		pNode = &pData->arrNodes[iNode];
 		fY = ((float)i * tResolved.fItemHeight) - fOffsetY;
@@ -2064,13 +2082,26 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( pNode->bHasChildren ) iState |= XUI_TREE_ITEM_HAS_CHILDREN;
 		if ( pNode->bChecked ) iState |= XUI_TREE_ITEM_CHECKED;
 		if ( pData->onRenderItem != NULL ) {
+			bRanPainter = true;
 			onRenderItem = pData->onRenderItem;
 			pRenderItemUser = pData->pRenderItemUser;
 			iGeneration = pData->iChangeCount;
 			tNodeSnapshot = *pNode;
-			iHandled = onRenderItem(pWidget, tNodeSnapshot.iId, i, &tNodeSnapshot,
-				pDraw, tRow, iState, pRenderItemUser);
-			if ( iHandled < 0 ) return iHandled;
+			xui_tree_view_text_pin_t tPin = {tNodeSnapshot.sText, pData->pTextPins, false};
+			pData->pTextPins = &tPin;
+			xui_callback_snapshot_t tCallback = {0};
+			iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderItem, &pRenderItemUser, &tCallback);
+			iHandled = 0;
+			if ( iRet == XUI_OK ) {
+				if ( pData->iChangeCount == iGeneration && pData->onRenderItem == onRenderItem &&
+				     pData->pRenderItemUser == pRenderItemUser )
+					iHandled = onRenderItem(pWidget, tNodeSnapshot.iId, i, &tNodeSnapshot,
+						pDraw, tRow, iState, pRenderItemUser);
+				iRet = xuiInternalCallbackSnapshotEnd(&tCallback, iHandled < 0 ? iHandled : XUI_OK);
+			}
+			pData->pTextPins = tPin.pPrevious;
+			if ( tPin.bRetired ) xrtFree((void*)tPin.sText);
+			if ( iRet != XUI_OK ) return iRet;
 			if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_OK;
 			if ( pData->iChangeCount != iGeneration || pData->onRenderItem != onRenderItem ||
 			     pData->pRenderItemUser != pRenderItemUser ) return XUI_OK;
@@ -2111,11 +2142,18 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			tIcon = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY + (tRow.fH - 14.0f) * 0.5f, 15.0f, 14.0f});
             int handled = 0;
             if ( pData->onRenderIcon != NULL ) {
+                bRanPainter = true;
                 xui_tree_view_icon_proc callback = pData->onRenderIcon;
                 void* user = pData->pRenderIconUser;
                 int generation = pData->iChangeCount;
-                handled = callback(pWidget, pNode->iId, pDraw, tIcon, iState, user);
-                if ( handled < 0 ) return handled;
+                int id = pNode->iId;
+                xui_callback_snapshot_t snapshot = {0};
+                iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderIcon, &user, &snapshot);
+                if ( iRet != XUI_OK ) return iRet;
+                if ( pData->iChangeCount == generation && pData->onRenderIcon == callback && pData->pRenderIconUser == user )
+                    handled = callback(pWidget, id, pDraw, tIcon, iState, user);
+                iRet = xuiInternalCallbackSnapshotEnd(&snapshot, handled < 0 ? handled : XUI_OK);
+                if ( iRet != XUI_OK ) return iRet;
                 if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_OK;
                 if ( pData->iChangeCount != generation || pData->onRenderIcon != callback || pData->pRenderIconUser != user ) return XUI_OK;
             }
@@ -2129,6 +2167,7 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
 			iTextColor = tResolved.iSelectedTextColor;
 		}
+		if ( bRanPainter ) tResolved.pFont = __xuiTreeViewResolveFont(pWidget, pData);
 		if ( (tResolved.pFont != NULL) && (__xuiTreeViewAlpha(iTextColor) != 0) ) {
 			tText = xuiInternalSnapRect((xui_rect_t){fTextX, tRow.fY, __xuiTreeViewMaxFloat(1.0f, tRow.fW - fTextX - tResolved.fPadding), tRow.fH});
 			iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=tResolved.pFont, .sText=__xuiTreeViewText(pNode->sText), .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -2729,11 +2768,36 @@ XUI_API int xuiTreeViewSetContextMenu(xui_widget pWidget, xui_tree_view_context_
 	return XUI_OK;
 }
 
+static int __xuiTreeViewPreparePainter(xui_widget pWidget, void* pUser)
+{
+	xui_tree_view_data_t* pData = pUser;
+	int iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTreeViewWidgetAlive(pWidget, pData) ? XUI_OK : XUI_ERROR_INVALID_STATE;
+}
+
+XUI_API int xuiTreeViewSetItemRendererOwned(xui_widget pWidget, xui_tree_view_item_proc onRender,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBeginValidated(pWidget, &pData->onRenderItem, onRender != NULL,
+		pUser, pOwner, __xuiTreeViewPreparePainter, pData, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onRenderItem = onRender;
+	pData->pRenderItemUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_proc onRender, void* pUser)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onRenderItem) )
+		return xuiTreeViewSetItemRendererOwned(pWidget, onRender, pUser, NULL);
 	if ( pData->onRenderItem == onRender && pData->pRenderItemUser == pUser ) return XUI_OK;
 	iRet = __xuiTreeViewInvalidateRows(pWidget, pData);
 	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
@@ -2742,10 +2806,27 @@ XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_pr
 	return XUI_OK;
 }
 
+XUI_API int xuiTreeViewSetIconRendererOwned(xui_widget widget, xui_tree_view_icon_proc callback,
+    void* user, const xui_callback_owner_t* owner)
+{
+    xui_tree_view_data_t* data = __xuiTreeViewGetData(widget);
+    if ( !data ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_callback_update_t update = {0};
+    int result = xuiInternalCallbackUpdateBeginValidated(widget, &data->onRenderIcon, callback != NULL,
+        user, owner, __xuiTreeViewPreparePainter, data, &update);
+    if ( result != XUI_OK ) return result;
+    data->onRenderIcon = callback;
+    data->pRenderIconUser = user;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
 XUI_API int xuiTreeViewSetIconRenderer(xui_widget widget, xui_tree_view_icon_proc callback, void* user)
 {
     xui_tree_view_data_t* data = __xuiTreeViewGetData(widget);
     if ( !data ) return XUI_ERROR_INVALID_ARGUMENT;
+    if ( xuiInternalCallbackSlotOwned(widget, &data->onRenderIcon) )
+        return xuiTreeViewSetIconRendererOwned(widget, callback, user, NULL);
     if ( data->onRenderIcon == callback && data->pRenderIconUser == user ) return XUI_OK;
     int result = __xuiTreeViewInvalidateRows(widget, data);
     if ( result != XUI_OK || !__xuiTreeViewWidgetAlive(widget, data) ) return result;
