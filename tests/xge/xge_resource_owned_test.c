@@ -116,6 +116,13 @@ static void mini_owned_bridge(void)
     assert(xgeMiniProgramAudioCommand(1,23,"a\0b",3)==9);
     assert(xgeMiniProgramAudioCommand(1,23,NULL,0)==9);
     assert(xgeMiniProgramAudioCommand(1,23,NULL,2)==XGE_ERROR_INVALID_ARGUMENT);
+    xmemdebugsnapshot before,after;
+    xrtMemDebugSnapshot(&before);
+    for(int i=0;i<1000;++i)assert(xgeMiniProgramAudioCommand(1,23,"a\0b",3)==9);
+    xrtMemDebugSnapshot(&after);
+    assert(before.AllocCount==after.AllocCount && before.FreeCount==after.FreeCount &&
+           before.ReallocCount==after.ReallocCount);
+    puts("MINIPROGRAM_NATIVE_HEAP alloc=0 free=0 realloc=0");
     xthread* worker=xrtThreadCreate(mini_other_thread,NULL,0);
     assert(worker && xrtThreadWait(worker)==XWAIT_OK);xrtThreadDestroy(worker);
     xge_resource_t value={0};
@@ -148,6 +155,10 @@ static void mini_owned_bridge(void)
     second.clear=1;
     assert(xgeMiniProgramRequestFrame()==7 && xgeMiniProgramRequestFrame()==XGE_ERROR_UNSUPPORTED);
     assert(xrtAtomic32Load(&second.refs,XMEMORY_RELAXED)==1);
+    xge_miniprogram_owned_bridge_t clear={0};
+    first.failHold=1;
+    assert(xgeMiniProgramSetBridgeOwned(&clear,&one)==XGE_OK && first.failHold==1);
+    first.failHold=0;
     assert(xgeMiniProgramSetBridgeOwned(&a,&one)==XGE_OK && xgeUnitChecked()==XGE_OK);
     assert(xrtAtomic32Load(&first.refs,XMEMORY_RELAXED)==1 && xgeMiniProgramRequestFrame()==XGE_ERROR_UNSUPPORTED);
     puts("mini-program host bridge: owned dispatch, replacement, reentry, OOM and checked unit passed");

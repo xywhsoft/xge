@@ -248,9 +248,10 @@ int xgeMiniProgramSetBridgeOwned(const xge_miniprogram_owned_bridge_t* pBridge,
 	xge_mini_bridge_state_t next = {0};
 	if ( pBridge ) next.owned = *pBridge;
 	bool hasCallback = next.owned.request_frame || next.owned.load_resource || next.owned.audio_command;
+	if ( !__xgeCallbackOwnerValid(pOwner) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( hasCallback && (!pOwner || !pOwner->onHold) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( hasCallback ) next.creatorThread = xrtThreadCurrentId();
-	return __xgeMiniSetBridge(&next, pOwner, hasCallback);
+	return __xgeMiniSetBridge(&next, hasCallback ? pOwner : NULL, hasCallback);
 }
 
 int xgeMiniProgramFrame(double fTimeSeconds)
