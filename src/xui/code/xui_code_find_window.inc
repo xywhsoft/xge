@@ -349,13 +349,15 @@ static void __xuiCodeEditFindButtonClick(xui_widget pButton, void* pUser)
 	}
 	xerror* previous = xrtTakeError();
 	if ((pButton == pUi->pFindNextButton || pButton == pUi->pFindPrevButton) && __xuiCodeEditFindWindowUseScope(pUi)) {
-		count = pUi->pFindScope->iResultCount;
+		xui_code_find_scope scope = pUi->pFindScope;
+		count = scope->iResultCount;
 		if (count > 0) {
-			int index = pUi->pFindScope->iActiveIndex;
+			int index = scope->iActiveIndex;
 			if (index < 0) index = pButton == pUi->pFindPrevButton ? 0 : -1;
 			index = (index + (pButton == pUi->pFindPrevButton ? count - 1 : 1)) % count;
-			result = xuiCodeFindScopeActivateResult(pUi->pFindScope, index);
-			if (result == XUI_OK) {
+			result = xuiCodeFindScopeActivateResult(scope, index);
+			if (result == XUI_OK && pUi->pFindScope == scope && !scope->bDestroyPending &&
+			    xuiInternalWidgetIsValid(pUi->pOwner)) {
 				pUi->bUpdating = 1;
 				(void)__xuiCodeFindWindowRefreshTable(pUi, 1, index);
 				pUi->bUpdating = 0;

@@ -2925,6 +2925,7 @@ typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const 
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
 typedef void (*xui_code_find_activate_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
+typedef int (*xui_code_find_activate_owned_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
 typedef int (*xui_code_margin_render_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, xui_draw_context_t* pDraw, xui_rect_t tRect, void* pUser);
 typedef int (*xui_code_margin_event_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, int iEvent, xui_rect_t tRect, void* pUser);
 
@@ -8073,6 +8074,20 @@ XUI_API void xuiFindFreeText(char* sText);
 XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope);
 /* 释放查找域。 */
 XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope);
+/* The owner is consumed even when cleanup reports a callback failure. An
+ * active call delays physical destruction until the outermost call ends. */
+XUI_API int xuiCodeFindScopeDestroyOwnerChecked(xui_code_find_scope pScope, bool* pConsumed);
+XUI_API int xuiCodeFindScopeDestroyChecked(xui_code_find_scope pScope);
+XUI_API int xuiCodeFindScopeLifetimeWatch(xui_code_find_scope pScope, xui_lifetime_link_t* pLink,
+    xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+typedef struct xui_code_find_scope_call_t {
+    const void* pSelf;
+    xui_code_find_scope pScope;
+} xui_code_find_scope_call_t;
+XUI_API int xuiCodeFindScopeCallBegin(xui_code_find_scope pScope, xui_code_find_scope_call_t* pCall);
+XUI_API int xuiCodeFindScopeCallEnd(xui_code_find_scope_call_t* pCall);
+XUI_API bool xuiCodeFindScopeTraceOwnership(xui_code_find_scope pScope, xrtownershipvisitor onVisit, void* pUser);
+XUI_API bool xuiCodeFindScopeOwnershipBusy(xui_code_find_scope pScope);
 /* 移除域内全部编辑器。 */
 XUI_API int xuiCodeFindScopeClearEditors(xui_code_find_scope pScope);
 /* 添加编辑器到查找域。 */
@@ -8096,6 +8111,11 @@ XUI_API int xuiCodeFindScopeGetEditorChecked(xui_code_find_scope pScope, xui_con
 XUI_API const char* xuiCodeFindScopeGetEditorName(xui_code_find_scope pScope, int iIndex);
 /* 注册结果激活回调（跳转到匹配处）。 */
 XUI_API int xuiCodeFindScopeSetActivate(xui_code_find_scope pScope, xui_code_find_activate_proc onActivate, void* pUser);
+/* A non-null callback requires an owner and returns XUI_OK or an XUI error.
+ * The scope holds one reference, and dispatch holds a second until return.
+ * pResult is a stable snapshot valid for the duration of the callback. */
+XUI_API int xuiCodeFindScopeSetActivateOwned(xui_code_find_scope pScope,
+    xui_code_find_activate_owned_proc onActivate, void* pUser, const xui_callback_owner_t* pOwner);
 /* 全域查找（选项含正则/大小写/全词）；返回命中总数。 */
 XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount);
 /* 读取上次全域查找结果数。 */

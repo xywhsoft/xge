@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_callback_hold_internal.h"
 #include "xui_code_document_internal.h"
 #include "xui_code_margin_internal.h"
 #include "xui_pointer_press_internal.h"
@@ -280,7 +281,14 @@ struct xui_code_find_scope_t {
 	int iResultCapacity;
 	int iActiveIndex;
 	xui_code_find_activate_proc onActivate;
+	xui_code_find_activate_owned_proc onActivateOwned;
 	void* pActivateUser;
+	xui_callback_owner_t tActivateOwner;
+	xui_lifetime_link_t* pLifetimeLinks;
+	uint64_t iCreatorThread;
+	size_t iActiveCalls;
+	bool bUpdatingActivate;
+	bool bDestroyPending;
 	xui_code_find_window_t* pFindUi;
 	xui_widget pActiveEditor;
 };
@@ -8685,30 +8693,129 @@ XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope)
 	if ( pScope == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memset(pScope, 0, sizeof(*pScope));
 	pScope->iActiveIndex = -1;
+	pScope->iCreatorThread = xrtThreadCurrentId();
 	*ppScope = pScope;
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope)
+static int __xuiCodeFindScopeStatus(xui_code_find_scope pScope)
 {
-	int i;
+	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pScope->iCreatorThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return pScope->bDestroyPending ? XUI_ERROR_INVALID_STATE : XUI_OK;
+}
 
-	if ( pScope == NULL ) return;
-	if(pScope->pFindUi != NULL) {
-		xui_code_find_window_t* ui=pScope->pFindUi;
-		ui->pFindScope=NULL;ui->pEditor=NULL;
-		__xuiCodeFindWindowDestroy(ui);
-	}
+static int __xuiCodeFindScopeDropOwner(const xui_callback_owner_t* pOwner)
+{
+	return !pOwner->onDrop || pOwner->onDrop(pOwner->tReference.Data) ? XUI_OK : XUI_ERROR_CALLBACK_FAILED;
+}
+
+static int __xuiCodeFindScopeDestroyNow(xui_code_find_scope pScope)
+{
+	xui_code_find_window_t* pUi = pScope->pFindUi;
 	pScope->pFindUi = NULL;
-	for ( i = 0; i < pScope->iEditorCount; i++ ) {
+	if ( pUi != NULL ) {
+		pUi->pFindScope = NULL;
+		pUi->pEditor = NULL;
+	}
+	for ( int i = 0; i < pScope->iEditorCount; ++i ) {
 		if ( xuiCodeEditGetFindScope(pScope->pEditors[i].pEditor) == pScope ) {
 			(void)xuiCodeEditSetFindScope(pScope->pEditors[i].pEditor, NULL);
 		}
 		xrtFree(pScope->pEditors[i].sName);
 	}
+	pScope->iEditorCount = pScope->iResultCount = 0;
+	pScope->pActiveEditor = NULL;
+	xui_cleanup_receipt_t tReceipt = {0};
+	xuiInternalCleanupStart(&tReceipt, XUI_OK);
+	if ( pUi != NULL ) xuiInternalCleanupAdd(&tReceipt, xuiWidgetDestroyChecked(pUi->pOwner));
+	xuiInternalLifetimeInvalidateAll(&pScope->pLifetimeLinks);
+	xuiInternalCleanupAdd(&tReceipt, XUI_OK);
+	xuiInternalCleanupAdd(&tReceipt, __xuiCodeFindScopeDropOwner(&pScope->tActivateOwner));
 	xrtFree(pScope->pEditors);
 	xrtFree(pScope->pResults);
 	xrtFree(pScope);
+	return xuiInternalCleanupEnd(NULL, &tReceipt);
+}
+
+XUI_API int xuiCodeFindScopeDestroyOwnerChecked(xui_code_find_scope pScope, bool* pConsumed)
+{
+	if ( pConsumed == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pConsumed = false;
+	int iRet = __xuiCodeFindScopeStatus(pScope);
+	if ( iRet != XUI_OK ) return iRet;
+	xrtownershipscope tMutation = {0};
+	if ( !xrtOwnershipMutationBegin(&tMutation) ) return XUI_ERROR_INVALID_STATE;
+	pScope->bDestroyPending = true;
+	*pConsumed = true;
+	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	return pScope->iActiveCalls ? XUI_OK : __xuiCodeFindScopeDestroyNow(pScope);
+}
+
+XUI_API int xuiCodeFindScopeDestroyChecked(xui_code_find_scope pScope)
+{
+	bool bConsumed = false;
+	return xuiCodeFindScopeDestroyOwnerChecked(pScope, &bConsumed);
+}
+
+XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope)
+{
+	if ( pScope != NULL ) (void)xuiCodeFindScopeDestroyChecked(pScope);
+}
+
+XUI_API int xuiCodeFindScopeLifetimeWatch(xui_code_find_scope pScope, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( pLink == NULL || onInvalidate == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet = __xuiCodeFindScopeStatus(pScope);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pLink->pNext || pLink->ppPrevious || pLink->onInvalidate || pLink->pUser ) return XUI_ERROR_INVALID_STATE;
+	pLink->pNext = pScope->pLifetimeLinks;
+	pLink->ppPrevious = &pScope->pLifetimeLinks;
+	pLink->onInvalidate = onInvalidate;
+	pLink->pUser = pUser;
+	if ( pLink->pNext ) pLink->pNext->ppPrevious = &pLink->pNext;
+	pScope->pLifetimeLinks = pLink;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeFindScopeCallBegin(xui_code_find_scope pScope, xui_code_find_scope_call_t* pCall)
+{
+	if ( pCall == NULL || pCall->pSelf || pCall->pScope ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet = __xuiCodeFindScopeStatus(pScope);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pScope->iActiveCalls == SIZE_MAX ) return XUI_ERROR_INVALID_STATE;
+	xrtownershipscope tMutation = {0};
+	if ( !xrtOwnershipMutationBegin(&tMutation) ) return XUI_ERROR_INVALID_STATE;
+	++pScope->iActiveCalls;
+	pCall->pSelf = pCall;
+	pCall->pScope = pScope;
+	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeFindScopeCallEnd(xui_code_find_scope_call_t* pCall)
+{
+	if ( pCall == NULL || pCall->pSelf != pCall || pCall->pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_find_scope pScope = pCall->pScope;
+	if ( pScope->iCreatorThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	pCall->pSelf = NULL;
+	pCall->pScope = NULL;
+	if ( !pScope->iActiveCalls ) abort();
+	--pScope->iActiveCalls;
+	return pScope->bDestroyPending && !pScope->iActiveCalls ? __xuiCodeFindScopeDestroyNow(pScope) : XUI_OK;
+}
+
+XUI_API bool xuiCodeFindScopeOwnershipBusy(xui_code_find_scope pScope)
+{
+	return __xuiCodeFindScopeStatus(pScope) != XUI_OK || pScope->iActiveCalls != 0;
+}
+
+XUI_API bool xuiCodeFindScopeTraceOwnership(xui_code_find_scope pScope, xrtownershipvisitor onVisit, void* pUser)
+{
+	if ( onVisit == NULL || xuiCodeFindScopeOwnershipBusy(pScope) ) return false;
+	const xui_callback_owner_t* pOwner = &pScope->tActivateOwner;
+	return !pOwner->onHold || onVisit(pOwner->tReference, pUser);
 }
 
 XUI_API int xuiCodeFindScopeClearEditors(xui_code_find_scope pScope)
@@ -8824,12 +8931,57 @@ XUI_API const char* xuiCodeFindScopeGetEditorName(xui_code_find_scope pScope, in
 	return (pScope->pEditors[iIndex].sName != NULL) ? pScope->pEditors[iIndex].sName : "";
 }
 
+static int __xuiCodeFindScopeSetActivate(xui_code_find_scope pScope,
+	xui_code_find_activate_proc onRaw, xui_code_find_activate_owned_proc onOwned, void* pUser,
+	const xui_callback_owner_t* pOwner)
+{
+	if ( !xuiInternalCallbackOwnerRawValid(pOwner) ||
+		(onOwned != NULL) != (pOwner != NULL && pOwner->onHold != NULL) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet = __xuiCodeFindScopeStatus(pScope);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pScope->bUpdatingActivate ) return XUI_ERROR_BUSY;
+	xui_code_find_scope_call_t tCall = {0};
+	iRet = xuiCodeFindScopeCallBegin(pScope, &tCall);
+	if ( iRet != XUI_OK ) return iRet;
+	xerror* pAmbient = xrtTakeError();
+	xui_callback_owner_t tCandidate = pOwner ? *pOwner : (xui_callback_owner_t){0};
+	pScope->bUpdatingActivate = true;
+	bool bHeld = false;
+	iRet = xuiInternalCallbackHoldFresh(&tCandidate, &bHeld);
+	if ( iRet == XUI_OK ) iRet = __xuiCodeFindScopeStatus(pScope);
+	xrtownershipscope tMutation = {0};
+	if ( iRet == XUI_OK && !xrtOwnershipMutationBegin(&tMutation) ) iRet = XUI_ERROR_INVALID_STATE;
+	xui_callback_owner_t tRelease = {0};
+	if ( iRet == XUI_OK ) {
+		tRelease = pScope->tActivateOwner;
+		pScope->tActivateOwner = tCandidate;
+		pScope->onActivate = onRaw;
+		pScope->onActivateOwned = onOwned;
+		pScope->pActivateUser = pUser;
+		if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	} else if ( bHeld ) {
+		tRelease = tCandidate;
+	}
+	pScope->bUpdatingActivate = false;
+	xui_cleanup_receipt_t tReceipt = {0};
+	xuiInternalCleanupStart(&tReceipt, iRet);
+	xuiInternalCleanupAdd(&tReceipt, __xuiCodeFindScopeDropOwner(&tRelease));
+	xuiInternalCleanupAdd(&tReceipt, xuiCodeFindScopeCallEnd(&tCall));
+	if ( tReceipt.status == XUI_OK ) tReceipt.error = pAmbient;
+	else xrtErrorFree(pAmbient);
+	return xuiInternalCleanupEnd(NULL, &tReceipt);
+}
+
 XUI_API int xuiCodeFindScopeSetActivate(xui_code_find_scope pScope, xui_code_find_activate_proc onActivate, void* pUser)
 {
-	if ( pScope == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pScope->onActivate = onActivate;
-	pScope->pActivateUser = pUser;
-	return XUI_OK;
+	return __xuiCodeFindScopeSetActivate(pScope, onActivate, NULL, pUser, NULL);
+}
+
+XUI_API int xuiCodeFindScopeSetActivateOwned(xui_code_find_scope pScope,
+	xui_code_find_activate_owned_proc onActivate, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	return __xuiCodeFindScopeSetActivate(pScope, NULL, onActivate, pUser, pOwner);
 }
 
 XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount)
@@ -8921,30 +9073,71 @@ XUI_API const char* xuiCodeFindScopeGetResultEditorName(xui_code_find_scope pSco
 	return __xuiCodeFindScopeGetEditorNameByWidget(pScope, pScope->pResults[iIndex].pEditor);
 }
 
+static int __xuiCodeFindScopeDispatchActivate(xui_code_find_scope pScope, xui_context pContext,
+	const xui_code_find_result_t* pResult)
+{
+	if ( pScope->onActivateOwned == NULL ) {
+		if ( pScope->onActivate == NULL ) return XUI_OK;
+		pScope->onActivate(pScope, pResult->pEditor, pResult, pScope->pActivateUser);
+		return XUI_OK;
+	}
+	xui_code_find_activate_owned_proc onActivate = pScope->onActivateOwned;
+	void* pUser = pScope->pActivateUser;
+	xui_callback_owner_t tOwner = pScope->tActivateOwner;
+	bool bUpdating = pScope->bUpdatingActivate;
+	pScope->bUpdatingActivate = true;
+	bool bHeld = false;
+	int iRet = xuiInternalCallbackHoldIsolated(&tOwner, &bHeld);
+	pScope->bUpdatingActivate = bUpdating;
+	if ( iRet == XUI_OK && (pScope->bDestroyPending || pContext->bCloseRequested ||
+		!xuiInternalWidgetIsValid(pResult->pEditor) || xuiCodeEditGetFindScope(pResult->pEditor) != pScope) )
+		iRet = XUI_ERROR_INVALID_STATE;
+	if ( iRet == XUI_OK ) iRet = onActivate(pScope, pResult->pEditor, pResult, pUser);
+	xui_cleanup_receipt_t tReceipt = {0};
+	xuiInternalCleanupStart(&tReceipt, iRet);
+	if ( bHeld ) xuiInternalCleanupAdd(&tReceipt, __xuiCodeFindScopeDropOwner(&tOwner));
+	return xuiInternalCleanupEnd(pContext, &tReceipt);
+}
+
 XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iIndex)
 {
-	xui_code_find_result_t* pResult;
-	xui_code_edit_data_t* pData;
-	xui_find_result_t tFind;
-	int iRet;
-
-	if ( pScope == NULL || iIndex < 0 || iIndex >= pScope->iResultCount ) return XUI_ERROR_INVALID_ARGUMENT;
-	pResult = &pScope->pResults[iIndex];
-	pData = __xuiCodeEditGetData(pResult->pEditor);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(&tFind, 0, sizeof(tFind));
-	tFind.iSize = sizeof(tFind);
-	tFind.iStart = pResult->iStart;
-	tFind.iEnd = pResult->iEnd;
-	iRet = __xuiCodeEditApplyFindResult(pResult->pEditor, pData, &tFind);
+	int iRet = __xuiCodeFindScopeStatus(pScope);
 	if ( iRet != XUI_OK ) return iRet;
-	pScope->iActiveIndex = iIndex;
-	(void)xuiCodeFindScopeSetActiveEditor(pScope,pResult->pEditor);
-	if ( pScope->onActivate != NULL ) {
-		xui_code_find_result_t snapshot=*pResult;
-		pScope->onActivate(pScope, snapshot.pEditor, &snapshot, pScope->pActivateUser);
+	if ( iIndex < 0 || iIndex >= pScope->iResultCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_find_result_t tResult = pScope->pResults[iIndex];
+	xui_widget pEditor = tResult.pEditor;
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pEditor);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = xuiWidgetGetContext(pEditor);
+	xui_code_find_scope_call_t tCall = {0};
+	iRet = xuiCodeFindScopeCallBegin(pScope, &tCall);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_call_scope_t tContext = {0};
+	iRet = xuiCallScopeBegin(pContext, &tContext);
+	if ( iRet == XUI_OK ) {
+		xui_find_result_t tFind = {0};
+		tFind.iSize = sizeof(tFind);
+		tFind.iStart = tResult.iStart;
+		tFind.iEnd = tResult.iEnd;
+		iRet = __xuiCodeEditApplyFindResult(pEditor, pData, &tFind);
+		if ( iRet == XUI_OK && (pScope->bDestroyPending || pContext->bCloseRequested ||
+			!xuiInternalWidgetIsValid(pEditor) || xuiCodeEditGetFindScope(pEditor) != pScope ||
+			iIndex >= pScope->iResultCount || pScope->pResults[iIndex].pEditor != pEditor ||
+			pScope->pResults[iIndex].iStart != tResult.iStart || pScope->pResults[iIndex].iEnd != tResult.iEnd) )
+			iRet = XUI_ERROR_INVALID_STATE;
+		if ( iRet == XUI_OK ) {
+			pScope->iActiveIndex = iIndex;
+			iRet = xuiCodeFindScopeSetActiveEditor(pScope, pEditor);
+		}
+		if ( iRet == XUI_OK && !pScope->bDestroyPending && !pContext->bCloseRequested )
+			iRet = __xuiCodeFindScopeDispatchActivate(pScope, pContext, &tResult);
 	}
-	return XUI_OK;
+	xui_cleanup_receipt_t tReceipt = {0};
+	xuiInternalCleanupStart(&tReceipt, iRet);
+	xuiInternalCleanupAdd(&tReceipt, xuiCodeFindScopeCallEnd(&tCall));
+	if ( tContext.pSelf != NULL )
+		return xuiInternalCallScopeEndRestored(&tContext, tReceipt.status, tReceipt.error);
+	return xuiInternalCleanupEnd(NULL, &tReceipt);
 }
 
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)

@@ -6,6 +6,7 @@
 #endif
 #include "xui.h"
 #include "xui_test_proxy.h"
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,12 +44,74 @@ static int editor(xui_context context,xui_widget root,const char* text,xui_widge
 }
 static void destroyScope(xui_code_find_scope scope,xui_widget editor,const xui_code_find_result_t* result,void* user)
 {(void)editor;(void)result;*(int*)user=0;xuiCodeFindScopeDestroy(scope);*(int*)user=result->iEnd>result->iStart;}
+
+typedef struct activate_owner {
+    size_t refs;
+    int calls, invalidated, status;
+    bool deny, failDrop, clear, close;
+} activate_owner;
+
+static bool holdActivate(const void* raw)
+{
+    activate_owner* owner=(void*)raw;
+    if(owner->deny)return false;
+    ++owner->refs;
+    return true;
+}
+static bool dropActivate(const void* raw)
+{
+    activate_owner* owner=(void*)raw;
+    assert(owner->refs>1);
+    --owner->refs;
+    return !owner->failDrop;
+}
+static bool countActivate(const void* raw,size_t* out)
+{*out=((const activate_owner*)raw)->refs;return true;}
+static bool traceActivate(const void* raw,xrtownershipvisitor visit,void* user)
+{(void)raw;(void)visit;(void)user;return true;}
+static const xrtownershipops activateOps={countActivate,traceActivate};
+static bool findActivateEdge(xrtownershipref ref,void* user)
+{return ref.Data==user && ref.Ops==&activateOps;}
+static void scopeInvalidated(void* user)
+{++((activate_owner*)user)->invalidated;}
+static int activate(xui_code_find_scope scope,xui_widget editor,const xui_code_find_result_t* result,void* user)
+{
+    activate_owner* owner=user;
+    ++owner->calls;
+    assert(owner->refs==3 && result->pEditor==editor && result->iEnd>result->iStart);
+    assert(xuiCodeFindScopeOwnershipBusy(scope) && !xuiCodeFindScopeTraceOwnership(scope,findActivateEdge,owner));
+    if(owner->clear){
+        assert(xuiCodeFindScopeSetActivateOwned(scope,NULL,NULL,NULL)==XUI_OK && owner->refs==2);
+        assert(xuiCodeFindScopeClearEditors(scope)==XUI_OK && strstr(result->sPreview,"alpha")!=NULL);
+    }
+    if(owner->close){
+        bool consumed=false;
+        assert(xuiCodeFindScopeDestroyOwnerChecked(scope,&consumed)==XUI_OK && consumed && !owner->invalidated);
+        assert(xuiCodeFindScopeSetActivateOwned(scope,NULL,NULL,NULL)==XUI_ERROR_INVALID_STATE);
+    }
+    return owner->status;
+}
+static int32 checkFindThread(ptr raw)
+{
+    xui_code_find_scope_call_t call={0};
+    bool consumed=true;
+    assert(xuiCodeFindScopeCallBegin(raw,&call)==XUI_ERROR_BUSY && !call.pScope);
+    assert(xuiCodeFindScopeSetActivateOwned(raw,NULL,NULL,NULL)==XUI_ERROR_BUSY);
+    assert(xuiCodeFindScopeActivateResult(raw,0)==XUI_ERROR_BUSY);
+    assert(xuiCodeFindScopeDestroyOwnerChecked(raw,&consumed)==XUI_ERROR_BUSY && !consumed);
+    return 0;
+}
+
 int main(void)
 {
     int failed=0,checks=0,destroyed=0;
     xui_context context=NULL,other=NULL;xui_code_find_scope scope=NULL;
     xui_widget root=NULL,a=NULL,b=NULL,c=NULL; xui_font font=NULL;xui_test_proxy_state_t state;
     xui_widget borrowed=NULL;
+    activate_owner active={.refs=1},denied={.refs=1,.deny=true};
+    xui_callback_owner_t owner={{&active,&activateOps},holdActivate,dropActivate};
+    xui_callback_owner_t rejected={{&denied,&activateOps},holdActivate,dropActivate};
+    xui_lifetime_link_t watch={0};
     xuiTestProxyInit(&state);
 #ifdef XGE_XRT_HOST
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
@@ -112,8 +175,35 @@ int main(void)
     CHECK(xuiWidgetDestroyChecked(a)==XUI_OK);a=NULL;
     CHECK(xuiCodeFindScopeGetEditorCount(scope)==1 && xuiCodeFindScopeGetFindWindow(scope)==window && xuiWindowIsOpen(window));
     CHECK(xuiCodeFindScopeRefresh(scope)==XUI_OK && xuiCodeFindScopeGetResultCount(scope)==2);
+    CHECK(xuiCodeFindScopeSetActivateOwned(scope,activate,&active,NULL)==XUI_ERROR_INVALID_ARGUMENT);
+    CHECK(xuiCodeFindScopeSetActivateOwned(scope,activate,&active,&owner)==XUI_OK && active.refs==2);
+    CHECK(xuiCodeFindScopeTraceOwnership(scope,findActivateEdge,&active));
+    xthread* worker=xrtThreadCreate(checkFindThread,scope,0);
+    CHECK(worker && xrtThreadWait(worker)==XWAIT_OK);
+    xrtThreadDestroy(worker);
+    CHECK(xuiCodeFindScopeSetActivateOwned(scope,activate,&denied,&rejected)==XUI_ERROR_CALLBACK_FAILED && denied.refs==1 && active.refs==2);
+    active.status=XUI_ERROR_CALLBACK_FAILED;
+    CHECK(xuiCodeFindScopeFindNext(scope,0)==XUI_ERROR_CALLBACK_FAILED && active.calls==1 && active.refs==2);
+    CHECK(xuiCodeFindScopeActivateResult(scope,0)==XUI_ERROR_CALLBACK_FAILED && active.calls==2 && active.refs==2);
+    active.status=XUI_OK;active.clear=true;
+    CHECK(xuiCodeFindScopeActivateResult(scope,0)==XUI_OK && active.calls==3 && active.refs==1 &&
+          xuiCodeFindScopeGetResultCount(scope)==0);
+    active.clear=false;
+    CHECK(xuiCodeFindScopeAddEditor(scope,b)==XUI_OK && xuiCodeFindScopeRefresh(scope)==XUI_OK);
+    CHECK(xuiCodeFindScopeSetActivateOwned(scope,activate,&active,&owner)==XUI_OK && active.refs==2);
     CHECK(xuiCodeFindScopeSetActivate(scope,destroyScope,&destroyed)==XUI_OK && xuiCodeFindScopeFindNext(scope,0)==XUI_OK && destroyed);scope=NULL;
+    CHECK(active.refs==1 && active.calls==3);
     CHECK(xuiCodeEditGetFindScope(b)==NULL && xuiCodeEditOpenFind(b)==XUI_OK && xuiCodeEditGetFindWindow(b)!=NULL);
+    CHECK(xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeAddEditor(scope,b)==XUI_OK);
+    xui_find_options_t options={.iSize=sizeof(options),.sPattern="alpha",.iRangeEnd=-1};
+    CHECK(xuiCodeFindScopeFindAll(scope,&options,NULL)==XUI_OK && xuiCodeFindScopeGetResultCount(scope)==2);
+    CHECK(xuiCodeFindScopeLifetimeWatch(scope,&watch,scopeInvalidated,&active)==XUI_OK);
+    CHECK(xuiCodeFindScopeSetActivateOwned(scope,activate,&active,&owner)==XUI_OK);
+    active.close=true;active.failDrop=true;active.status=XUI_ERROR_INVALID_STATE;
+    int outcome=xuiCodeFindScopeActivateResult(scope,0);
+    if(active.invalidated)scope=NULL;
+    CHECK(outcome==XUI_ERROR_INVALID_STATE && active.calls==4 && active.refs==1 && active.invalidated==1 &&
+          xuiCodeEditGetFindScope(b)==NULL);
     CHECK(xuiWidgetDestroyChecked(b)==XUI_OK);b=NULL;
     CHECK(editor(context,root,"last\n",&c)==XUI_OK && xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeAddEditor(scope,c)==XUI_OK && xuiCodeEditOpenFind(c)==XUI_OK);
     CHECK(xuiCodeFindScopeSetActiveEditor(scope,root)==XUI_ERROR_INVALID_ARGUMENT);
