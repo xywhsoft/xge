@@ -40,6 +40,7 @@ struct xui_resource_t {
 	int iRefCount;
     uint32_t iOwnershipFlags;
 	xui_resource_dependency_t* pDependencies;
+	xui_lifetime_link_t* pLifetimeLinks;
 };
 enum { XUI_RESOURCE_OWNS_SURFACE=1u, XUI_RESOURCE_OWNS_FONT=2u, XUI_RESOURCE_UPDATING=4u };
 
@@ -1441,6 +1442,7 @@ static void __xuiResourceDestroyOne(xui_resource pResource)
 		return;
 	}
     pResource->iMagic=0;
+    xuiInternalLifetimeInvalidateAll(&pResource->pLifetimeLinks);
 	pDependency = pResource->pDependencies;
 	while ( pDependency != NULL ) {
 		pNextDependency = pDependency->pNext;
@@ -2852,6 +2854,20 @@ finish:
     xrtSetErrorTake(first);return status;
 }
 
+XUI_API int xuiResourceSetSurface(xui_context context,const char* name,xui_surface surface)
+{
+    if(!__xuiContextValid(context) || !context->pOwnedProxy || !surface)return XUI_ERROR_INVALID_ARGUMENT;
+    const xui_resource_desc_t desc={.iSize=sizeof(desc),.sName=name,.iKind=XUI_RESOURCE_SURFACE,.pHandle=surface};
+    return xuiResourceSet(context,NULL,&desc);
+}
+
+XUI_API int xuiResourceSetFont(xui_context context,const char* name,xui_font font)
+{
+    if(!__xuiContextValid(context) || !context->pOwnedProxy || !font)return XUI_ERROR_INVALID_ARGUMENT;
+    const xui_resource_desc_t desc={.iSize=sizeof(desc),.sName=name,.iKind=XUI_RESOURCE_FONT,.pHandle=font};
+    return xuiResourceSet(context,NULL,&desc);
+}
+
 XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName)
 {
 	xui_resource pResource;
@@ -2865,6 +2881,17 @@ XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName)
 		}
 	}
 	return NULL;
+}
+
+XUI_API int xuiResourceLifetimeWatch(xui_resource resource,xui_lifetime_link_t* link,
+    xui_lifetime_invalidate_proc invalidate,void* user)
+{
+    if(!__xuiResourceValid(resource) || !link || !invalidate)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context=resource->pContext;
+    if(!__xuiContextValid(context) || context->bDestroying || context->bDestroyPending ||
+       context->bCloseRequested)return XUI_ERROR_INVALID_STATE;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    return xuiInternalLifetimeWatch(&resource->pLifetimeLinks,link,invalidate,user);
 }
 
 XUI_API int xuiResourceRemove(xui_resource resource)
@@ -2929,6 +2956,18 @@ XUI_API int xuiResourceGetKind(xui_resource pResource)
 XUI_API void* xuiResourceGetHandle(xui_resource pResource)
 {
 	return __xuiResourceValid(pResource) ? pResource->pHandle : NULL;
+}
+
+XUI_API xui_surface xuiResourceGetSurface(xui_resource resource)
+{
+    return __xuiResourceValid(resource) && (resource->iOwnershipFlags&XUI_RESOURCE_OWNS_SURFACE)
+        ? resource->pHandle:NULL;
+}
+
+XUI_API xui_font xuiResourceGetFont(xui_resource resource)
+{
+    return __xuiResourceValid(resource) && (resource->iOwnershipFlags&XUI_RESOURCE_OWNS_FONT)
+        ? resource->pHandle:NULL;
 }
 
 XUI_API uint32_t xuiResourceGetGeneration(xui_resource pResource)

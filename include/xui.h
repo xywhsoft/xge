@@ -6772,8 +6772,13 @@ XUI_API void xuiClearFonts(xui_context pContext);
 /* 注册命名资源（surface/纹理等，按名全局可查）。同名且描述完全一致时幂等；
  * 替换仍被外部引用的资源或复用其拥有型句柄时返回 XUI_ERROR_INVALID_STATE。 */
 XUI_API int xuiResourceSet(xui_context pContext, xui_resource* ppResource, const xui_resource_desc_t* pDesc);
+/* The Context retains its own reference to a compatible managed resource. */
+XUI_API int xuiResourceSetSurface(xui_context pContext, const char* sName, xui_surface pSurface);
+XUI_API int xuiResourceSetFont(xui_context pContext, const char* sName, xui_font pFont);
 /* 按名查找资源；不存在返回 NULL。 */
 XUI_API xui_resource xuiResourceFind(xui_context pContext, const char* sName);
+/* Watches expire before resource release callbacks on replacement, removal or Context destruction. */
+XUI_API int xuiResourceLifetimeWatch(xui_resource pResource, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 /* 移除资源注册并释放注册表引用；仍有外部引用时返回 XUI_ERROR_INVALID_STATE。 */
 XUI_API int xuiResourceRemove(xui_resource pResource);
 /* 标记资源内容已变更；修订号会传递到全部直接和间接依赖资源。 */
@@ -6784,6 +6789,9 @@ XUI_API const char* xuiResourceGetName(xui_resource pResource);
 XUI_API int xuiResourceGetKind(xui_resource pResource);
 /* 读取资源底层句柄（按种类解释）。 */
 XUI_API void* xuiResourceGetHandle(xui_resource pResource);
+/* Borrowed managed resources. A wrong kind or an unmanaged handle yields NULL. */
+XUI_API xui_surface xuiResourceGetSurface(xui_resource pResource);
+XUI_API xui_font xuiResourceGetFont(xui_resource pResource);
 /* 读取资源修订号。 */
 XUI_API uint32_t xuiResourceGetGeneration(xui_resource pResource);
 /* Changes after a successful Set/Remove/Touch, including surface replacement.

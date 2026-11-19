@@ -369,15 +369,30 @@ static void managedRegistry(void)
     xui_surface a=surfaceCreate(proxy,&finalized,0),b=surfaceCreate(proxy,&finalized,0);
     xui_resource resource=NULL;xui_resource_desc_t desc={.iSize=sizeof(desc),.sName="managed-surface",.iKind=XUI_RESOURCE_SURFACE,.pHandle=a};
     assert(xuiResourceSet(context,&resource,&desc)==XUI_OK && resource && refs(a)==2);
+    assert(xuiResourceGetSurface(resource)==a && !xuiResourceGetFont(resource));
     matching=xuiSurfaceOwnership(a);matchingEdges=0;xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
     assert(xuiContextTraceOwnership(context,edge,NULL) && matchingEdges==1 && xrtOwnershipScopeEnd(&freeze));
     for(int budget=0;budget<3;++budget){
-        xui_resource previous=xuiResourceFind(context,"managed-surface");assert(xrtMemDebugFailAfter(budget));desc.pHandle=b;
-        int result=xuiResourceSet(context,&resource,&desc);assert(xrtMemDebugFailAfter(-1));xrtClearError();
-        if(result==XUI_OK){assert(refs(a)==1 && refs(b)==2);desc.pHandle=a;assert(xuiResourceSet(context,&resource,&desc)==XUI_OK);}
-        else assert(xuiResourceFind(context,"managed-surface")==previous && refs(a)==2 && refs(b)==1);
+        xui_resource previous=xuiResourceFind(context,"managed-surface");
+        unsigned gone=0;xui_lifetime_link_t watch={0};
+        assert(xuiResourceLifetimeWatch(previous,&watch,invalidation,&gone)==XUI_OK);
+        assert(xrtMemDebugFailAfter(budget));
+        int result=xuiResourceSetSurface(context,"managed-surface",b);
+        assert(xrtMemDebugFailAfter(-1));xrtClearError();
+        if(result==XUI_OK){
+            assert(gone==1 && !watch.ppPrevious && refs(a)==1 && refs(b)==2);
+            assert(xuiResourceSetSurface(context,"managed-surface",a)==XUI_OK);
+        }else{
+            assert(!gone && watch.ppPrevious);
+            assert(xuiResourceFind(context,"managed-surface")==previous && refs(a)==2 && refs(b)==1);
+            xuiLifetimeUnwatch(&watch);
+        }
     }
-    assert(xuiDestroyChecked(context)==XUI_OK && refs(a)==1 && refs(b)==1);
+    unsigned closed=0;xui_lifetime_link_t closeWatch={0};
+    resource=xuiResourceFind(context,"managed-surface");
+    assert(xuiResourceLifetimeWatch(resource,&closeWatch,invalidation,&closed)==XUI_OK);
+    assert(xuiResourceSetSurface(context,"managed-surface",a)==XUI_OK && !closed && refs(a)==2);
+    assert(xuiDestroyChecked(context)==XUI_OK && closed==1 && !closeWatch.ppPrevious && refs(a)==1 && refs(b)==1);
     assert(xuiSurfaceReleaseChecked(a)==XUI_OK && xuiSurfaceReleaseChecked(b)==XUI_OK && finalized==2);
     assert(xuiProxyReleaseChecked(proxy)==XUI_OK && drop(&owner));
 }
