@@ -10,6 +10,7 @@
 #include "xui_code_command_internal.h"
 #include "xui_code_fold_state_internal.h"
 #include "xui_code_language_internal.h"
+#include "xui_code_token_internal.h"
 #include "xui_code_provider_internal.h"
 #include "xui_code_bracket_internal.h"
 
@@ -573,7 +574,7 @@ static void __xuiCodeEditDocumentEdited(xui_code_document pDocument,
 			(void)__xuiCodeEditCancelPointer(pData->pOwner, pData);
 		}
 		if ( pData->pFoldState != NULL ) xuiCodeFoldStateClear(pData->pFoldState);
-		if ( pData->pTokenBuffer != NULL ) xuiCodeTokenBufferClear(pData->pTokenBuffer);
+		xuiInternalCodeTokenBufferClear(pData->pTokenBuffer);
 		if ( pData->pAnnotations != NULL ) xuiCodeAnnotationStoreClear(pData->pAnnotations);
 		__xuiCodeEditClearFindResults(pData);
 		if ( pData->pSelection != NULL ) {
@@ -2505,7 +2506,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	xuiInternalCodeCommandMapDestroyOwned(pData->pCommandMap, pWidget);
 	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
 	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
-	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
+	xuiInternalCodeTokenBufferDestroyOwned(pData->pTokenBuffer, pWidget);
 	xuiInternalCodeLanguageRegistryDestroyOwned(pData->pLanguages, pWidget);
 	xuiInternalCodeAnnotationDestroyOwned(pData->pAnnotations, pWidget);
 	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
@@ -3057,7 +3058,7 @@ static void __xuiCodeEditLanguageChanged(xui_widget editor, const char* language
 		if ( xuiCodeLanguageRegistryFind(data->pLanguages, data->sLanguage, &active) != XUI_OK ||
 		     active.sId != languageId ) return;
 	}
-	xuiCodeTokenBufferClear(data->pTokenBuffer);
+	xuiInternalCodeTokenBufferClear(data->pTokenBuffer);
 	xuiInternalCodeBracketReset(&data->tBracketMatch);
 	(void)xuiWidgetInvalidate(editor, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -3078,6 +3079,23 @@ static const xui_code_annotation_owner_ops_t g_xuiCodeEditAnnotationOwnerOps = {
 	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditAnnotationsChanged
 };
 
+static int __xuiCodeEditTokenExtent(xui_widget editor, uint32_t version, int* length)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(editor);
+	if ( data == NULL || xuiCodeDocumentGetVersion(data->pDocument) != version ) return XUI_ERROR_INVALID_STATE;
+	*length = xuiCodeDocumentGetLength(data->pDocument);
+	return XUI_OK;
+}
+
+static void __xuiCodeEditTokensChanged(xui_widget editor)
+{
+	(void)xuiInternalWidgetInvalidatePaintIfNeeded(editor);
+}
+
+static const xui_code_token_owner_ops_t g_xuiCodeEditTokenOwnerOps = {
+	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditTokenExtent, __xuiCodeEditTokensChanged
+};
+
 static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData, const xui_code_edit_desc_t* pDesc)
 {
 	int iRet;
@@ -3093,6 +3111,8 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeAnnotationClaimOwner(pData->pAnnotations, pWidget,
 		pData->pDocument, &g_xuiCodeEditAnnotationOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeTokenBufferCreate(&pData->pTokenBuffer);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeTokenBufferClaimOwner(pData->pTokenBuffer, pWidget,
+		&g_xuiCodeEditTokenOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeProviderSetCreate(&pData->pProviders);
 	if ( iRet == XUI_OK ) iRet = xuiCodeMarginModelCreate(&pData->pMargins);
     if(iRet==XUI_OK)iRet=xuiInternalCodeMarginClaimOwner(pData->pMargins,pWidget);
@@ -5972,7 +5992,7 @@ static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData,
 	if ( pData->sLanguage == NULL || pData->sLanguage[0] == '\0' ||
 	     xuiCodeLanguageRegistryFind(pData->pLanguages, pData->sLanguage,
 		     &tLanguage) != XUI_OK ) {
-		return xuiCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
+		return xuiInternalCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
 			iVersion, iStartOffset, iEndOffset);
 	}
 	bBuiltinC = xuiInternalCodeLanguageUsesBuiltinC(&tLanguage);
@@ -5980,7 +6000,7 @@ static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData,
 		(tLanguage.iLexerType == XUI_CODE_LEXER_REGEX &&
 		 tLanguage.pRegexRules != NULL && tLanguage.iRegexRuleCount > 0);
 	if ( !bHasLexer || iEndOffset == iStartOffset ) {
-		return xuiCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
+		return xuiInternalCodeTokenBufferSetRange(pData->pTokenBuffer, NULL, 0,
 			iVersion, iStartOffset, iEndOffset);
 	}
 	iLexStart = iStartOffset;
@@ -6033,7 +6053,7 @@ static int __xuiCodeEditEnsureTokens(xui_code_edit_data_t* pData,
 		iRet = __xuiCodeEditReserveTokenScratch(pData, iCount);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	iRet = xuiCodeTokenBufferSetRange(pData->pTokenBuffer,
+	iRet = xuiInternalCodeTokenBufferSetRange(pData->pTokenBuffer,
 		(iCount > 0) ? pData->pTokenScratch : NULL, iCount, iVersion,
 		iLexStart, iLexEnd);
 	return iRet;
@@ -7886,7 +7906,7 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage)
 	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	xrtFree(pData->sLanguage);
 	pData->sLanguage = sNew;
-	xuiCodeTokenBufferClear(pData->pTokenBuffer);
+	xuiInternalCodeTokenBufferClear(pData->pTokenBuffer);
 	xuiInternalCodeBracketReset(&pData->tBracketMatch);
 	__xuiCodeEditSetError(pData, "");
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

@@ -8304,8 +8304,13 @@ XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_d
 XUI_API int xuiCodeTokenBufferCreate(xui_code_token_buffer* ppBuffer);
 /* 释放 token 缓冲。 */
 XUI_API void xuiCodeTokenBufferDestroy(xui_code_token_buffer pBuffer);
+/* An editor owns its token buffer and controls destruction. */
+XUI_API int xuiCodeTokenBufferDestroyChecked(xui_code_token_buffer pBuffer);
 /* 清空缓存 token。 */
 XUI_API void xuiCodeTokenBufferClear(xui_code_token_buffer pBuffer);
+XUI_API int xuiCodeTokenBufferClearChecked(xui_code_token_buffer pBuffer);
+XUI_API int xuiCodeTokenBufferEditorLifetimeWatch(xui_code_token_buffer pBuffer,
+    xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc invalidate, void* pUser);
 /* 以全量 token 覆盖缓存（记录文本版本）。 */
 XUI_API int xuiCodeTokenBufferSet(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion);
 /* 以指定窗口的升序 token 替换缓存；token 必须完全位于该窗口内。 */
@@ -8322,6 +8327,19 @@ XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t 
 /* 输出缓存中与半开区间相交的 token；容量可为 0 以只查询总数，
  * pTokenCount 返回命中总数且可能大于输出容量。 */
 XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion, int iStart, int iEnd, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
+/* Read-only capture on the creating thread. Token storage remains valid until
+ * the final capture reference is released, even after buffer edits or close. */
+typedef struct xui_code_token_snapshot_t* xui_code_token_snapshot;
+XUI_API int xuiCodeTokenBufferCapture(xui_code_token_buffer pBuffer, uint32_t iTextVersion,
+    xui_code_token_snapshot* ppSnapshot);
+XUI_API int xuiCodeTokenBufferCaptureInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion,
+    int iStart, int iEnd, xui_code_token_snapshot* ppSnapshot);
+XUI_API int xuiCodeTokenSnapshotAddRef(xui_code_token_snapshot pSnapshot);
+XUI_API void xuiCodeTokenSnapshotDestroy(xui_code_token_snapshot pSnapshot);
+XUI_API int xuiCodeTokenSnapshotGetRange(const struct xui_code_token_snapshot_t* pSnapshot,
+    uint32_t* pTextVersion, int* pStart, int* pEnd);
+XUI_API int xuiCodeTokenSnapshotGetTokens(const struct xui_code_token_snapshot_t* pSnapshot,
+    const xui_code_token_t** ppTokens, size_t* pCount);
 /* 创建折叠状态（展开/折叠记录）。 */
 XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState);
 /* 释放折叠状态。 */
