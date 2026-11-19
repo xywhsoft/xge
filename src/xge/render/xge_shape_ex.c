@@ -15858,6 +15858,10 @@ typedef struct xge_shape_ex_external_draw_context_t {
 	void* pUser;
 } xge_shape_ex_external_draw_context_t;
 
+/* Implemented by the pass state in this aggregate's render-target unit. */
+static xge_pass __xgePassCurrentOnThread(void);
+static bool __xgePassUnwindAbove(xge_pass boundary, int* status, xerror** first);
+
 static int __xgeShapeExExternalDraw(void* pUser, xge_shape_ex_matrix_t tLocalParent)
 {
 	xge_shape_ex_external_draw_context_t* pContext = (xge_shape_ex_external_draw_context_t*)pUser;
@@ -15865,7 +15869,23 @@ static int __xgeShapeExExternalDraw(void* pUser, xge_shape_ex_matrix_t tLocalPar
 	if ( (pContext == NULL) || (pContext->pDraw == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return pContext->pDraw(pContext->pUser, &tLocalParent);
+	xge_pass boundary = __xgePassCurrentOnThread();
+	int renderActive = g_xge.bRenderActive;
+	xerror* previous = xrtTakeError();
+	xerror* first = NULL;
+	int status = XGE_OK;
+	__xgeCallbackOutcome(pContext->pDraw(pContext->pUser, &tLocalParent), &status, &first);
+	bool abandoned = __xgePassUnwindAbove(boundary, &status, &first);
+	if ( abandoned || g_xge.bRenderActive != renderActive ) {
+		g_xge.bRenderActive = renderActive;
+		if ( status == XGE_OK ) status = XGE_ERROR_INVALID_STATE;
+	}
+	if ( status == XGE_OK ) xrtSetErrorTake(previous);
+	else {
+		xrtErrorFree(previous);
+		xrtSetErrorTake(first);
+	}
+	return status;
 }
 
 int xgeShapeExMaskCompositeScene(
@@ -15894,6 +15914,8 @@ int xgeShapeExMaskCompositeScene(
 	     ((pParentMatrix != NULL) && !__xgeShapeExMatrixFinite(pParentMatrix)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( iRet != XGE_OK && iRet != XGE_ERROR_NOT_INITIALIZED ) return iRet;
 	tParent = pParentMatrix != NULL ? *pParentMatrix : __xgeShapeExMatrixIdentity();
 	tScreenParent = __xgeShapeExScreenParent(tParent, bScreenSpace != 0);
 	tBounds = __xgeShapeExMatrixRectBounds(tScreenParent, tSourceBounds);
@@ -15902,19 +15924,25 @@ int xgeShapeExMaskCompositeScene(
 	tMaskContext.pScene = pMaskScene;
 	tMaskContext.fTolerance = fTolerance;
 	tMaskContext.fParentOpacity = 1.0f;
+	if ( pMaskScene->iTraversals == INT_MAX ) return XGE_ERROR_BUSY;
+	iRet = xgeShapeExSceneAddRef(pMaskScene);
+	if ( iRet != XGE_OK ) return iRet;
+	pMaskScene->iTraversals++;
 	iRet = __xgeShapeExMaskPaintBounds(&tMaskContext, tScreenParent, &tMaskBounds);
-	if ( iRet != XGE_OK ) {
-		return iRet;
+	if ( iRet == XGE_OK ) {
+		tBounds = __xgeShapeExMaskCombineBounds(tBounds, tMaskBounds, iMethod);
+		tSourceContext.pDraw = pSourceDraw;
+		tSourceContext.pUser = pSourceUser;
+		iRet = __xgeShapeExCompositeMask(
+			iMethod, iOutputBlend, tBounds,
+			__xgeShapeExExternalDraw, &tSourceContext,
+			__xgeShapeExMaskPaintDraw, &tMaskContext,
+			tScreenParent, 1
+		);
 	}
-	tBounds = __xgeShapeExMaskCombineBounds(tBounds, tMaskBounds, iMethod);
-	tSourceContext.pDraw = pSourceDraw;
-	tSourceContext.pUser = pSourceUser;
-	return __xgeShapeExCompositeMask(
-		iMethod, iOutputBlend, tBounds,
-		__xgeShapeExExternalDraw, &tSourceContext,
-		__xgeShapeExMaskPaintDraw, &tMaskContext,
-		tScreenParent, 1
-	);
+	pMaskScene->iTraversals--;
+	xgeShapeExSceneDestroy(pMaskScene);
+	return iRet;
 }
 
 static int __xgeShapeExMaskOutputBlend(int bBlendSet, int iBlend, int bSuppressOwnBlend)

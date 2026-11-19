@@ -3511,6 +3511,11 @@ XGE_API int xgeShapeExMaskClear(xge_shape_ex pShape);
 /* 输出当前遮罩（方法/目标类型/句柄）。 */
 XGE_API int xgeShapeExMaskGet(xge_shape_ex pShape, int* pMethod, int* pTargetType, xge_shape_ex* ppTargetShape, xge_shape_ex_scene* ppTargetScene);
 /* 以回调绘制源内容并与遮罩场景合成（高级自定义遮罩入口）。 */
+/* Calls pSourceDraw synchronously inside a temporary pass; the matrix is
+ * valid through that call. The mask retains its scene and excludes structural
+ * mutation until compositing completes. Nested passes must finish in scope.
+ * Unbalanced passes are ended before returning an error; raw C pass storage
+ * must remain valid until the pass has ended. */
 XGE_API int xgeShapeExMaskCompositeScene(xge_shape_ex_scene pMaskScene, int iMethod, int iOutputBlend, xge_rect_t tSourceBounds, xge_shape_ex_draw_proc pSourceDraw, void* pSourceUser, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int bScreenSpace);
 /* 计算路径轴对齐包围盒（含容差细分）。 */
 XGE_API int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds);

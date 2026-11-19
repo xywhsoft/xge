@@ -67,6 +67,36 @@ int xgePassEnd(xge_pass pass)
     if(status!=XGE_OK){xrtErrorFree(previous);xrtSetErrorTake(first);}else xrtSetErrorTake(previous);
     return status;
 }
+#if XGE_ENABLE_2D && XGE_ENABLE_SHAPE_EX
+static xge_pass __xgePassCurrentOnThread(void)
+{
+    __xgePassStateLock(&g_xgePassState);
+    xge_pass current = g_xgePassState.thread == xrtThreadCurrentId() ? g_xgePassState.current : NULL;
+    __xgePassStateUnlock(&g_xgePassState);
+    return current;
+}
+
+/* A callback cannot leave the temporary mask pass underneath an active pass.
+ * Managed passes use owned storage. A raw C pass must still stay allocated
+ * for as long as it is active. */
+static bool __xgePassUnwindAbove(xge_pass boundary, int* status, xerror** first)
+{
+    xge_pass current = __xgePassCurrentOnThread();
+    if (current == boundary) return false;
+    for (xge_pass scan = current; scan; scan = scan->_pPrevious) {
+        if (scan == boundary) {
+            do {
+                __xgeCallbackOutcome(xgePassEnd(current), status, first);
+                xge_pass next = __xgePassCurrentOnThread();
+                if (next == current) break;
+                current = next;
+            } while (current && current != boundary);
+            break;
+        }
+    }
+    return true;
+}
+#endif
 int xgePassCreateOwned(xge_pass* out,xge_render_target target,uint32_t flags,uint32_t color)
 {
     if(!out)return XGE_ERROR_INVALID_ARGUMENT;
