@@ -1053,10 +1053,11 @@ static bool __xuiContextHasAmbient(xui_context context,const xerror* error)
         if(scope->iResult==XUI_OK && scope->_pFirstError==error)return true;
     return false;
 }
-static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,bool closing)
+static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,bool closing,bool managed)
 {
 	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !closing && pContext->bResolvingCodeTokenStyle ) return XUI_ERROR_BUSY;
+	if ( !closing && pContext->bResolvingCodeTokenStyle &&
+	     !(managed && pContext->bTokenStyleManagedScopePending) ) return XUI_ERROR_BUSY;
     if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return XUI_ERROR_BUSY;
 	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pScope->pPrevious != NULL ||
 		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pScope->_pFirstError != NULL ||
@@ -1067,6 +1068,8 @@ static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,boo
     if(!__xuiContextHasAmbient(pContext,xrtGetError())){
         xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
     }
+	if ( managed && pContext->bResolvingCodeTokenStyle )
+		pContext->bTokenStyleManagedScopePending = false;
 	pScope->pContext = pContext;
 	pScope->pSelf = pScope;
 	pScope->pNext = pContext->pCallScopes;
@@ -1078,9 +1081,11 @@ static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,boo
 }
 
 XUI_API int xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope)
-{return __xuiCallScopeBegin(pContext,pScope,false);}
+{return __xuiCallScopeBegin(pContext,pScope,false,false);}
+XUI_API int xuiCallScopeBeginManaged(xui_context context,xui_call_scope_t* scope)
+{return __xuiCallScopeBegin(context,scope,false,true);}
 int xuiInternalCleanupCallScopeBegin(xui_context context,xui_call_scope_t* scope)
-{return __xuiCallScopeBegin(context,scope,true);}
+{return __xuiCallScopeBegin(context,scope,true,false);}
 
 XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope)
 {

@@ -20,7 +20,7 @@ static int shapeSpans(xui_proxy p,xui_draw_context d,const xui_text_shape_t* sha
 typedef struct style_state {
     xui_code_document doc;
     uint32_t version;
-    int mode,calls,offscreen,hidden,start,end;
+    int mode,calls,offscreen,hidden,start,end,matching;
     xui_context context;
     xui_widget editor;
     xui_surface surface;
@@ -34,6 +34,7 @@ static bool holdResolver(const void* raw)
     if(state->guardOwnerOps){
         xui_call_scope_t scope={0};
         assert(xuiCallScopeBegin(state->context,&scope)==XUI_ERROR_BUSY);
+        assert(xuiCallScopeBeginManaged(state->context,&scope)==XUI_ERROR_BUSY);
     }
     ++state->holds;
     ++state->refs;
@@ -46,6 +47,7 @@ static bool dropResolver(const void* raw)
     if(state->guardOwnerOps){
         xui_call_scope_t scope={0};
         assert(xuiCallScopeBegin(state->context,&scope)==XUI_ERROR_BUSY);
+        assert(xuiCallScopeBeginManaged(state->context,&scope)==XUI_ERROR_BUSY);
     }
     ++state->drops;
     --state->refs;
@@ -83,14 +85,20 @@ static int resolve(xui_code_document_t* doc,const xui_code_token_t* token,int* s
     if(s->checkBusy){
         s->checkBusy=false;
         xui_call_scope_t scope={0};
+        xui_call_scope_t admission={0};
         assert(xuiCallScopeBegin(s->context,&scope)==XUI_ERROR_BUSY);
+        assert(xuiCallScopeBeginManaged(s->context,&admission)==XUI_OK);
+        assert(xuiCallScopeBeginManaged(s->context,&scope)==XUI_ERROR_BUSY);
         assert(xuiRender(s->context,s->surface,NULL,0)==XUI_ERROR_BUSY);
         assert(xuiLayout(s->context)==XUI_ERROR_BUSY);
         assert(xuiCodeEditSetText(s->editor,"unchanged")==XUI_ERROR_BUSY);
         assert(xuiCodeEditSetTokenStyleResolver(s->editor,NULL,NULL)==XUI_ERROR_BUSY);
         assert(xuiWidgetDestroyChecked(s->editor)==XUI_ERROR_BUSY);
+        assert(xuiCallScopeEnd(&admission)==XUI_OK);
+        assert(xuiCallScopeBeginManaged(s->context,&scope)==XUI_ERROR_BUSY);
     }
     if(doc!=s->doc || xuiCodeDocumentGetVersion(doc)!=s->version || token->iStartOffset!=s->start || token->iEndOffset!=s->end)return XUI_ERROR_NOT_FOUND;
+    ++s->matching;
     *style=s->mode==2?999999:s->mode==3?XUI_CODE_STYLE_CUSTOM_BASE+1:XUI_CODE_STYLE_CUSTOM_BASE;
     return s->mode==4?XUI_ERROR_NOT_FOUND:XUI_OK;
 }
@@ -155,7 +163,32 @@ int main(void)
     callback=resolve;user=&state;CHECK(xuiCodeEditGetTokenStyleResolver(NULL,&callback,&user)==XUI_ERROR_INVALID_ARGUMENT && !callback && !user);
     CHECK(xuiCodeEditGetTokenStyleResolver(edit,NULL,NULL)==XUI_ERROR_INVALID_ARGUMENT && xuiCodeEditSetTokenStyleResolver(NULL,resolve,&state)==XUI_ERROR_INVALID_ARGUMENT);
     CHECK(!xuiCodeEditHasTokenStyleResolver(edit));
+    /* The same full token must reach the resolver on each wrapped row,
+       even when the backend uses per-span drawing and clips the paint range. */
+    const char wrappedText[]="int abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+        "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz = 7;";
+    const char* identifier=wrappedText+4;
+    CHECK(xuiCodeEditSetText(edit,wrappedText)==XUI_OK);
+    CHECK(xuiCodeEditSetWordWrap(edit,1)==XUI_OK);
+    CHECK(xuiInputViewport(ctx,180,300)==XUI_OK);
+    CHECK(xuiWidgetSetRect(edit,(xui_rect_t){0,0,180,300})==XUI_OK);
+    state.version=xuiCodeDocumentGetVersion(state.doc);
+    state.start=4; state.end=4+(int)strcspn(identifier," ");
+    CHECK(xuiCodeLexerCTokenize(wrappedText,(int)strlen(wrappedText),tokens,128,&count)==XUI_OK);
+    CHECK(xuiCodeTokenBufferSetRange(buffer,tokens,count,state.version,0,(int)strlen(wrappedText))==XUI_OK);
+    CHECK(xuiLayout(ctx)==XUI_OK);
+    xui_rect_t begin, end;
+    CHECK(xuiCodeEditGetOffsetRect(edit,state.start,&begin)==XUI_OK);
+    CHECK(xuiCodeEditGetOffsetRect(edit,state.end-1,&end)==XUI_OK && end.fY>begin.fY);
     state.mode=1;
+    state.matching=0;
+    proxy.tProxy.drawTextSpans=NULL;
+    CHECK(xuiCodeEditSetTokenStyleResolver(edit,resolve,&state)==XUI_OK);
+    paintCount=0;
+    CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0xe10102ffu) && state.matching>1);
+    proxy.tProxy.drawTextSpans=spans;
+    CHECK(xuiCodeEditSetTokenStyleResolver(edit,NULL,NULL)==XUI_OK);
+
     state.context=ctx; state.editor=edit; state.surface=target; state.refs=1;
     const xui_callback_owner_t owner={{&state,&resolverOps},holdResolver,dropResolver};
     CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true));

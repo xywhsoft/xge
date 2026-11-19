@@ -5831,6 +5831,7 @@ static int __xuiCodeEditGetTokenStyle(xui_code_theme pTheme,
 typedef struct xui_code_token_style_frame_t {
 	xui_code_token_style_proc onStyle;
 	void* pUser;
+	bool bRetained;
 } xui_code_token_style_frame_t;
 
 static int __xuiCodeEditTokenForeground(xui_widget pWidget, xui_code_edit_data_t* pData,
@@ -5845,7 +5846,9 @@ static int __xuiCodeEditTokenForeground(xui_widget pWidget, xui_code_edit_data_t
 		tGlobal.iStartOffset += iDocumentStart;
 		tGlobal.iEndOffset += iDocumentStart;
 		context->bResolvingCodeTokenStyle = true;
+		context->bTokenStyleManagedScopePending = pResolver->bRetained;
 		int status = pResolver->onStyle(pData->pDocument, &tGlobal, &iStyleId, pResolver->pUser);
+		context->bTokenStyleManagedScopePending = false;
 		context->bResolvingCodeTokenStyle = false;
 		if ( xrtGetError() != NULL ) return XUI_ERROR_CALLBACK_FAILED;
 		if ( !__xuiCodeEditAlive(context, pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
@@ -6975,11 +6978,12 @@ static int __xuiCodeEditCacheRender(xui_widget widget,xui_draw_context draw,uint
     xui_code_margin_snapshot_t frame={0};
     /* Hold once before taking render data. Owner Hold/Drop can call user code,
        so release only after the render and its other activity have finished. */
-    xui_code_token_style_frame_t resolver={data->onTokenStyle,data->pTokenStyleUser};
+    xui_code_token_style_frame_t resolver={data->onTokenStyle,data->pTokenStyleUser,false};
     xui_callback_snapshot_t snapshot={0};
     if(resolver.onStyle){
         context->bResolvingCodeTokenStyle=true;
         status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onTokenStyle,&resolver.pUser,&snapshot);
+        resolver.bRetained=snapshot.pContext!=NULL;
         context->bResolvingCodeTokenStyle=false;
     }
     if(status==XUI_OK)

@@ -562,6 +562,7 @@ struct xui_context_t {
 	int iWidgetCallbackDepth;
 	int iOperationDepth;
 	bool bResolvingCodeTokenStyle;
+	bool bTokenStyleManagedScopePending;
 	xui_call_scope_t* pCallScopes;
 	int bDestroyPending;
 	int bCloseRequested;

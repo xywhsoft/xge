@@ -6473,6 +6473,10 @@ XUI_API void xuiLifetimeUnwatch(xui_lifetime_link_t* pLink);
  * is a no-op. Balance every successful Begin on all exits; End executes user
  * code and rejects reentry on the same ending token. */
 XUI_API int xuiCallScopeBegin(xui_context pContext, xui_call_scope_t* pScope);
+/* Managed foreign-view glue uses this entry. During a guarded retained callback
+ * it may claim the callback's single lifetime scope; other scoped operations
+ * into that Context are refused until the callback returns. */
+XUI_API int xuiCallScopeBeginManaged(xui_context pContext, xui_call_scope_t* pScope);
 XUI_API int xuiCallScopeEnd(xui_call_scope_t* pScope);
 /* 注册错误回调（全部框架错误的统一出口）。 */
 XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
