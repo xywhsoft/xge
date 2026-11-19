@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_code_language_internal.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -22,9 +23,45 @@ typedef struct xui_code_language_entry_t {
 
 struct xui_code_language_registry_t {
 	xui_code_language_entry_t* pEntries;
+	xui_widget pOwner;
+	const xui_code_language_owner_ops_t* pOwnerOps;
+	uint64_t iOwnerThread;
 	int iCount;
 	int iCapacity;
 };
+
+static int __xuiCodeLanguageRegistryStatus(xui_code_language_registry registry, bool write)
+{
+	if ( registry == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( registry->pOwner == NULL ) return XUI_OK;
+	if ( registry->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return registry->pOwnerOps->check(registry->pOwner, write);
+}
+
+int xuiInternalCodeLanguageRegistryClaimOwner(xui_code_language_registry registry,
+	xui_widget editor, const xui_code_language_owner_ops_t* ops)
+{
+	if ( registry == NULL || editor == NULL || ops == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( registry->pOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	registry->iOwnerThread = xrtThreadCurrentId();
+	registry->pOwnerOps = ops;
+	registry->pOwner = editor;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeLanguageRegistryEditorLifetimeWatch(xui_code_language_registry registry,
+	xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+	int status = __xuiCodeLanguageRegistryStatus(registry, false);
+	if ( status != XUI_OK ) return status;
+	if ( registry->pOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return registry->pOwnerOps->watch(registry->pOwner, link, invalidate, user);
+}
+
+static void __xuiCodeLanguageRegistryChanged(xui_code_language_registry registry, const char* languageId)
+{
+	if ( registry->pOwner != NULL ) registry->pOwnerOps->changed(registry->pOwner, languageId);
+}
 
 static char* __xuiCodeLanguageStrDup(const char* sText)
 {
@@ -47,6 +84,13 @@ static const char* __xuiCodeLanguageNormalizeExtension(const char* sExtension)
 	if ( sExtension == NULL ) return NULL;
 	if ( sExtension[0] == '.' ) return sExtension + 1;
 	return sExtension;
+}
+
+static const char* __xuiCodeLanguageExtension(const xui_code_language_t* language,
+	const xui_code_language_extension_t* extensions, int index)
+{
+	const char* extension = extensions != NULL ? extensions[index].sExtension : language->arrExtensions[index];
+	return __xuiCodeLanguageNormalizeExtension(extension);
 }
 
 static void __xuiCodeLanguageSetError(char* sError, int iCapacity, const char* sMessage)
@@ -123,7 +167,8 @@ static int __xuiCodeLanguageReserve(xui_code_language_registry pRegistry, int iC
 	return XUI_OK;
 }
 
-static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const xui_code_language_t* pLanguage)
+static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const xui_code_language_t* pLanguage,
+	const xui_code_language_extension_t* extensions)
 {
 	int i;
 
@@ -152,7 +197,7 @@ static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const x
 		if ( pEntry->pExtensions == NULL ) goto oom;
 		memset(pEntry->pExtensions, 0, sizeof(char*) * (size_t)pLanguage->iExtensionCount);
 		for ( i = 0; i < pLanguage->iExtensionCount; i++ ) {
-			pEntry->pExtensions[i] = __xuiCodeLanguageStrDup(__xuiCodeLanguageNormalizeExtension(pLanguage->arrExtensions[i]));
+			pEntry->pExtensions[i] = __xuiCodeLanguageStrDup(__xuiCodeLanguageExtension(pLanguage, extensions, i));
 			if ( pEntry->pExtensions[i] == NULL ) goto oom;
 			pEntry->tLanguage.iExtensionCount++;
 		}
@@ -167,11 +212,12 @@ static int __xuiCodeLanguageCopyEntry(xui_code_language_entry_t* pEntry, const x
 		memset(pEntry->pRulePatterns, 0, sizeof(char*) * (size_t)pLanguage->iRegexRuleCount);
 		for ( i = 0; i < pLanguage->iRegexRuleCount; i++ ) {
 			pEntry->pRegexRules[i] = pLanguage->pRegexRules[i];
+			/* Both pointer arrays are initialized, so rollback includes this slot. */
+			pEntry->tLanguage.iRegexRuleCount++;
 			pEntry->pRuleNames[i] = __xuiCodeLanguageStrDup(pLanguage->pRegexRules[i].sName);
 			pEntry->pRulePatterns[i] = __xuiCodeLanguageStrDup(pLanguage->pRegexRules[i].sPattern);
 			if ( (pLanguage->pRegexRules[i].sName != NULL && pEntry->pRuleNames[i] == NULL) ||
 			     pEntry->pRulePatterns[i] == NULL ) goto oom;
-			pEntry->tLanguage.iRegexRuleCount++;
 		}
 	}
 	__xuiCodeLanguagePublish(pEntry);
@@ -283,21 +329,53 @@ XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry)
+static void __xuiCodeLanguageRegistryClear(xui_code_language_registry pRegistry)
 {
-	if ( pRegistry == NULL ) return;
-	xuiCodeLanguageRegistryClear(pRegistry);
+	for ( int i = 0; i < pRegistry->iCount; i++ ) __xuiCodeLanguageFreeEntry(&pRegistry->pEntries[i]);
+	pRegistry->iCount = 0;
+}
+
+static void __xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry)
+{
+	__xuiCodeLanguageRegistryClear(pRegistry);
 	xrtFree(pRegistry->pEntries);
 	xrtFree(pRegistry);
 }
 
+void xuiInternalCodeLanguageRegistryDestroyOwned(xui_code_language_registry registry, xui_widget editor)
+{
+	if ( registry != NULL && (registry->pOwner == NULL || registry->pOwner == editor) )
+		__xuiCodeLanguageRegistryDestroy(registry);
+}
+
+XUI_API int xuiCodeLanguageRegistryDestroyChecked(xui_code_language_registry registry)
+{
+	int status = __xuiCodeLanguageRegistryStatus(registry, true);
+	if ( status != XUI_OK ) return status;
+	if ( registry->pOwner != NULL ) return XUI_ERROR_BUSY;
+	__xuiCodeLanguageRegistryDestroy(registry);
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry registry)
+{
+	if ( registry != NULL ) (void)xuiCodeLanguageRegistryDestroyChecked(registry);
+}
+
+XUI_API int xuiCodeLanguageRegistryClearChecked(xui_code_language_registry registry)
+{
+	int status = __xuiCodeLanguageRegistryStatus(registry, true);
+	if ( status != XUI_OK ) return status;
+	if ( registry->iCount != 0 ) {
+		__xuiCodeLanguageRegistryClear(registry);
+		__xuiCodeLanguageRegistryChanged(registry, NULL);
+	}
+	return XUI_OK;
+}
+
 XUI_API void xuiCodeLanguageRegistryClear(xui_code_language_registry pRegistry)
 {
-	int i;
-
-	if ( pRegistry == NULL ) return;
-	for ( i = 0; i < pRegistry->iCount; i++ ) __xuiCodeLanguageFreeEntry(&pRegistry->pEntries[i]);
-	pRegistry->iCount = 0;
+	if ( pRegistry != NULL ) (void)xuiCodeLanguageRegistryClearChecked(pRegistry);
 }
 
 XUI_API int xuiCodeLanguageRegistryLoadDefaults(xui_code_language_registry pRegistry)
@@ -321,31 +399,37 @@ XUI_API int xuiCodeLanguageRegistryLoadDefaults(xui_code_language_registry pRegi
 	return xuiCodeLanguageRegistryRegister(pRegistry, &tLanguage);
 }
 
-XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry, const xui_code_language_t* pLanguage)
+static int __xuiCodeLanguageRegister(xui_code_language_registry pRegistry, const xui_code_language_t* pLanguage,
+	const xui_code_language_extension_t* extensions)
 {
 	xui_code_language_entry_t tEntry;
 	int i;
 	int iRet;
 
-	if ( (pRegistry == NULL) || (pLanguage == NULL) ||
+	iRet = __xuiCodeLanguageRegistryStatus(pRegistry, true);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (pLanguage == NULL) ||
 	     (pLanguage->iSize < sizeof(*pLanguage)) ||
 	     (pLanguage->sId == NULL) || (pLanguage->sId[0] == '\0') ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pLanguage->iExtensionCount < 0 || (pLanguage->iExtensionCount > 0 && pLanguage->arrExtensions == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pLanguage->iExtensionCount < 0 ||
+	     (pLanguage->iExtensionCount > 0 && pLanguage->arrExtensions == NULL && extensions == NULL) )
+		return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pLanguage->iRegexRuleCount < 0 || (pLanguage->iRegexRuleCount > 0 && pLanguage->pRegexRules == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pLanguage->iExtensionCount; i++ ) {
-		const char* sExtension = __xuiCodeLanguageNormalizeExtension(pLanguage->arrExtensions[i]);
+		const char* sExtension = __xuiCodeLanguageExtension(pLanguage, extensions, i);
 		if ( sExtension == NULL || sExtension[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	for ( i = 0; i < pLanguage->iRegexRuleCount; i++ ) {
 		if ( pLanguage->pRegexRules[i].iSize < sizeof(pLanguage->pRegexRules[i]) ||
 		     pLanguage->pRegexRules[i].sPattern == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiCodeLanguageCopyEntry(&tEntry, pLanguage);
+	iRet = __xuiCodeLanguageCopyEntry(&tEntry, pLanguage, extensions);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pRegistry->iCount; i++ ) {
 		if ( __xuiCodeLanguageEquals(pRegistry->pEntries[i].tLanguage.sId, pLanguage->sId) ) {
 			__xuiCodeLanguageFreeEntry(&pRegistry->pEntries[i]);
 			pRegistry->pEntries[i] = tEntry;
+			__xuiCodeLanguageRegistryChanged(pRegistry, tEntry.sId);
 			return XUI_OK;
 		}
 	}
@@ -359,17 +443,42 @@ XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry
 		return iRet;
 	}
 	pRegistry->pEntries[pRegistry->iCount++] = tEntry;
+	__xuiCodeLanguageRegistryChanged(pRegistry, tEntry.sId);
 	return XUI_OK;
+}
+
+XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry registry, const xui_code_language_t* language)
+{
+	return __xuiCodeLanguageRegister(registry, language, NULL);
+}
+
+XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry registry,
+	const xui_code_regex_language_t* language)
+{
+	if ( language == NULL || language->iSize < sizeof(*language) || language->iRegexRuleCount <= 0 )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_language_t native = {
+		.iSize = sizeof(native), .sId = language->sId, .sName = language->sName,
+		.sLineComment = language->sLineComment, .sBlockCommentStart = language->sBlockCommentStart,
+		.sBlockCommentEnd = language->sBlockCommentEnd, .iLexerType = XUI_CODE_LEXER_REGEX,
+		.iExtensionCount = language->iExtensionCount, .pRegexRules = language->pRegexRules,
+		.iRegexRuleCount = language->iRegexRuleCount
+	};
+	return __xuiCodeLanguageRegister(registry, &native, language->pExtensions);
 }
 
 XUI_API int xuiCodeLanguageRegistryGetCount(xui_code_language_registry pRegistry)
 {
-	return (pRegistry != NULL) ? pRegistry->iCount : 0;
+	if ( pRegistry == NULL ) return 0;
+	int status = __xuiCodeLanguageRegistryStatus(pRegistry, false);
+	return status == XUI_OK ? pRegistry->iCount : status;
 }
 
 XUI_API int xuiCodeLanguageRegistryGet(xui_code_language_registry pRegistry, int iIndex, xui_code_language_t* pLanguage)
 {
-	if ( (pRegistry == NULL) || (pLanguage == NULL) || (iIndex < 0) || (iIndex >= pRegistry->iCount) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeLanguageRegistryStatus(pRegistry, false);
+	if ( status != XUI_OK ) return status;
+	if ( (pLanguage == NULL) || (iIndex < 0) || (iIndex >= pRegistry->iCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pLanguage = pRegistry->pEntries[iIndex].tLanguage;
 	pLanguage->iSize = sizeof(*pLanguage);
 	return XUI_OK;
@@ -379,7 +488,9 @@ XUI_API int xuiCodeLanguageRegistryFind(xui_code_language_registry pRegistry, co
 {
 	int i;
 
-	if ( (pRegistry == NULL) || (sId == NULL) || (pLanguage == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeLanguageRegistryStatus(pRegistry, false);
+	if ( status != XUI_OK ) return status;
+	if ( (sId == NULL) || (pLanguage == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < pRegistry->iCount; i++ ) {
 		if ( __xuiCodeLanguageEquals(pRegistry->pEntries[i].tLanguage.sId, sId) ) {
 			*pLanguage = pRegistry->pEntries[i].tLanguage;
@@ -396,7 +507,9 @@ XUI_API int xuiCodeLanguageRegistryFindByExtension(xui_code_language_registry pR
 	int i;
 	int j;
 
-	if ( (pRegistry == NULL) || (sExtension == NULL) || (pLanguage == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeLanguageRegistryStatus(pRegistry, false);
+	if ( status != XUI_OK ) return status;
+	if ( (sExtension == NULL) || (pLanguage == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	sNorm = __xuiCodeLanguageNormalizeExtension(sExtension);
 	for ( i = 0; i < pRegistry->iCount; i++ ) {
 		for ( j = 0; j < pRegistry->pEntries[i].tLanguage.iExtensionCount; j++ ) {
@@ -408,6 +521,30 @@ XUI_API int xuiCodeLanguageRegistryFindByExtension(xui_code_language_registry pR
 		}
 	}
 	return XUI_ERROR_UNSUPPORTED;
+}
+
+XUI_API int xuiCodeLanguageRegistryGetExtension(xui_code_language_registry registry,
+	int languageIndex, int extensionIndex, const char** extension)
+{
+	if ( extension == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_language_t language;
+	int status = xuiCodeLanguageRegistryGet(registry, languageIndex, &language);
+	if ( status != XUI_OK ) return status;
+	if ( extensionIndex < 0 || extensionIndex >= language.iExtensionCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	*extension = language.arrExtensions[extensionIndex];
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeLanguageRegistryGetRegexRule(xui_code_language_registry registry,
+	int languageIndex, int ruleIndex, xui_code_regex_rule_t* rule)
+{
+	if ( rule == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_language_t language;
+	int status = xuiCodeLanguageRegistryGet(registry, languageIndex, &language);
+	if ( status != XUI_OK ) return status;
+	if ( ruleIndex < 0 || ruleIndex >= language.iRegexRuleCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	*rule = language.pRegexRules[ruleIndex];
+	return XUI_OK;
 }
 
 XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity)

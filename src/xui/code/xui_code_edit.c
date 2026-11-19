@@ -9,6 +9,7 @@
 #include "xui_text_internal.h"
 #include "xui_code_command_internal.h"
 #include "xui_code_fold_state_internal.h"
+#include "xui_code_language_internal.h"
 #include "xui_code_provider_internal.h"
 #include "xui_code_bracket_internal.h"
 
@@ -2505,7 +2506,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
 	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
 	xuiCodeTokenBufferDestroy(pData->pTokenBuffer);
-	xuiCodeLanguageRegistryDestroy(pData->pLanguages);
+	xuiInternalCodeLanguageRegistryDestroyOwned(pData->pLanguages, pWidget);
 	xuiCodeAnnotationStoreDestroy(pData->pAnnotations);
 	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
 	xuiCodeThemeDestroy(pData->pTheme);
@@ -3038,6 +3039,33 @@ static const xui_code_fold_owner_ops_t g_xuiCodeEditFoldOwnerOps = {
 	__xuiCodeEditCheckFoldOwner, xuiWidgetLifetimeWatch, __xuiCodeEditFoldChanged, __xuiCodeEditBuildFolds
 };
 
+static int __xuiCodeEditCheckLanguageOwner(xui_widget editor, bool write)
+{
+	if ( !xuiInternalWidgetIsValid(editor) ) return XUI_ERROR_INVALID_STATE;
+	if ( !write ) return XUI_OK;
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(editor);
+	if ( data == NULL || data->iCacheActivity || editor->pContext->bGuardedCallback ) return XUI_ERROR_BUSY;
+	return XUI_OK;
+}
+
+static void __xuiCodeEditLanguageChanged(xui_widget editor, const char* languageId)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(editor);
+	if ( data == NULL || data->sLanguage == NULL || data->sLanguage[0] == '\0' ) return;
+	if ( languageId != NULL ) {
+		xui_code_language_t active;
+		if ( xuiCodeLanguageRegistryFind(data->pLanguages, data->sLanguage, &active) != XUI_OK ||
+		     active.sId != languageId ) return;
+	}
+	xuiCodeTokenBufferClear(data->pTokenBuffer);
+	xuiInternalCodeBracketReset(&data->tBracketMatch);
+	(void)xuiWidgetInvalidate(editor, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static const xui_code_language_owner_ops_t g_xuiCodeEditLanguageOwnerOps = {
+	__xuiCodeEditCheckLanguageOwner, xuiWidgetLifetimeWatch, __xuiCodeEditLanguageChanged
+};
+
 static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData, const xui_code_edit_desc_t* pDesc)
 {
 	int iRet;
@@ -3059,6 +3087,8 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeCommandMapClaimOwner(pData->pCommandMap, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryCreate(&pData->pLanguages);
 	if ( iRet == XUI_OK ) iRet = xuiCodeLanguageRegistryLoadDefaults(pData->pLanguages);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeLanguageRegistryClaimOwner(pData->pLanguages, pWidget,
+		&g_xuiCodeEditLanguageOwnerOps);
 	if ( iRet == XUI_OK ) {
         iRet=xuiInternalCodeDocumentSetEditObserverChecked(pData->pDocument,pWidget->pContext,__xuiCodeEditDocumentPrepare,
             __xuiCodeEditDocumentEdited,pData);
