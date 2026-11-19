@@ -3541,6 +3541,9 @@ XUI_API int xuiStyleBeginUpdate(xui_context pContext)
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pContext->iStyleUpdateDepth == INT_MAX ) {
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	}
 	pContext->iStyleUpdateDepth++;
 	return XUI_OK;
 }
@@ -3888,10 +3891,69 @@ XUI_API int xuiStyleGetPropertyInfo(xui_context pContext, uint32_t iPropertyId, 
 	return XUI_OK;
 }
 
+static xui_style_token_t* __xuiStyleCreateToken(const char* name)
+{
+    char* copy=__xuiStringDuplicate(name);
+    if(!copy)return NULL;
+    xui_style_token_t* entry=xrtCalloc(1,sizeof(*entry));
+    if(!entry){xrtFree(copy);return NULL;}
+    entry->sName=copy;
+    return entry;
+}
+
+static void __xuiStylePublishToken(xui_context context,xui_style_token_t* entry,bool created,
+    const xui_style_value_t* value)
+{
+    if(created){
+        entry->pNext=context->pStyleTokens;
+        context->pStyleTokens=entry;
+    }else{
+        __xuiStyleValueReset(&entry->tValue);
+    }
+    entry->tValue=*value;
+    if(++context->iTokenGeneration==0)context->iTokenGeneration=1;
+}
+
+void xuiInternalStyleDiscardScalarTokens(xui_style_token_update_t* updates,size_t count)
+{
+    for(size_t i=0;i<count;++i){
+        if(!updates[i].created)continue;
+        xrtFree(updates[i].entry->sName);
+        xrtFree(updates[i].entry);
+        updates[i].entry=NULL;
+        updates[i].created=false;
+    }
+}
+
+/* Only used for the fixed, distinct numeric keys of Theme and ChromeStyle.
+ * Keep all allocations outside publication. Existing tokens are untouched
+ * until the caller has admitted the rest of the update. */
+int xuiInternalStylePrepareScalarTokens(xui_context context,xui_style_token_update_t* updates,size_t count)
+{
+    for(size_t i=0;i<count;++i){
+        xui_style_token_update_t* update=&updates[i];
+        update->entry=__xuiStyleFindToken(context,update->name);
+        if(update->entry)continue;
+        update->entry=__xuiStyleCreateToken(update->name);
+        if(!update->entry){
+            xuiInternalStyleDiscardScalarTokens(updates,i);
+            return XUI_ERROR_OUT_OF_MEMORY;
+        }
+        update->created=true;
+    }
+    return XUI_OK;
+}
+
+void xuiInternalStylePublishScalarTokens(xui_context context,xui_style_token_update_t* updates,size_t count)
+{
+    for(size_t i=0;i<count;++i)
+        __xuiStylePublishToken(context,updates[i].entry,updates[i].created,&updates[i].value);
+    context->bStyleDirty=1;
+}
+
 XUI_API int xuiStyleSetToken(xui_context pContext, const char* sName, const xui_style_value_t* pValue)
 {
 	xui_style_token_t* pToken;
-	char* sCopy;
 	xui_style_value_t tValue;
 	int iRet;
 
@@ -3909,29 +3971,15 @@ XUI_API int xuiStyleSetToken(xui_context pContext, const char* sName, const xui_
 		return iRet;
 	}
 	pToken = __xuiStyleFindToken(pContext, sName);
-	if ( pToken == NULL ) {
-		sCopy = __xuiStringDuplicate(sName);
-		if ( sCopy == NULL ) {
-			__xuiStyleValueReset(&tValue);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		pToken = (xui_style_token_t*)xrtCalloc(1, sizeof(*pToken));
+	bool created = pToken == NULL;
+	if ( created ) {
+		pToken = __xuiStyleCreateToken(sName);
 		if ( pToken == NULL ) {
-			xrtFree(sCopy);
 			__xuiStyleValueReset(&tValue);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		pToken->sName = sCopy;
-		pToken->pNext = pContext->pStyleTokens;
-		pContext->pStyleTokens = pToken;
-	} else {
-		__xuiStyleValueReset(&pToken->tValue);
 	}
-	pToken->tValue = tValue;
-	pContext->iTokenGeneration++;
-	if ( pContext->iTokenGeneration == 0 ) {
-		pContext->iTokenGeneration = 1;
-	}
+	__xuiStylePublishToken(pContext,pToken,created,&tValue);
 	return __xuiStyleCommitChange(pContext);
 }
 

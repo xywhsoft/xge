@@ -2445,67 +2445,58 @@ XUI_API void xuiThemeDefault(xui_theme_t* pTheme)
 	pTheme->fBorderWidth = 1.0f;
 }
 
-static int __xuiCoreSetColorToken(xui_context pContext, const char* sName, uint32_t iColor)
-{
-	xui_style_value_t tValue;
-
-	memset(&tValue, 0, sizeof(tValue));
-	tValue.iSize = sizeof(tValue);
-	tValue.iType = XUI_STYLE_VALUE_COLOR;
-	tValue.iColor = iColor;
-	return xuiStyleSetToken(pContext, sName, &tValue);
-}
-
-static int __xuiCoreSetFloatToken(xui_context pContext, const char* sName, float fValue)
-{
-	xui_style_value_t tValue;
-
-	memset(&tValue, 0, sizeof(tValue));
-	tValue.iSize = sizeof(tValue);
-	tValue.iType = XUI_STYLE_VALUE_FLOAT;
-	tValue.fFloat = fValue;
-	return xuiStyleSetToken(pContext, sName, &tValue);
-}
+#define XUI_COLOR_TOKEN(key,color) \
+    {.name=key,.value={.iSize=sizeof(xui_style_value_t),.iType=XUI_STYLE_VALUE_COLOR,.iColor=color}}
+#define XUI_FLOAT_TOKEN(key,number) \
+    {.name=key,.value={.iSize=sizeof(xui_style_value_t),.iType=XUI_STYLE_VALUE_FLOAT,.fFloat=number}}
 
 XUI_API int xuiSetTheme(xui_context pContext, const xui_theme_t* pTheme)
 {
-	xui_theme_t tTheme;
-	int iRet;
+    if(!__xuiContextValid(pContext) || !pTheme ||
+       (pTheme->iSize && pTheme->iSize<sizeof(*pTheme)))return XUI_ERROR_INVALID_ARGUMENT;
 
-	if ( !__xuiContextValid(pContext) || (pTheme == NULL) ||
-	     ((pTheme->iSize != 0) && (pTheme->iSize < sizeof(*pTheme))) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(pContext,&scope);
+    if(status!=XUI_OK)return status;
+
+    xui_theme_t theme=*pTheme;
+    theme.iSize=sizeof(theme);
+    xui_style_token_update_t tokens[]={
+        XUI_COLOR_TOKEN("theme.text",theme.iTextColor),
+        XUI_COLOR_TOKEN("theme.background",theme.iBackgroundColor),
+        XUI_COLOR_TOKEN("theme.panel",theme.iPanelColor),
+        XUI_COLOR_TOKEN("theme.border",theme.iBorderColor),
+        XUI_COLOR_TOKEN("theme.accent",theme.iAccentColor),
+        XUI_COLOR_TOKEN("theme.selection",theme.iSelectionColor),
+        XUI_COLOR_TOKEN("theme.state.normal",theme.iStateNormalColor),
+        XUI_COLOR_TOKEN("theme.state.hover",theme.iStateHoverColor),
+        XUI_COLOR_TOKEN("theme.state.active",theme.iStateActiveColor),
+        XUI_COLOR_TOKEN("theme.state.focus",theme.iStateFocusColor),
+        XUI_COLOR_TOKEN("theme.state.disabled",theme.iStateDisabledColor),
+        XUI_FLOAT_TOKEN("theme.padding",theme.fPadding),
+        XUI_FLOAT_TOKEN("theme.spacing",theme.fSpacing),
+        XUI_FLOAT_TOKEN("theme.border_width",theme.fBorderWidth)
+    };
+    const size_t count=sizeof(tokens)/sizeof(tokens[0]);
     xui_font_slot_update_t fontUpdate={0};
-    iRet=xuiInternalFontSlotBegin(pContext,&pContext->pDefaultFont,pTheme->pFont,true,&fontUpdate);
-    if(iRet!=XUI_OK)return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
-	tTheme = *pTheme;
-	tTheme.iSize = sizeof(tTheme);
-	pContext->tTheme = tTheme;
-
-	iRet = xuiStyleBeginUpdate(pContext);
-	if ( iRet != XUI_OK ) {
-		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
-	}
-	iRet = __xuiCoreSetColorToken(pContext, "theme.text", tTheme.iTextColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.background", tTheme.iBackgroundColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.panel", tTheme.iPanelColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.border", tTheme.iBorderColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.accent", tTheme.iAccentColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.selection", tTheme.iSelectionColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.normal", tTheme.iStateNormalColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.hover", tTheme.iStateHoverColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.active", tTheme.iStateActiveColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.focus", tTheme.iStateFocusColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.disabled", tTheme.iStateDisabledColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.padding", tTheme.fPadding);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.spacing", tTheme.fSpacing);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.border_width", tTheme.fBorderWidth);
-	if ( iRet != XUI_OK ) {
-		(void)xuiStyleEndUpdate(pContext);
-		return xuiInternalFontSlotEnd(&fontUpdate,true,iRet);
-	}
-	return xuiInternalFontSlotEnd(&fontUpdate,true,xuiStyleEndUpdate(pContext));
+    bool published=false;
+    status=xuiInternalFontSlotPrepare(pContext,&pContext->pDefaultFont,theme.pFont,true,false,&fontUpdate);
+    if(status==XUI_OK)status=xuiInternalStylePrepareScalarTokens(pContext,tokens,count);
+    if(status==XUI_OK){
+        status=xuiStyleBeginUpdate(pContext);
+        if(status==XUI_OK){
+            status=xuiInternalFontSlotPublish(&fontUpdate);
+            if(status==XUI_OK){
+                pContext->tTheme=theme;
+                xuiInternalStylePublishScalarTokens(pContext,tokens,count);
+                published=true;
+            }
+            status=xuiInternalStyleEndOutcome(pContext,status);
+        }
+        if(!published)xuiInternalStyleDiscardScalarTokens(tokens,count);
+    }
+    status=xuiInternalFontSlotEnd(&fontUpdate,published,status);
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
 
 XUI_API int xuiGetTheme(xui_context pContext, xui_theme_t* pTheme)
@@ -2520,38 +2511,44 @@ XUI_API int xuiGetTheme(xui_context pContext, xui_theme_t* pTheme)
 
 XUI_API int xuiSetChromeStyle(xui_context pContext, const xui_chrome_style_t* pChrome)
 {
-	xui_chrome_style_t tChrome;
-	int iRet;
+    if(!__xuiContextValid(pContext) || !pChrome ||
+       (pChrome->iSize && pChrome->iSize<sizeof(*pChrome)))return XUI_ERROR_INVALID_ARGUMENT;
 
-	if ( !__xuiContextValid(pContext) || (pChrome == NULL) ||
-	     ((pChrome->iSize != 0) && (pChrome->iSize < sizeof(*pChrome))) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	tChrome = *pChrome;
-	tChrome.iSize = sizeof(tChrome);
-	pContext->tChromeStyle = tChrome;
-	iRet = xuiStyleBeginUpdate(pContext);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	iRet = __xuiCoreSetColorToken(pContext, "chrome.backdrop", tChrome.iBackdropColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.popup", tChrome.iPopupColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.popup_border", tChrome.iPopupBorderColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.tooltip", tChrome.iTooltipColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.tooltip_text", tChrome.iTooltipTextColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.modal_overlay", tChrome.iModalOverlayColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "chrome.border_width", tChrome.fBorderWidth);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "chrome.shadow_size", tChrome.fShadowSize);
-	if ( iRet != XUI_OK ) {
-		(void)xuiStyleEndUpdate(pContext);
-		return iRet;
-	}
-	iRet = xuiStyleEndUpdate(pContext);
-	if ( iRet == XUI_OK && pContext->pTooltipPopupWidget != NULL ) {
-		(void)xuiWidgetInvalidate(pContext->pTooltipPopupWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
-	return iRet;
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(pContext,&scope);
+    if(status!=XUI_OK)return status;
+
+    xui_chrome_style_t chrome=*pChrome;
+    chrome.iSize=sizeof(chrome);
+    xui_style_token_update_t tokens[]={
+        XUI_COLOR_TOKEN("chrome.backdrop",chrome.iBackdropColor),
+        XUI_COLOR_TOKEN("chrome.popup",chrome.iPopupColor),
+        XUI_COLOR_TOKEN("chrome.popup_border",chrome.iPopupBorderColor),
+        XUI_COLOR_TOKEN("chrome.tooltip",chrome.iTooltipColor),
+        XUI_COLOR_TOKEN("chrome.tooltip_text",chrome.iTooltipTextColor),
+        XUI_COLOR_TOKEN("chrome.modal_overlay",chrome.iModalOverlayColor),
+        XUI_FLOAT_TOKEN("chrome.border_width",chrome.fBorderWidth),
+        XUI_FLOAT_TOKEN("chrome.shadow_size",chrome.fShadowSize)
+    };
+    const size_t count=sizeof(tokens)/sizeof(tokens[0]);
+    status=xuiInternalStylePrepareScalarTokens(pContext,tokens,count);
+    if(status==XUI_OK){
+        status=xuiStyleBeginUpdate(pContext);
+        if(status==XUI_OK){
+            pContext->tChromeStyle=chrome;
+            xuiInternalStylePublishScalarTokens(pContext,tokens,count);
+            status=xuiStyleEndUpdate(pContext);
+            if(status==XUI_OK && pContext->pTooltipPopupWidget)
+                (void)xuiWidgetInvalidate(pContext->pTooltipPopupWidget,XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER);
+        }else{
+            xuiInternalStyleDiscardScalarTokens(tokens,count);
+        }
+    }
+    return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
+
+#undef XUI_COLOR_TOKEN
+#undef XUI_FLOAT_TOKEN
 
 XUI_API int xuiGetChromeStyle(xui_context pContext, xui_chrome_style_t* pChrome)
 {

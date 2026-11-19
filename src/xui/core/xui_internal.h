@@ -264,6 +264,15 @@ typedef struct xui_style_prop_t xui_style_prop_t;
 typedef struct xui_style_rule_t xui_style_rule_t;
 typedef struct xui_style_property_entry_t xui_style_property_entry_t;
 typedef struct xui_style_token_t xui_style_token_t;
+typedef struct xui_style_token_update_t {
+    const char* name;
+    xui_style_value_t value;
+    xui_style_token_t* entry;
+    bool created;
+} xui_style_token_update_t;
+int xuiInternalStylePrepareScalarTokens(xui_context context,xui_style_token_update_t* updates,size_t count);
+void xuiInternalStyleDiscardScalarTokens(xui_style_token_update_t* updates,size_t count);
+void xuiInternalStylePublishScalarTokens(xui_context context,xui_style_token_update_t* updates,size_t count);
 typedef struct xui_resource_t xui_resource_t;
 typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
