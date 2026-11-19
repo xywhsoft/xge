@@ -18,6 +18,8 @@
 
 struct xui_input_decoration_t {
 	struct xui_input_decoration_t* pNext;
+	xui_widget pWidget;
+	xui_lifetime_link_t* pLifetimeLinks;
 	int iSide;
 	int iKind;
 	int iVisibleMode;
@@ -83,6 +85,7 @@ typedef struct xui_input_data_t {
 	int bTextShapeValid;
 	xui_widget pMenu;
 	xui_input_decoration pLeadingDecoration;
+	bool bDecorationUpdating;
 	xui_input_decoration pTrailingDecoration;
 	xui_input_decoration pHoverDecoration;
 	xui_input_decoration pActiveDecoration;
@@ -1520,6 +1523,11 @@ static int __xuiInputImplSetTextInternal(xui_widget pWidget, xui_input_data_t* p
 	return XUI_OK;
 }
 
+static void __xuiInputDecorationClickInvalidated(void* pUser)
+{
+	*(xui_input_decoration*)pUser = NULL;
+}
+
 static int __xuiInputDecorationClick(xui_widget pWidget, xui_input_data_t* pData, xui_input_decoration pDecoration)
 {
 	xui_context pContext;
@@ -1531,10 +1539,15 @@ static int __xuiInputDecorationClick(xui_widget pWidget, xui_input_data_t* pData
 	pContext = xuiWidgetGetContext(pWidget);
 	iRet = XUI_OK;
 	if ( pDecoration->iKind == XUI_INPUT_DECORATION_CLEAR ) {
+		xui_lifetime_link_t tWatch = {0};
+		iRet = xuiInternalLifetimeWatch(&pDecoration->pLifetimeLinks, &tWatch,
+			__xuiInputDecorationClickInvalidated, &pDecoration);
+		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiInputSetTextInternal(pWidget, pData, "", 1, 1);
+		xuiLifetimeUnwatch(&tWatch);
 	}
 	if ( iRet != XUI_OK || !__xuiInputAlive(pContext, pWidget, pData) ||
-	     !__xuiInputDecorationBelongs(pData, pDecoration) ) return iRet;
+	     pDecoration == NULL ) return iRet;
 	if ( pDecoration->onClick != NULL ) {
 		pDecoration->onClick(pWidget, pDecoration, pDecoration->pUser);
 	}
@@ -3312,6 +3325,8 @@ static void __xuiInputDecorationFree(xui_input_decoration pDecoration)
 	if ( pDecoration == NULL ) {
 		return;
 	}
+	pDecoration->pWidget = NULL;
+	xuiInternalLifetimeInvalidateAll(&pDecoration->pLifetimeLinks);
 	if ( pDecoration->sText != NULL ) {
 		xrtFree(pDecoration->sText);
 	}
@@ -3321,6 +3336,9 @@ static void __xuiInputDecorationFree(xui_input_decoration pDecoration)
 static void __xuiInputDecorationFreeList(xui_input_decoration pDecoration)
 {
 	xui_input_decoration pNext;
+	for ( xui_input_decoration pScan = pDecoration; pScan != NULL; pScan = pScan->pNext ) {
+		pScan->pWidget = NULL;
+	}
 
 	while ( pDecoration != NULL ) {
 		pNext = pDecoration->pNext;
@@ -3349,12 +3367,14 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 		}
 		pData->pMenu = NULL;
 	}
-	__xuiInputDecorationFreeList(pData->pLeadingDecoration);
-	__xuiInputDecorationFreeList(pData->pTrailingDecoration);
+	xui_input_decoration pLeading = pData->pLeadingDecoration;
+	xui_input_decoration pTrailing = pData->pTrailingDecoration;
 	pData->pLeadingDecoration = NULL;
 	pData->pTrailingDecoration = NULL;
 	pData->pHoverDecoration = NULL;
 	pData->pActiveDecoration = NULL;
+	__xuiInputDecorationFreeList(pLeading);
+	__xuiInputDecorationFreeList(pTrailing);
 	__xuiInputTextShapeClear(pWidget,pData);
 	if ( pData->sText != NULL ) xrtFree(pData->sText);
 	if ( pData->sPlaceholder != NULL ) xrtFree(pData->sPlaceholder);
@@ -3442,7 +3462,7 @@ static int __xuiInputDestroyPrepare(xui_widget widget,void* raw,bool* complete)
 {
     if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
     *complete=false;xui_input_data_t* data=raw;
-    if(data->bTextUpdating)return XUI_STATUS_DEFERRED;
+    if(data->bTextUpdating || data->bDecorationUpdating)return XUI_STATUS_DEFERRED;
     data->bTextUpdating=1;
     xui_cleanup_receipt_t receipt={0};xuiInternalCleanupStart(&receipt,XUI_OK);
     bool shapeConsumed=false,called=false,chunkComplete=false,waiting=false;
@@ -3464,7 +3484,7 @@ static int __xuiInputDestroyPrepare(xui_widget widget,void* raw,bool* complete)
 static int __xuiInputDestroyReady(xui_widget widget,const void* raw)
 {
     const xui_input_data_t* data=raw;bool managed=widget->pContext->pOwnedProxy!=NULL;
-    if(data->bTextUpdating)return XUI_ERROR_BUSY;
+    if(data->bTextUpdating || data->bDecorationUpdating)return XUI_ERROR_BUSY;
     int status=xuiInternalTextShapeReady(&data->tTextShape,managed);
     return status!=XUI_OK ? status:xuiInternalTextChunkCacheReady(&data->tTextChunks,managed);
 }
@@ -4132,6 +4152,20 @@ static int __xuiInputDecorationCopyDesc(xui_input_decoration pDecoration, const 
 	return XUI_OK;
 }
 
+static int __xuiInputDecorationEditBegin(xui_widget pWidget, xui_input_data_t* pData, xui_call_scope_t* pScope)
+{
+	if ( pData->bDecorationUpdating || pData->bTextUpdating == 2 ) return XUI_ERROR_BUSY;
+	int iRet = xuiCallScopeBegin(pWidget->pContext, pScope);
+	if ( iRet == XUI_OK ) pData->bDecorationUpdating = true;
+	return iRet;
+}
+
+static int __xuiInputDecorationEditEnd(xui_input_data_t* pData, xui_call_scope_t* pScope, int iRet)
+{
+	pData->bDecorationUpdating = false;
+	return xuiInternalCallScopeEndRestored(pScope, iRet, xrtTakeError());
+}
+
 XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decoration* ppDecoration, const xui_input_decoration_desc_t* pDesc)
 {
 	xui_input_data_t* pData;
@@ -4144,17 +4178,21 @@ XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decor
 	if ( (pData == NULL) || !__xuiInputDecorationSideValid(iSide) || !__xuiInputDecorationDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xui_call_scope_t tScope = {0};
+	iRet = __xuiInputDecorationEditBegin(pWidget, pData, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
 	pDecoration = (xui_input_decoration)xrtMalloc(sizeof(*pDecoration));
 	if ( pDecoration == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+		return __xuiInputDecorationEditEnd(pData, &tScope, XUI_ERROR_OUT_OF_MEMORY);
 	}
 	memset(pDecoration, 0, sizeof(*pDecoration));
 	pDecoration->iSide = iSide;
 	iRet = __xuiInputDecorationCopyDesc(pDecoration, pDesc);
 	if ( iRet != XUI_OK ) {
 		__xuiInputDecorationFree(pDecoration);
-		return iRet;
+		return __xuiInputDecorationEditEnd(pData, &tScope, iRet);
 	}
+	pDecoration->pWidget = pWidget;
 	ppList = __xuiInputDecorationListRef(pData, iSide);
 	while ( *ppList != NULL ) {
 		ppList = &(*ppList)->pNext;
@@ -4163,8 +4201,8 @@ XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decor
 	if ( ppDecoration != NULL ) {
 		*ppDecoration = pDecoration;
 	}
-	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	iRet = __xuiInputInvalidateText(pWidget);
+	return __xuiInputDecorationEditEnd(pData, &tScope, iRet);
 }
 
 XUI_API int xuiInputDecorationSet(xui_widget pWidget, xui_input_decoration pDecoration, const xui_input_decoration_desc_t* pDesc)
@@ -4176,12 +4214,12 @@ XUI_API int xuiInputDecorationSet(xui_widget pWidget, xui_input_decoration pDeco
 	if ( (pData == NULL) || !__xuiInputDecorationBelongs(pData, pDecoration) || !__xuiInputDecorationDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xui_call_scope_t tScope = {0};
+	iRet = __xuiInputDecorationEditBegin(pWidget, pData, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiInputDecorationCopyDesc(pDecoration, pDesc);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	if ( iRet == XUI_OK ) iRet = __xuiInputInvalidateText(pWidget);
+	return __xuiInputDecorationEditEnd(pData, &tScope, iRet);
 }
 
 XUI_API int xuiInputDecorationRemove(xui_widget pWidget, xui_input_decoration pDecoration)
@@ -4195,12 +4233,16 @@ XUI_API int xuiInputDecorationRemove(xui_widget pWidget, xui_input_decoration pD
 	}
 	ppList = __xuiInputDecorationFindRef(pData, pDecoration);
 	if ( ppList == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t tScope = {0};
+	int iRet = __xuiInputDecorationEditBegin(pWidget, pData, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_context pContext = pWidget->pContext;
 	*ppList = pDecoration->pNext;
 	if ( pData->pHoverDecoration == pDecoration ) pData->pHoverDecoration = NULL;
 	if ( pData->pActiveDecoration == pDecoration ) pData->pActiveDecoration = NULL;
 	__xuiInputDecorationFree(pDecoration);
-	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	if ( __xuiInputAlive(pContext, pWidget, pData) ) iRet = __xuiInputInvalidateText(pWidget);
+	return __xuiInputDecorationEditEnd(pData, &tScope, iRet);
 }
 
 XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide)
@@ -4216,12 +4258,17 @@ XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide)
 	if ( ppList == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xui_call_scope_t tScope = {0};
+	int iRet = __xuiInputDecorationEditBegin(pWidget, pData, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_context pContext = pWidget->pContext;
 	if ( __xuiInputDecorationBelongsToList(*ppList, pData->pHoverDecoration) ) pData->pHoverDecoration = NULL;
 	if ( __xuiInputDecorationBelongsToList(*ppList, pData->pActiveDecoration) ) pData->pActiveDecoration = NULL;
-	__xuiInputDecorationFreeList(*ppList);
+	xui_input_decoration pRemoved = *ppList;
 	*ppList = NULL;
-	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
-	return __xuiInputInvalidateText(pWidget);
+	__xuiInputDecorationFreeList(pRemoved);
+	if ( __xuiInputAlive(pContext, pWidget, pData) ) iRet = __xuiInputInvalidateText(pWidget);
+	return __xuiInputDecorationEditEnd(pData, &tScope, iRet);
 }
 
 XUI_API int xuiInputDecorationGetCount(xui_widget pWidget, int iSide)
@@ -4310,6 +4357,26 @@ XUI_API xui_rect_t xuiInputDecorationGetRect(xui_widget pWidget, xui_input_decor
 	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 	__xuiInputDecorationLayout(pWidget, pData, NULL, NULL);
 	return pDecoration->tRect;
+}
+
+XUI_API int xuiInputDecorationLifetimeWatch(xui_input_decoration pDecoration,
+	xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser)
+{
+	if ( pDecoration == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_widget pWidget = pDecoration->pWidget;
+	if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) )
+		return XUI_ERROR_INVALID_STATE;
+	return xuiInternalLifetimeWatch(&pDecoration->pLifetimeLinks, pLink, onInvalidate, pUser);
+}
+
+XUI_API int xuiInputDecorationGetBounds(xui_input_decoration pDecoration, xui_rect_t* pRect)
+{
+	if ( pRect == NULL || pDecoration == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_widget pWidget = pDecoration->pWidget;
+	if ( !xuiInternalWidgetIsValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) )
+		return XUI_ERROR_INVALID_STATE;
+	*pRect = pDecoration->tRect;
+	return XUI_OK;
 }
 
 XUI_API int xuiInputSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)

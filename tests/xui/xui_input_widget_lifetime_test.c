@@ -1,8 +1,27 @@
+#ifdef XGE_XRT_HOST
+#define XRT_MODULE_ALL
+#ifdef _WIN32
+#define XRT_USE_SHARED
+#endif
+#endif
 #include "xui.h"
 #include "xui_test_proxy.h"
 
 #include <stdio.h>
 #include <string.h>
+
+#ifdef XGE_XRT_HOST
+#include <xge_host_xrt_contract.h>
+
+static xge_host_xrt_proc resolve_xrt(void* user, const char* name)
+{
+	(void)user;
+#define XGE_HOST_XRT_SLOT(symbol) if (!strcmp(name, #symbol)) return (xge_host_xrt_proc)&symbol;
+#include <xge_host_xrt_slots.inc>
+#undef XGE_HOST_XRT_SLOT
+	return NULL;
+}
+#endif
 
 typedef struct input_lifetime_test_t {
 	xui_context pContext;
@@ -103,6 +122,78 @@ static void check_widget_destroyed(input_lifetime_test_t* pTest)
 		"destroyed Input is detached from its parent");
 	CHECK(pTest, xuiUpdate(pTest->pContext, 0.0f) == XUI_OK,
 		"context remains usable after Input destruction");
+}
+
+static void count_invalidation(void* pUser)
+{
+	++*(int*)pUser;
+}
+
+typedef struct decoration_observation_t {
+	input_lifetime_test_t* pTest;
+	xui_input_decoration pPeer;
+	xui_lifetime_link_t* pCanceled;
+} decoration_observation_t;
+
+static void check_clear_invalidation(void* pUser)
+{
+	decoration_observation_t* pObservation = pUser;
+	input_lifetime_test_t* pTest = pObservation->pTest;
+	xui_lifetime_link_t tUnexpected = {0};
+	pTest->iCallbackCount++;
+	CHECK(pTest, xuiInputDecorationGetCount(pTest->pInput, XUI_INPUT_DECORATION_SIDE_TRAILING) == 0,
+		"clear detaches the list before notifying");
+	CHECK(pTest, xuiInputDecorationLifetimeWatch(pObservation->pPeer, &tUnexpected,
+		count_invalidation, &pTest->iDecorationClickCount) == XUI_ERROR_INVALID_STATE,
+		"cannot watch a detached peer");
+	xuiLifetimeUnwatch(&tUnexpected);
+	xuiLifetimeUnwatch(pObservation->pCanceled);
+	CHECK(pTest, xuiInputDecorationClear(pTest->pInput, XUI_INPUT_DECORATION_SIDE_TRAILING) == XUI_ERROR_BUSY,
+		"reentrant mutation is rejected");
+}
+
+static void check_decoration_observers(input_lifetime_test_t* pTest)
+{
+	xui_input_decoration_desc_t tDesc = {0};
+	xui_input_decoration pFirst = NULL, pSecond = NULL, pOtherSide = NULL;
+	xui_lifetime_link_t tFirst = {0}, tCanceled = {0}, tSecond = {0}, tOtherSide = {0};
+	xui_rect_t tRect;
+	const int iSide = XUI_INPUT_DECORATION_SIDE_TRAILING;
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iKind = XUI_INPUT_DECORATION_TEXT;
+	tDesc.sText = "observed";
+	tDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 22.0f;
+	CHECK(pTest, xuiInputDecorationAdd(pTest->pInput, iSide, &pFirst, &tDesc) == XUI_OK, "add first decoration");
+	CHECK(pTest, xuiInputDecorationAdd(pTest->pInput, iSide, &pSecond, &tDesc) == XUI_OK, "add second decoration");
+	CHECK(pTest, xuiInputDecorationAdd(pTest->pInput, XUI_INPUT_DECORATION_SIDE_LEADING,
+		&pOtherSide, &tDesc) == XUI_OK, "add leading decoration");
+	int iInvalidated = 0;
+	decoration_observation_t tObservation = {pTest, pSecond, &tCanceled};
+	CHECK(pTest, xuiInputDecorationLifetimeWatch(pSecond, &tCanceled, count_invalidation,
+		&pTest->iDecorationClickCount) == XUI_OK, "watch second decoration");
+	CHECK(pTest, xuiInputDecorationLifetimeWatch(pSecond, &tSecond, count_invalidation,
+		&iInvalidated) == XUI_OK, "watch second decoration twice");
+	CHECK(pTest, xuiInputDecorationLifetimeWatch(pOtherSide, &tOtherSide, count_invalidation,
+		&iInvalidated) == XUI_OK, "watch leading decoration");
+	CHECK(pTest, xuiInputDecorationLifetimeWatch(pFirst, &tFirst, check_clear_invalidation,
+		&tObservation) == XUI_OK, "watch first decoration");
+	CHECK(pTest, xuiInputDecorationGetBounds(pFirst, &tRect) == XUI_OK && tRect.fW == 22.0f,
+		"read live bounds");
+	tDesc.fWidth = 30.0f;
+	CHECK(pTest, xuiInputDecorationSet(pTest->pInput, pFirst, &tDesc) == XUI_OK &&
+		xuiInputDecorationGetBounds(pFirst, &tRect) == XUI_OK && tRect.fW == 30.0f,
+		"editing preserves identity and updates bounds");
+	CHECK(pTest, xuiInputDecorationClear(pTest->pInput, iSide) == XUI_OK &&
+		pTest->iCallbackCount == 1 && iInvalidated == 1 && pTest->iDecorationClickCount == 0,
+		"clear invalidates only the selected list and allows peer unwatch");
+	CHECK(pTest, xuiInputDecorationAdd(pTest->pInput, iSide, &pFirst, &tDesc) == XUI_OK &&
+		xuiInputDecorationLifetimeWatch(pFirst, &tFirst, count_invalidation, &iInvalidated) == XUI_OK &&
+		xuiInputDecorationRemove(pTest->pInput, pFirst) == XUI_OK && iInvalidated == 2,
+		"remove invalidates a single decoration");
+	xuiWidgetDestroy(pTest->pInput);
+	CHECK(pTest, iInvalidated == 3, "destroy invalidates the remaining decoration");
+	check_widget_destroyed(pTest);
 }
 
 static int run_case(const char* sName)
@@ -219,6 +310,8 @@ static int run_case(const char* sName)
 			"undo with destructive callback");
 		CHECK(&tTest, tTest.iCallbackCount == 1, "undo callback runs once");
 		check_widget_destroyed(&tTest);
+	} else if ( strcmp(sName, "decoration_observers") == 0 ) {
+		check_decoration_observers(&tTest);
 	} else if ( strcmp(sName, "clear_decoration_destroy_widget") == 0 ) {
 		memset(&tDecorationDesc, 0, sizeof(tDecorationDesc));
 		tDecorationDesc.iSize = sizeof(tDecorationDesc);
@@ -261,13 +354,20 @@ static int run_case(const char* sName)
 
 int main(void)
 {
+#ifdef XGE_XRT_HOST
+	const xge_host_xrt_contract_t contract = XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
+	if (xgeHostXrtBind(&contract, resolve_xrt, NULL, NULL) != XGE_HOST_XRT_OK) {
+		fputs("Could not bind the host XRT contract\n", stderr);
+		return 1;
+	}
+#endif
 	static const char* arrCases[] = {
 		"change_destroy_widget", "change_destroy_context",
 		"edit_text_destroy_widget", "selection_destroy_widget",
 		"validation_destroy_widget", "ime_destroy_widget",
 		"focus_selection_destroy_widget", "pointer_selection_destroy_widget",
 		"undo_destroy_widget",
-		"clear_decoration_destroy_widget"
+		"clear_decoration_destroy_widget", "decoration_observers"
 	};
 	int i;
 	int iFailed = 0;

@@ -9054,6 +9054,11 @@ XUI_API xui_input_decoration xuiInputDecorationGetAt(xui_widget pWidget, int iSi
 XUI_API int xuiInputDecorationGetDesc(xui_widget pWidget, xui_input_decoration pDecoration, xui_input_decoration_desc_t* pDesc);
 /* 读取装饰矩形。 */
 XUI_API xui_rect_t xuiInputDecorationGetRect(xui_widget pWidget, xui_input_decoration pDecoration);
+/* Invalidated before removal or Widget destruction, on the UI thread. */
+XUI_API int xuiInputDecorationLifetimeWatch(xui_input_decoration pDecoration,
+	xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Read the widget-local bounds from the most recent Input layout. */
+XUI_API int xuiInputDecorationGetBounds(xui_input_decoration pDecoration, xui_rect_t* pRect);
 /* 按命令 id 设置右键菜单标题。 */
 XUI_API int xuiInputSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
 /* 按命令 id 读取菜单标题。 */
