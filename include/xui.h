@@ -2780,6 +2780,11 @@ struct xui_code_diagnostic_hit_t {
 	xui_code_diagnostic_t tDiagnostic;
 };
 
+static inline const xui_code_diagnostic_t* xuiCodeDiagnosticHitDetails(const xui_code_diagnostic_hit_t* hit)
+{
+	return hit != NULL ? &hit->tDiagnostic : NULL;
+}
+
 #define XUI_CODE_VIRTUAL_TEXT_INLINE_COMPLETION 1
 
 struct xui_code_virtual_text_t {
@@ -8515,7 +8520,10 @@ XUI_API int xuiCodeEditGetDiagnostic(xui_widget widget, int index, xui_code_diag
  * Diagnostic strings are borrowed until the next diagnostic mutation. */
 XUI_API int xuiCodeEditFindDiagnostic(xui_widget widget, float x, float y, xui_code_diagnostic_hit_t* hit);
 /* 注册诊断悬停提示回调。 */
+/* The hit and its text remain valid through the invocation; NULL means leave.
+ * Replacement publishes the new handler before notifying the old handler. */
 XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser);
+XUI_API int xuiCodeEditSetDiagnosticHoverOwned(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取 token 缓冲（词法缓存，编辑器持有）。 */
 XUI_API xui_code_token_buffer xuiCodeEditGetTokenBuffer(xui_widget pWidget);
 /* 取语言服务提供者集合（编辑器持有）。 */

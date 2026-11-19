@@ -8,4 +8,11 @@
 int xuiInternalCodeAnnotationApplyDiagnostics(xui_code_annotation_store store,
     const xui_code_diagnostic_t* diagnostics, int count, xui_widget editor);
 
+/* A hover hit copies numeric fields. The immutable string storage can outlive
+ * a reentrant annotation update while the selected callback reads the hit. */
+typedef struct xui_code_diagnostic_text_t xui_code_diagnostic_text_t;
+int xuiInternalCodeAnnotationPinDiagnosticText(xui_code_annotation_store store,
+    xui_code_diagnostic_text_t** text);
+void xuiInternalCodeAnnotationUnpinDiagnosticText(xui_code_diagnostic_text_t* text);
+
 #endif

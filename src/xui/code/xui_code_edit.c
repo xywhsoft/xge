@@ -163,6 +163,7 @@ typedef struct xui_code_edit_data_t {
 	xui_code_diagnostic_hover_proc onDiagnosticHover;
 	void* pDiagnosticHoverUser;
 	int iHoveredDiagnostic;
+	uint32_t iHoveredDiagnosticVersion;
 	xui_rect_t tHoveredDiagnosticRect;
 	int bImeComposing;
 	int iImeAnchorStart;
@@ -4559,25 +4560,45 @@ static int __xuiCodeEditDiagnosticRectSame(xui_rect_t tA, xui_rect_t tB)
 	return tA.fX == tB.fX && tA.fY == tB.fY && tA.fW == tB.fW && tA.fH == tB.fH;
 }
 
-static void __xuiCodeEditUpdateDiagnosticHover(xui_widget pWidget, xui_code_edit_data_t* pData, float fX, float fY, int bLeave)
+static int __xuiCodeEditUpdateDiagnosticHover(xui_context pContext, xui_widget pWidget,
+	xui_code_edit_data_t* pData, const xui_event_t* pEvent)
 {
+	if ( pData->onDiagnosticHover == NULL ) return XUI_OK;
 	xui_code_diagnostic_hit_t tHit;
-	int iRet;
+	int iRet = pEvent->iType == XUI_EVENT_POINTER_LEAVE ? XUI_ERROR_NOT_FOUND :
+		__xuiCodeEditHitTestDiagnosticInternal(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
+	if ( iRet != XUI_OK && iRet != XUI_ERROR_NOT_FOUND ) return iRet;
+	if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 
-	if ( pData == NULL ) return;
-	memset(&tHit, 0, sizeof(tHit));
-	iRet = bLeave ? XUI_ERROR_UNSUPPORTED : __xuiCodeEditHitTestDiagnosticInternal(pWidget, pData, fX, fY, &tHit);
-	if ( iRet == XUI_OK ) {
-		if ( pData->iHoveredDiagnostic == tHit.iIndex && __xuiCodeEditDiagnosticRectSame(pData->tHoveredDiagnosticRect, tHit.tRect) ) return;
-		pData->iHoveredDiagnostic = tHit.iIndex;
-		pData->tHoveredDiagnosticRect = tHit.tRect;
-		if ( pData->onDiagnosticHover != NULL ) pData->onDiagnosticHover(pWidget, &tHit, pData->pDiagnosticHoverUser);
-		return;
+	/* Layout can call into the host, so select the live handler after layout. */
+	xui_code_diagnostic_hover_proc onHover = pData->onDiagnosticHover;
+	if ( onHover == NULL ) return XUI_OK;
+	void* user = pData->pDiagnosticHoverUser;
+	const xui_code_diagnostic_hit_t* hit = iRet == XUI_OK ? &tHit : NULL;
+	xui_code_diagnostic_text_t* text = NULL;
+	if ( hit != NULL ) {
+		uint32_t version = xuiCodeAnnotationGetDiagnosticVersion(pData->pAnnotations);
+		if ( pData->iHoveredDiagnostic == hit->iIndex && pData->iHoveredDiagnosticVersion == version &&
+		     __xuiCodeEditDiagnosticRectSame(pData->tHoveredDiagnosticRect, hit->tRect) ) return XUI_OK;
+		iRet = xuiInternalCodeAnnotationPinDiagnosticText(pData->pAnnotations, &text);
+		if ( iRet != XUI_OK ) return iRet;
+		pData->iHoveredDiagnostic = hit->iIndex;
+		pData->iHoveredDiagnosticVersion = version;
+		pData->tHoveredDiagnosticRect = hit->tRect;
+	} else {
+		if ( pData->iHoveredDiagnostic < 0 ) return XUI_OK;
+		pData->iHoveredDiagnostic = -1;
 	}
-	if ( pData->iHoveredDiagnostic < 0 ) return;
-	pData->iHoveredDiagnostic = -1;
-	memset(&pData->tHoveredDiagnosticRect, 0, sizeof(pData->tHoveredDiagnosticRect));
-	if ( pData->onDiagnosticHover != NULL ) pData->onDiagnosticHover(pWidget, NULL, pData->pDiagnosticHoverUser);
+
+	xui_callback_snapshot_t snapshot = {0};
+	iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onDiagnosticHover, &user, &snapshot);
+	if ( iRet == XUI_OK ) {
+		onHover(pWidget, hit, user);
+		if ( xrtGetError() != NULL ) iRet = XUI_ERROR_CALLBACK_FAILED;
+		iRet = xuiInternalCallbackSnapshotEnd(&snapshot, iRet);
+	}
+	xuiInternalCodeAnnotationUnpinDiagnosticText(text);
+	return iRet;
 }
 
 static int __xuiCodeEditAutoScrollPointer(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
@@ -5001,7 +5022,9 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		__xuiCodeEditUpdateDiagnosticHover(pWidget, pData, pEvent->fX, pEvent->fY, 0);
+		iRet = __xuiCodeEditUpdateDiagnosticHover(pContext, pWidget, pData, pEvent);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 		if ( !pData->bDragging ) return XUI_OK;
 		iRet = __xuiCodeEditPointerSelect(pWidget, pData, pEvent, 1);
 		if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_EVENT_DISPATCH_STOP;
@@ -5046,8 +5069,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		pData->bMarginSelecting = 0;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
-		__xuiCodeEditUpdateDiagnosticHover(pWidget, pData, pEvent->fX, pEvent->fY, 1);
-		return XUI_OK;
+		return __xuiCodeEditUpdateDiagnosticHover(pContext, pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
@@ -7290,18 +7312,32 @@ XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget widget, float x, float y, xu
 	return status;
 }
 
-XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser)
+XUI_API int xuiCodeEditSetDiagnosticHoverOwned(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser, const xui_callback_owner_t* pOwner)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->iHoveredDiagnostic >= 0 && pData->onDiagnosticHover != NULL ) {
-		pData->onDiagnosticHover(pWidget, NULL, pData->pDiagnosticHoverUser);
-	}
+
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(pWidget, &pData->onDiagnosticHover,
+		onHover != NULL, pUser, pOwner, &update);
+	if ( status != XUI_OK ) return status;
+	xui_code_diagnostic_hover_proc previous = pData->iHoveredDiagnostic >= 0 ?
+		pData->onDiagnosticHover : NULL;
+	void* previousUser = pData->pDiagnosticHoverUser;
 	pData->onDiagnosticHover = onHover;
 	pData->pDiagnosticHoverUser = pUser;
 	pData->iHoveredDiagnostic = -1;
-	memset(&pData->tHoveredDiagnosticRect, 0, sizeof(pData->tHoveredDiagnosticRect));
-	return XUI_OK;
+	xuiInternalCallbackUpdatePublish(&update);
+
+	/* The update owns the previous closure and the widget call scope. A
+	 * nested registration can supersede this one during the leave callback. */
+	if ( previous != NULL ) previous(pWidget, NULL, previousUser);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
+XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser)
+{
+	return xuiCodeEditSetDiagnosticHoverOwned(pWidget, onHover, pUser, NULL);
 }
 
 XUI_API xui_code_token_buffer xuiCodeEditGetTokenBuffer(xui_widget pWidget)

@@ -71,6 +71,124 @@ static void checkDamageRollback(xui_context context, uint32_t version)
     assert(xuiInputViewport(context, 112, 140) == XUI_OK);
 }
 
+typedef struct hover_owner {
+    size_t refs;
+    int enters;
+    int leaves;
+    uint32_t version;
+    bool replaceDiagnostics;
+    bool registerOnLeave;
+    bool closeOnEnter;
+    struct hover_owner* replacement;
+} hover_owner;
+
+static bool holdHover(const void* data)
+{
+    ++((hover_owner*)data)->refs;
+    return true;
+}
+
+static bool dropHover(const void* data)
+{
+    hover_owner* owner=(hover_owner*)data;
+    assert(owner->refs>1);
+    --owner->refs;
+    return true;
+}
+
+static bool countHover(const void* data, size_t* count)
+{
+    *count=((const hover_owner*)data)->refs;
+    return true;
+}
+
+static bool traceHover(const void* data, xrtownershipvisitor visitor, void* user)
+{
+    (void)data;
+    (void)visitor;
+    (void)user;
+    return true;
+}
+
+static const xrtownershipops hoverOps = {countHover, traceHover};
+static void diagnosticHover(xui_widget widget, const xui_code_diagnostic_hit_t* hit, void* user);
+
+static int setHover(xui_widget widget, hover_owner* value)
+{
+    xui_callback_owner_t owner = {{value, &hoverOps}, holdHover, dropHover};
+    return xuiCodeEditSetDiagnosticHoverOwned(widget, diagnosticHover, value, &owner);
+}
+
+static void diagnosticHover(xui_widget widget, const xui_code_diagnostic_hit_t* hit, void* user)
+{
+    hover_owner* owner=user;
+    if (hit == NULL) {
+        ++owner->leaves;
+        if (owner->registerOnLeave) {
+            owner->registerOnLeave=false;
+            assert(setHover(widget, owner->replacement)==XUI_OK);
+        }
+        return;
+    }
+
+    ++owner->enters;
+    assert(owner->refs==3 && hit->iIndex>=0);
+    const xui_code_diagnostic_t* detail=xuiCodeDiagnosticHitDetails(hit);
+    assert(detail->sCode && *detail->sCode=='\0' && detail->sSource==NULL);
+    if (owner->replaceDiagnostics) {
+        owner->replaceDiagnostics=false;
+        xui_code_diagnostic_t candidate=*detail;
+        candidate.sMessage="from handler";
+        assert(xuiCodeEditApplyDiagnostics(widget, owner->version, &candidate, 1)==XUI_OK);
+        assert(!strcmp(detail->sMessage, "old"));
+    }
+    if (owner->closeOnEnter) {
+        assert(xuiWidgetDestroyChecked(widget)==XUI_OK);
+        assert(!strcmp(detail->sMessage, "from handler"));
+    }
+}
+
+static void movePointer(xui_context context, int x, int y)
+{
+    assert(xuiInputPointerMove(context,x,y,0)==XUI_OK);
+    assert(xuiDispatchPendingEvents(context)==XUI_OK);
+}
+
+static void checkHover(xui_context context, uint32_t version, int x, int y)
+{
+    hover_owner active={.refs=1,.version=version,.replaceDiagnostics=true};
+    hover_owner ignored={.refs=1};
+    hover_owner replacement={.refs=1};
+    active.replacement=&replacement;
+
+    assert(xrtMemDebugFailAfter(0));
+    assert(setHover(activeEditor,&ignored)==XUI_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();
+    assert(ignored.refs==1);
+    assert(setHover(activeEditor,&active)==XUI_OK && active.refs==2);
+
+    movePointer(context,x,y);
+    assert(active.enters==1 && active.leaves==0 && active.refs==2);
+    movePointer(context,x+1,y);
+    assert(active.enters==2 && active.leaves==0);
+
+    /* Replacing an active handler sends the old one a leave. Its nested
+       update must survive the outer return, with both retired holds dropped. */
+    active.registerOnLeave=true;
+    assert(setHover(activeEditor,&ignored)==XUI_OK);
+    assert(active.leaves==1 && active.refs==1 && ignored.refs==1 && replacement.refs==2);
+
+    movePointer(context,x,y);
+    movePointer(context,x+1,y);
+    assert(replacement.enters==1 && ignored.enters==0);
+    movePointer(context,x+80,y);
+    assert(replacement.leaves==1);
+
+    replacement.closeOnEnter=true;
+    movePointer(context,x,y);
+    assert(replacement.enters==2 && replacement.refs==1);
+}
+
 int main(void)
 {
 #ifdef XGE_XRT_HOST
@@ -145,6 +263,17 @@ int main(void)
     destroyOnMeasure = true;
     int status = xuiCodeEditFindDiagnostic(activeEditor, x, y, &hit);
     assert(destroyed && status != XUI_OK && hit.iIndex == -1);
+    assert(xuiCodeEditCreate(context, &activeEditor, &desc) == XUI_OK);
+    assert(xuiWidgetAddChild(root, activeEditor) == XUI_OK);
+    assert(xuiWidgetSetRect(activeEditor, (xui_rect_t){0,0,112,140}) == XUI_OK);
+    assert(xuiCodeEditSetDefaultMargins(activeEditor, 0, 0, 0, 0) == XUI_OK);
+    assert(xuiCodeEditSetWordWrap(activeEditor, 1) == XUI_OK);
+    assert(xuiCodeEditGetDocumentVersion(activeEditor, &version) == XUI_OK);
+    diagnostics[39].sMessage = "old";
+    assert(xuiCodeEditApplyDiagnostics(activeEditor, version, diagnostics, 40) == XUI_OK);
+    assert(xuiLayout(context) == XUI_OK);
+    assert(xuiCodeEditGetOffsetRect(activeEditor, 23, &wrapped) == XUI_OK);
+    checkHover(context, version, (int)wrapped.fX + 1, (int)wrapped.fY + 1);
     xuiDestroy(context);
     state.tProxy.fontDestroy(&state.tProxy, font);
     puts("code_edit_diagnostics passed");
