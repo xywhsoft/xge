@@ -8593,6 +8593,11 @@ XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind, int 
 XUI_API int xuiCodeThemeGetTokenStyle(xui_code_theme pTheme, int iTokenKind, xui_code_style_t* pStyle);
 /* 复制主题内容。 */
 XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc);
+/* Create an independent copy of all styles and token mappings. */
+XUI_API int xuiCodeThemeClone(xui_code_theme source, xui_code_theme* out);
+/* Observe the lifetime of a borrowed editor theme on its creator thread. */
+XUI_API int xuiCodeThemeEditorLifetimeWatch(xui_code_theme theme, xui_lifetime_link_t* link,
+	xui_lifetime_invalidate_proc invalidate, void* user);
 /* 创建按键-命令映射表。 */
 XUI_API int xuiCodeCommandMapCreate(xui_code_command_map* ppMap);
 /* 释放映射表。 */

@@ -11,6 +11,7 @@
 #include "xui_code_fold_state_internal.h"
 #include "xui_code_language_internal.h"
 #include "xui_code_token_internal.h"
+#include "xui_code_theme_internal.h"
 #include "xui_code_provider_internal.h"
 #include "xui_code_bracket_internal.h"
 
@@ -2510,7 +2511,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	xuiInternalCodeLanguageRegistryDestroyOwned(pData->pLanguages, pWidget);
 	xuiInternalCodeAnnotationDestroyOwned(pData->pAnnotations, pWidget);
 	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
-	xuiCodeThemeDestroy(pData->pTheme);
+	xuiInternalCodeThemeDestroyOwned(pData->pTheme, pWidget);
 	xuiInternalCodeSelectionDestroyOwned(pWidget, pData->pSelection);
     if(pData->pDocument)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeDocumentDestroyOwned(pWidget,pData->pDocument));
 	pData->pCommandMap = NULL;
@@ -3096,6 +3097,15 @@ static const xui_code_token_owner_ops_t g_xuiCodeEditTokenOwnerOps = {
 	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditTokenExtent, __xuiCodeEditTokensChanged
 };
 
+static int __xuiCodeEditThemeChanged(xui_widget editor)
+{
+	return xuiWidgetInvalidate(editor, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static const xui_code_theme_owner_ops_t g_xuiCodeEditThemeOwnerOps = {
+	__xuiCodeEditCheckAttachedModel, xuiWidgetLifetimeWatch, __xuiCodeEditThemeChanged
+};
+
 static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData, const xui_code_edit_desc_t* pDesc)
 {
 	int iRet;
@@ -3105,6 +3115,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionCreate(&pData->pSelection);
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeSelectionClaimOwner(pData->pSelection, pWidget, pData->pDocument);
 	if ( iRet == XUI_OK ) iRet = xuiCodeThemeCreate(&pData->pTheme);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeThemeClaimOwner(pData->pTheme, pWidget, &g_xuiCodeEditThemeOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeFoldStateCreate(&pData->pFoldState);
 	if ( iRet == XUI_OK ) iRet = xuiInternalCodeFoldStateClaimOwner(pData->pFoldState, pWidget, &g_xuiCodeEditFoldOwnerOps);
 	if ( iRet == XUI_OK ) iRet = xuiCodeAnnotationStoreCreate(&pData->pAnnotations);
@@ -7483,26 +7494,16 @@ XUI_API xui_code_theme xuiCodeEditGetTheme(xui_widget pWidget)
 
 XUI_API int xuiCodeEditSetTheme(xui_widget pWidget, xui_code_theme pTheme)
 {
-	xui_code_edit_data_t* pData;
-	int iRet;
-
-	pData = __xuiCodeEditGetData(pWidget);
-	if ( pData == NULL || pTheme == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = xuiCodeThemeCopy(pData->pTheme, pTheme);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiCodeThemeCopy(pData->pTheme, pTheme);
 }
 
 XUI_API int xuiCodeEditSetStyle(xui_widget pWidget, int iStyleId, const xui_code_style_t* pStyle)
 {
-	xui_code_edit_data_t* pData;
-	int iRet;
-
-	pData = __xuiCodeEditGetData(pWidget);
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = xuiCodeThemeSetStyle(pData->pTheme, iStyleId, pStyle);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiCodeThemeSetStyle(pData->pTheme, iStyleId, pStyle);
 }
 
 static int __xuiCodeEditInvalidateTokenStyle(xui_widget widget, void* unused)

@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
+#include "xui_code_theme_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -27,7 +28,42 @@ struct xui_code_theme_t {
 	xui_code_theme_token_entry_t* pCustomTokens;
 	int iCustomTokenCount;
 	int iCustomTokenCapacity;
+	xui_widget owner;
+	const xui_code_theme_owner_ops_t* ops;
+	uint64_t ownerThread;
 };
+
+static int __xuiCodeThemeStatus(xui_code_theme theme, bool write)
+{
+	if ( theme == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( theme->owner == NULL ) return XUI_OK;
+	if ( theme->ownerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return theme->ops->check(theme->owner, write);
+}
+
+static int __xuiCodeThemeChanged(xui_code_theme theme)
+{
+	return theme->owner != NULL ? theme->ops->changed(theme->owner) : XUI_OK;
+}
+
+int xuiInternalCodeThemeClaimOwner(xui_code_theme theme, xui_widget editor, const xui_code_theme_owner_ops_t* ops)
+{
+	if ( theme == NULL || editor == NULL || ops == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( theme->owner != NULL ) return XUI_ERROR_INVALID_STATE;
+	theme->ownerThread = xrtThreadCurrentId();
+	theme->ops = ops;
+	theme->owner = editor;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeThemeEditorLifetimeWatch(xui_code_theme theme, xui_lifetime_link_t* link,
+	xui_lifetime_invalidate_proc invalidate, void* user)
+{
+	int status = __xuiCodeThemeStatus(theme, false);
+	if ( status != XUI_OK ) return status;
+	if ( theme->owner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return theme->ops->watch(theme->owner, link, invalidate, user);
+}
 
 static int __xuiCodeThemeStyleIdValid(int iStyleId)
 {
@@ -129,19 +165,25 @@ XUI_API int xuiCodeThemeCreate(xui_code_theme* ppTheme)
 	return XUI_OK;
 }
 
-XUI_API void xuiCodeThemeDestroy(xui_code_theme pTheme)
+void xuiInternalCodeThemeDestroyOwned(xui_code_theme pTheme, xui_widget editor)
 {
-	if ( pTheme == NULL ) return;
+	if ( pTheme == NULL || (pTheme->owner != NULL && pTheme->owner != editor) ) return;
 	xrtFree(pTheme->pCustomStyles);
 	xrtFree(pTheme->pCustomTokens);
 	xrtFree(pTheme);
+}
+
+XUI_API void xuiCodeThemeDestroy(xui_code_theme pTheme)
+{
+	xuiInternalCodeThemeDestroyOwned(pTheme, NULL);
 }
 
 XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 {
 	int i;
 
-	if ( pTheme == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeThemeStatus(pTheme, true);
+	if ( status != XUI_OK ) return status;
 	xrtFree(pTheme->pCustomStyles);
 	xrtFree(pTheme->pCustomTokens);
 	pTheme->pCustomStyles = NULL;
@@ -195,7 +237,7 @@ XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme)
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_OPERATOR] = XUI_CODE_STYLE_OPERATOR;
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_BRACE] = XUI_CODE_STYLE_BRACE;
 	pTheme->arrTokenStyle[XUI_CODE_TOKEN_ERROR] = XUI_CODE_STYLE_ERROR;
-	return XUI_OK;
+	return __xuiCodeThemeChanged(pTheme);
 }
 
 XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId,
@@ -209,15 +251,17 @@ XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId,
 		pStyle == NULL || pStyle->iSize < sizeof(*pStyle) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiCodeThemeStatus(pTheme, true);
+	if ( iRet != XUI_OK ) return iRet;
 	tStyle = *pStyle;
 	tStyle.iSize = sizeof(tStyle);
 	if ( iStyleId < XUI_CODE_STYLE_COUNT ) {
 		pTheme->arrStyles[iStyleId] = tStyle;
-		return XUI_OK;
+		return __xuiCodeThemeChanged(pTheme);
 	}
 	if ( __xuiCodeThemeFindStyle(pTheme, iStyleId, &iIndex) ) {
 		pTheme->pCustomStyles[iIndex].tStyle = tStyle;
-		return XUI_OK;
+		return __xuiCodeThemeChanged(pTheme);
 	}
 	if ( pTheme->iCustomStyleCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	iRet = __xuiCodeThemeReserve((void**)&pTheme->pCustomStyles,
@@ -230,7 +274,7 @@ XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId,
 	pTheme->pCustomStyles[iIndex].iStyleId = iStyleId;
 	pTheme->pCustomStyles[iIndex].tStyle = tStyle;
 	pTheme->iCustomStyleCount++;
-	return XUI_OK;
+	return __xuiCodeThemeChanged(pTheme);
 }
 
 XUI_API int xuiCodeThemeGetStyle(xui_code_theme pTheme, int iStyleId,
@@ -261,14 +305,16 @@ XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind,
 		!__xuiCodeThemeStyleIdValid(iStyleId) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiCodeThemeStatus(pTheme, true);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiCodeThemeStyleExists(pTheme, iStyleId) ) return XUI_ERROR_NOT_FOUND;
 	if ( iTokenKind < XUI_CODE_THEME_TOKEN_BUILTIN_COUNT ) {
 		pTheme->arrTokenStyle[iTokenKind] = iStyleId;
-		return XUI_OK;
+		return __xuiCodeThemeChanged(pTheme);
 	}
 	if ( __xuiCodeThemeFindToken(pTheme, iTokenKind, &iIndex) ) {
 		pTheme->pCustomTokens[iIndex].iStyleId = iStyleId;
-		return XUI_OK;
+		return __xuiCodeThemeChanged(pTheme);
 	}
 	if ( pTheme->iCustomTokenCount == INT_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
 	iRet = __xuiCodeThemeReserve((void**)&pTheme->pCustomTokens,
@@ -281,7 +327,7 @@ XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind,
 	pTheme->pCustomTokens[iIndex].iTokenKind = iTokenKind;
 	pTheme->pCustomTokens[iIndex].iStyleId = iStyleId;
 	pTheme->iCustomTokenCount++;
-	return XUI_OK;
+	return __xuiCodeThemeChanged(pTheme);
 }
 
 XUI_API int xuiCodeThemeGetTokenStyle(xui_code_theme pTheme, int iTokenKind,
@@ -308,8 +354,11 @@ XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc)
 	xui_code_theme_style_entry_t* pStyles;
 	xui_code_theme_token_entry_t* pTokens;
 
-	if ( pDst == NULL || pSrc == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pDst == pSrc ) return XUI_OK;
+	int status = __xuiCodeThemeStatus(pDst, true);
+	if ( status != XUI_OK ) return status;
+	status = __xuiCodeThemeStatus(pSrc, false);
+	if ( status != XUI_OK ) return status;
+	if ( pDst == pSrc ) return __xuiCodeThemeChanged(pDst);
 	pStyles = NULL;
 	pTokens = NULL;
 	if ( pSrc->iCustomStyleCount > 0 ) {
@@ -346,6 +395,23 @@ XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc)
 	pDst->pCustomTokens = pTokens;
 	pDst->iCustomTokenCount = pSrc->iCustomTokenCount;
 	pDst->iCustomTokenCapacity = pSrc->iCustomTokenCount;
+	return __xuiCodeThemeChanged(pDst);
+}
+
+XUI_API int xuiCodeThemeClone(xui_code_theme source, xui_code_theme* out)
+{
+	if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	int status = __xuiCodeThemeStatus(source, false);
+	if ( status != XUI_OK ) return status;
+	xui_code_theme copy = xrtCalloc(1, sizeof(*copy));
+	if ( copy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	status = xuiCodeThemeCopy(copy, source);
+	if ( status != XUI_OK ) {
+		xuiCodeThemeDestroy(copy);
+		return status;
+	}
+	*out = copy;
 	return XUI_OK;
 }
 
