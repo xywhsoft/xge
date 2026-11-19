@@ -252,9 +252,17 @@ int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int
 	float fY;
 	int i;
 	int iIndex;
+	int iEventType;
 
-	if ( (pTouches == NULL) || (iCount < 0) || (iCount > XGE_TOUCH_MAX) ) {
+	if ( (iCount < 0) || (iCount > XGE_TOUCH_MAX) || (iCount != 0 && pTouches == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	switch ( iPhase ) {
+		case XGE_TOUCH_BEGIN: iEventType = XGE_EVENT_TOUCH_BEGIN; break;
+		case XGE_TOUCH_MOVE: iEventType = XGE_EVENT_TOUCH_MOVE; break;
+		case XGE_TOUCH_END: iEventType = XGE_EVENT_TOUCH_END; break;
+		case XGE_TOUCH_CANCEL: iEventType = XGE_EVENT_TOUCH_CANCEL; break;
+		default: return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	fDevicePixelRatio = (g_xge.tMiniProgramDesc.fDevicePixelRatio > 0.0f) ?
 		g_xge.tMiniProgramDesc.fDevicePixelRatio : 1.0f;
@@ -282,17 +290,7 @@ int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	memset(&tTouch, 0, sizeof(tTouch));
-	if ( iPhase == XGE_TOUCH_BEGIN ) {
-		tEvent.iType = XGE_EVENT_TOUCH_BEGIN;
-	} else if ( iPhase == XGE_TOUCH_MOVE ) {
-		tEvent.iType = XGE_EVENT_TOUCH_MOVE;
-	} else if ( iPhase == XGE_TOUCH_END ) {
-		tEvent.iType = XGE_EVENT_TOUCH_END;
-	} else if ( iPhase == XGE_TOUCH_CANCEL ) {
-		tEvent.iType = XGE_EVENT_TOUCH_CANCEL;
-	} else {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
+	tEvent.iType = iEventType;
 	tTouch.iPhase = iPhase;
 	tTouch.iCount = g_xge.iTouchCount;
 	if ( tTouch.iCount > XGE_TOUCH_MAX ) {

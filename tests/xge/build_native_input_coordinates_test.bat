@@ -6,7 +6,7 @@ set OUT=%OUT_DIR%\test_native_input_coordinates.exe
 set SRC=tests\xge\test_native_input_coordinates.c
 set INC=@config/includes.rsp
 set FLAGS=-O1 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DEBUGMODE=0
-set LIBS=-lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -loleaut32 -luuid -limm32 -lwinmm -lavrt
+set LIBS=-lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -loleaut32 -luuid -limm32 -lwinmm -lavrt -ldwrite
 
 where gcc >nul 2>nul
 if %errorlevel% neq 0 (

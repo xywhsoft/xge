@@ -270,6 +270,17 @@ static int __testMiniProgramCoordinates(void)
 		tEvent.iModifiers == 0u &&
 		__testNear(tEvent.fX, 50.0f) && __testNear(tEvent.fY, 60.0f),
 		"miniprogram touch framebuffer coordinates");
+	{
+		const xge_miniprogram_touch_t touch = {9, 31.0f, 32.0f, 1.0f};
+		xge_touch_point_t point;
+		TEST_CHECK(xgeMiniProgramTouch(XGE_TOUCH_STATIONARY, &touch, 1) == XGE_ERROR_INVALID_ARGUMENT &&
+			xgeTouchFind(9, &point) == XGE_OK && point.iPhase == XGE_TOUCH_BEGIN &&
+			point.bChanged && __testNear(point.fX, 50.0f) && xgeInputEventGet(&tEvent) == 0,
+			"invalid phase leaves touch state and input queue intact");
+		TEST_CHECK(xgeMiniProgramTouch(XGE_TOUCH_MOVE, NULL, 0) == XGE_OK &&
+			xgeTouchFind(9, &point) == XGE_OK && !point.bChanged && __testNear(point.fX, 50.0f),
+			"empty touch batch allows NULL and keeps the active position");
+	}
 	memset(&tResource, 0, sizeof(tResource));
 	TEST_CHECK(xgeResourceLoad("res://bridge-a", &tResource) == XGE_OK, "load with first bridge");
 	TEST_CHECK(xgeMiniProgramSetBridge(&tBridgeB) == XGE_OK, "replace miniprogram bridge");

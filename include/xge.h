@@ -2377,7 +2377,8 @@ XGE_API int xgeMiniProgramSetBridge(const xge_miniprogram_bridge_t* pBridge);
 XGE_API int xgeMiniProgramFrame(double fTimeSeconds);
 /* 通知画布尺寸/像素比变更。 */
 XGE_API int xgeMiniProgramResize(int iWidth, int iHeight, float fDevicePixelRatio);
-/* 批量注入触摸事件。 */
+/* Synchronously consumes iCount touch records. A zero count permits NULL.
+ * An invalid phase is rejected before modifying touch state. */
 XGE_API int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int iCount);
 /* 注入单个触摸点事件。 */
 XGE_API int xgeMiniProgramTouchOne(int iPhase, int iId, float fX, float fY, float fForce);
