@@ -64,7 +64,11 @@ static int generation(xui_proxy proxy,xui_surface surface,uint32_t* out)
 {(void)proxy;if(!surface || !out)return XUI_ERROR_INVALID_ARGUMENT;*out=1;return XUI_OK;}
 static xui_proxy proxyCreate(xui_test_proxy_state_t* state,Owner* owner)
 {
-    xuiTestProxyInit(state);state->tProxy.surfaceGetDesc=surfaceDesc;state->tProxy.surfaceGetGeneration=generation;
+    xuiTestProxyInit(state);
+    /* The shared test backend returns raw Fonts. This owned Surface fixture
+     * does not provide system Fonts from its managed Proxy. */
+    state->tProxy.fontLoadSystem=NULL;
+    state->tProxy.surfaceGetDesc=surfaceDesc;state->tProxy.surfaceGetGeneration=generation;
     xui_callback_owner_t binding=ownerRef(owner);xui_proxy proxy=NULL;
     assert(xuiProxyCreateOwned(&state->tProxy,&binding,&proxy)==XUI_OK);return proxy;
 }
