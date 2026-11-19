@@ -8984,6 +8984,18 @@ XUI_API int xuiCodeFindScopeSetActivateOwned(xui_code_find_scope pScope,
 	return __xuiCodeFindScopeSetActivate(pScope, NULL, onActivate, pUser, pOwner);
 }
 
+XUI_API int xuiCodeFindResultGetPreviewView(const xui_code_find_result_t* pResult, xstrview* pPreview)
+{
+	if ( pPreview == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pPreview = (xstrview){0};
+	if ( pResult == NULL || pResult->iSize < sizeof(*pResult) ) return XUI_ERROR_INVALID_ARGUMENT;
+	const char* end = memchr(pResult->sPreview, 0, sizeof(pResult->sPreview));
+	if ( end == NULL ) return XUI_ERROR_INVALID_STATE;
+	pPreview->Data = pResult->sPreview;
+	pPreview->Size = (size_t)(end - pResult->sPreview);
+	return XUI_OK;
+}
+
 XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount)
 {
 	xui_code_find_result_t tResult;

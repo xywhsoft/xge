@@ -8116,6 +8116,8 @@ XUI_API int xuiCodeFindScopeSetActivate(xui_code_find_scope pScope, xui_code_fin
  * pResult is a stable snapshot valid for the duration of the callback. */
 XUI_API int xuiCodeFindScopeSetActivateOwned(xui_code_find_scope pScope,
     xui_code_find_activate_owned_proc onActivate, void* pUser, const xui_callback_owner_t* pOwner);
+/* Borrow the preview for the lifetime of this result record. */
+XUI_API int xuiCodeFindResultGetPreviewView(const xui_code_find_result_t* pResult, xstrview* pPreview);
 /* 全域查找（选项含正则/大小写/全词）；返回命中总数。 */
 XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount);
 /* 读取上次全域查找结果数。 */

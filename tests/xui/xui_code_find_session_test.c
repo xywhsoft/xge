@@ -79,6 +79,9 @@ static int activate(xui_code_find_scope scope,xui_widget editor,const xui_code_f
     activate_owner* owner=user;
     ++owner->calls;
     assert(owner->refs==3 && result->pEditor==editor && result->iEnd>result->iStart);
+    xstrview preview={0};
+    assert(xuiCodeFindResultGetPreviewView(result,&preview)==XUI_OK &&
+           preview.Data==result->sPreview && preview.Size==strlen(result->sPreview));
     assert(xuiCodeFindScopeOwnershipBusy(scope) && !xuiCodeFindScopeTraceOwnership(scope,findActivateEdge,owner));
     if(owner->clear){
         assert(xuiCodeFindScopeSetActivateOwned(scope,NULL,NULL,NULL)==XUI_OK && owner->refs==2);
@@ -145,6 +148,12 @@ int main(void)
         CHECK(xuiCodeEditGetFindResult(b,0,&result)==XUI_OK && result.iStart==0 && result.iEnd==5 && strlen(result.sPreview)==158);
         CHECK(xuiCodeFindScopeFindAll(scope,&options,&count)==XUI_OK && count==2);
         CHECK(xuiCodeFindScopeGetResult(scope,1,&result)==XUI_OK && result.pEditor==b && strlen(result.sPreview)==158);
+        xstrview preview={0};
+        CHECK(xuiCodeFindResultGetPreviewView(&result,&preview)==XUI_OK && preview.Size==158);
+        memset(result.sPreview,'x',sizeof(result.sPreview));
+        CHECK(xuiCodeFindResultGetPreviewView(&result,&preview)==XUI_ERROR_INVALID_STATE && !preview.Data && !preview.Size);
+        result.iSize=0;
+        CHECK(xuiCodeFindResultGetPreviewView(&result,&preview)==XUI_ERROR_INVALID_ARGUMENT && !preview.Data);
         CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,context,1,&borrowed)==XUI_OK && borrowed==b);
         CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,other,1,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
         CHECK(xuiCodeEditSetText(b,"alpha alpha\n")==XUI_OK);
