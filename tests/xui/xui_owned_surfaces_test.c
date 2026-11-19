@@ -552,7 +552,14 @@ static void ownedIconSurfaces(void)
     xui_test_proxy_state_t state;Owner owner={.refs=1};xui_proxy proxy=proxyCreate(&state,&owner);xui_context context=NULL;unsigned finalized=0;
     assert(xuiCreateOwned(proxy,&context)==XUI_OK);xui_icon_category category=NULL;assert(xuiIconCategoryCreate(context,"owned-icons",NULL,&category)==XUI_OK);
     xui_surface surface=surfaceCreate(proxy,&finalized,0);xui_icon icon=NULL,alias=NULL;
-    assert(xuiIconAddSurface(category,"surface",surface,rect,0,NULL,&icon)==XUI_OK && refs(surface)==2);
+    assert(xuiIconAddSurfaceShared(category,"surface",surface,rect,NULL,&icon)==XUI_OK && refs(surface)==2);
+    xui_context unmanaged=NULL;xui_icon_category unmanagedCategory=NULL;
+    assert(xuiCreate(&unmanaged)==XUI_OK);
+    assert(xuiIconCategoryCreate(unmanaged,"unmanaged",NULL,&unmanagedCategory)==XUI_OK);
+    xui_icon rejected=icon;
+    assert(xuiIconAddSurfaceShared(unmanagedCategory,"surface",surface,rect,NULL,&rejected)==XUI_ERROR_INVALID_ARGUMENT &&
+        !rejected && refs(surface)==2 && xuiIconCategoryGetIconCount(unmanagedCategory)==0);
+    assert(xuiDestroyChecked(unmanaged)==XUI_OK);
     assert(xuiIconAddAlias(category,"alias",icon,NULL,&alias)==XUI_OK && refs(surface)==2);
     matching=xuiSurfaceOwnership(surface);matchingEdges=0;xrtownershipscope freeze={0};assert(xrtOwnershipFreezeTryBegin(&freeze));
     assert(xuiContextTraceOwnership(context,edge,NULL) && matchingEdges==1 && xrtOwnershipScopeEnd(&freeze));
@@ -560,7 +567,7 @@ static void ownedIconSurfaces(void)
     matchingEdges=0;assert(xrtOwnershipFreezeTryBegin(&freeze));assert(xuiContextTraceOwnership(context,edge,NULL) && matchingEdges==1 && xrtOwnershipScopeEnd(&freeze));
     assert(xuiIconRemove(category,"alias")==XUI_OK && refs(surface)==1);
     for(int budget=0;budget<16;++budget){
-        assert(xrtMemDebugFailAfter(budget));icon=NULL;int status=xuiIconAddSurface(category,"oom",surface,rect,0,NULL,&icon);
+        assert(xrtMemDebugFailAfter(budget));icon=NULL;int status=xuiIconAddSurfaceShared(category,"oom",surface,rect,NULL,&icon);
         assert(xrtMemDebugFailAfter(-1));xrtClearError();
         if(status==XUI_OK)assert(icon && refs(surface)==2 && xuiIconRemove(category,"oom")==XUI_OK);
         else assert(!icon);

@@ -6867,6 +6867,9 @@ XUI_API int xuiIconAddRasterFile(xui_icon_category pCategory, const char* sName,
 XUI_API int xuiIconAddRasterMemory(xui_icon_category pCategory, const char* sName, const void* pData, int iSize, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
 /* 以 surface 子区域添加图标。 */
 XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, uint32_t iSurfaceFlags, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
+/* Register an icon using a compatible owned Surface, retaining a separate
+ * reference. Both the caller and the icon keep their own references. */
+XUI_API int xuiIconAddSurfaceShared(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
 /* 以资源对象子区域添加图标。 */
 XUI_API int xuiIconAddResource(xui_icon_category pCategory, const char* sName, xui_resource pResource, xui_rect_t tSource, const xui_icon_desc_t* pDesc, xui_icon* ppIcon);
 /* 添加别名图标（指向既有图标；别名链深度上限 32）。 */

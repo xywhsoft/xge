@@ -1725,7 +1725,7 @@ XUI_API int xuiIconAddRasterMemory(xui_icon_category pCategory, const char* sNam
 	return __xuiIconAddMemory(pCategory, sName, pData, iSize, XUI_ICON_SOURCE_RASTER_MEMORY, pDesc, ppIcon);
 }
 
-XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, uint32_t iSurfaceFlags, const xui_icon_desc_t* pDesc, xui_icon* ppIcon)
+static inline int __xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, uint32_t iSurfaceFlags, bool requireOwned, const xui_icon_desc_t* pDesc, xui_icon* ppIcon)
 {
 	xui_icon pIcon;
 	int iRet;
@@ -1737,6 +1737,7 @@ XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xu
 	}
     if(!__xuiIconCategoryValid(pCategory))return XUI_ERROR_INVALID_ARGUMENT;
     xui_context context=pCategory->pContext;
+    if(requireOwned && !context->pOwnedProxy)return XUI_ERROR_INVALID_ARGUMENT;
     bool retained=false;
     if(context->pOwnedProxy){
         if(iSurfaceFlags&XUI_ICON_SURFACE_TAKE_OWNERSHIP){
@@ -1757,6 +1758,16 @@ XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xu
     pIcon->bOwnSurface=context->pOwnedProxy || (iSurfaceFlags&XUI_ICON_SURFACE_TAKE_OWNERSHIP);
 	if ( ppIcon != NULL ) *ppIcon = pIcon;
 	return XUI_OK;
+}
+
+XUI_API int xuiIconAddSurface(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, uint32_t iSurfaceFlags, const xui_icon_desc_t* pDesc, xui_icon* ppIcon)
+{
+    return __xuiIconAddSurface(pCategory,sName,pSurface,tSource,iSurfaceFlags,false,pDesc,ppIcon);
+}
+
+XUI_API int xuiIconAddSurfaceShared(xui_icon_category pCategory, const char* sName, xui_surface pSurface, xui_rect_t tSource, const xui_icon_desc_t* pDesc, xui_icon* ppIcon)
+{
+    return __xuiIconAddSurface(pCategory,sName,pSurface,tSource,0,true,pDesc,ppIcon);
 }
 
 XUI_API int xuiIconAddResource(xui_icon_category pCategory, const char* sName, xui_resource pResource, xui_rect_t tSource, const xui_icon_desc_t* pDesc, xui_icon* ppIcon)
