@@ -3374,7 +3374,7 @@ static int __xuiLayoutOperation(xui_context pContext)
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pContext->bResolvingCodeTokenStyle ) return XUI_ERROR_BUSY;
+	if ( pContext->bGuardedCallback ) return XUI_ERROR_BUSY;
 	pRoot = pContext->pRoot;
 	pOverlayRoot = pContext->pOverlayRoot;
 	iGeneration = pContext->tLayoutStats.iGeneration + 1u;

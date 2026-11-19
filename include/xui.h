@@ -2184,6 +2184,7 @@ typedef struct xui_code_signature_help_t xui_code_signature_help_t;
 typedef struct xui_code_text_edit_t xui_code_text_edit_t;
 typedef struct xui_code_input_event_t xui_code_input_event_t;
 typedef struct xui_code_input_action_t xui_code_input_action_t;
+typedef struct xui_code_input_response_t xui_code_input_response_t;
 typedef struct xui_code_placeholder_t xui_code_placeholder_t;
 typedef struct xui_code_margin_desc_t xui_code_margin_desc_t;
 typedef struct xui_code_margin_info_t xui_code_margin_info_t;
@@ -2926,6 +2927,7 @@ typedef int (*xui_code_hover_proc)(xui_widget_t* pWidget, int iOffset, xui_code_
 typedef void (*xui_code_diagnostic_hover_proc)(xui_widget_t* pWidget, const xui_code_diagnostic_hit_t* pHit, void* pUser);
 typedef int (*xui_code_signature_proc)(xui_widget_t* pWidget, int iOffset, xui_code_signature_help_t* pHelp, void* pUser);
 typedef int (*xui_code_input_proc)(xui_widget_t* pWidget, const xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction, void* pUser);
+typedef int (*xui_code_input_owned_proc)(xui_widget_t* pWidget, const xui_code_input_event_t* pEvent, xui_code_input_response_t* pAction, void* pUser);
 typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
@@ -8570,6 +8572,15 @@ XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
 XUI_API int xuiCodeEditGetTextView(xui_widget pWidget, xstrview* pView);
 /* 注册输入拦截回调（外部输入法/补全引擎用）。 */
 XUI_API int xuiCodeEditSetInputHandler(xui_widget pWidget, xui_code_input_proc onInput, void* pUser);
+/* PREVIEW can consume input. PREVIEW and COMMITTED can prepare edits, caret
+ * and assist actions. The event and response are valid for the invocation.
+ * The response owns proposed replacements until the editor consumes them.
+ * Scoped reentry into this Context is Busy during the handler. */
+XUI_API int xuiCodeEditSetInputHandlerOwned(xui_widget pWidget, xui_code_input_owned_proc onInput, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API uint32_t xuiCodeInputResponseGetFlags(const xui_code_input_response_t* response);
+XUI_API int xuiCodeInputResponseSetFlags(xui_code_input_response_t* response, uint32_t flags);
+XUI_API int xuiCodeInputResponseSetEdits(xui_code_input_response_t* response, const xui_code_text_edit_t* edits, int count);
+XUI_API int xuiCodeInputResponseSetSelection(xui_code_input_response_t* response, int anchor, int caret);
 /* 批量应用文本编辑（多光标/重排序安全）。 */
 XUI_API int xuiCodeEditApplyTextEdits(xui_widget pWidget, const xui_code_text_edit_t* pEdits, int iEditCount, int iSelectionAnchor, int iSelectionCaret);
 /* 设置内联补全建议（AI ghost text）。 */

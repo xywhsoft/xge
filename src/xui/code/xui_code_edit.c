@@ -198,6 +198,7 @@ typedef struct xui_code_edit_data_t {
 	float fCompletionDelay;
 	float fCompletionElapsed;
 	xui_code_input_proc onInput;
+	xui_code_input_owned_proc onOwnedInput;
 	void* pInputUser;
 	int bInputDispatch;
 	xui_widget pAssistPopup;
@@ -3356,25 +3357,120 @@ static int __xuiCodeEditApplyInputAction(xui_widget pWidget, xui_code_edit_data_
 		pAction->iSelectionAnchor, pAction->iSelectionCaret);
 }
 
-static int __xuiCodeEditDispatchInput(xui_widget pWidget, xui_code_edit_data_t* pData,
-	xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction)
-{
-	int iRet;
+struct xui_code_input_response_t {
+	xui_code_input_action_t action;
+	xui_code_text_edit_t* storage;
+	int documentLength;
+	bool open;
+};
 
-	if ( pData == NULL || pEvent == NULL || pAction == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(pAction, 0, sizeof(*pAction));
-	pAction->iSize = sizeof(*pAction);
-	if ( pData->onInput == NULL ) return XUI_OK;
-	if ( pData->bInputDispatch ) return XUI_ERROR_UNSUPPORTED;
-	pData->bInputDispatch = 1;
-	iRet = pData->onInput((xui_widget_t*)pWidget, pEvent, pAction, pData->pInputUser);
-	pData->bInputDispatch = 0;
-	if ( iRet != XUI_OK ) {
-		__xuiCodeEditSetError(pData, "CodeEdit input handler failed");
-		memset(pAction, 0, sizeof(*pAction));
-		pAction->iSize = sizeof(*pAction);
-		return XUI_OK;
+XUI_API uint32_t xuiCodeInputResponseGetFlags(const xui_code_input_response_t* response)
+{
+	return response != NULL && response->open ? response->action.iFlags : 0;
+}
+
+XUI_API int xuiCodeInputResponseSetFlags(xui_code_input_response_t* response, uint32_t flags)
+{
+	const uint32_t allowed = XUI_CODE_INPUT_ACTION_CONSUME | XUI_CODE_INPUT_ACTION_APPLY_EDITS |
+		XUI_CODE_INPUT_ACTION_SET_SELECTION | XUI_CODE_INPUT_ACTION_SHOW_COMPLETION |
+		XUI_CODE_INPUT_ACTION_SHOW_SIGNATURE | XUI_CODE_INPUT_ACTION_CLOSE_ASSIST;
+	if ( response == NULL || !response->open || (flags & ~allowed) != 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	response->action.iFlags = flags;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeInputResponseSetSelection(xui_code_input_response_t* response, int anchor, int caret)
+{
+	if ( response == NULL || !response->open || anchor < 0 || caret < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	response->action.iSelectionAnchor = anchor;
+	response->action.iSelectionCaret = caret;
+	response->action.iFlags |= XUI_CODE_INPUT_ACTION_SET_SELECTION;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeInputResponseSetEdits(xui_code_input_response_t* response,
+	const xui_code_text_edit_t* edits, int count)
+{
+	if ( response == NULL || !response->open || count < 0 || (count > 0 && edits == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (size_t)count > SIZE_MAX / sizeof(*edits) ) return XUI_ERROR_LIMIT_EXCEEDED;
+	size_t bytes = (size_t)count * sizeof(*edits);
+	for ( int i = 0; i < count; i++ ) {
+		const xui_code_text_edit_t* edit = &edits[i];
+		if ( (edit->iSize != 0 && edit->iSize < sizeof(*edit)) || edit->sText == NULL ||
+		     edit->tRange.iStart < 0 || edit->tRange.iEnd < edit->tRange.iStart ||
+		     edit->tRange.iEnd > response->documentLength ||
+		     (i > 0 && edit->tRange.iStart < edits[i-1].tRange.iEnd) ) return XUI_ERROR_INVALID_ARGUMENT;
+		size_t length = strlen(edit->sText);
+		if ( length >= INT_MAX || length >= SIZE_MAX - bytes ) return XUI_ERROR_LIMIT_EXCEEDED;
+		bytes += length + 1;
+	}
+	xui_code_text_edit_t* candidate = NULL;
+	if ( count > 0 ) {
+		candidate = xrtMalloc(bytes);
+		if ( candidate == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		char* text = (char*)(candidate + count);
+		for ( int i = 0; i < count; i++ ) {
+			size_t length = strlen(edits[i].sText) + 1;
+			memcpy(text, edits[i].sText, length);
+			candidate[i] = edits[i];
+			candidate[i].iSize = sizeof(candidate[i]);
+			candidate[i].sText = text;
+			text += length;
+		}
+	}
+	xrtFree(response->storage);
+	response->storage = candidate;
+	response->action.pEdits = candidate;
+	response->action.iEditCount = count;
+	if ( count > 0 ) response->action.iFlags |= XUI_CODE_INPUT_ACTION_APPLY_EDITS;
+	else response->action.iFlags &= ~XUI_CODE_INPUT_ACTION_APPLY_EDITS;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditDispatchInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const xui_code_input_event_t* pEvent, xui_code_input_response_t* response)
+{
+	*response = (xui_code_input_response_t){.action={.iSize=sizeof(response->action)}};
+	xui_code_input_owned_proc managed = pData->onOwnedInput;
+	xui_code_input_proc borrowed = pData->onInput;
+	if ( managed == NULL && borrowed == NULL ) return XUI_OK;
+	xui_context context = pWidget->pContext;
+	if ( pData->bInputDispatch || context->bGuardedCallback ) return XUI_ERROR_BUSY;
+	pData->bInputDispatch = 1;
+	void* user = pData->pInputUser;
+	int status;
+	if ( managed != NULL ) {
+		xui_callback_snapshot_t snapshot = {0};
+		context->bGuardedCallback = true;
+		status = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onInput, &user, &snapshot);
+		if ( status == XUI_OK ) {
+			response->documentLength = xuiCodeDocumentGetLength(pData->pDocument);
+			response->open = true;
+			context->bGuardedCallbackScopePending = snapshot.pContext != NULL;
+			status = managed(pWidget, pEvent, response, user);
+			context->bGuardedCallbackScopePending = false;
+			response->open = false;
+			if ( status == XUI_OK && xrtGetError() != NULL ) status = XUI_ERROR_CALLBACK_FAILED;
+			status = xuiInternalCallbackSnapshotEnd(&snapshot, status);
+		}
+		context->bGuardedCallback = false;
+	} else {
+		status = borrowed(pWidget, pEvent, &response->action, user);
+		if ( xrtGetError() != NULL ) status = XUI_ERROR_CALLBACK_FAILED;
+		else if ( status != XUI_OK ) {
+			/* A legacy C handler can decline input by returning a status. */
+			response->action = (xui_code_input_action_t){.iSize=sizeof(response->action)};
+			status = XUI_OK;
+		}
+	}
+	pData->bInputDispatch = 0;
+	if ( status != XUI_OK ) return status;
+	if ( !__xuiCodeEditAlive(context, pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
+	/* A legacy handler can edit the document directly. Its old ranges may
+	   no longer describe the input transaction after a reentrant change. */
+	if ( pEvent->iDocumentVersion != xuiCodeDocumentGetVersion(pData->pDocument) ) return XUI_ERROR_BUSY;
 	return XUI_OK;
 }
 
@@ -3398,12 +3494,11 @@ static int __xuiCodeEditApplyAssistAction(xui_widget pWidget, xui_code_edit_data
 	return XUI_OK;
 }
 
-static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+static int __xuiCodeEditProcessTextInputImpl(xui_widget pWidget, xui_code_edit_data_t* pData,
 	const char* sText, int iTextSize, int iSource, const xui_event_t* pSourceEvent)
 {
 	xui_code_input_event_t tInput;
-	xui_code_input_action_t tPreviewAction;
-	xui_code_input_action_t tCommittedAction;
+	xui_code_input_response_t response;
 	xui_code_selection_t tBefore;
 	xui_code_selection_t tAfter;
 	xui_code_range_t tChanged;
@@ -3411,7 +3506,6 @@ static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_
 	int iStart;
 	int iEnd;
 	int iRet;
-	int iEndRet;
 	int bChanged;
 	int bCompletionRetained;
 
@@ -3440,22 +3534,23 @@ static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_
 	tInput.tSelectionAfter = tBefore;
 	tInput.tReplacedRange = (xui_code_range_t){iStart, iEnd};
 	tInput.tInsertedRange = (xui_code_range_t){iStart, iStart};
-	iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &tPreviewAction);
-	if ( iRet != XUI_OK ) return iRet;
-	iAssistFlags = tPreviewAction.iFlags;
+	iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &response);
+	iAssistFlags = response.action.iFlags;
 	bChanged = 0;
-	iRet = xuiCodeDocumentBeginEdit(pData->pDocument);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( (tPreviewAction.iFlags & (XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
-		iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &tPreviewAction);
-		if ( iRet == XUI_OK && (tPreviewAction.iFlags & XUI_CODE_INPUT_ACTION_APPLY_EDITS) != 0 &&
-		     tPreviewAction.iEditCount > 0 ) bChanged = 1;
+	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentBeginEdit(pData->pDocument);
+	if ( iRet != XUI_OK ) {
+		xrtFree(response.storage);
+		return iRet;
 	}
-	if ( iRet == XUI_OK && (tPreviewAction.iFlags & XUI_CODE_INPUT_ACTION_CONSUME) == 0 ) {
+	if ( (iAssistFlags & (XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
+		iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &response.action);
+		if ( iRet == XUI_OK && (iAssistFlags & XUI_CODE_INPUT_ACTION_APPLY_EDITS) != 0 &&
+		     response.action.iEditCount > 0 ) bChanged = 1;
+	}
+	xrtFree(response.storage);
+	if ( iRet == XUI_OK && (iAssistFlags & XUI_CODE_INPUT_ACTION_CONSUME) == 0 ) {
 		iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection, sText, pData->bReadonly);
-		if ( iRet == XUI_OK ) {
-			bChanged = 1;
-		}
+		if ( iRet == XUI_OK ) bChanged = 1;
 	}
 	if ( iRet == XUI_OK && bChanged ) {
 		(void)xuiCodeSelectionGetState(pData->pSelection, &tAfter);
@@ -3464,16 +3559,20 @@ static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_
 		tInput.iDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
 		tInput.tSelectionAfter = tAfter;
 		tInput.tInsertedRange = tChanged;
-		iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &tCommittedAction);
-		if ( iRet == XUI_OK && (tCommittedAction.iFlags &
-			(XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
-			iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &tCommittedAction);
+		iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &response);
+		if ( iRet == XUI_OK && (response.action.iFlags &
+		     (XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
+			iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &response.action);
 		}
-		iAssistFlags |= tCommittedAction.iFlags;
+		iAssistFlags |= response.action.iFlags;
+		xrtFree(response.storage);
 	}
-	iEndRet = xuiCodeDocumentEndEdit(pData->pDocument);
-	if ( iRet == XUI_OK ) iRet = iEndRet;
+	xui_cleanup_receipt_t receipt = {0};
+	xuiInternalCleanupStart(&receipt, iRet);
+	xuiInternalCleanupAdd(&receipt, xuiCodeDocumentEndEdit(pData->pDocument));
+	iRet = xuiInternalCleanupEnd(NULL, &receipt);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCodeEditAlive(pWidget->pContext, pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
 	if ( !bChanged ) return __xuiCodeEditApplyAssistAction(pWidget, pData, iAssistFlags);
 	bCompletionRetained = 0;
 	if ( (iAssistFlags & XUI_CODE_INPUT_ACTION_SHOW_COMPLETION) == 0 &&
@@ -3494,6 +3593,21 @@ static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_
 	(void)xuiCodeEditEnsureCaretVisible(pWidget);
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return __xuiCodeEditApplyAssistAction(pWidget, pData, iAssistFlags);
+}
+
+static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const char* sText, int iTextSize, int iSource, const xui_event_t* pSourceEvent)
+{
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pWidget->pContext->iOperationDepth > 0 ) {
+		return __xuiCodeEditProcessTextInputImpl(pWidget, pData, sText, iTextSize, iSource, pSourceEvent);
+	}
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(pWidget->pContext, &scope);
+	if ( status != XUI_OK ) return status;
+	status = __xuiCodeEditProcessTextInputImpl(pWidget, pData, sText, iTextSize, iSource, pSourceEvent);
+	xerror* error = xrtTakeError();
+	return xuiInternalCallScopeEndRestored(&scope, status, error);
 }
 
 static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
@@ -3530,7 +3644,7 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 			iRet = __xuiCodeEditCommitCompletionCharacter(pWidget, pData, sText);
 			__xuiCodeEditSetError(pData,
 				(iRet == XUI_OK) ? "" : "CodeEdit completion character commit failed");
-			return XUI_EVENT_DISPATCH_STOP;
+			return iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 		}
 	}
 	bInlineCompletion = __xuiCodeEditInlineCompletionValid(pData);
@@ -3540,7 +3654,7 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 	if ( iRet == XUI_OK && bInlineCompletion ) {
 		(void)__xuiCodeEditInlineCompletionConsume(pData, sText, iTextSize);
 	}
-	return XUI_EVENT_DISPATCH_STOP;
+	return iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiCodeEditCommitText(xui_widget pWidget, xui_code_edit_data_t* pData, const char* sText)
@@ -5845,11 +5959,11 @@ static int __xuiCodeEditTokenForeground(xui_widget pWidget, xui_code_edit_data_t
 		xui_code_token_t tGlobal = *pToken;
 		tGlobal.iStartOffset += iDocumentStart;
 		tGlobal.iEndOffset += iDocumentStart;
-		context->bResolvingCodeTokenStyle = true;
-		context->bTokenStyleManagedScopePending = pResolver->bRetained;
+		context->bGuardedCallback = true;
+		context->bGuardedCallbackScopePending = pResolver->bRetained;
 		int status = pResolver->onStyle(pData->pDocument, &tGlobal, &iStyleId, pResolver->pUser);
-		context->bTokenStyleManagedScopePending = false;
-		context->bResolvingCodeTokenStyle = false;
+		context->bGuardedCallbackScopePending = false;
+		context->bGuardedCallback = false;
 		if ( xrtGetError() != NULL ) return XUI_ERROR_CALLBACK_FAILED;
 		if ( !__xuiCodeEditAlive(context, pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
 		if ( status == XUI_OK &&
@@ -6981,18 +7095,18 @@ static int __xuiCodeEditCacheRender(xui_widget widget,xui_draw_context draw,uint
     xui_code_token_style_frame_t resolver={data->onTokenStyle,data->pTokenStyleUser,false};
     xui_callback_snapshot_t snapshot={0};
     if(resolver.onStyle){
-        context->bResolvingCodeTokenStyle=true;
+        context->bGuardedCallback=true;
         status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onTokenStyle,&resolver.pUser,&snapshot);
         resolver.bRetained=snapshot.pContext!=NULL;
-        context->bResolvingCodeTokenStyle=false;
+        context->bGuardedCallback=false;
     }
     if(status==XUI_OK)
         status=__xuiCodeEditCacheRenderImpl(widget,draw,state,user,&frame,&resolver);
     if(frame.self)status=xuiInternalCodeMarginSnapshotEnd(&frame,status);
     if(snapshot.pContext){
-        context->bResolvingCodeTokenStyle=true;
+        context->bGuardedCallback=true;
         status=xuiInternalCallbackSnapshotEnd(&snapshot,status);
-        context->bResolvingCodeTokenStyle=false;
+        context->bGuardedCallback=false;
     }
     data->iCacheActivity=0;
     if(status==XUI_OK && (!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending))status=XUI_ERROR_INVALID_STATE;
@@ -7911,15 +8025,32 @@ XUI_API const char* xuiCodeEditGetText(xui_widget pWidget)
 	return (pData != NULL) ? xuiCodeDocumentGetText(pData->pDocument) : "";
 }
 
+static int __xuiCodeEditReplaceInputHandler(xui_widget widget, xui_code_input_proc borrowed,
+	xui_code_input_owned_proc managed, void* user, const xui_callback_owner_t* owner)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( data->bInputDispatch ) return XUI_ERROR_BUSY;
+	bool installed = borrowed != NULL || managed != NULL;
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(widget, &data->onInput,
+		installed, installed ? user : NULL, owner, &update);
+	if ( status != XUI_OK ) return status;
+	data->onInput = borrowed;
+	data->onOwnedInput = managed;
+	data->pInputUser = installed ? user : NULL;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
 XUI_API int xuiCodeEditSetInputHandler(xui_widget pWidget, xui_code_input_proc onInput, void* pUser)
 {
-	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return __xuiCodeEditReplaceInputHandler(pWidget, onInput, NULL, pUser, NULL);
+}
 
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->bInputDispatch ) return XUI_ERROR_UNSUPPORTED;
-	pData->onInput = onInput;
-	pData->pInputUser = pUser;
-	return XUI_OK;
+XUI_API int xuiCodeEditSetInputHandlerOwned(xui_widget pWidget, xui_code_input_owned_proc onInput, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	return __xuiCodeEditReplaceInputHandler(pWidget, NULL, onInput, pUser, pOwner);
 }
 
 XUI_API int xuiCodeEditApplyTextEdits(xui_widget pWidget,
