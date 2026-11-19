@@ -8877,6 +8877,44 @@ XUI_API int xuiCodeFindScopeGetResult(xui_code_find_scope pScope, int iIndex, xu
 	return XUI_OK;
 }
 
+static int __xuiCodeFindScopeBorrowWidget(xui_code_find_scope pScope, xui_context pContext,
+	xui_widget pWidget, xui_widget* ppWidget)
+{
+	if ( ppWidget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppWidget = NULL;
+	if ( pScope == NULL || !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pContext->bDestroying || pContext->bDestroyPending ) return XUI_ERROR_INVALID_STATE;
+	if ( pWidget != NULL ) {
+		xui_context pOwner = xuiWidgetGetContext(pWidget);
+		if ( pOwner == NULL ) return XUI_ERROR_INVALID_STATE;
+		if ( pOwner != pContext ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	*ppWidget = pWidget;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeFindScopeGetEditorChecked(xui_code_find_scope pScope, xui_context pContext, int iIndex, xui_widget* ppEditor)
+{
+	return __xuiCodeFindScopeBorrowWidget(pScope,pContext,xuiCodeFindScopeGetEditor(pScope,iIndex),ppEditor);
+}
+
+XUI_API int xuiCodeFindScopeGetResultEditorChecked(xui_code_find_scope pScope, xui_context pContext, int iIndex, xui_widget* ppEditor)
+{
+	xui_widget pEditor = NULL;
+	if ( pScope != NULL && iIndex >= 0 && iIndex < pScope->iResultCount ) pEditor = pScope->pResults[iIndex].pEditor;
+	return __xuiCodeFindScopeBorrowWidget(pScope,pContext,pEditor,ppEditor);
+}
+
+XUI_API int xuiCodeFindScopeGetActiveEditorChecked(xui_code_find_scope pScope, xui_context pContext, xui_widget* ppEditor)
+{
+	return __xuiCodeFindScopeBorrowWidget(pScope,pContext,xuiCodeFindScopeGetActiveEditor(pScope),ppEditor);
+}
+
+XUI_API int xuiCodeFindScopeGetFindWindowChecked(xui_code_find_scope pScope, xui_context pContext, xui_widget* ppWindow)
+{
+	return __xuiCodeFindScopeBorrowWidget(pScope,pContext,xuiCodeFindScopeGetFindWindow(pScope),ppWindow);
+}
+
 XUI_API const char* xuiCodeFindScopeGetResultEditorName(xui_code_find_scope pScope, int iIndex)
 {
 	if ( pScope == NULL || iIndex < 0 || iIndex >= pScope->iResultCount ) return "";

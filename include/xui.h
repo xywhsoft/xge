@@ -8087,6 +8087,11 @@ XUI_API int xuiCodeFindScopeRemoveEditor(xui_code_find_scope pScope, xui_widget 
 XUI_API int xuiCodeFindScopeGetEditorCount(xui_code_find_scope pScope);
 /* 按索引取编辑器控件。 */
 XUI_API xui_widget xuiCodeFindScopeGetEditor(xui_code_find_scope pScope, int iIndex);
+/* Checked scope getters run on the UI thread. Borrowed results belong to the
+ * supplied context. An absent result succeeds with NULL. A different context
+ * fails with INVALID_ARGUMENT, a retiring context or widget with INVALID_STATE.
+ * The output is cleared on failure. */
+XUI_API int xuiCodeFindScopeGetEditorChecked(xui_code_find_scope pScope, xui_context pContext, int iIndex, xui_widget* ppEditor);
 /* 按索引取编辑器显示名。 */
 XUI_API const char* xuiCodeFindScopeGetEditorName(xui_code_find_scope pScope, int iIndex);
 /* 注册结果激活回调（跳转到匹配处）。 */
@@ -8097,6 +8102,7 @@ XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_o
 XUI_API int xuiCodeFindScopeGetResultCount(xui_code_find_scope pScope);
 /* 按索引输出查找结果。 */
 XUI_API int xuiCodeFindScopeGetResult(xui_code_find_scope pScope, int iIndex, xui_code_find_result_t* pResult);
+XUI_API int xuiCodeFindScopeGetResultEditorChecked(xui_code_find_scope pScope, xui_context pContext, int iIndex, xui_widget* ppEditor);
 /* 按索引取结果所属编辑器名。 */
 XUI_API const char* xuiCodeFindScopeGetResultEditorName(xui_code_find_scope pScope, int iIndex);
 /* 激活（跳转到）指定结果。 */
@@ -8106,6 +8112,8 @@ XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iInde
 XUI_API int xuiCodeFindScopeSetActiveEditor(xui_code_find_scope pScope, xui_widget pEditor);
 XUI_API xui_widget xuiCodeFindScopeGetActiveEditor(xui_code_find_scope pScope);
 XUI_API xui_widget xuiCodeFindScopeGetFindWindow(xui_code_find_scope pScope);
+XUI_API int xuiCodeFindScopeGetActiveEditorChecked(xui_code_find_scope pScope, xui_context pContext, xui_widget* ppEditor);
+XUI_API int xuiCodeFindScopeGetFindWindowChecked(xui_code_find_scope pScope, xui_context pContext, xui_widget* ppWindow);
 /* Navigate the open shared window; replace operations remain current-editor only. */
 XUI_API int xuiCodeFindScopeFindNext(xui_code_find_scope pScope, int bPrevious);
 /* Rebuild current native results after host-side membership/name changes. */

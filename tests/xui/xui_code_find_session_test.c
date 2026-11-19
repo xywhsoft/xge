@@ -48,6 +48,7 @@ int main(void)
     int failed=0,checks=0,destroyed=0;
     xui_context context=NULL,other=NULL;xui_code_find_scope scope=NULL;
     xui_widget root=NULL,a=NULL,b=NULL,c=NULL; xui_font font=NULL;xui_test_proxy_state_t state;
+    xui_widget borrowed=NULL;
     xuiTestProxyInit(&state);
 #ifdef XGE_XRT_HOST
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
@@ -57,10 +58,17 @@ int main(void)
     xuiContextDescDefault(&config);
     config.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED;
     CHECK(xuiCreateEx(&config,&context)==XUI_OK && xuiSetProxy(context,&state.tProxy)==XUI_OK);
+    CHECK(xuiCreateEx(&config,&other)==XUI_OK);
     CHECK(state.tProxy.fontLoadFile(&state.tProxy,&font,"find.ttf",14,0)==XUI_OK && xuiSetDefaultFont(context,font)==XUI_OK);
     CHECK(xuiInputViewport(context,800,600)==XUI_OK && xuiWidgetCreate(context,&root)==XUI_OK && xuiSetRootWidget(context,root)==XUI_OK);
     CHECK(xuiWidgetSetRect(root,(xui_rect_t){0,0,800,600})==XUI_OK && editor(context,root,"alpha\n",&a)==XUI_OK && editor(context,root,"alpha alpha\n",&b)==XUI_OK);
     CHECK(xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,a,"one.c")==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,b,"two.c")==XUI_OK);
+    CHECK(xuiCodeFindScopeGetEditorChecked(scope,context,0,&borrowed)==XUI_OK && borrowed==a);
+    CHECK(xuiCodeFindScopeGetEditorChecked(scope,other,0,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
+    CHECK(xuiCodeFindScopeGetEditorChecked(scope,context,-1,&borrowed)==XUI_OK && !borrowed);
+    CHECK(xuiCodeFindScopeGetActiveEditorChecked(scope,context,&borrowed)==XUI_OK && !borrowed);
+    CHECK(xuiCodeFindScopeGetFindWindowChecked(scope,context,&borrowed)==XUI_OK && !borrowed);
+    CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,context,0,&borrowed)==XUI_OK && !borrowed);
     {
         char text[162];
         xui_find_options_t options={0};
@@ -74,11 +82,19 @@ int main(void)
         CHECK(xuiCodeEditGetFindResult(b,0,&result)==XUI_OK && result.iStart==0 && result.iEnd==5 && strlen(result.sPreview)==158);
         CHECK(xuiCodeFindScopeFindAll(scope,&options,&count)==XUI_OK && count==2);
         CHECK(xuiCodeFindScopeGetResult(scope,1,&result)==XUI_OK && result.pEditor==b && strlen(result.sPreview)==158);
+        CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,context,1,&borrowed)==XUI_OK && borrowed==b);
+        CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,other,1,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
         CHECK(xuiCodeEditSetText(b,"alpha alpha\n")==XUI_OK);
+        CHECK(xuiCodeFindScopeGetResultEditorChecked(scope,context,1,&borrowed)==XUI_OK && !borrowed);
     }
     CHECK(xuiCodeEditOpenReplace(a)==XUI_OK);
     xui_widget window=xuiCodeFindScopeGetFindWindow(scope);
     CHECK(window && window==xuiCodeEditGetFindWindow(a) && window==xuiCodeEditGetFindWindow(b));
+    CHECK(xuiCodeFindScopeGetFindWindowChecked(scope,context,&borrowed)==XUI_OK && borrowed==window);
+    CHECK(xuiCodeFindScopeGetFindWindowChecked(scope,other,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
+    CHECK(xuiCodeFindScopeGetActiveEditorChecked(scope,context,&borrowed)==XUI_OK && borrowed==a);
+    CHECK(xuiCodeFindScopeGetActiveEditorChecked(scope,other,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
+    CHECK(xuiCodeFindScopeGetActiveEditorChecked(scope,context,NULL)==XUI_ERROR_INVALID_ARGUMENT);
     xui_widget query=control(context,window,"input",0,0),replacement=control(context,window,"input",0,1),all=control(context,window,"checkbox",XUI_TR_FIND_SCOPE,0);
     CHECK(query && replacement && all && xuiInputSetText(query,"alpha")==XUI_OK && xuiCodeFindScopeRefresh(scope)==XUI_OK && xuiCodeEditGetFindResultCount(a)==1);
     CHECK(xuiSetFocusWidget(context,b)==XUI_OK && xuiCodeFindScopeSetActiveEditor(scope,b)==XUI_OK && xuiGetFocusWidget(context)==b && xuiCodeFindScopeRefresh(scope)==XUI_OK && xuiCodeEditGetFindResultCount(b)==2);
@@ -103,8 +119,9 @@ int main(void)
     CHECK(xuiCodeFindScopeSetActiveEditor(scope,root)==XUI_ERROR_INVALID_ARGUMENT);
     xuiDestroy(context);context=NULL;c=NULL;root=NULL;
     CHECK(xuiCodeFindScopeGetEditorCount(scope)==0 && xuiCodeFindScopeGetFindWindow(scope)==NULL);
+    CHECK(xuiCodeFindScopeGetFindWindowChecked(scope,other,&borrowed)==XUI_OK && !borrowed);
     xuiCodeFindScopeDestroy(scope);scope=NULL;
-    CHECK(xuiCreate(&other)==XUI_OK);xuiDestroy(other);other=NULL;
+    xuiDestroy(other);other=NULL;
 cleanup:
     if(scope)xuiCodeFindScopeDestroy(scope);
     if(context)xuiDestroy(context);
