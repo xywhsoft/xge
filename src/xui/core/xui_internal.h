@@ -561,6 +561,7 @@ struct xui_context_t {
 	int iDestroyFlushDepth;
 	int iWidgetCallbackDepth;
 	int iOperationDepth;
+	bool bResolvingCodeTokenStyle;
 	xui_call_scope_t* pCallScopes;
 	int bDestroyPending;
 	int bCloseRequested;

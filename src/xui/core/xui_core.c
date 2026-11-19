@@ -1056,6 +1056,7 @@ static bool __xuiContextHasAmbient(xui_context context,const xerror* error)
 static int __xuiCallScopeBegin(xui_context pContext,xui_call_scope_t* pScope,bool closing)
 {
 	if ( pScope == NULL || !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !closing && pContext->bResolvingCodeTokenStyle ) return XUI_ERROR_BUSY;
     if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return XUI_ERROR_BUSY;
 	if ( pScope->pContext != NULL || pScope->pSelf != NULL || pScope->pPrevious != NULL ||
 		pScope->pNext != NULL || pScope->iResult != XUI_OK || pScope->bEnding || pScope->_pFirstError != NULL ||
@@ -3848,6 +3849,7 @@ static int __xuiRenderOperation(xui_context pContext, xui_surface pTarget, const
 	if ( !__xuiContextValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pContext->bResolvingCodeTokenStyle ) return XUI_ERROR_BUSY;
 	if ( (pTarget == NULL) || (iRectCount < 0) || ((iRectCount > 0) && (pRects == NULL)) ) {
 		xuiInternalReportError(pContext, NULL, XUI_ERROR_INVALID_ARGUMENT, XUI_ERROR_STAGE_RENDER, 0,
 			"render.arguments", "The render target or damage rectangle arguments are invalid.");

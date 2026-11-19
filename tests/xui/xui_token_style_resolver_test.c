@@ -1,5 +1,6 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,10 +17,79 @@ static int spans(xui_proxy p,xui_draw_context d,const xui_text_item_t* text,xui_
 {for(int i=0;i<count && paintCount<4096;++i)paints[paintCount++]=rows[i].iColor;return baseSpans(p,d,text,rect,color,flags,rows,count);}
 static int shapeSpans(xui_proxy p,xui_draw_context d,const xui_text_shape_t* shape,int start,int end,xui_rect_t rect,uint32_t color,uint32_t flags,float x,const xui_text_paint_span_t* rows,int count)
 {for(int i=0;i<count && paintCount<4096;++i)paints[paintCount++]=rows[i].iColor;return baseShapeSpans(p,d,shape,start,end,rect,color,flags,x,rows,count);}
-typedef struct style_state {xui_code_document doc;uint32_t version;int mode,calls,offscreen,hidden,start,end;} style_state;
+typedef struct style_state {
+    xui_code_document doc;
+    uint32_t version;
+    int mode,calls,offscreen,hidden,start,end;
+    xui_context context;
+    xui_widget editor;
+    xui_surface surface;
+    size_t refs,holds,drops;
+    bool checkBusy,guardOwnerOps;
+} style_state;
+
+static bool holdResolver(const void* raw)
+{
+    style_state* state=(style_state*)raw;
+    if(state->guardOwnerOps){
+        xui_call_scope_t scope={0};
+        assert(xuiCallScopeBegin(state->context,&scope)==XUI_ERROR_BUSY);
+    }
+    ++state->holds;
+    ++state->refs;
+    return true;
+}
+static bool dropResolver(const void* raw)
+{
+    style_state* state=(style_state*)raw;
+    assert(state->refs>1);
+    if(state->guardOwnerOps){
+        xui_call_scope_t scope={0};
+        assert(xuiCallScopeBegin(state->context,&scope)==XUI_ERROR_BUSY);
+    }
+    ++state->drops;
+    --state->refs;
+    return true;
+}
+static bool countResolver(const void* raw,size_t* count)
+{
+    *count=((const style_state*)raw)->refs;
+    return true;
+}
+static bool traceResolver(const void* raw,xrtownershipvisitor visit,void* user)
+{
+    (void)raw;
+    (void)visit;
+    (void)user;
+    return true;
+}
+static const xrtownershipops resolverOps={countResolver,traceResolver};
+typedef struct style_edges {
+    style_state* owner;
+    int matches;
+} style_edges;
+static bool visitResolver(xrtownershipref ref,void* user)
+{
+    style_edges* edges=user;
+    if(ref.Data==edges->owner && ref.Ops==&resolverOps)++edges->matches;
+    return true;
+}
 static int resolve(xui_code_document_t* doc,const xui_code_token_t* token,int* style,void* user)
 {
-    style_state* s=user;++s->calls;if(token->iStartOffset>=s->hidden)s->offscreen=1;
+    style_state* s=user;
+    ++s->calls;
+    if(token->iStartOffset>=s->hidden)s->offscreen=1;
+    if(s->refs>1)assert(s->refs==3);
+    if(s->checkBusy){
+        s->checkBusy=false;
+        xui_call_scope_t scope={0};
+        assert(xuiCallScopeBegin(s->context,&scope)==XUI_ERROR_BUSY);
+        assert(xuiRender(s->context,s->surface,NULL,0)==XUI_ERROR_BUSY);
+        assert(xuiLayout(s->context)==XUI_ERROR_BUSY);
+        assert(xuiCodeEditSetText(s->editor,"unchanged")==XUI_ERROR_BUSY);
+        assert(xuiCodeEditSetTokenStyleResolver(s->editor,NULL,NULL)==XUI_ERROR_BUSY);
+        assert(xuiWidgetDestroyChecked(s->editor)==XUI_ERROR_BUSY);
+    }
     if(doc!=s->doc || xuiCodeDocumentGetVersion(doc)!=s->version || token->iStartOffset!=s->start || token->iEndOffset!=s->end)return XUI_ERROR_NOT_FOUND;
     *style=s->mode==2?999999:s->mode==3?XUI_CODE_STYLE_CUSTOM_BASE+1:XUI_CODE_STYLE_CUSTOM_BASE;
     return s->mode==4?XUI_ERROR_NOT_FOUND:XUI_OK;
@@ -84,6 +154,37 @@ int main(void)
     CHECK(xuiCodeTokenBufferGetTokens(buffer,state.version,after,128,&afterCount)==XUI_OK && afterCount==count && !memcmp(tokens,after,(size_t)count*sizeof(*tokens)));
     callback=resolve;user=&state;CHECK(xuiCodeEditGetTokenStyleResolver(NULL,&callback,&user)==XUI_ERROR_INVALID_ARGUMENT && !callback && !user);
     CHECK(xuiCodeEditGetTokenStyleResolver(edit,NULL,NULL)==XUI_ERROR_INVALID_ARGUMENT && xuiCodeEditSetTokenStyleResolver(NULL,resolve,&state)==XUI_ERROR_INVALID_ARGUMENT);
+    CHECK(!xuiCodeEditHasTokenStyleResolver(edit));
+    state.mode=1;
+    state.context=ctx; state.editor=edit; state.surface=target; state.refs=1;
+    const xui_callback_owner_t owner={{&state,&resolverOps},holdResolver,dropResolver};
+    CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true));
+    CHECK(xrtMemDebugFailAfter(0));
+    int status=xuiCodeEditSetTokenStyleResolverOwned(edit,resolve,&state,&owner);
+    xrtMemDebugFailClear();
+    CHECK(status==XUI_ERROR_OUT_OF_MEMORY && state.refs==1 && !xuiCodeEditHasTokenStyleResolver(edit));
+
+    CHECK(xuiCodeEditSetTokenStyleResolverOwned(edit,resolve,&state,&owner)==XUI_OK);
+    CHECK(state.refs==2 && xuiCodeEditHasTokenStyleResolver(edit));
+    style_edges edges={&state,0};
+    xrtownershipscope freeze={0};
+    CHECK(xrtOwnershipFreezeTryBegin(&freeze));
+    bool traced=xuiContextTraceOwnership(ctx,visitResolver,&edges);
+    CHECK(xrtOwnershipScopeEnd(&freeze) && traced && edges.matches==1);
+
+    size_t holds=state.holds, drops=state.drops;
+    int calls=state.calls;
+    state.checkBusy=true;
+    state.guardOwnerOps=true;
+    paintCount=0;
+    CHECK(xuiRender(ctx,target,&damage,1)==XUI_OK && has(0xe10102ffu) && !state.checkBusy);
+    state.guardOwnerOps=false;
+    CHECK(state.calls-calls>1 && state.holds-holds==1 && state.drops-drops==1 && state.refs==2);
+    CHECK(xuiCodeDocumentGetVersion(state.doc)==state.version);
+
+    CHECK(xuiCodeEditSetTokenStyleResolver(edit,resolve,&state)==XUI_OK && state.refs==1);
+    CHECK(xuiCodeEditSetTokenStyleResolverOwned(edit,resolve,&state,&owner)==XUI_OK && state.refs==2);
+    CHECK(xuiWidgetDestroyChecked(edit)==XUI_OK && state.refs==1);
     printf("xui_token_style_resolver_test passed: %u checks; visible foreground, lexical cache/CSS fallback, no reshaping, span paths and clearing.\n",checks);
 cleanup:
     if(ctx)xuiDestroy(ctx);

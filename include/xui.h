@@ -8503,6 +8503,11 @@ XUI_API int xuiCodeEditSetStyle(xui_widget pWidget, int iStyleId, const xui_code
 /* O(1) callback/user switch: repaint only; lexical cache and layout are intact.
  * NULL callback uninstalls and clears user. Getter requires at least one output. */
 XUI_API int xuiCodeEditSetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc onStyle, void* pUser);
+/* Own a resolver until replaced or until the editor closes. Scoped calls
+ * into this context return Busy during invocation; the borrowed document
+ * supports read-only inspection and the style id is writable for this call. */
+XUI_API int xuiCodeEditSetTokenStyleResolverOwned(xui_widget pWidget, xui_code_token_style_proc onStyle, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API bool xuiCodeEditHasTokenStyleResolver(xui_widget pWidget);
 XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc* pStyle, void** pUser);
 /* 取折叠状态（展开/折叠记录，编辑器持有）。 */
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
