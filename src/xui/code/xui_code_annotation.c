@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui.h"
+#include "xui_code_diagnostics_internal.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -572,7 +573,8 @@ XUI_API int xuiCodeAnnotationGetIndicatorsAt(xui_code_annotation_store pStore, i
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore, const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount)
+int xuiInternalCodeAnnotationApplyDiagnostics(xui_code_annotation_store pStore,
+	const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount, xui_widget editor)
 {
 	xui_code_annotation_store_t tNew;
 	xui_code_diagnostic_t* pDiagnostic;
@@ -632,6 +634,13 @@ XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore, co
 		__xuiCodeAnnotationFreeDiagnosticStorage(&tNew);
 		return iRet;
 	}
+	if ( editor != NULL ) {
+		iRet = xuiWidgetInvalidate(editor, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		if ( iRet != XUI_OK ) {
+			__xuiCodeAnnotationFreeDiagnosticStorage(&tNew);
+			return iRet;
+		}
+	}
 	__xuiCodeAnnotationFreeDiagnosticStorage(pStore);
 	pStore->pDiagnostics = tNew.pDiagnostics;
 	pStore->iDiagnosticCount = tNew.iDiagnosticCount;
@@ -642,6 +651,12 @@ XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore, co
 	tNew.pDiagnosticIndex = NULL;
 	__xuiCodeAnnotationBumpDiagnosticVersion(pStore);
 	return XUI_OK;
+}
+
+XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore,
+	const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount)
+{
+	return xuiInternalCodeAnnotationApplyDiagnostics(pStore, pDiagnostics, iDiagnosticCount, NULL);
 }
 
 XUI_API int xuiCodeAnnotationClearDiagnostics(xui_code_annotation_store pStore)

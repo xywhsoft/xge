@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
 #include "xui_code_document_internal.h"
+#include "xui_code_diagnostics_internal.h"
 #include "xui_code_margin_internal.h"
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
@@ -3814,7 +3815,7 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 	xui_code_diagnostic_t arrLocal[32];
 	xui_code_diagnostic_t* pDiagnostics;
 	xui_code_diagnostic_t* pDiagnostic;
-	xui_code_diagnostic_t tBest;
+	xui_code_edit_line_layout_t* pLayout = NULL;
 	int arrLocalIndices[32];
 	int* pIndices;
 	xui_rect_t tWorld;
@@ -3833,9 +3834,14 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 	float fLineHeight;
 	float fStartX;
 	float fEndX;
+	float fSegmentStartX;
+	double fRow;
 	int iVisibleRow;
 	int iLine;
-	int iLineCount;
+	int iSegmentStart;
+	int iSegmentEnd;
+	int iQueryEnd;
+	int iRet;
 	int iLineStart;
 	int iLineEnd;
 	int iStart;
@@ -3849,10 +3855,13 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 	int iLength;
 
 	if ( pHit != NULL ) memset(pHit, 0, sizeof(*pHit));
-	if ( pWidget == NULL || pData == NULL || pHit == NULL || pData->pDocument == NULL || pData->pAnnotations == NULL ) {
+	if ( pWidget == NULL || pData == NULL || pHit == NULL || pData->pDocument == NULL || pData->pAnnotations == NULL ||
+	     !isfinite(fX) || !isfinite(fY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xuiCodeEditUpdateScrollModel(pWidget, pData) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	if ( xuiCodeAnnotationGetDiagnosticCount(pData->pAnnotations) == 0 ) return XUI_ERROR_NOT_FOUND;
+	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	fViewportX = tWorld.fX + pData->tScrollViewportRect.fX;
 	fViewportY = tWorld.fY + pData->tScrollViewportRect.fY;
@@ -3861,59 +3870,67 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 	fMarginWidth = 0.0f;
 	(void)xuiCodeMarginModelGetTotalWidth(pData->pMargins, &fMarginWidth);
 	if ( fX < fViewportX + fMarginWidth || fX >= fViewportRight || fY < fViewportY || fY >= fViewportBottom ) {
-		return XUI_ERROR_UNSUPPORTED;
+		return XUI_ERROR_NOT_FOUND;
 	}
 	fLineHeight = __xuiCodeEditLineHeight(pWidget, pData);
-	if ( fLineHeight <= 0.0f || fY - fViewportY - 4.0f + pData->fScrollY < 0.0f ) return XUI_ERROR_UNSUPPORTED;
-	iVisibleRow = (int)((fY - fViewportY - 4.0f + pData->fScrollY) / fLineHeight);
-	iLine = __xuiCodeEditVisibleRowToLine(pData, iVisibleRow);
-	iLineCount = xuiCodeDocumentGetLineCount(pData->pDocument);
-	if ( iLine < 0 || iLine >= iLineCount ) return XUI_ERROR_UNSUPPORTED;
-	iLineStart = 0;
-	iLineEnd = 0;
-	if ( xuiCodeDocumentGetLineRange(pData->pDocument, iLine, &iLineStart, &iLineEnd) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	if ( !isfinite(fLineHeight) || fLineHeight <= 0.0f ) return XUI_ERROR_LAYOUT_UNSTABLE;
+	fRow = ((double)fY - fViewportY - 4.0 + pData->fScrollY) / fLineHeight;
+	if ( !isfinite(fRow) || fRow < 0.0 || fRow >= __xuiCodeEditVisibleLineCount(pData) ) return XUI_ERROR_NOT_FOUND;
+	iVisibleRow = (int)fRow;
+	int iAnchorRow, iExtraRows;
+	if ( __xuiCodeEditInlineCompletionLayout(pData, NULL, &iAnchorRow, &iExtraRows) &&
+	     iVisibleRow > iAnchorRow && iVisibleRow - iAnchorRow <= iExtraRows ) return XUI_ERROR_NOT_FOUND;
+	iRet = __xuiCodeEditWrapVisualSegment(pWidget, pData, iVisibleRow, &iLine, NULL,
+		&iSegmentStart, &iSegmentEnd, &fSegmentStartX);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iSegmentStart >= iSegmentEnd && iSegmentStart == INT_MAX ) return XUI_ERROR_NOT_FOUND;
+	iQueryEnd = iSegmentEnd > iSegmentStart ? iSegmentEnd : iSegmentStart + 1;
+	iRet = xuiCodeDocumentGetLineRange(pData->pDocument, iLine, &iLineStart, &iLineEnd);
+	if ( iRet != XUI_OK ) return iRet;
 	pContext = xuiWidgetGetContext(pWidget);
 	pProxy = xuiInternalContextGetProxy(pContext);
-	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
+	pFont = __xuiCodeEditResolveFont(pWidget, pData);
 	fColumnWidth = __xuiCodeEditColumnWidth(pWidget, pData);
-	if ( __xuiCodeEditReadRange(pData, iLineStart, iLineEnd, &sText) != XUI_OK ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = __xuiCodeEditReadRange(pData, iLineStart, iLineEnd, &sText);
+	if ( iRet != XUI_OK ) return iRet;
+	/* Shape before reading any borrowed annotation records. The loop below
+	 * may only use cached geometry and must never invoke a proxy callback. */
+	if ( pProxy != NULL && pFont != NULL ) {
+		pLayout = __xuiCodeEditLineLayoutEnsure(pProxy, pFont, pData,
+			sText, iLineEnd - iLineStart, fColumnWidth);
+		if ( pLayout == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pDiagnostics = arrLocal;
 	pIndices = arrLocalIndices;
-	if ( xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
-		(iLineEnd > iLineStart) ? iLineEnd : iLineStart + 1,
-		arrLocal, arrLocalIndices, (int)(sizeof(arrLocal) / sizeof(arrLocal[0])), &iCount) != XUI_OK || iCount <= 0 ) {
-		return XUI_ERROR_UNSUPPORTED;
-	}
+	iRet = xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iSegmentStart, iQueryEnd,
+		arrLocal, arrLocalIndices, (int)(sizeof(arrLocal) / sizeof(arrLocal[0])), &iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iCount == 0 ) return XUI_ERROR_NOT_FOUND;
 	if ( iCount > (int)(sizeof(arrLocal) / sizeof(arrLocal[0])) ) {
-		i = __xuiCodeEditReserveDiagnosticScratch(pData, iCount);
-		if ( i != XUI_OK ) return i;
+		iRet = __xuiCodeEditReserveDiagnosticScratch(pData, iCount);
+		if ( iRet != XUI_OK ) return iRet;
 		pDiagnostics = pData->pDiagnosticScratch;
 		pIndices = pData->pDiagnosticIndexScratch;
-		if ( xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iLineStart,
-			(iLineEnd > iLineStart) ? iLineEnd : iLineStart + 1,
-			pDiagnostics, pIndices, pData->iDiagnosticScratchCapacity,
-			&iCount) != XUI_OK ||
-		     iCount > pData->iDiagnosticScratchCapacity ) {
-			return XUI_ERROR_UNSUPPORTED;
-		}
+		iRet = xuiCodeAnnotationGetDiagnosticsInRange(pData->pAnnotations, iSegmentStart, iQueryEnd,
+			pDiagnostics, pIndices, pData->iDiagnosticScratchCapacity, &iCount);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iCount > pData->iDiagnosticScratchCapacity ) return XUI_ERROR_LIMIT_EXCEEDED;
 	}
 	iBest = -1;
 	iBestSeverity = 0x7fffffff;
 	iBestLength = 0x7fffffff;
-	memset(&tBest, 0, sizeof(tBest));
 	memset(&tBestRect, 0, sizeof(tBestRect));
 	for ( i = 0; i < iCount; i++ ) {
 		pDiagnostic = &pDiagnostics[i];
-		iStart = (pDiagnostic->tRange.iStart > iLineStart) ? pDiagnostic->tRange.iStart : iLineStart;
-		iEnd = (pDiagnostic->tRange.iEnd < iLineEnd) ? pDiagnostic->tRange.iEnd : iLineEnd;
-		if ( iStart > iLineEnd ) continue;
-		if ( iEnd < iStart ) iEnd = iStart;
-		fStartX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
-			iStart - iLineStart, fColumnWidth);
-		fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
-			iEnd - iLineStart, fColumnWidth);
+		iStart = pDiagnostic->tRange.iStart > iSegmentStart ? pDiagnostic->tRange.iStart : iSegmentStart;
+		iEnd = pDiagnostic->tRange.iEnd < iSegmentEnd ? pDiagnostic->tRange.iEnd : iSegmentEnd;
+		if ( iEnd <= iStart && iSegmentEnd > iSegmentStart ) continue;
+		fStartX = pLayout != NULL ? __xuiCodeEditLineLayoutOffsetX(pLayout, iStart - iLineStart) :
+			__xuiCodeEditLineOffsetX(NULL, NULL, pData, sText, 0, iStart - iLineStart, fColumnWidth);
+		fEndX = pLayout != NULL ? __xuiCodeEditLineLayoutOffsetX(pLayout, iEnd - iLineStart) :
+			__xuiCodeEditLineOffsetX(NULL, NULL, pData, sText, 0, iEnd - iLineStart, fColumnWidth);
+		fStartX -= fSegmentStartX;
+		fEndX -= fSegmentStartX;
 		if ( fEndX <= fStartX ) fEndX = fStartX + fColumnWidth;
 		tRect = (xui_rect_t){
 			fViewportX + fMarginWidth + 4.0f + fStartX - pData->fScrollX,
@@ -3939,17 +3956,14 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 			iBest = pIndices[i];
 			iBestSeverity = iSeverity;
 			iBestLength = iLength;
-			tBest = *pDiagnostic;
 			tBestRect = tRect;
 		}
 	}
-	if ( iBest < 0 ) return XUI_ERROR_UNSUPPORTED;
+	if ( iBest < 0 ) return XUI_ERROR_NOT_FOUND;
 	pHit->iSize = sizeof(*pHit);
 	pHit->iIndex = iBest;
 	pHit->tRect = tBestRect;
-	pHit->tDiagnostic = tBest;
-	pHit->tDiagnostic.iSize = sizeof(pHit->tDiagnostic);
-	return XUI_OK;
+	return xuiCodeAnnotationGetDiagnostic(pData->pAnnotations, iBest, &pHit->tDiagnostic);
 }
 
 static int __xuiCodeEditInlineCompletionValid(xui_code_edit_data_t* pData)
@@ -7178,11 +7192,102 @@ XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget)
 	return (pData != NULL) ? pData->pAnnotations : NULL;
 }
 
-XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget pWidget, float fX, float fY, xui_code_diagnostic_hit_t* pHit)
+XUI_API int xuiCodeEditApplyDiagnostics(xui_widget widget,
+	uint32_t documentVersion, const xui_code_diagnostic_t* diagnostics, int count)
 {
-	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiCodeEditHitTestDiagnosticInternal(pWidget, pData, fX, fY, pHit);
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( data->bProducingLineLayout ) return XUI_ERROR_BUSY;
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(widget->pContext, &scope);
+	if ( status != XUI_OK ) return status;
+	if ( documentVersion != xuiCodeDocumentGetVersion(data->pDocument) ) {
+		status = XUI_ERROR_INVALID_STATE;
+	} else {
+		uint32_t previous = xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations);
+		status = xuiInternalCodeAnnotationApplyDiagnostics(data->pAnnotations, diagnostics, count, widget);
+		if ( status == XUI_OK && previous != xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations) ) {
+			/* Force the next pointer event to refresh or dismiss the old hover. */
+			data->tHoveredDiagnosticRect = (xui_rect_t){0};
+		}
+	}
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
+XUI_API int xuiCodeEditGetDocumentVersion(xui_widget widget, uint32_t* version)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL || version == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*version = xuiCodeDocumentGetVersion(data->pDocument);
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditGetDiagnosticCount(xui_widget widget)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	return data != NULL ? xuiCodeAnnotationGetDiagnosticCount(data->pAnnotations) : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditGetDiagnostic(xui_widget widget, int index, xui_code_diagnostic_t* diagnostic)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	return data != NULL ? xuiCodeAnnotationGetDiagnostic(data->pAnnotations, index, diagnostic) :
+		XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static void __xuiCodeEditDiagnosticWidgetInvalidated(void* user)
+{
+	*(bool*)user = false;
+}
+
+XUI_API int xuiCodeEditFindDiagnostic(xui_widget widget, float x, float y, xui_code_diagnostic_hit_t* hit)
+{
+	xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
+	if ( data == NULL || hit == NULL || !isfinite(x) || !isfinite(y) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( data->bProducingLineLayout ) return XUI_ERROR_BUSY;
+	*hit = (xui_code_diagnostic_hit_t){.iSize=sizeof(*hit), .iIndex=-1};
+	if ( xuiCodeAnnotationGetDiagnosticCount(data->pAnnotations) == 0 ) return XUI_OK;
+	xui_context context = widget->pContext;
+	xui_lifetime_link_t link = {0};
+	bool alive = true;
+	int status = xuiWidgetLifetimeWatch(widget, &link, __xuiCodeEditDiagnosticWidgetInvalidated, &alive);
+	if ( status != XUI_OK ) return status;
+	xui_call_scope_t scope = {0};
+	status = xuiCallScopeBegin(context, &scope);
+	uint32_t version = xuiCodeDocumentGetVersion(data->pDocument);
+	uint32_t annotations = xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations);
+	xui_code_diagnostic_hit_t candidate = {0};
+	bool found = false;
+	if ( status == XUI_OK ) {
+		int previous = data->iCacheActivity;
+		data->iCacheActivity = 2;
+		status = __xuiCodeEditHitTestDiagnosticInternal(widget, data, x, y, &candidate);
+		data->iCacheActivity = previous;
+		found = status == XUI_OK;
+		if ( status == XUI_ERROR_NOT_FOUND ) status = XUI_OK;
+		status = xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+	}
+	xuiLifetimeUnwatch(&link);
+	if ( status != XUI_OK ) return status;
+	if ( !alive || !__xuiCodeEditAlive(context, widget, data) ) return XUI_ERROR_INVALID_STATE;
+	if ( version != xuiCodeDocumentGetVersion(data->pDocument) ||
+	     annotations != xuiCodeAnnotationGetDiagnosticVersion(data->pAnnotations) ) return XUI_ERROR_BUSY;
+	if ( !found ) return XUI_OK;
+	/* Scope end can run deferred work. Read borrowed strings only after it,
+	 * once the widget and both versions have been validated again. */
+	status = xuiCodeAnnotationGetDiagnostic(data->pAnnotations, candidate.iIndex, &candidate.tDiagnostic);
+	if ( status == XUI_OK ) *hit = candidate;
+	return status;
+}
+
+XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget widget, float x, float y, xui_code_diagnostic_hit_t* hit)
+{
+	int status = xuiCodeEditFindDiagnostic(widget, x, y, hit);
+	if ( status == XUI_OK && hit->iIndex < 0 ) {
+		memset(hit, 0, sizeof(*hit));
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	return status;
 }
 
 XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser)

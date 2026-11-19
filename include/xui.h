@@ -8505,6 +8505,15 @@ XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget);
 /* 命中测试偏移处诊断。 */
 XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget pWidget, float fX, float fY, xui_code_diagnostic_hit_t* pHit);
+/* Publish a complete diagnostic set for the given document version. A stale
+ * version or failed allocation leaves the previous set intact. */
+XUI_API int xuiCodeEditApplyDiagnostics(xui_widget widget, uint32_t documentVersion, const xui_code_diagnostic_t* diagnostics, int count);
+XUI_API int xuiCodeEditGetDocumentVersion(xui_widget widget, uint32_t* version);
+XUI_API int xuiCodeEditGetDiagnosticCount(xui_widget widget);
+XUI_API int xuiCodeEditGetDiagnostic(xui_widget widget, int index, xui_code_diagnostic_t* diagnostic);
+/* Hit-test context coordinates. A miss succeeds with iIndex == -1.
+ * Diagnostic strings are borrowed until the next diagnostic mutation. */
+XUI_API int xuiCodeEditFindDiagnostic(xui_widget widget, float x, float y, xui_code_diagnostic_hit_t* hit);
 /* 注册诊断悬停提示回调。 */
 XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser);
 /* 取 token 缓冲（词法缓存，编辑器持有）。 */
