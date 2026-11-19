@@ -2523,21 +2523,21 @@ static int __xuiWidgetTypeDescValid(xui_context pContext, const xui_widget_type_
 	return 1;
 }
 
-static xui_widget_content_measure_proc __xuiWidgetTypeContentMeasure(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeContentMeasureOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onContentMeasure != NULL ) {
-			return pType->onContentMeasure;
+			return pType;
 		}
 	}
 	return NULL;
 }
 
-static xui_widget_cache_render_proc __xuiWidgetTypeCacheRender(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeCacheRenderOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onCacheRender != NULL ) {
-			return pType->onCacheRender;
+			return pType;
 		}
 	}
 	return NULL;
@@ -2602,11 +2602,11 @@ static void __xuiWidgetNotifyParentChanged(xui_widget pWidget,
 	if ( onParentChanged != NULL ) onParentChanged(pWidget, pOldParent, pNewParent);
 }
 
-static xui_widget_update_proc __xuiWidgetTypeUpdate(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeUpdateOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onUpdate != NULL ) {
-			return pType->onUpdate;
+			return pType;
 		}
 	}
 	return NULL;
@@ -3093,12 +3093,15 @@ static void __xuiWidgetTypeDestroyChain(xui_widget pWidget, xui_widget_type pTyp
     else __xuiTypeDestroyCallbacks(pWidget,pType);
 }
 
-static void __xuiWidgetTypeDestroy(xui_widget_type pType)
+static int __xuiWidgetTypeDestroy(xui_widget_type pType)
 {
+	xui_context context=pType->pContext;
+	xui_callback_owner_t owner=pType->tCallbackOwner;
 	pType->iMagic = 0;
 	xuiInternalLifetimeInvalidateAll(&pType->pLifetimeLinks);
 	xrtFree(pType->sName);
 	xrtFree(pType);
+	return xuiInternalCallbackOwnerDrop(context,&owner);
 }
 
 static void __xuiStylePropertyEntryDestroy(xui_style_property_entry_t* pEntry)
@@ -3146,7 +3149,7 @@ void xuiInternalContextDestroyWidgetTypes(xui_context pContext)
 	while ( pContext->pWidgetTypes != NULL ) {
 		xui_widget_type pType = pContext->pWidgetTypes;
 		pContext->pWidgetTypes = pType->pNext;
-		__xuiWidgetTypeDestroy(pType);
+		(void)__xuiWidgetTypeDestroy(pType);
 	}
 }
 
@@ -3218,44 +3221,51 @@ static void __xuiWidgetDestroyAccessibilityData(xui_widget pWidget)
 	pWidget->pAccessibleUser = NULL;
 }
 
-static xui_widget_layout_complete_proc __xuiWidgetTypeLayoutComplete(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeLayoutCompleteOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onLayoutComplete != NULL ) {
-			return pType->onLayoutComplete;
+			return pType;
 		}
 	}
 	return NULL;
 }
 
-static xui_widget_cursor_proc __xuiWidgetTypeQueryCursor(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeQueryCursorOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onQueryCursor != NULL ) {
-			return pType->onQueryCursor;
+			return pType;
 		}
 	}
 	return NULL;
 }
 
-static xui_widget_layout_children_proc __xuiWidgetTypeLayoutChildren(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeLayoutChildrenOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onLayoutChildren != NULL ) {
-			return pType->onLayoutChildren;
+			return pType;
 		}
 	}
 	return NULL;
 }
 
-static xui_widget_layout_prepare_proc __xuiWidgetTypeLayoutPrepare(xui_widget_type pType)
+static xui_widget_type __xuiWidgetTypeLayoutPrepareOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
 		if ( pType->onLayoutPrepare != NULL ) {
-			return pType->onLayoutPrepare;
+			return pType;
 		}
 	}
 	return NULL;
+}
+
+/* Legacy virtuals receive instance data. An owned table gives the declaring
+ * callback its shared environment even when its receiver is a derived type. */
+static void* __xuiWidgetTypeVirtualUser(xui_widget_type pOwner, xui_widget pWidget)
+{
+	return pOwner->tCallbackOwner.onDrop != NULL ? pOwner->pUser : pWidget->pTypeData;
 }
 
 static int __xuiWidgetLayoutChanged(xui_widget pWidget)
@@ -3449,7 +3459,8 @@ XUI_API xui_widget_type xuiWidgetGetBaseType(void)
 	return &g_xuiWidgetBaseType;
 }
 
-XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType, const xui_widget_type_desc_t* pDesc)
+static int __xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
+	const xui_widget_type_desc_t* pDesc, const xui_callback_owner_t* pRetainedOwner)
 {
 	xui_widget_type pType;
 
@@ -3492,10 +3503,67 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 	pType->onQueryCursor = pDesc->onQueryCursor;
 	pType->tLayout = pDesc->tLayout;
 	pType->tCachePolicy = pDesc->tCachePolicy;
+	if ( pRetainedOwner != NULL ) pType->tCallbackOwner = *pRetainedOwner;
 	pType->pNext = pContext->pWidgetTypes;
 	pContext->pWidgetTypes = pType;
 	*ppType = pType;
 	return XUI_OK;
+}
+
+XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType, const xui_widget_type_desc_t* pDesc)
+{
+	if ( xuiInternalContextIsValid(pContext) && pContext->bRegisteringWidgetType ) return XUI_ERROR_BUSY;
+	return __xuiWidgetRegisterType(pContext,ppType,pDesc,NULL);
+}
+
+static void __xuiWidgetTypeOutputGone(void* user)
+{
+	*(xui_widget_type*)user=NULL;
+}
+
+XUI_API int xuiWidgetRegisterTypeOwned(xui_context pContext, xui_widget_type* ppType,
+	const xui_widget_type_desc_t* pDesc, const xui_callback_owner_t* pOwner)
+{
+	if ( ppType == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppType=NULL;
+	if ( !xuiInternalContextIsValid(pContext) || pContext->pOwnedProxy==NULL ||
+	     !xuiInternalCallbackOwnerRawValid(pOwner) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope={0};
+	int status=xuiCallScopeBegin(pContext,&scope);
+	if ( status!=XUI_OK ) return status;
+	if ( pContext->bRegisteringWidgetType )
+		return xuiInternalCallScopeEndRestored(&scope,XUI_ERROR_BUSY,xrtTakeError());
+	if ( !__xuiWidgetTypeDescValid(pContext,pDesc) )
+		return xuiInternalCallScopeEndRestored(&scope,XUI_ERROR_INVALID_ARGUMENT,xrtTakeError());
+
+	bool hasCallbacks=pDesc->onInit || pDesc->onDestroy || pDesc->onContentMeasure || pDesc->onLayoutPrepare ||
+		pDesc->onLayoutChildren || pDesc->onLayoutComplete || pDesc->onCacheRender || pDesc->onUpdate || pDesc->onQueryCursor;
+	if ( hasCallbacks!=(pOwner!=NULL && pOwner->onHold!=NULL) )
+		return xuiInternalCallScopeEndRestored(&scope,XUI_ERROR_INVALID_ARGUMENT,xrtTakeError());
+
+	xui_widget_type candidate=NULL;
+	xui_lifetime_link_t watch={0};
+	bool held=false;
+	/* The borrowed parent and registry identities cannot change in Hold.
+	 * Closing requests can still be queued while this native scope is active. */
+	pContext->bRegisteringWidgetType=1;
+	status=xuiInternalCallbackHoldFresh(pOwner,&held);
+	if ( status==XUI_OK ) {
+		if ( pContext->bCloseRequested || pContext->bDestroyPending ) status=XUI_ERROR_INVALID_STATE;
+		else status=__xuiWidgetRegisterType(pContext,&candidate,pDesc,pOwner);
+	}
+	pContext->bRegisteringWidgetType=0;
+	xerror* first=xrtTakeError();
+	if ( candidate!=NULL ) {
+		(void)xuiInternalLifetimeWatch(&candidate->pLifetimeLinks,&watch,__xuiWidgetTypeOutputGone,&candidate);
+	} else if ( held ) {
+		int drop=xuiInternalCallbackOwnerDropOutcome(pContext,pOwner,status,first);
+		xuiInternalContextCleanupOutcome(pContext,drop,&status,&first);
+	}
+	status=xuiInternalCallScopeEndRestored(&scope,status,first);
+	xuiLifetimeUnwatch(&watch);
+	*ppType=candidate;
+	return status==XUI_OK && candidate==NULL ? XUI_ERROR_INVALID_STATE:status;
 }
 
 XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_type_ownership_trace_proc onTrace)
@@ -3525,39 +3593,28 @@ XUI_API int xuiWidgetTypeLifetimeWatch(xui_widget_type pType, xui_lifetime_link_
 
 XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 {
-	xui_context pContext;
-	xui_widget_type pScan;
-	xui_widget_type pPrev;
-
-	if ( !__xuiWidgetTypeValid(pType) || pType->bBuiltin || (pType->pContext == NULL) ) {
+	if ( !__xuiWidgetTypeValid(pType) || pType->bBuiltin || pType->pContext==NULL )
 		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context context=pType->pContext;
+	xui_call_scope_t scope={0};
+	int status=xuiCallScopeBegin(context,&scope);
+	if ( status!=XUI_OK ) return status;
+	if ( context->bRegisteringWidgetType ) status=XUI_ERROR_BUSY;
+	else if ( pType->iWidgetCount>0 ) status=XUI_ERROR_ALREADY_INITIALIZED;
+	for ( xui_widget_type type=context->pWidgetTypes; status==XUI_OK && type!=NULL; type=type->pNext ) {
+		if ( type->pParent==pType ) status=XUI_ERROR_ALREADY_INITIALIZED;
 	}
-	if ( pType->iWidgetCount > 0 ) {
-		return XUI_ERROR_ALREADY_INITIALIZED;
-	}
-	pContext = pType->pContext;
-	if ( !xuiInternalContextIsValid(pContext) || pContext->bDestroyPending || pContext->bDestroying )
-		return XUI_ERROR_INVALID_STATE;
-	for ( pScan = pContext->pWidgetTypes; pScan != NULL; pScan = pScan->pNext ) {
-		if ( pScan->pParent == pType ) {
-			return XUI_ERROR_ALREADY_INITIALIZED;
+	if ( status==XUI_OK ) {
+		xui_widget_type* slot=&context->pWidgetTypes;
+		while ( *slot!=NULL && *slot!=pType ) slot=&(*slot)->pNext;
+		if ( *slot==NULL ) status=XUI_ERROR_INVALID_ARGUMENT;
+		else {
+			*slot=pType->pNext;
+			__xuiStyleRetireWidgetType(context,pType);
+			status=__xuiWidgetTypeDestroy(pType);
 		}
 	}
-	pPrev = NULL;
-	for ( pScan = pContext->pWidgetTypes; pScan != NULL; pScan = pScan->pNext ) {
-		if ( pScan == pType ) {
-			if ( pPrev != NULL ) {
-				pPrev->pNext = pScan->pNext;
-			} else {
-				pContext->pWidgetTypes = pScan->pNext;
-			}
-			__xuiStyleRetireWidgetType(pContext, pType);
-			__xuiWidgetTypeDestroy(pType);
-			return XUI_OK;
-		}
-		pPrev = pScan;
-	}
-	return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
 
 XUI_API xui_widget_type xuiWidgetFindType(xui_context pContext, const char* sName)
@@ -4169,23 +4226,44 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 			pWidget->tCachePolicy.iSize = sizeof(pWidget->tCachePolicy);
 		}
 	}
-	pWidget->onContentMeasure = __xuiWidgetTypeContentMeasure(pType);
-	pWidget->pContentMeasureUser = pWidget->pTypeData;
-	pWidget->onLayoutPrepare = __xuiWidgetTypeLayoutPrepare(pType);
-	pWidget->pLayoutPrepareUser = pWidget->pTypeData;
-	pWidget->onLayoutChildren = __xuiWidgetTypeLayoutChildren(pType);
-	pWidget->pLayoutChildrenUser = pWidget->pTypeData;
-	pWidget->onLayoutComplete = __xuiWidgetTypeLayoutComplete(pType);
-	pWidget->pLayoutCompleteUser = pWidget->pTypeData;
-	pWidget->onCacheRender = __xuiWidgetTypeCacheRender(pType);
-	pWidget->pCacheRenderUser = pWidget->pTypeData;
-	pWidget->onUpdate = __xuiWidgetTypeUpdate(pType);
-	pWidget->pUpdateUser = pWidget->pTypeData;
+	pOwner = __xuiWidgetTypeContentMeasureOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onContentMeasure = pOwner->onContentMeasure;
+		pWidget->pContentMeasureUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
+	pOwner = __xuiWidgetTypeLayoutPrepareOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onLayoutPrepare = pOwner->onLayoutPrepare;
+		pWidget->pLayoutPrepareUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
+	pOwner = __xuiWidgetTypeLayoutChildrenOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onLayoutChildren = pOwner->onLayoutChildren;
+		pWidget->pLayoutChildrenUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
+	pOwner = __xuiWidgetTypeLayoutCompleteOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onLayoutComplete = pOwner->onLayoutComplete;
+		pWidget->pLayoutCompleteUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
+	pOwner = __xuiWidgetTypeCacheRenderOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onCacheRender = pOwner->onCacheRender;
+		pWidget->pCacheRenderUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
+	pOwner = __xuiWidgetTypeUpdateOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onUpdate = pOwner->onUpdate;
+		pWidget->pUpdateUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
 	pWidget->bSubtreeHasUpdate = pWidget->onUpdate != NULL;
 	pWidget->bSubtreeHasInactiveUpdate = pWidget->onUpdate != NULL &&
 		(pType->iFlags & XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE) != 0;
-	pWidget->onQueryCursor = __xuiWidgetTypeQueryCursor(pType);
-	pWidget->pQueryCursorUser = pWidget->pTypeData;
+	pOwner = __xuiWidgetTypeQueryCursorOwner(pType);
+	if ( pOwner != NULL ) {
+		pWidget->onQueryCursor = pOwner->onQueryCursor;
+		pWidget->pQueryCursorUser = __xuiWidgetTypeVirtualUser(pOwner, pWidget);
+	}
 	iRet = xuiInternalLayoutCreateWidget(pWidget);
 	if ( iRet != XUI_OK ) {
 		if ( pWidget->pTypeData != NULL ) {
@@ -6660,6 +6738,8 @@ XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor 
     if(!xuiInternalContextTraceManagers(pContext,onVisit,pUser))return false;
     if(pContext->pErrorOwner && !onVisit(pContext->pErrorOwner->tOwner.tReference,pUser))return false;
     if(pContext->pAccessibilityOwner && !onVisit(pContext->pAccessibilityOwner->tOwner.tReference,pUser))return false;
+    for(xui_widget_type type=pContext->pWidgetTypes;type;type=type->pNext)
+        if(type->tCallbackOwner.onHold && !onVisit(type->tCallbackOwner.tReference,pUser))return false;
     for(int i=0;i<pContext->iHotkeyCount;++i)
         if(pContext->pHotkeys[i].pOwned && !onVisit(pContext->pHotkeys[i].pOwned->tOwner.tReference,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {

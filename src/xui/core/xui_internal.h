@@ -608,6 +608,7 @@ struct xui_context_t {
 	size_t iCacheBudgetBytes;
 	uint32_t iCacheGeneration;
 	xui_widget_type pWidgetTypes;
+	int bRegisteringWidgetType;
 	xui_style_rule_t* pStyleRules;
 	xui_style_property_entry_t* pStyleProperties;
 	/* Intrusive indexes; the list remains the sole owner and iteration order. */
@@ -727,6 +728,7 @@ struct xui_widget_type_t {
 	/* Builtin descriptors can retry a partially failed property initialization. */
 	int bStylePropertiesReady;
 	xui_lifetime_link_t* pLifetimeLinks;
+	xui_callback_owner_t tCallbackOwner;
 };
 
 typedef struct xui_internal_edit_adapter_t {

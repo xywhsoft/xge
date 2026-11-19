@@ -13363,6 +13363,12 @@ XUI_API xui_widget xuiGetRootWidget(xui_context pContext);
 XUI_API xui_widget_type xuiWidgetGetBaseType(void);
 /* 注册控件类型（pDesc 声明父类型与虚函数表）；*ppType 输出类型句柄。 */
 XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType, const xui_widget_type_desc_t* pDesc);
+/* Retains one traced callback group for an owned Context. Init/Destroy receive
+ * native type data and the descriptor userdata. Other inherited virtuals use
+ * the declaring type's userdata. Callback-free descriptors accept no owner.
+ * A late failure may return a live output that requires checked unregister. */
+XUI_API int xuiWidgetRegisterTypeOwned(xui_context pContext, xui_widget_type* ppType,
+    const xui_widget_type_desc_t* pDesc, const xui_callback_owner_t* pOwner);
 /* Configure before the first live instance; the tracer's native code must
  * remain resident with the context. This does not itself own any userdata. */
 XUI_API int xuiWidgetTypeSetOwnershipTrace(xui_widget_type pType, xui_widget_type_ownership_trace_proc onTrace);
