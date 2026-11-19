@@ -353,6 +353,8 @@ typedef struct xui_language_text_t {
 #define XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE	0x00000004u
 /* Runs onPreparePaint every frame even when the widget subtree is otherwise clean. */
 #define XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT	0x00000008u
+/* One inherited, Context-traced XRT value slot per instance. */
+#define XUI_WIDGET_TYPE_MANAGED_STATE		0x00000010u
 
 #define XUI_RESOURCE_SURFACE		1
 #define XUI_RESOURCE_FONT		2
@@ -13409,6 +13411,12 @@ XUI_API xui_widget_type xuiWidgetGetType(xui_widget pWidget);
 XUI_API int xuiWidgetIsType(xui_widget pWidget, xui_widget_type pType);
 /* 取该类型私有数据块（未匹配类型时返回 NULL）。 */
 XUI_API void* xuiWidgetGetTypeData(xui_widget pWidget);
+/* Managed state uses the owned Context's creator thread. Set retains the
+ * supplied identity, and NULL clears it. Replacing a busy value returns Busy.
+ * Get transfers one retained result and accepts reads in the type destructor.
+ * Writes are rejected once widget destruction has been requested. */
+XUI_API int xuiWidgetSetInstanceState(xui_widget pWidget, xvalue* pValue);
+XUI_API int xuiWidgetGetInstanceState(xui_widget pWidget, xvalue** ppValue);
 /* 设置实例用户指针。 */
 XUI_API void xuiWidgetSetUserData(xui_widget pWidget, void* pUser);
 /* 读取实例用户指针。 */

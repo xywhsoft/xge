@@ -2318,7 +2318,8 @@ static int __xuiWidgetEnsureCacheSurface(xui_widget pWidget, xui_widget_cache_sl
 #define XUI_DESTROY_EXECUTING UINT32_C(0x80000000)
 #define XUI_DESTROY_MEMBER UINT32_C(0x40000000)
 #define XUI_DESTROY_PREPARING UINT32_C(0x20000000)
-#define XUI_DESTROY_EPOCH_MASK UINT32_C(0x1fffffff)
+#define XUI_DESTROY_STATE_READ UINT32_C(0x10000000)
+#define XUI_DESTROY_EPOCH_MASK UINT32_C(0x0fffffff)
 static uint32_t __xuiWidgetVisitBegin(xui_context context)
 {
     uint32_t epoch=(++context->iDestroyVisitEpoch)&XUI_DESTROY_EPOCH_MASK;
@@ -2500,11 +2501,16 @@ static int __xuiWidgetTypeDescValid(xui_context pContext, const xui_widget_type_
 		return 0;
 	}
 	if ( (pDesc->iFlags & ~(XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
-		XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE | XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT)) != 0 ) {
+		XUI_WIDGET_TYPE_UPDATE_ON_INACTIVE | XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT |
+		XUI_WIDGET_TYPE_MANAGED_STATE)) != 0 ) {
 		return 0;
 	}
 	pParent = (pDesc->pParent != NULL) ? pDesc->pParent : &g_xuiWidgetBaseType;
 	if ( !__xuiWidgetTypeBelongsToContext(pContext, pParent) ) {
+		return 0;
+	}
+	if ( ((pDesc->iFlags | pParent->iFlags) & XUI_WIDGET_TYPE_MANAGED_STATE) != 0 &&
+	     pContext->pOwnedProxy == NULL ) {
 		return 0;
 	}
 	if ( pDesc->iTypeDataSize < pParent->iTypeDataSize ) {
@@ -3019,6 +3025,39 @@ static int __xuiTypeResourceAdmit(xui_widget widget,xui_widget_type type)
     }
     return XUI_OK;
 }
+/* Only opted-in instances append storage. Native TypeData keeps its exact
+ * size and address semantics, including a NULL pointer for zero-size types. */
+_Static_assert(_Alignof(xui_widget_t) >= _Alignof(xvalue*), "widget state alignment");
+static xvalue** __xuiWidgetStateSlot(xui_widget widget)
+{
+    return (widget->pType->iFlags & XUI_WIDGET_TYPE_MANAGED_STATE) ? (xvalue**)(widget+1):NULL;
+}
+
+static bool __xuiWidgetStateReady(xvalue* value)
+{
+    if(!value)return true;
+    /* Built-in read-only XRT count refuses busy and finalizing shells.
+     * The creator-thread state slot already holds a strong reference. */
+    xrtownershipref ref=xrtValueOwnership(value);
+    size_t count=0;
+    return ref.Ops->Count(ref.Data,&count);
+}
+
+static void __xuiWidgetStateRetire(xui_widget widget,xvalue** slot)
+{
+    if(!slot || !*slot)return;
+    xerror* first=xrtTakeError();
+    int result=first ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
+    xrtownershipscope mutation={0};
+    if(!xrtOwnershipMutationBegin(&mutation))abort();
+    xvalue* old=*slot;
+    *slot=NULL;
+    if(!xrtOwnershipScopeEnd(&mutation))abort();
+    xrtValueRelease(old);
+    xuiInternalContextCleanupOutcome(widget->pContext,XUI_OK,&result,&first);
+    xrtSetErrorTake(first);
+}
+
 static void __xuiTypeDestroyCallbacks(xui_widget widget,xui_widget_type type)
 {
     if(!__xuiWidgetTypeValid(type))return;
@@ -3489,7 +3528,7 @@ static int __xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType
 	pType->iMagic = XUI_WIDGET_TYPE_MAGIC;
 	pType->pContext = pContext;
 	pType->pParent = (pDesc->pParent != NULL) ? pDesc->pParent : &g_xuiWidgetBaseType;
-	pType->iFlags = pDesc->iFlags;
+	pType->iFlags = pDesc->iFlags | (pType->pParent->iFlags & XUI_WIDGET_TYPE_MANAGED_STATE);
 	pType->iTypeDataSize = pDesc->iTypeDataSize;
 	pType->pUser = pDesc->pUser;
 	pType->onInit = pDesc->onInit;
@@ -4178,11 +4217,13 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*ppWidget = NULL;
-	pWidget = (xui_widget)xrtMalloc(sizeof(*pWidget));
+	size_t bytes=sizeof(*pWidget);
+	if ( pType->iFlags & XUI_WIDGET_TYPE_MANAGED_STATE ) bytes+=sizeof(xvalue*);
+	pWidget = (xui_widget)xrtMalloc(bytes);
 	if ( pWidget == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	memset(pWidget, 0, sizeof(*pWidget));
+	memset(pWidget, 0, bytes);
 	pWidget->iMagic = XUI_WIDGET_MAGIC;
 	pWidget->pContext = pContext;
 	pWidget->pType = pType;
@@ -4621,7 +4662,13 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget, bool bVisualDetached)
      * and callback targets are still alive, even outside its visual subtree. */
     while(pWidget->pFirstOwnedPart)__xuiWidgetDestroyNow(pWidget->pFirstOwnedPart, false);
 	__xuiWidgetEndActiveUpdate(pWidget);
-    if(pWidget->pInitializedType)__xuiWidgetTypeDestroyChain(pWidget,pWidget->pInitializedType);
+    xvalue** state=__xuiWidgetStateSlot(pWidget);
+    if(pWidget->pInitializedType){
+        if(state)pWidget->iDestroyVisitEpoch|=XUI_DESTROY_STATE_READ;
+        __xuiWidgetTypeDestroyChain(pWidget,pWidget->pInitializedType);
+        pWidget->iDestroyVisitEpoch&=~XUI_DESTROY_STATE_READ;
+    }
+    __xuiWidgetStateRetire(pWidget,state);
 	/* Empty the physical slots before arbitrary consuming cleanup reenters. */
 	xui_event_owners_t* pOwners = pWidget->pEventOwners;
 	pWidget->pEventOwners = NULL;
@@ -4823,6 +4870,54 @@ XUI_API void* xuiWidgetGetTypeData(xui_widget pWidget)
 		return NULL;
 	}
 	return pWidget->pTypeData;
+}
+
+XUI_API int xuiWidgetGetInstanceState(xui_widget widget,xvalue** output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    if(!xuiInternalContextIsValid(widget->pContext))return XUI_ERROR_INVALID_STATE;
+    if(!widget->pContext->pOwnedProxy)return XUI_ERROR_UNSUPPORTED;
+    if(!xuiInternalProxyCreator(widget->pContext->pOwnedProxy))return XUI_ERROR_BUSY;
+    if(widget->bDestroyPending && !(widget->iDestroyVisitEpoch&XUI_DESTROY_STATE_READ))return XUI_ERROR_INVALID_STATE;
+    xvalue** slot=__xuiWidgetStateSlot(widget);
+    if(!slot)return XUI_ERROR_UNSUPPORTED;
+    if(*slot && !(*output=xrtValueRetain(*slot)))return XUI_ERROR_INVALID_STATE;
+    return XUI_OK;
+}
+
+XUI_API int xuiWidgetSetInstanceState(xui_widget widget,xvalue* value)
+{
+    if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
+    if(widget->bDestroyPending)return XUI_ERROR_INVALID_STATE;
+    xui_context context=widget->pContext;
+    xui_call_scope_t scope={0};
+    int status=xuiCallScopeBegin(context,&scope);
+    if(status!=XUI_OK)return status;
+
+    xvalue** slot=__xuiWidgetStateSlot(widget);
+    xvalue* old=NULL;
+    if(!slot)status=XUI_ERROR_UNSUPPORTED;
+    else if(*slot!=value){
+        xrtownershipscope mutation={0};
+        if(!xrtOwnershipMutationBegin(&mutation))status=XUI_ERROR_INVALID_STATE;
+        else {
+            if(!__xuiWidgetStateReady(*slot))status=XUI_ERROR_BUSY;
+            else if(value && !xrtValueRetain(value))status=XUI_ERROR_INVALID_STATE;
+            else {
+                old=*slot;
+                *slot=value;
+            }
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+    }
+    xerror* first=xrtTakeError();
+    if(old){
+        xrtValueRelease(old);
+        xuiInternalContextCleanupOutcome(context,XUI_OK,&status,&first);
+    }
+    return xuiInternalCallScopeEndRestored(&scope,status,first);
 }
 
 XUI_API void xuiWidgetSetUserData(xui_widget pWidget, void* pUser)
@@ -6566,6 +6661,8 @@ static int __xuiWidgetDestroyReadySelf(xui_widget widget)
     if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
     if(widget->iDestroyVisitEpoch&XUI_DESTROY_PREPARING)return XUI_ERROR_BUSY;
     if(widget->bCacheMutationActive)return XUI_ERROR_BUSY;
+    xvalue** state=__xuiWidgetStateSlot(widget);
+    if(state && !__xuiWidgetStateReady(*state))return XUI_ERROR_BUSY;
     if(widget->pActiveUpdateDraw && widget->pContext->pOwnedProxy &&
        xuiProxyResourceOwnershipBusy(xuiDrawOwnership(widget->pActiveUpdateDraw)))return XUI_ERROR_BUSY;
     for(xui_widget_type type=widget->pInitializedType;type;type=type->pParent){
@@ -6596,6 +6693,8 @@ static int __xuiWidgetDestroyPrepareSelf(xui_widget widget,bool* complete)
     *complete=false;
     if(!__xuiWidgetMemoryValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
     if(widget->bCacheMutationActive)return XUI_STATUS_DEFERRED;
+    xvalue** state=__xuiWidgetStateSlot(widget);
+    if(state && !__xuiWidgetStateReady(*state))return XUI_STATUS_DEFERRED;
     bool all=true;int result=XUI_OK;xerror* first=NULL;
     bool drawWaiting=widget->pActiveUpdateDraw && widget->pContext->pOwnedProxy &&
         xuiProxyResourceOwnershipBusy(xuiDrawOwnership(widget->pActiveUpdateDraw));
@@ -6743,6 +6842,8 @@ XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor 
     for(int i=0;i<pContext->iHotkeyCount;++i)
         if(pContext->pHotkeys[i].pOwned && !onVisit(pContext->pHotkeys[i].pOwned->tOwner.tReference,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {
+        xvalue** state=__xuiWidgetStateSlot(pWidget);
+        if(state && *state && !onVisit(xrtValueOwnership(*state),pUser))return false;
         if(pWidget->pEventOwners) {
             for(const xui_callback_binding_t* binding=pWidget->pEventOwners->pBindings;binding;binding=binding->pNext) {
                 if(!onVisit(binding->tOwner.tReference,pUser))return false;
