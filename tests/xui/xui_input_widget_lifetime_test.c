@@ -129,6 +129,57 @@ static void count_invalidation(void* pUser)
 	++*(int*)pUser;
 }
 
+typedef struct history_close_test_t {
+	input_lifetime_test_t* pTest;
+	bool bRedo, bCloseContext, bReportError;
+} history_close_test_t;
+
+static void close_after_history_change(xui_widget pWidget, const char* sText, void* pUser)
+{
+	history_close_test_t* pHistory = pUser;
+	input_lifetime_test_t* pTest = pHistory->pTest;
+	++pTest->iCallbackCount;
+	CHECK(pTest, strcmp(sText, pHistory->bRedo ? "U" : "") == 0,
+		"change callback sees committed text");
+	CHECK(pTest, pHistory->bRedo ? xuiInputCanUndo(pWidget) : xuiInputCanRedo(pWidget),
+		"change callback sees committed history");
+	CHECK(pTest, (pHistory->bRedo ? xuiInputUndo(pWidget) : xuiInputRedo(pWidget)) == XUI_ERROR_BUSY,
+		"same-input edits stay blocked during notification");
+	if ( pHistory->bCloseContext ) {
+		xuiDestroy(pTest->pContext);
+		pTest->bContextDestroyed = 1;
+	} else {
+		xuiWidgetDestroy(pWidget);
+	}
+	if ( pHistory->bReportError ) xrtSetErrorKind(XERR_RANGE);
+}
+
+static void check_history_close(input_lifetime_test_t* pTest, bool bRedo, bool bCloseContext, bool bReportError)
+{
+	history_close_test_t tHistory = {pTest, bRedo, bCloseContext, bReportError};
+	xui_lifetime_link_t tWatch = {0};
+	int iInvalidated = 0;
+	CHECK(pTest, xuiSetFocusWidget(pTest->pContext, pTest->pInput) == XUI_OK, "focus Input for history");
+	CHECK(pTest, dispatch_text(pTest, 'U') == XUI_OK, "create undo history");
+	if ( bRedo ) {
+		CHECK(pTest, xuiInputUndo(pTest->pInput) == XUI_OK, "create redo history");
+	}
+	CHECK(pTest, xuiWidgetLifetimeWatch(pTest->pInput, &tWatch, count_invalidation, &iInvalidated) == XUI_OK,
+		"watch Input destruction");
+	CHECK(pTest, xuiInputSetChange(pTest->pInput, close_after_history_change, &tHistory) == XUI_OK,
+		"set destructive history callback");
+	int iStatus = bRedo ? xuiInputRedo(pTest->pInput) : xuiInputUndo(pTest->pInput);
+	CHECK(pTest, iStatus == (bReportError ? XUI_ERROR_CALLBACK_FAILED : XUI_OK),
+		"history returns the callback outcome after committed edit");
+	CHECK(pTest, bReportError ? xrtErrorKind(xrtGetError()) == XERR_RANGE : !xrtGetError(),
+		"history preserves the diagnostic");
+	xrtClearError();
+	CHECK(pTest, pTest->iCallbackCount == 1 && iInvalidated == 1 && !tWatch.ppPrevious,
+		"history notifies and invalidates exactly once");
+	if ( !bCloseContext ) check_widget_destroyed(pTest);
+	xuiLifetimeUnwatch(&tWatch);
+}
+
 typedef struct decoration_observation_t {
 	input_lifetime_test_t* pTest;
 	xui_input_decoration pPeer;
@@ -301,15 +352,13 @@ static int run_case(const char* sName)
 		CHECK(&tTest, tTest.iCallbackCount == 1, "pointer selection callback runs once");
 		check_widget_destroyed(&tTest);
 	} else if ( strcmp(sName, "undo_destroy_widget") == 0 ) {
-		CHECK(&tTest, xuiSetFocusWidget(tTest.pContext, tTest.pInput) == XUI_OK,
-			"focus Input for undo");
-		CHECK(&tTest, dispatch_text(&tTest, 'U') == XUI_OK, "create undo history");
-		CHECK(&tTest, xuiInputSetChange(tTest.pInput, destroy_on_change, &tTest) == XUI_OK,
-			"set destructive undo callback");
-		CHECK(&tTest, xuiInputUndo(tTest.pInput) == XUI_OK,
-			"undo with destructive callback");
-		CHECK(&tTest, tTest.iCallbackCount == 1, "undo callback runs once");
-		check_widget_destroyed(&tTest);
+		check_history_close(&tTest, false, false, false);
+	} else if ( strcmp(sName, "redo_destroy_widget") == 0 ) {
+		check_history_close(&tTest, true, false, false);
+	} else if ( strcmp(sName, "undo_destroy_context") == 0 ) {
+		check_history_close(&tTest, false, true, false);
+	} else if ( strcmp(sName, "redo_destroy_widget_error") == 0 ) {
+		check_history_close(&tTest, true, false, true);
 	} else if ( strcmp(sName, "decoration_observers") == 0 ) {
 		check_decoration_observers(&tTest);
 	} else if ( strcmp(sName, "clear_decoration_destroy_widget") == 0 ) {
@@ -366,7 +415,7 @@ int main(void)
 		"edit_text_destroy_widget", "selection_destroy_widget",
 		"validation_destroy_widget", "ime_destroy_widget",
 		"focus_selection_destroy_widget", "pointer_selection_destroy_widget",
-		"undo_destroy_widget",
+		"undo_destroy_widget", "redo_destroy_widget", "undo_destroy_context", "redo_destroy_widget_error",
 		"clear_decoration_destroy_widget", "decoration_observers"
 	};
 	int i;

@@ -646,12 +646,15 @@ static int __xuiInputTextEditBegin(xui_widget widget,xui_input_data_t* data,xui_
     int status=xuiCallScopeBegin(widget->pContext,scope);if(status!=XUI_OK)return status;
     data->bTextUpdating=1;return XUI_OK;
 }
+static int __xuiInputTextEditFinish(xui_input_data_t* data,xui_call_scope_t* scope,int status)
+{
+    xuiInternalTextChunkCacheCancelEdit(&data->tTextChunks);data->bTextUpdating=0;
+    return xuiInternalCallScopeEndRestored(scope,status,xrtTakeError());
+}
 static int __xuiInputTextEditEnd(xui_widget widget,xui_input_data_t* data,xui_call_scope_t* scope,int status)
 {
-    xui_context context=widget->pContext;
-    xuiInternalTextChunkCacheCancelEdit(&data->tTextChunks);data->bTextUpdating=0;
-    if(status==XUI_OK && (!xuiInternalContextIsValid(context) || !xuiInternalWidgetIsValid(widget)))status=XUI_ERROR_INVALID_STATE;
-    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(scope,status,&first);xrtSetErrorTake(first);return status;
+    if(status==XUI_OK && (!xuiInternalContextIsValid(widget->pContext) || !xuiInternalWidgetIsValid(widget)))status=XUI_ERROR_INVALID_STATE;
+    return __xuiInputTextEditFinish(data,scope,status);
 }
 static int __xuiInputTextShapeClearOutcome(xui_widget widget,xui_input_data_t* data,int prior,bool chunks)
 {
@@ -3942,6 +3945,18 @@ static int __xuiInputApplyHistoryState(xui_widget pWidget,
 	return XUI_OK;
 }
 
+static int __xuiInputNotifyHistoryChange(xui_widget pWidget,xui_input_data_t* pData)
+{
+    xui_context context=pWidget->pContext;
+    int status=__xuiInputInvalidateText(pWidget);
+    if(status!=XUI_OK)return status;
+    if(!__xuiInputAlive(context,pWidget,pData))return XUI_ERROR_INVALID_STATE;
+    /* History and text are committed before notifying. A handler may close
+     * the widget or context, and the calling scope still owns cleanup. */
+    __xuiInputNotifyChange(pWidget,pData);
+    return XUI_OK;
+}
+
 static int __xuiInputImplUndo(xui_widget pWidget)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
@@ -3968,10 +3983,7 @@ static int __xuiInputImplUndo(xui_widget pWidget)
 	}
 	__xuiInputHistoryFree(&tUndo);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInputInvalidateText(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	__xuiInputNotifyChange(pWidget, pData);
-	return XUI_OK;
+	return __xuiInputNotifyHistoryChange(pWidget,pData);
 }
 
 static int __xuiInputImplRedo(xui_widget pWidget)
@@ -4000,10 +4012,7 @@ static int __xuiInputImplRedo(xui_widget pWidget)
 	}
 	__xuiInputHistoryFree(&tRedo);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInputInvalidateText(pWidget);
-	if ( iRet != XUI_OK ) return iRet;
-	__xuiInputNotifyChange(pWidget, pData);
-	return XUI_OK;
+	return __xuiInputNotifyHistoryChange(pWidget,pData);
 }
 
 XUI_API int xuiInputCanUndo(xui_widget pWidget)
@@ -4616,7 +4625,7 @@ XUI_API int xuiInputUndo(xui_widget pWidget)
     xui_input_data_t* pData=__xuiInputGetData(pWidget);xui_call_scope_t scope={0};
     int status=__xuiInputTextEditBegin(pWidget,pData,&scope);if(status!=XUI_OK)return status;
     status=__xuiInputImplUndo(pWidget);
-    return __xuiInputTextEditEnd(pWidget,pData,&scope,status);
+    return __xuiInputTextEditFinish(pData,&scope,status);
 }
 
 XUI_API int xuiInputRedo(xui_widget pWidget)
@@ -4624,7 +4633,7 @@ XUI_API int xuiInputRedo(xui_widget pWidget)
     xui_input_data_t* pData=__xuiInputGetData(pWidget);xui_call_scope_t scope={0};
     int status=__xuiInputTextEditBegin(pWidget,pData,&scope);if(status!=XUI_OK)return status;
     status=__xuiInputImplRedo(pWidget);
-    return __xuiInputTextEditEnd(pWidget,pData,&scope,status);
+    return __xuiInputTextEditFinish(pData,&scope,status);
 }
 
 XUI_API int xuiInputSetMaxLength(xui_widget pWidget, int iMaxLength)
