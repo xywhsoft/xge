@@ -588,6 +588,8 @@ static void __xuiCodeEditDocumentEdited(xui_code_document pDocument,
 		}
 		__xuiCodeEditAdjustPlaceholders(pData,
 			iStartOffset, iEndOffset, iNewEndOffset - iStartOffset);
+		if ( iNewEndOffset < iEndOffset )
+			xuiInternalCodeSelectionClampLength(pData->pSelection, xuiCodeDocumentGetLength(pDocument));
 	}
 	if ( pData->pOwner != NULL ) {
 		(void)xuiWidgetInvalidate(pData->pOwner,
@@ -2507,7 +2509,7 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	xuiCodeAnnotationStoreDestroy(pData->pAnnotations);
 	xuiCodeFoldStateDestroy(pData->pFoldState);
 	xuiCodeThemeDestroy(pData->pTheme);
-	xuiCodeSelectionDestroy(pData->pSelection);
+	xuiInternalCodeSelectionDestroyOwned(pWidget, pData->pSelection);
     if(pData->pDocument)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeDocumentDestroyOwned(pWidget,pData->pDocument));
 	pData->pCommandMap = NULL;
 	pData->pMargins = NULL;
@@ -2993,6 +2995,7 @@ static int __xuiCodeEditInitOwned(xui_widget pWidget,xui_code_edit_data_t* pData
 	iRet = xuiCodeDocumentCreate(&pData->pDocument);
     if(iRet==XUI_OK)iRet=xuiInternalCodeDocumentClaimOwner(pData->pDocument,pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiCodeSelectionCreate(&pData->pSelection);
+	if ( iRet == XUI_OK ) iRet = xuiInternalCodeSelectionClaimOwner(pData->pSelection, pWidget, pData->pDocument);
 	if ( iRet == XUI_OK ) iRet = xuiCodeThemeCreate(&pData->pTheme);
 	if ( iRet == XUI_OK ) iRet = xuiCodeFoldStateCreate(&pData->pFoldState);
 	if ( iRet == XUI_OK ) iRet = xuiCodeAnnotationStoreCreate(&pData->pAnnotations);
@@ -7279,6 +7282,14 @@ XUI_API xui_code_document xuiCodeEditGetDocument(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? pData->pDocument : NULL;
+}
+
+XUI_API int xuiCodeEditSetDocumentChangeCallbackOwned(xui_widget pWidget,
+    xui_code_document_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+    if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiCodeDocumentSetChangeCallbackOwned(pData->pDocument, onChange, pUser, pOwner);
 }
 
 XUI_API xui_code_selection_model xuiCodeEditGetSelection(xui_widget pWidget)

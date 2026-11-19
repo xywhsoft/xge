@@ -2,6 +2,8 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 
+#include "xui_code_document_internal.h"
+
 #include <limits.h>
 #include <string.h>
 
@@ -11,7 +13,8 @@ static int __xuiCodeEditingUnicodeRead(void* pUser, int iOffset,
 static int __xuiCodeEditingWritable(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly)
 {
 	if ( (pDocument == NULL) || (pSelection == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return bReadonly ? XUI_ERROR_UNSUPPORTED : XUI_OK;
+	if ( bReadonly ) return XUI_ERROR_UNSUPPORTED;
+	return xuiInternalCodeSelectionPrepare(pSelection, pDocument);
 }
 
 /* EndEdit can invoke an owned change callback, which may fail or close the

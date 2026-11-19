@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
+#include "xui_code_document_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -11,9 +12,64 @@ struct xui_code_selection_model_t {
 	xui_code_selection_t* pExtra;
 	int iExtraCount;
 	int iExtraCapacity;
+	xui_widget pInternalOwner;
+	xui_code_document pInternalDocument;
+	uint64_t iOwnerThread;
 };
 
 #define XUI_CODE_SELECTION_EXTRA_INITIAL 4
+
+static int __xuiCodeSelectionEditorStatus(xui_code_selection_model selection)
+{
+	if ( selection->pInternalOwner == NULL ) return XUI_OK;
+	if ( selection->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	if ( !xuiInternalWidgetIsValid(selection->pInternalOwner) ||
+	     xuiInternalContextDestroyPending(selection->pInternalOwner->pContext) ) return XUI_ERROR_INVALID_STATE;
+	return XUI_OK;
+}
+
+int xuiInternalCodeSelectionPrepare(xui_code_selection_model selection, xui_code_document document)
+{
+	if ( selection == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeSelectionEditorStatus(selection);
+	if ( status != XUI_OK || selection->pInternalOwner == NULL ) return status;
+	if ( document != NULL && selection->pInternalDocument != document ) return XUI_ERROR_INVALID_ARGUMENT;
+	return selection->pInternalOwner->pContext->bGuardedCallback ? XUI_ERROR_BUSY : XUI_OK;
+}
+
+static void __xuiCodeSelectionPaint(xui_code_selection_model selection)
+{
+	xui_widget owner = selection->pInternalOwner;
+	const uint32_t flags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	if ( owner == NULL || (owner->iDirtyFlags & flags) == flags ) return;
+	xerror* prior = xrtTakeError();
+	if ( xuiWidgetInvalidate(owner, flags) != XUI_OK ) {
+		xrtClearError();
+		(void)xuiInternalContextInvalidateAll(owner->pContext);
+	}
+	xrtClearError();
+	xrtSetErrorTake(prior);
+}
+
+int xuiInternalCodeSelectionClaimOwner(xui_code_selection_model selection, xui_widget editor,
+	xui_code_document document)
+{
+	if ( selection == NULL || document == NULL || !xuiInternalWidgetIsValid(editor) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( selection->pInternalOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	selection->pInternalOwner = editor;
+	selection->pInternalDocument = document;
+	selection->iOwnerThread = xrtThreadCurrentId();
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeSelectionEditorLifetimeWatch(xui_code_selection_model selection,
+	xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+	if ( selection == NULL || selection->pInternalOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = __xuiCodeSelectionEditorStatus(selection);
+	return status == XUI_OK ? xuiWidgetLifetimeWatch(selection->pInternalOwner, link, invalidate, user) : status;
+}
 
 static int __xuiCodeSelectionUnicodeRead(void* pUser, int iOffset,
 	unsigned char* pByte);
@@ -145,24 +201,39 @@ XUI_API int xuiCodeSelectionCreate(xui_code_selection_model* ppSelection)
 	return XUI_OK;
 }
 
+void xuiInternalCodeSelectionDestroyOwned(xui_widget editor, xui_code_selection_model selection)
+{
+	if ( selection == NULL || (selection->pInternalOwner != NULL && selection->pInternalOwner != editor) ) return;
+	xrtFree(selection->pExtra);
+	xrtFree(selection);
+}
+
+XUI_API int xuiCodeSelectionDestroyChecked(xui_code_selection_model selection)
+{
+	if ( selection != NULL && selection->pInternalOwner != NULL ) return XUI_ERROR_INVALID_STATE;
+	xuiInternalCodeSelectionDestroyOwned(NULL, selection);
+	return XUI_OK;
+}
+
 XUI_API void xuiCodeSelectionDestroy(xui_code_selection_model pSelection)
 {
-	if ( pSelection == NULL ) return;
-	xrtFree(pSelection->pExtra);
-	xrtFree(pSelection);
+	(void)xuiCodeSelectionDestroyChecked(pSelection);
 }
 
 XUI_API void xuiCodeSelectionClear(xui_code_selection_model pSelection)
 {
-	if ( pSelection == NULL ) return;
+	if ( xuiInternalCodeSelectionPrepare(pSelection, NULL) != XUI_OK ) return;
 	memset(&pSelection->tPrimary, 0, sizeof(pSelection->tPrimary));
 	pSelection->tPrimary.iSize = sizeof(pSelection->tPrimary);
 	pSelection->iExtraCount = 0;
+	__xuiCodeSelectionPaint(pSelection);
 }
 
 XUI_API int xuiCodeSelectionSetRange(xui_code_selection_model pSelection, xui_code_document pDocument, int iAnchorOffset, int iCaretOffset)
 {
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	pSelection->tPrimary.iSize = sizeof(pSelection->tPrimary);
 	pSelection->tPrimary.iAnchorOffset = __xuiCodeSelectionClamp(pDocument, iAnchorOffset);
 	pSelection->tPrimary.iCaretOffset = __xuiCodeSelectionClamp(pDocument, iCaretOffset);
@@ -172,6 +243,7 @@ XUI_API int xuiCodeSelectionSetRange(xui_code_selection_model pSelection, xui_co
 		pSelection->tPrimary.iFlags |= XUI_CODE_SELECTION_REVERSED;
 	}
 	pSelection->iExtraCount = 0;
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
 }
 
@@ -179,7 +251,9 @@ XUI_API int xuiCodeSelectionSetState(xui_code_selection_model pSelection, xui_co
 {
 	xui_code_selection_t tState;
 
-	if ( (pSelection == NULL) || (pDocument == NULL) || (pState == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL || (pState == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	if ( pState->iAnchorOffset < 0 || pState->iCaretOffset < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	tState = *pState;
 	tState.iSize = sizeof(tState);
@@ -192,6 +266,7 @@ XUI_API int xuiCodeSelectionSetState(xui_code_selection_model pSelection, xui_co
 	tState.iFlags &= ~XUI_CODE_SELECTION_INACTIVE;
 	pSelection->tPrimary = tState;
 	pSelection->iExtraCount = 0;
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
 }
 
@@ -253,20 +328,29 @@ XUI_API int xuiCodeSelectionAdd(xui_code_selection_model pSelection, const xui_c
 	xui_code_selection_t tState;
 	int iRet;
 
-	if ( (pSelection == NULL) || (pState == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiInternalCodeSelectionPrepare(pSelection, NULL);
+	if ( iRet != XUI_OK ) return iRet;
 	if ( pState->iAnchorOffset < 0 || pState->iCaretOffset < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiCodeSelectionEnsureExtra(pSelection, pSelection->iExtraCount + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	tState = *pState;
+	if ( pSelection->pInternalDocument != NULL ) {
+		tState.iAnchorOffset = __xuiCodeSelectionClamp(pSelection->pInternalDocument, tState.iAnchorOffset);
+		tState.iCaretOffset = __xuiCodeSelectionClamp(pSelection->pInternalDocument, tState.iCaretOffset);
+	}
 	__xuiCodeSelectionNormalizeState(&tState);
 	tState.iFlags |= XUI_CODE_SELECTION_INACTIVE;
 	pSelection->pExtra[pSelection->iExtraCount++] = tState;
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeSelectionSelectAll(xui_code_selection_model pSelection, xui_code_document pDocument)
 {
 	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	return xuiCodeSelectionSetRange(pSelection, pDocument, 0, xuiCodeDocumentGetLength(pDocument));
 }
 
@@ -276,7 +360,9 @@ XUI_API int xuiCodeSelectionSelectWord(xui_code_selection_model pSelection, xui_
 	int iEnd;
 	xui_internal_word_kind_t iKind;
 
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
 	iKind = xuiInternalTextWordRangeRead(__xuiCodeSelectionUnicodeRead, pDocument,
 		xuiCodeDocumentGetLength(pDocument), iOffset, XUI_INTERNAL_WORD_IDENTIFIER,
@@ -292,7 +378,9 @@ XUI_API int xuiCodeSelectionSelectLine(xui_code_selection_model pSelection, xui_
 	int iEnd;
 	int iRet;
 
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	iLineCount = xuiCodeDocumentGetLineCount(pDocument);
 	if ( iLine < 0 ) iLine = 0;
 	if ( iLine >= iLineCount ) iLine = iLineCount - 1;
@@ -311,8 +399,11 @@ XUI_API int xuiCodeSelectionSelectLine(xui_code_selection_model pSelection, xui_
 
 XUI_API int xuiCodeSelectionGotoOffset(xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset, int bExtend)
 {
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, -1);
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
 }
 
@@ -321,10 +412,13 @@ XUI_API int xuiCodeSelectionGotoLineColumn(xui_code_selection_model pSelection, 
 	int iOffset;
 	int iRet;
 
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	iRet = __xuiCodeSelectionLineOffset(pDocument, iLine, iColumn, &iOffset);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, iColumn);
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
 }
 
@@ -337,7 +431,9 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	int bExtend;
 	int iRet;
 
-	if ( (pSelection == NULL) || (pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int status = xuiInternalCodeSelectionPrepare(pSelection, pDocument);
+	if ( status != XUI_OK ) return status;
 	iOffset = pSelection->tPrimary.iCaretOffset;
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	bExtend = 0;
@@ -406,6 +502,7 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 		iRet = __xuiCodeSelectionLineOffset(pDocument, iLine, iColumn, &iOffset);
 		if ( iRet != XUI_OK ) return iRet;
 		__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, iColumn);
+		__xuiCodeSelectionPaint(pSelection);
 		return XUI_OK;
 	case XUI_CODE_COMMAND_SELECT_ALL:
 		return xuiCodeSelectionSelectAll(pSelection, pDocument);
@@ -413,7 +510,25 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 		return XUI_ERROR_UNSUPPORTED;
 	}
 	__xuiCodeSelectionApplyCaret(pSelection, pDocument, iOffset, bExtend, -1);
+	__xuiCodeSelectionPaint(pSelection);
 	return XUI_OK;
+}
+
+static void __xuiCodeSelectionClampStateLength(xui_code_selection_t* state, int length)
+{
+	if ( state->iAnchorOffset <= length && state->iCaretOffset <= length ) return;
+	if ( state->iAnchorOffset > length ) state->iAnchorOffset = length;
+	if ( state->iCaretOffset > length ) state->iCaretOffset = length;
+	state->iPreferredColumn = -1;
+	__xuiCodeSelectionNormalizeState(state);
+}
+
+void xuiInternalCodeSelectionClampLength(xui_code_selection_model selection, int length)
+{
+	if ( selection == NULL ) return;
+	__xuiCodeSelectionClampStateLength(&selection->tPrimary, length);
+	for ( int i = 0; i < selection->iExtraCount; ++i )
+		__xuiCodeSelectionClampStateLength(&selection->pExtra[i], length);
 }
 
 #endif

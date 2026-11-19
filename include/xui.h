@@ -7866,6 +7866,8 @@ XUI_API int xuiCodeDocumentDestroyOwnerChecked(xui_code_document pDocument, bool
 XUI_API int xuiCodeDocumentDestroyChecked(xui_code_document pDocument);
 XUI_API bool xuiCodeDocumentOwnershipBusy(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentLifetimeWatch(xui_code_document pDocument, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Internal CodeEdit documents expire at the owning widget's logical close. */
+XUI_API int xuiCodeDocumentEditorLifetimeWatch(xui_code_document document, xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user);
 /* Address-stable, zero-initialized read/callback lifetime protection. These
  * scopes pin the actual unique Document (and its observed Context if any),
  * without setting its writer flag or inventing a reference count. A consumed
@@ -8411,6 +8413,9 @@ XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t t
 XUI_API int xuiCodeSelectionCreate(xui_code_selection_model* ppSelection);
 /* 释放选区模型。 */
 XUI_API void xuiCodeSelectionDestroy(xui_code_selection_model pSelection);
+/* A raw borrowed editor selection cannot be destroyed independently. */
+XUI_API int xuiCodeSelectionDestroyChecked(xui_code_selection_model selection);
+XUI_API int xuiCodeSelectionEditorLifetimeWatch(xui_code_selection_model selection, xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user);
 /* 清空全部选区。 */
 XUI_API void xuiCodeSelectionClear(xui_code_selection_model pSelection);
 /* 以锚点/光标设置主选区。 */
@@ -8499,6 +8504,8 @@ XUI_API int xuiCodeEditCreate(xui_context pContext, xui_widget* ppWidget, const 
 /* 取内部代码文档（编辑器持有）。 */
 XUI_API xui_code_document xuiCodeEditGetDocument(xui_widget pWidget);
 /* 输出当前选区（锚点/光标偏移）。 */
+/* The document callback is anchored to the editor and survives release of a borrowed view. */
+XUI_API int xuiCodeEditSetDocumentChangeCallbackOwned(xui_widget pWidget, xui_code_document_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API xui_code_selection_model xuiCodeEditGetSelection(xui_widget pWidget);
 /* 输出当前语法配色主题。 */
 XUI_API xui_code_theme xuiCodeEditGetTheme(xui_widget pWidget);

@@ -158,6 +158,15 @@ static int __xuiCodeDocumentImplSetTextLength(xui_code_document pDocument, const
 static int __xuiCodeDocumentImplLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 static int __xuiCodeDocumentImplSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 static int __xuiCodeDocumentImplReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText, int iTextLength);
+XUI_API int xuiCodeDocumentEditorLifetimeWatch(xui_code_document document,
+    xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+    int status = __xuiCodeDocumentReadStatus(document);
+    if ( status != XUI_OK ) return status;
+    if ( document->pInternalOwner == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiWidgetLifetimeWatch(document->pInternalOwner, link, invalidate, user);
+}
+
 static int __xuiCodeDocumentImplBeginEdit(xui_code_document pDocument);
 static int __xuiCodeDocumentImplEndEdit(xui_code_document pDocument);
 static int __xuiCodeDocumentImplUndo(xui_code_document pDocument);

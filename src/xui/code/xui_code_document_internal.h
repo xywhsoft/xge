@@ -12,4 +12,10 @@ int xuiInternalCodeDocumentDestroyOwned(xui_widget,xui_code_document);
  * Native transformations share public validation, history, observers and the
  * checked write lifetime; public C-string edits keep their grapheme behavior. */
 int xuiInternalCodeDocumentReplaceLength(xui_code_document,int,int,const char*,int);
+/* An editor owns its selection and binds it to exactly one document. */
+int xuiInternalCodeSelectionClaimOwner(xui_code_selection_model selection, xui_widget editor, xui_code_document document);
+void xuiInternalCodeSelectionDestroyOwned(xui_widget editor, xui_code_selection_model selection);
+int xuiInternalCodeSelectionPrepare(xui_code_selection_model selection, xui_code_document document);
+void xuiInternalCodeSelectionClampLength(xui_code_selection_model selection, int length);
+
 #endif
