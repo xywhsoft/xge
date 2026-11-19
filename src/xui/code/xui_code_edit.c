@@ -207,6 +207,13 @@ typedef struct xui_code_edit_data_t {
 	xui_widget pAssistContent;
 	uint32_t arrAssistColors[3];
 	int iAssistKind;
+	bool bPointerHoverEnabled;
+	int iPointerHoverState;
+	int iPointerHoverX;
+	int iPointerHoverY;
+	float fPointerHoverDelay;
+	float fPointerHoverElapsed;
+	uint64_t iPointerHoverEpoch;
 	char* sAssistLabel;
 	int iAssistLabelCapacity;
 	char* sAssistDocumentation;
@@ -271,6 +278,13 @@ static int __xuiCodeEditAlive(xui_context pContext, xui_widget pWidget,
 #define XUI_CODE_EDIT_ASSIST_SIGNATURE 1
 #define XUI_CODE_EDIT_ASSIST_HINT 2
 #define XUI_CODE_EDIT_ASSIST_COMPLETION_DOCUMENTATION 3
+
+enum {
+	XUI_CODE_EDIT_HOVER_IDLE,
+	XUI_CODE_EDIT_HOVER_PENDING,
+	XUI_CODE_EDIT_HOVER_RESOLVED,
+	XUI_CODE_EDIT_HOVER_SHOWING
+};
 
 typedef struct xui_code_find_scope_editor_t {
 	xui_widget pEditor;
@@ -337,6 +351,7 @@ static int __xuiCodeEditApplyInputAction(xui_widget pWidget, xui_code_edit_data_
 	const xui_code_input_action_t* pAction);
 static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_edit_data_t* pData);
 static int __xuiCodeEditCloseAssistInternal(xui_code_edit_data_t* pData);
+static void __xuiCodeEditCancelPointerHover(xui_code_edit_data_t* pData);
 static void __xuiCodeEditShowCompletionDocumentation(xui_code_edit_data_t* pData,
 	const xui_code_completion_owned_item_t* pItem);
 static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont,
@@ -542,6 +557,7 @@ static void __xuiCodeEditDocumentEdited(xui_code_document pDocument,
 	(void)pDocument;
 	pData = (xui_code_edit_data_t*)pUser;
 	if ( pData == NULL ) return;
+	__xuiCodeEditCancelPointerHover(pData);
 	if (pData->pFindScope != NULL) {
 		pData->pFindScope->iResultCount = 0;
 		pData->pFindScope->iActiveIndex = -1;
@@ -4747,6 +4763,33 @@ static int __xuiCodeEditUpdateDiagnosticHover(xui_context pContext, xui_widget p
 	return iRet;
 }
 
+static void __xuiCodeEditCancelPointerHover(xui_code_edit_data_t* pData)
+{
+	if ( pData->iPointerHoverState == XUI_CODE_EDIT_HOVER_IDLE ) return;
+	bool close = pData->iPointerHoverState == XUI_CODE_EDIT_HOVER_SHOWING &&
+		pData->iAssistKind == XUI_CODE_EDIT_ASSIST_HINT;
+	pData->iPointerHoverState = XUI_CODE_EDIT_HOVER_IDLE;
+	++pData->iPointerHoverEpoch;
+	if ( close ) (void)__xuiCodeEditCloseAssistInternal(pData);
+}
+
+static void __xuiCodeEditQueuePointerHover(xui_code_edit_data_t* pData, const xui_event_t* pEvent)
+{
+	if ( !pData->bPointerHoverEnabled || pEvent->iPointerType != XUI_POINTER_TYPE_MOUSE ) return;
+	if ( pEvent->iButtons || pData->tPointerOwner.bActive || pData->bImeComposing ||
+	     !xuiInternalCodeProviderHasHover(pData->pProviders) ) {
+		__xuiCodeEditCancelPointerHover(pData);
+		return;
+	}
+	if ( pData->iPointerHoverState != XUI_CODE_EDIT_HOVER_IDLE &&
+	     pData->iPointerHoverX == pEvent->fX && pData->iPointerHoverY == pEvent->fY ) return;
+	__xuiCodeEditCancelPointerHover(pData);
+	pData->iPointerHoverX = pEvent->fX;
+	pData->iPointerHoverY = pEvent->fY;
+	pData->fPointerHoverElapsed = 0.0f;
+	pData->iPointerHoverState = XUI_CODE_EDIT_HOVER_PENDING;
+}
+
 static int __xuiCodeEditAutoScrollPointer(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_rect_t tWorld;
@@ -5068,6 +5111,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_OK;
 	case XUI_EVENT_BLUR:
+		__xuiCodeEditCancelPointerHover(pData);
 		iRet = __xuiCodeEditCancelPointer(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_OK;
@@ -5086,6 +5130,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_VISIBLE_CHANGED:
 		if ( !xuiWidgetGetEffectiveEnabled(pWidget) ||
 		     !xuiWidgetGetEffectiveVisible(pWidget) ) {
+			__xuiCodeEditCancelPointerHover(pData);
 			iRet = __xuiCodeEditCancelPointer(pWidget, pData);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_OK;
@@ -5097,6 +5142,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return xuiWidgetInvalidate(pWidget,
 			XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_POINTER_DOWN:
+		__xuiCodeEditCancelPointerHover(pData);
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 		if ( pData->tPointerOwner.bActive ) return XUI_EVENT_DISPATCH_STOP;
 		pData->bMarginSelecting = 0;
@@ -5171,7 +5217,10 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		iRet = __xuiCodeEditUpdateDiagnosticHover(pContext, pWidget, pData, pEvent);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-		if ( !pData->bDragging ) return XUI_OK;
+		if ( !pData->bDragging ) {
+			__xuiCodeEditQueuePointerHover(pData, pEvent);
+			return XUI_OK;
+		}
 		iRet = __xuiCodeEditPointerSelect(pWidget, pData, pEvent, 1);
 		if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_EVENT_DISPATCH_STOP;
 		if ( iRet != XUI_OK ) return iRet;
@@ -5203,6 +5252,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_WHEEL:
+		__xuiCodeEditCancelPointerHover(pData);
 		iRet = xuiCodeEditSetScroll(pWidget, pData->fScrollX + pEvent->fWheelX * 32.0f, pData->fScrollY - pEvent->fWheelY * 48.0f);
 		if ( iRet != XUI_OK ) return iRet;
 		return XUI_EVENT_DISPATCH_STOP;
@@ -5215,6 +5265,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		pData->bMarginSelecting = 0;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_LEAVE:
+		if ( pEvent->iPointerType == XUI_POINTER_TYPE_MOUSE ) __xuiCodeEditCancelPointerHover(pData);
 		return __xuiCodeEditUpdateDiagnosticHover(pContext, pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
@@ -5229,6 +5280,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 	{
+		__xuiCodeEditCancelPointerHover(pData);
 		float fMenuX = (float)pEvent->fX;
 		float fMenuY = (float)pEvent->fY;
 		iRet = xuiSetFocusWidget(pContext, pWidget);
@@ -5254,6 +5306,14 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	case XUI_EVENT_KEY_DOWN:
+		if ( pEvent->iKey == XUI_KEY_ESCAPE &&
+		     pData->iPointerHoverState == XUI_CODE_EDIT_HOVER_SHOWING &&
+		     pData->iAssistKind == XUI_CODE_EDIT_ASSIST_HINT &&
+		     xuiPopupIsOpen(pData->pAssistPopup) ) {
+			__xuiCodeEditCancelPointerHover(pData);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		__xuiCodeEditCancelPointerHover(pData);
 		if ( pData->pCompletionPopup != NULL && xuiPopupIsOpen(pData->pCompletionPopup) &&
 		     pData->iCompletionCount > 0 ) {
 			if ( pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN ||
@@ -5344,9 +5404,11 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( iRet == XUI_OK || iRet == XUI_ERROR_UNSUPPORTED ) return XUI_EVENT_DISPATCH_STOP;
 		return iRet;
 	case XUI_EVENT_TEXT:
+		__xuiCodeEditCancelPointerHover(pData);
 		if ( pData->bImeComposing ) return XUI_EVENT_DISPATCH_STOP;
 		return __xuiCodeEditInsertEventText(pWidget, pData, pEvent);
 	case XUI_EVENT_IME_COMPOSITION:
+		__xuiCodeEditCancelPointerHover(pData);
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
 		iRet = __xuiCodeEditImeComposition(pWidget, pData, pEvent);
 		if ( iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP ) {
@@ -5360,6 +5422,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		return iRet;
 	case XUI_EVENT_COMMAND:
+		__xuiCodeEditCancelPointerHover(pData);
 		if ( pEvent->iCommand != XUI_CODE_COMMAND_ACCEPT_INLINE_COMPLETION &&
 		     pEvent->iCommand != XUI_CODE_COMMAND_CANCEL_INLINE_COMPLETION ) {
 			(void)__xuiCodeEditInlineCompletionClearData(pData);
@@ -5433,6 +5496,8 @@ static int __xuiCodeEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iCompletionMinPrefix = 1;
 	pData->iCompletionMaxItems = 256;
 	pData->fCompletionDelay = 0.075f;
+	pData->fPointerHoverDelay = 0.35f;
+	pData->iPointerHoverEpoch = 1;
 	xuiScrollModelInit(&pData->tScrollModel);
 	pData->sLanguage = __xuiCodeEditStringDup(
 		(pDesc != NULL && pDesc->sLanguage != NULL) ? pDesc->sLanguage : "");
@@ -7548,8 +7613,15 @@ XUI_API int xuiCodeEditSetHoverProviderOwned(xui_widget pWidget,
     xui_code_hover_reply_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     xui_code_edit_data_t* data = __xuiCodeEditGetData(pWidget);
-    return data ? xuiCodeProviderSetHoverReplyOwned(data->pProviders, callback, user, owner)
-                : XUI_ERROR_INVALID_ARGUMENT;
+    if (!data) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context = xuiWidgetGetContext(pWidget);
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(context, &scope);
+    if (status != XUI_OK) return status;
+    status = xuiCodeProviderSetHoverReplyOwned(data->pProviders, callback, user, owner);
+    if (status == XUI_OK && __xuiCodeEditAlive(context, pWidget, data))
+        __xuiCodeEditCancelPointerHover(data);
+    return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
 }
 
 XUI_API int xuiCodeEditSetSignatureProviderOwned(xui_widget pWidget,
@@ -8427,6 +8499,27 @@ XUI_API int xuiCodeEditGetCompletionOptions(xui_widget pWidget, int* pAutoShow,
 	return XUI_OK;
 }
 
+XUI_API int xuiCodeEditSetHoverOptions(xui_widget pWidget, bool enabled, float delay)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || !isfinite(delay) || delay < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bPointerHoverEnabled != enabled || pData->fPointerHoverDelay != delay ) {
+		pData->bPointerHoverEnabled = enabled;
+		pData->fPointerHoverDelay = delay;
+		__xuiCodeEditCancelPointerHover(pData);
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditGetHoverOptions(xui_widget pWidget, bool* enabled, float* delay)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || enabled == NULL || delay == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*enabled = pData->bPointerHoverEnabled;
+	*delay = pData->fPointerHoverDelay;
+	return XUI_OK;
+}
+
 static int __xuiCodeEditCloseAssistInternal(xui_code_edit_data_t* pData)
 {
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -8553,8 +8646,8 @@ XUI_API int xuiCodeEditGetTextOffsetRect(xui_widget pWidget, int iByteOffset,
 	return xuiCodeEditGetOffsetRect(pWidget, iByteOffset, pRect);
 }
 
-XUI_API int xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
-	float fContextY, xui_code_edit_text_hit_t* pHit)
+static int __xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
+	float fContextY, xui_code_edit_text_hit_t* pHit, bool countColumn)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	xui_code_edit_line_layout_t* pLayout;
@@ -8661,12 +8754,13 @@ XUI_API int xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
 	}
 	if ( pHit->tCharacterRect.fW < 1.0f ) pHit->tCharacterRect.fW = 1.0f;
 	iColumn = 0;
-	for ( iAt = iSegmentStart - iLineStart;
-		iAt < iOffset - iLineStart; iColumn++ ) {
-		int iNext = xuiInternalTextGraphemeNext(sText,
-			iLineEnd - iLineStart, iAt);
-		if ( iNext <= iAt ) break;
-		iAt = iNext;
+	if ( countColumn ) {
+		for ( iAt = iSegmentStart - iLineStart;
+			iAt < iOffset - iLineStart; iColumn++ ) {
+			int iNext = xuiInternalTextGraphemeNext(sText, iLineEnd - iLineStart, iAt);
+			if ( iNext <= iAt ) break;
+			iAt = iNext;
+		}
 	}
 	pHit->iByteOffset = iOffset;
 	pHit->iLine = iLine;
@@ -8675,6 +8769,12 @@ XUI_API int xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
 	pHit->iClusterStart = iClusterStart;
 	pHit->iClusterEnd = iClusterEnd;
 	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
+	float fContextY, xui_code_edit_text_hit_t* pHit)
+{
+	return __xuiCodeEditHitTestText(pWidget, fContextX, fContextY, pHit, true);
 }
 
 XUI_API int xuiCodeEditShowSignatureHelp(xui_widget pWidget,
@@ -8776,7 +8876,17 @@ XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget)
 		pData->pAssistPopup != NULL && xuiPopupIsOpen(pData->pAssistPopup);
 }
 
-XUI_API int xuiCodeEditRequestHoverHint(xui_widget widget, int offset)
+static bool __xuiCodeEditPointerHoverAvailable(xui_code_edit_data_t* data)
+{
+    return data->iHoveredDiagnostic < 0 && !data->bCompletionPending &&
+        !xuiPopupIsOpen(data->pCompletionPopup) &&
+        !xuiPopupIsOpen(data->pAssistPopup) && !xuiPopupIsOpen(data->pMenu);
+}
+
+static int __xuiCodeEditShowHint(xui_widget widget, const xui_code_hover_t* hint,
+    uint64_t hoverEpoch);
+
+static int __xuiCodeEditRequestHoverHint(xui_widget widget, int offset, uint64_t hoverEpoch)
 {
     xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
     if (!data || offset < -1) return XUI_ERROR_INVALID_ARGUMENT;
@@ -8793,18 +8903,31 @@ XUI_API int xuiCodeEditRequestHoverHint(xui_widget widget, int offset)
     xui_code_provider_scope_t scope = {0};
     int status = xuiCodeProviderSetCallBegin(data->pProviders, &scope);
     if (status != XUI_OK) return status;
+    if (!hoverEpoch) __xuiCodeEditCancelPointerHover(data);
     xui_code_hover_t hint = {0};
     status = xuiCodeProviderRequestHover(data->pProviders, widget, offset, &hint);
-    if (status == XUI_OK &&
-        (!xuiInternalWidgetIsValid(widget) || version != xuiCodeDocumentGetVersion(data->pDocument))) {
+    bool alive = __xuiCodeEditAlive(scope.pContext, widget, data);
+    bool stale = !alive || version != xuiCodeDocumentGetVersion(data->pDocument);
+    if (hoverEpoch && !xrtGetError() &&
+        (stale || hoverEpoch != data->iPointerHoverEpoch ||
+         !__xuiCodeEditPointerHoverAvailable(data))) {
+        return xuiInternalCodeProviderCallEndRestored(&scope, XUI_OK, NULL);
+    }
+    if (status == XUI_OK && stale) {
         status = XUI_ERROR_INVALID_STATE;
     }
     if (status == XUI_OK && hint.tRange.iEnd > length) status = XUI_ERROR_INVALID_ARGUMENT;
-    if (status == XUI_OK) status = xuiCodeEditShowHint(widget, &hint);
+    if (status == XUI_OK) status = __xuiCodeEditShowHint(widget, &hint, hoverEpoch);
     return xuiInternalCodeProviderCallEndRestored(&scope, status, xrtTakeError());
 }
 
-XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint)
+XUI_API int xuiCodeEditRequestHoverHint(xui_widget widget, int offset)
+{
+	return __xuiCodeEditRequestHoverHint(widget, offset, 0);
+}
+
+static int __xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint,
+	uint64_t hoverEpoch)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	xui_rect_t tAnchor;
@@ -8814,13 +8937,7 @@ XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHin
 	if ( pData == NULL || !xuiInternalCodeProviderHoverValid(pHint) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
-		&pData->iAssistLabelCapacity, pHint->sText);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCodeEditStringSet(&pData->sAssistDocumentation,
-		&pData->iAssistDocumentationCapacity, "");
-	if ( iRet != XUI_OK ) return iRet;
-	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
+	xui_context context = xuiWidgetGetContext(pWidget);
 	iOffset = pHint->tRange.iStart;
 	if ( iOffset < 0 || iOffset > xuiCodeDocumentGetLength(pData->pDocument) ) {
 		xui_code_selection_t tSelection;
@@ -8830,18 +8947,43 @@ XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHin
 	}
 	iRet = xuiCodeEditGetOffsetRect(pWidget, iOffset, &tAnchor);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiCodeEditAlive(context, pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
+	if ( hoverEpoch && (hoverEpoch != pData->iPointerHoverEpoch ||
+	     !__xuiCodeEditPointerHoverAvailable(pData)) ) return XUI_OK;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
+		&pData->iAssistLabelCapacity, pHint->sText);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->sAssistDocumentation != NULL ) pData->sAssistDocumentation[0] = '\0';
+	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
 	pData->iAssistKind = XUI_CODE_EDIT_ASSIST_HINT;
 	(void)xuiPopupSetContentSize(pData->pAssistPopup, 420.0f, 38.0f);
 	(void)xuiPopupSetAnchorRect(pData->pAssistPopup, tAnchor);
 	(void)xuiWidgetInvalidate(pData->pAssistContent,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	return xuiPopupSetOpen(pData->pAssistPopup, 1);
+	if ( hoverEpoch ) pData->iPointerHoverState = XUI_CODE_EDIT_HOVER_SHOWING;
+	iRet = xuiPopupSetOpen(pData->pAssistPopup, 1);
+	if ( hoverEpoch && iRet != XUI_OK && __xuiCodeEditAlive(context, pWidget, pData) &&
+	     hoverEpoch == pData->iPointerHoverEpoch ) __xuiCodeEditCancelPointerHover(pData);
+	return iRet;
+}
+
+XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || !xuiInternalCodeProviderHoverValid(pHint) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(xuiWidgetGetContext(pWidget), &scope);
+	if ( status != XUI_OK ) return status;
+	__xuiCodeEditCancelPointerHover(pData);
+	status = __xuiCodeEditShowHint(pWidget, pHint, 0);
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
 }
 
 XUI_API int xuiCodeEditCloseHint(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeEditCancelPointerHover(pData);
 	if ( pData->iAssistKind != XUI_CODE_EDIT_ASSIST_HINT ) return XUI_OK;
 	return __xuiCodeEditCloseAssistInternal(pData);
 }
@@ -9643,6 +9785,50 @@ XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iInde
 	return xuiInternalCleanupEnd(NULL, &tReceipt);
 }
 
+static int __xuiCodeEditUpdatePointerHover(xui_context context, xui_widget widget,
+	xui_code_edit_data_t* data, float delta)
+{
+	if ( data->iPointerHoverState == XUI_CODE_EDIT_HOVER_IDLE ||
+	     data->iPointerHoverState == XUI_CODE_EDIT_HOVER_RESOLVED ) return XUI_OK;
+	if ( !xuiInternalCodeProviderHasHover(data->pProviders) || data->bImeComposing ||
+	     !xuiWidgetGetEffectiveEnabled(widget) || !xuiWidgetGetEffectiveVisible(widget) ||
+	     xuiGetPointerCapture(context) != NULL ) {
+		__xuiCodeEditCancelPointerHover(data);
+		return XUI_OK;
+	}
+	if ( data->iPointerHoverState != XUI_CODE_EDIT_HOVER_PENDING ) return XUI_OK;
+	if ( !__xuiCodeEditPointerHoverAvailable(data) ) {
+		__xuiCodeEditCancelPointerHover(data);
+		return XUI_OK;
+	}
+	data->fPointerHoverElapsed += delta;
+	if ( data->fPointerHoverElapsed < data->fPointerHoverDelay ) return XUI_OK;
+
+	uint64_t epoch = data->iPointerHoverEpoch;
+	int x = data->iPointerHoverX;
+	int y = data->iPointerHoverY;
+	data->iPointerHoverState = XUI_CODE_EDIT_HOVER_RESOLVED;
+	/* A fontless editor has no visible glyph to hover. */
+	if ( __xuiCodeEditResolveFont(widget, data) == NULL )
+		return xrtGetError() ? XUI_ERROR_NOT_INITIALIZED : XUI_OK;
+	if ( !__xuiCodeEditAlive(context, widget, data) || epoch != data->iPointerHoverEpoch )
+		return XUI_OK;
+	xui_code_edit_text_hit_t hit = {0};
+	int status = __xuiCodeEditHitTestText(widget, (float)x, (float)y, &hit, false);
+	if ( (status == XUI_ERROR_UNSUPPORTED || status == XUI_ERROR_NOT_FOUND) && !xrtGetError() )
+		return XUI_OK;
+	if ( status != XUI_OK ) return status;
+	if ( !__xuiCodeEditAlive(context, widget, data) || epoch != data->iPointerHoverEpoch ||
+	     !__xuiCodeEditPointerHoverAvailable(data) ) return XUI_OK;
+	if ( !hit.bInsideText || hit.iClusterStart >= hit.iClusterEnd ||
+	     x < hit.tCharacterRect.fX || x >= hit.tCharacterRect.fX + hit.tCharacterRect.fW ||
+	     y < hit.tCharacterRect.fY || y >= hit.tCharacterRect.fY + hit.tCharacterRect.fH ) return XUI_OK;
+	status = __xuiCodeEditRequestHoverHint(widget, hit.iClusterStart, epoch);
+	if ( (status == XUI_ERROR_UNSUPPORTED || status == XUI_ERROR_NOT_FOUND) && !xrtGetError() )
+		return XUI_OK;
+	return status;
+}
+
 static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	xui_code_edit_data_t* pData;
@@ -9699,7 +9885,8 @@ static int __xuiCodeEditUpdate(xui_widget pWidget, float fDelta, void* pUser)
 			}
 		}
 	}
-	return XUI_OK;
+	if ( !__xuiCodeEditAlive(pContext, pWidget, pData) ) return XUI_OK;
+	return __xuiCodeEditUpdatePointerHover(pContext, pWidget, pData, fDelta);
 }
 
 #include "xui_code_find_window.inc"
@@ -9829,6 +10016,8 @@ XUI_API int xuiCodeEditSetScroll(xui_widget pWidget, float fScrollX, float fScro
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( fScrollX < 0.0f ) fScrollX = 0.0f;
 	if ( fScrollY < 0.0f ) fScrollY = 0.0f;
+	if ( pData->fScrollX != fScrollX || pData->fScrollY != fScrollY )
+		__xuiCodeEditCancelPointerHover(pData);
 	pData->fScrollX = fScrollX;
 	pData->fScrollY = fScrollY;
 	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);

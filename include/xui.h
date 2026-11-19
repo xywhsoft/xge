@@ -8691,6 +8691,9 @@ XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget);
 /* Ask the installed hover provider and show its answer at a document byte offset.
  * An offset of -1 uses the caret. */
 XUI_API int xuiCodeEditRequestHoverHint(xui_widget pWidget, int offset);
+/* Optional mouse dwell in seconds. Disabled by default. Zero fires on the next update. */
+XUI_API int xuiCodeEditSetHoverOptions(xui_widget pWidget, bool enabled, float delay);
+XUI_API int xuiCodeEditGetHoverOptions(xui_widget pWidget, bool* enabled, float* delay);
 XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint);
 /* 关闭悬浮提示。 */
 XUI_API int xuiCodeEditCloseHint(xui_widget pWidget);

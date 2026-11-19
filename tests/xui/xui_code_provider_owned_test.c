@@ -403,6 +403,118 @@ static void editorCommands(void)
     assert(xuiDestroyChecked(context)==XUI_OK&&xuiProxyReleaseChecked(proxy)==XUI_OK&&backendRefs==1);
     puts("Owned Editor commands: guarded dispatch, default fallback, reentry, observed key map and menu close");
 }
+typedef struct EditorHover {
+    int calls;
+    int offset;
+    int action;
+    int diagnostic;
+} EditorHover;
+
+static int pointerHoverReply(xui_widget editor, int offset, xui_code_hover_reply_t* reply, void* user)
+{
+    EditorHover* state = user;
+    ++state->calls;
+    state->offset = offset;
+    if (state->action == 1) return XUI_ERROR_NOT_FOUND;
+    if (state->action == 2)
+        assert(xuiCodeEditSetHoverOptions(editor, false, 0.0f) == XUI_OK);
+    if (state->action == 3)
+        assert(xuiWidgetDestroyChecked(editor) == XUI_OK);
+    if (state->action == 4)
+        assert(xrtMemDebugFailAfter(0));
+    const xui_code_hover_t hint = {
+        .iSize = sizeof(hint), .tRange = {offset, offset}, .sText = "pointer hover"
+    };
+    int status = xuiCodeHoverReplySet(reply, &hint);
+    if (state->action == 4) xrtMemDebugFailClear();
+    return status;
+}
+
+static void pointerHoverDiagnostic(xui_context context, const xui_error_info_t* error, void* user)
+{
+    (void)context;
+    assert(error->iStage == XUI_ERROR_STAGE_UPDATE && error->bRecoverable);
+    ((EditorHover*)user)->diagnostic = error->iCode;
+}
+
+static void editorPointerHover(void)
+{
+    xui_test_proxy_state_t backend;
+    xuiTestProxyInit(&backend);
+    const xui_context_desc_t desc = {sizeof(desc),XUI_SYSTEM_FONT_DISABLED,0,0};
+    xui_context context = NULL;
+    xui_widget editor = NULL;
+    assert(xuiCreateEx(&desc, &context) == XUI_OK);
+    assert(xuiSetProxy(context, &backend.tProxy) == XUI_OK);
+    assert(xuiCodeEditCreate(context, &editor, NULL) == XUI_OK);
+    assert(xuiSetRootWidget(context, editor) == XUI_OK);
+    assert(xuiSetViewportSize(context, 320, 160) == XUI_OK);
+    assert(xuiCodeEditSetText(editor, "aébc second") == XUI_OK && xuiLayout(context) == XUI_OK);
+    xui_rect_t character;
+    assert(xuiCodeEditGetOffsetRect(editor, 1, &character) == XUI_OK);
+    xui_event_t move = {.iSize=sizeof(move), .iType=XUI_EVENT_POINTER_MOVE, .pTarget=editor,
+        .fX=character.fX+1, .fY=character.fY+2};
+    EditorHover state = {0};
+    assert(xuiSetErrorCallback(context, pointerHoverDiagnostic, &state) == XUI_OK);
+    assert(xuiCodeEditSetHoverProviderOwned(editor, pointerHoverReply, &state, NULL) == XUI_OK);
+    bool enabled = true;
+    float delay = 0.0f;
+    assert(xuiCodeEditGetHoverOptions(editor, &enabled, &delay) == XUI_OK && !enabled && delay == 0.35f);
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK && state.calls == 0);
+    assert(xuiCodeEditSetHoverOptions(editor, true, -1.0f) == XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiCodeEditSetHoverOptions(editor, true, 0.25f) == XUI_OK);
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK);
+    assert(state.calls == 0 && !state.diagnostic);
+    xui_font font = NULL;
+    assert(backend.tProxy.fontLoadFile(&backend.tProxy, &font, "hover.ttf", 14, 0) == XUI_OK);
+    assert(xuiSetDefaultFont(context, font) == XUI_OK && xuiLayout(context) == XUI_OK);
+    assert(xuiCodeEditGetOffsetRect(editor, 1, &character) == XUI_OK);
+    xui_event_t leave = move;
+    leave.iType = XUI_EVENT_POINTER_LEAVE;
+    assert(xuiDispatchEvent(context, &leave) == XUI_OK);
+    move.fX = character.fX + 1;
+    move.fY = character.fY + 2;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 0.125f) == XUI_OK && state.calls == 0);
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 0.125f) == XUI_OK);
+    assert(state.calls == 1 && state.offset == 1 && xuiCodeEditIsHintOpen(editor));
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK && state.calls == 1);
+    assert(xuiDispatchEvent(context, &leave) == XUI_OK && !xuiCodeEditIsHintOpen(editor));
+
+    assert(xuiDispatchEvent(context, &move) == XUI_OK);
+    assert(xuiCodeEditSetText(editor, "aébc second line") == XUI_OK);
+    assert(xuiUpdate(context, 1.0f) == XUI_OK && state.calls == 1);
+    move.iPointerType = XUI_POINTER_TYPE_TOUCH;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK && state.calls == 1);
+    move.iPointerType = XUI_POINTER_TYPE_MOUSE;
+    move.fX = 300;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK && state.calls == 1);
+    move.fX = character.fX + 1;
+
+    state.action = 1;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK);
+    assert(state.calls == 2 && !xuiCodeEditIsHintOpen(editor) && !state.diagnostic);
+    assert(xuiDispatchEvent(context, &leave) == XUI_OK);
+
+    state.action = 2;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK && xuiUpdate(context, 1.0f) == XUI_OK);
+    assert(state.calls == 3 && !xuiCodeEditIsHintOpen(editor) && !state.diagnostic);
+    assert(xuiCodeEditSetHoverOptions(editor, true, 0.0f) == XUI_OK);
+
+    state.action = 4;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK);
+    (void)xuiUpdate(context, 0.0f);
+    assert(state.calls == 4 && state.diagnostic == XUI_ERROR_OUT_OF_MEMORY && !xuiCodeEditIsHintOpen(editor));
+    xrtClearError();
+    assert(xuiDispatchEvent(context, &leave) == XUI_OK);
+
+    state.action = 3;
+    assert(xuiDispatchEvent(context, &move) == XUI_OK);
+    assert(xuiUpdate(context, 0.0f) == XUI_OK && state.calls == 5 && xuiGetRootWidget(context) == NULL);
+    assert(xuiDestroyChecked(context) == XUI_OK);
+    backend.tProxy.fontDestroy(&backend.tProxy, font);
+    puts("Editor pointer hover: delay, UTF-8, leave, mutation, OOM, cancellation and close");
+}
+
 int main(void)
 {
     marginBind();xmemdebugsnapshot initial;xrtMemDebugSnapshot(&initial);
@@ -410,5 +522,6 @@ int main(void)
     graphAndHot();balanced(&initial);consumers();balanced(&initial);consumerAllocationPrefixes();balanced(&initial);
     replyStorage();balanced(&initial);
     editorCommands();balanced(&initial);
+    editorPointerHover();balanced(&initial);
     puts("Owned Provider: all5 roles, immutable pins, scoped borrows, generation, graph, reentry, errors and consumers passed");return 0;
 }

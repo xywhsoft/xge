@@ -109,6 +109,11 @@ bool xuiInternalCodeProviderHasCommandGuard(xui_code_provider_set providers)
     return slot && slot->typed;
 }
 
+bool xuiInternalCodeProviderHasHover(xui_code_provider_set providers)
+{
+    return providers && (providers->slots[XUI_PROVIDER_HOVER] || providers->callbacks.onHover);
+}
+
 typedef struct xui_code_provider_borrow_t {
     xui_code_provider_scope_t* caller;
     uint64 generation;
