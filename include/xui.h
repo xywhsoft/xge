@@ -11616,11 +11616,13 @@ XUI_API int xuiListViewSetSelect(xui_widget pWidget, xui_list_view_select_proc o
 XUI_API int xuiListViewSetSelectOwned(xui_widget pWidget, xui_list_view_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册条目激活回调（双击、Enter 或无障碍 Activate）；回调可销毁 ListView 或其 Context。 */
 XUI_API int xuiListViewSetActivate(xui_widget pWidget, xui_list_view_activate_proc onActivate, void* pUser);
+XUI_API int xuiListViewSetActivateOwned(xui_widget pWidget, xui_list_view_activate_proc onActivate, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册条目右键回调；回调可销毁 ListView 或其 Context。 */
 XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser);
 XUI_API int xuiListViewSetContextMenuOwned(xui_widget pWidget, xui_list_view_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册条目自绘回调（覆盖默认绘制）；允许回调销毁控件，修改列表会终止当前绘制批次。 */
 XUI_API int xuiListViewSetItemRenderer(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser);
+XUI_API int xuiListViewSetItemRendererOwned(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 以字符串数组批量设置条目。 */
 XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int iCount);
 /* Virtual rows: no per-row text/storage allocation in single-selection mode.

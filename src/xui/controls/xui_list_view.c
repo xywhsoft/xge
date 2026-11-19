@@ -324,14 +324,19 @@ static xui_font __xuiListViewStyleFont(xui_widget pWidget, xui_font pBaseFont)
 	return pBaseFont;
 }
 
+static xui_font __xuiListViewResolveFont(xui_widget pWidget, xui_list_view_data_t* pData)
+{
+	xui_font pFont = pData->pFont ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	return __xuiListViewStyleFont(pWidget, pFont);
+}
+
 static void __xuiListViewResolve(xui_widget pWidget, xui_list_view_data_t* pData, xui_list_view_data_t* pResolved)
 {
 	*pResolved = *pData;
 	pResolved->fItemHeight = pData->fBaseItemHeight;
 	pResolved->fPadding = pData->fBasePadding;
 	pResolved->fBorderWidth = pData->fBaseBorderWidth;
-	pResolved->pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
-	pResolved->pFont = __xuiListViewStyleFont(pWidget, pResolved->pFont);
+	pResolved->pFont = __xuiListViewResolveFont(pWidget, pData);
 	(void)__xuiListViewStyleColor(pWidget, "listview.background.color", &pResolved->iBackgroundColor);
 	(void)__xuiListViewStyleColor(pWidget, "listview.border.color", &pResolved->iBorderColor);
 	(void)__xuiListViewStyleColor(pWidget, "listview.focus.color", &pResolved->iFocusColor);
@@ -700,13 +705,16 @@ static void __xuiListViewNotifySelect(xui_widget pWidget, xui_list_view_data_t* 
 
 static void __xuiListViewNotifyActivate(xui_widget pWidget, xui_list_view_data_t* pData, int iIndex, int iButton)
 {
-	xui_list_view_activate_proc onActivate;
-	void* pActivateUser;
-
 	if ( pWidget == NULL || pData == NULL || !__xuiListViewItemEnabledData(pData, iIndex) ) return;
-	onActivate = pData->onActivate;
-	pActivateUser = pData->pActivateUser;
-	if ( onActivate != NULL ) onActivate(pWidget, iIndex, iButton, pActivateUser);
+	xui_list_view_activate_proc onActivate = pData->onActivate;
+	if ( onActivate == NULL ) return;
+	void* pUser = pData->pActivateUser;
+	int iGeneration = pData->iChangeCount;
+	xui_callback_snapshot_t tSnapshot = {0};
+	if ( xuiInternalCallbackSnapshotBeginReported(pWidget, &pData->onActivate, &pUser, &tSnapshot) != XUI_OK ) return;
+	if ( pData->iChangeCount == iGeneration && pData->onActivate == onActivate && pData->pActivateUser == pUser )
+		onActivate(pWidget, iIndex, iButton, pUser);
+	(void)xuiInternalCallbackSnapshotEnd(&tSnapshot, XUI_OK);
 }
 
 static int __xuiListViewSetSelectedInternal(xui_widget pWidget, xui_list_view_data_t* pData, int iIndex, int bNotify, int bRepeat)
@@ -1502,12 +1510,20 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 			onRenderItem = pData->onRenderItem;
 			pRenderItemUser = pData->pRenderItemUser;
 			iGeneration = pData->iChangeCount;
-			iHandled = onRenderItem(pWidget, i, pDraw, tRow, iState, pRenderItemUser);
-			if ( iHandled < 0 ) return iHandled;
+			xui_callback_snapshot_t tSnapshot = {0};
+			iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderItem, &pRenderItemUser, &tSnapshot);
+			if ( iRet != XUI_OK ) return iRet;
+			iHandled = 0;
+			if ( pData->iChangeCount == iGeneration && pData->onRenderItem == onRenderItem &&
+			     pData->pRenderItemUser == pRenderItemUser )
+				iHandled = onRenderItem(pWidget, i, pDraw, tRow, iState, pRenderItemUser);
+			iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iHandled < 0 ? iHandled : XUI_OK);
+			if ( iRet != XUI_OK ) return iRet;
 			if ( !__xuiListViewWidgetAlive(pWidget, pData) ) return XUI_OK;
 			if ( pData->iChangeCount != iGeneration || pData->onRenderItem != onRenderItem ||
 			     pData->pRenderItemUser != pRenderItemUser ) return XUI_OK;
 			if ( iHandled ) continue;
+			tResolved.pFont = __xuiListViewResolveFont(pWidget, pData);
 		}
 		if ( (iState & XUI_LIST_ITEM_SELECTED) != 0 ) {
 			tFill = xuiInternalRectFromFloatNearest((float)tRow.fX + 3.0f,
@@ -1550,6 +1566,8 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 				if ( !__xuiListViewWidgetAlive(pWidget, pData) ) return XUI_OK;
 				if ( pData->iChangeCount != iGeneration || pData->onText != onText ||
 				     pData->pTextUser != pTextUser ) return XUI_OK;
+				tResolved.pFont = __xuiListViewResolveFont(pWidget, pData);
+				if ( tResolved.pFont == NULL ) continue;
 			} else {
 				sText = __xuiListViewText(pData->arrItems[i]);
 			}
@@ -2068,10 +2086,27 @@ XUI_API int xuiListViewSetSelect(xui_widget pWidget, xui_list_view_select_proc o
 	return XUI_OK;
 }
 
+XUI_API int xuiListViewSetActivateOwned(xui_widget pWidget, xui_list_view_activate_proc onActivate,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBegin(pWidget, &pData->onActivate, onActivate != NULL, pUser, pOwner, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onActivate = onActivate;
+	pData->pActivateUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiListViewSetActivate(xui_widget pWidget, xui_list_view_activate_proc onActivate, void* pUser)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onActivate) )
+		return xuiListViewSetActivateOwned(pWidget, onActivate, pUser, NULL);
 	if ( pData->onActivate == onActivate && pData->pActivateUser == pUser ) return XUI_OK;
 	pData->onActivate = onActivate;
 	pData->pActivateUser = pUser;
@@ -2102,11 +2137,36 @@ XUI_API int xuiListViewSetContextMenu(xui_widget pWidget, xui_list_view_context_
 	return XUI_OK;
 }
 
+static int __xuiListViewPreparePainter(xui_widget pWidget, void* pUser)
+{
+	xui_list_view_data_t* pData = pUser;
+	int iRet = __xuiListViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiListViewWidgetAlive(pWidget, pData) ? XUI_OK : XUI_ERROR_INVALID_STATE;
+}
+
+XUI_API int xuiListViewSetItemRendererOwned(xui_widget pWidget, xui_list_view_item_proc onRender,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBeginValidated(pWidget, &pData->onRenderItem, onRender != NULL,
+		pUser, pOwner, __xuiListViewPreparePainter, pData, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onRenderItem = onRender;
+	pData->pRenderItemUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiListViewSetItemRenderer(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onRenderItem) )
+		return xuiListViewSetItemRendererOwned(pWidget, onRender, pUser, NULL);
 	if ( pData->onRenderItem == onRender && pData->pRenderItemUser == pUser ) return XUI_OK;
 	iRet = __xuiListViewInvalidateRows(pWidget, pData);
 	if ( iRet != XUI_OK || !__xuiListViewWidgetAlive(pWidget, pData) ) return iRet;
