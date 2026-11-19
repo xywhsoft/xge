@@ -122,8 +122,13 @@ XUI_API int xuiDocumentImageResourceLoadFileAsync(xui_context context, const cha
 XUI_API int xuiDocumentImageResourceLoadMemoryAsync(xui_context context, const char* resource_name,
     const void* encoded, uint64_t encoded_bytes, const xui_doc_image_load_limits_t* limits,
     xui_doc_image_request* out);
-/* Publish a completed image request on the XUI owner thread. */
+/* Publish a completed image request on the XUI owner thread. The optional
+ * output borrows the current Context entry for this ticket's generation.
+ * A later replacement or removal leaves a successful ticket with no entry.
+ * Failure clears the output. */
 XUI_API int xuiDocumentImageResourcePoll(xui_doc_image_request request, xui_resource* out);
+/* Same polling and status contract, without an output or registry lookup. */
+XUI_API int xuiDocumentImageResourcePollStatus(xui_doc_image_request request);
 /* Cancel an outstanding image request. */
 XUI_API int xuiDocumentImageResourceCancel(xui_doc_image_request request);
 /* Logical close is nonblocking. The Context retains pending worker/storage;

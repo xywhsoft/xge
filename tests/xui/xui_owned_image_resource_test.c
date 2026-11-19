@@ -21,6 +21,7 @@ typedef struct ImageTest {
     unsigned char failPixel;
     bool removeOnRead,closeOnLoad,uploadReentry;
     xui_doc_image_request target,peer;
+    xui_widget removeAfterUpload;
     atomic_int block,entered,allow;
 } ImageTest;
 typedef struct ImageSurface {ImageTest* test;xui_surface_desc_t desc;int result;} ImageSurface;
@@ -54,6 +55,10 @@ static int imageUpload(xui_proxy proxy,xui_surface* output,int width,int height,
         assert(xuiDocumentImageResourcePoll(test->target,&none)==XUI_DOC_ERROR_BUSY && !none);
         assert(xuiDocumentImageResourceReleaseChecked(test->peer)==XUI_OK);
         assert(xuiDocumentImageResourceReleaseChecked(test->target)==XUI_OK);
+    }
+    if(test->removeAfterUpload){
+        xui_widget widget=test->removeAfterUpload;test->removeAfterUpload=NULL;
+        assert(xuiWidgetDestroyChecked(widget)==XUI_OK);
     }
     return status==XUI_OK && (!test->failPixel || *(const unsigned char*)pixels==test->failPixel) ? test->loadResult:status;
 }
@@ -150,6 +155,46 @@ static void asyncRoundTrip(bool cancelled)
     waitRequest(job);xui_resource resource=NULL;
     assert(xuiDocumentImageResourcePoll(job,&resource)==(cancelled ? XUI_DOC_ERROR_CANCELLED:XUI_OK));
     assert((resource!=NULL)==!cancelled && xuiDocumentImageResourceReleaseChecked(job)==XUI_OK);xrtClearError();imageFinish(&test);indexEmpty();
+}
+static void asyncPollCurrentGeneration(void)
+{
+    ImageTest test;imageSetup(&test);atomic_store(&test.block,1);atomic_store(&test.allow,0);
+    xui_doc_image_request job=newRequest(&test,"current");waitEntered(&test,1);
+    xui_resource current=(void*)(uintptr_t)1;
+    assert(xuiDocumentImageResourcePollStatus(job)==XUI_DOC_ERROR_BUSY);
+    assert(xuiDocumentImageResourcePoll(job,&current)==XUI_DOC_ERROR_BUSY && !current);
+    atomic_store_explicit(&test.allow,1,memory_order_release);waitRequest(job);
+    assert(xuiDocumentImageResourcePollStatus(job)==XUI_OK);
+    assert(xuiDocumentImageResourcePoll(job,&current)==XUI_OK && current);
+    assert(xuiResourceRemove(current)==XUI_OK);
+    xui_resource replacement=NULL;
+    assert(xuiDocumentImageResourceLoadMemory(test.context,"current",pngData,pngBytes,NULL,&replacement)==XUI_OK && replacement);
+    assert(xuiDocumentImageResourcePoll(job,&current)==XUI_OK && !current);
+    assert(xuiDocumentImageResourceReleaseChecked(job)==XUI_OK);
+    assert(xuiResourceFind(test.context,"current")==replacement);
+    imageFinish(&test);indexEmpty();
+}
+static void removePublishedOnWidgetDestroy(xui_widget widget,void* data,void* user)
+{
+    (void)widget;(void)data;
+    ImageTest* test=user;
+    xui_resource resource=xuiResourceFind(test->context,"cleanup-tail");
+    assert(resource && xuiResourceRemove(resource)==XUI_OK);
+}
+static void asyncPollCleanupTail(void)
+{
+    ImageTest test;imageSetup(&test);
+    xui_widget_type type=NULL;
+    xui_widget_type_desc_t desc={.iSize=sizeof(desc),.sName="test.poll.cleanup",
+        .pParent=xuiWidgetGetBaseType(),.onDestroy=removePublishedOnWidgetDestroy,.pUser=&test};
+    assert(xuiWidgetRegisterType(test.context,&type,&desc)==XUI_OK);
+    assert(xuiWidgetCreateTyped(test.context,type,&test.removeAfterUpload,NULL)==XUI_OK);
+    xui_doc_image_request job=newRequest(&test,"cleanup-tail");waitRequest(job);
+    xui_resource output=(void*)(uintptr_t)1;
+    assert(xuiDocumentImageResourcePoll(job,&output)==XUI_OK && !output);
+    assert(test.created==1 && test.dropped==1 && !xuiResourceFind(test.context,"cleanup-tail"));
+    assert(xuiDocumentImageResourceReleaseChecked(job)==XUI_OK);
+    imageFinish(&test);indexEmpty();
 }
 static void asyncBlockedContextClose(void)
 {
@@ -264,7 +309,8 @@ int main(void)
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
     assert(xgeImageEncodePNGEx(2,2,rgba,8,XGE_IMAGE_STRAIGHT_ALPHA,&pngData,&pngBytes)==XGE_OK && pngData && pngBytes);
     syncRoundTrip(false);syncRoundTrip(true);syncFailures();syncReentrantContextClose();
-    asyncRoundTrip(false);asyncRoundTrip(true);asyncFailureClassification(false);asyncFailureClassification(true);asyncPeerFailureLocal();asyncPeerDiagnosticLocal();
+    asyncRoundTrip(false);asyncRoundTrip(true);asyncPollCurrentGeneration();asyncPollCleanupTail();
+    asyncFailureClassification(false);asyncFailureClassification(true);asyncPeerFailureLocal();asyncPeerDiagnosticLocal();
     asyncBlockedContextClose();asyncQueuedCancellation();asyncPeerClose();asyncConstructorOom();independentCreators();
     xrtFree(pngData);xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     puts("Document images: actual Surface register/read pin + checked first NULL; native worker cancel/context retirement/reentry and two independent creator indexes balanced");return 0;

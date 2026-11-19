@@ -327,9 +327,8 @@ static void doc_image_pump(xui_context context)
     }
     doc_image_start_queued(context);
 }
-XUI_API int xuiDocumentImageResourcePoll(xui_doc_image_request job,xui_resource* out)
+static int doc_image_poll(xui_doc_image_request job)
 {
-    if(out)*out=NULL;
     if(!job)return XUI_ERROR_INVALID_ARGUMENT;
     xui_manager_scope_t scope={0};int status=xuiInternalManagerScopeBegin(&job->owned,&scope);if(status!=XUI_OK)return status;
     if(doc_image_is_pumping(job->context))return xuiInternalManagerScopeEnd(&scope,XUI_DOC_ERROR_BUSY);
@@ -337,14 +336,25 @@ XUI_API int xuiDocumentImageResourcePoll(xui_doc_image_request job,xui_resource*
     job->polling=1;doc_image_pump(job->context);
     status=!job->terminal ? XUI_DOC_ERROR_BUSY:job->final_result;
     if(!xuiInternalManagerAlive(&job->owned) || !doc_image_context_alive(job->context))status=XUI_ERROR_INVALID_STATE;
+    if(status!=XUI_OK && job->terminal && job->final_result==status)xrtSetErrorTake(xrtErrorRef(job->error));
+    job->polling=0;status=xuiInternalManagerScopeEnd(&scope,status);xuiLifetimeUnwatch(&watch);
+    if(status==XUI_OK && (!alive || !doc_image_context_alive(job->context)))status=XUI_ERROR_INVALID_STATE;
+    return status;
+}
+XUI_API int xuiDocumentImageResourcePollStatus(xui_doc_image_request job)
+{
+    return doc_image_poll(job);
+}
+XUI_API int xuiDocumentImageResourcePoll(xui_doc_image_request job,xui_resource* out)
+{
+    if(out)*out=NULL;
+    int status=doc_image_poll(job);
+    /* Closing the inner manager scope can run pending cleanup callbacks.
+     * Resolve the borrowed pointer only after that tail, on the creator. */
     if(status==XUI_OK && out){
         xui_resource current=xuiResourceFind(job->context,job->name);
         if(current && xuiResourceGetGeneration(current)==job->published_generation)*out=current;
     }
-    if(status!=XUI_OK && job->terminal && job->final_result==status)xrtSetErrorTake(xrtErrorRef(job->error));
-    job->polling=0;status=xuiInternalManagerScopeEnd(&scope,status);xuiLifetimeUnwatch(&watch);
-    if(status==XUI_OK && (!alive || !doc_image_context_alive(job->context)))status=XUI_ERROR_INVALID_STATE;
-    if(status!=XUI_OK && out)*out=NULL;
     return status;
 }
 XUI_API int xuiDocumentImageResourceCancel(xui_doc_image_request job)
