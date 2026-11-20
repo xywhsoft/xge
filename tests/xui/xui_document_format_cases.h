@@ -1,19 +1,26 @@
 static xui_draw_text_proc document_format_base_draw;
 static xui_draw_text_spans_proc document_format_base_spans;
+static xui_text_measure_proc document_format_base_measure;
 static unsigned document_format_hyphens;
 static unsigned document_format_fail_hyphen;
 static int document_format_hyphen_kerning;
 static int document_format_hyphen_narrow;
 static unsigned document_format_fail_terminal, document_format_terminal_shapes;
 static const char* const document_formats[] = {"\xc2\xad", "\xe2\x80\x8b", "\xe2\x81\xa0", "\xef\xbb\xbf"};
+static int document_format_measure(xui_proxy proxy, const xui_text_item_t* item, xui_vec2_t* size)
+{
+    if (document_format_fail_hyphen && item && item->iSize >= sizeof(*item) &&
+        item->iTextSize == 1 && item->sText && item->sText[0] == '-') {
+        document_format_fail_hyphen--;
+        return XUI_ERROR_OUT_OF_MEMORY;
+    }
+    return document_format_base_measure(proxy, item, size);
+}
 static int document_format_shape(xui_proxy proxy, const xui_text_item_t* pTextItem, xui_text_shape_t* shape)
 {
     const char* text = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->sText : NULL;
     int bytes = pTextItem && pTextItem->iSize >= sizeof(*pTextItem) ? pTextItem->iTextSize : 0;
 
-    if (document_format_fail_hyphen && bytes == 1 && text[0] == '-') {
-        document_format_fail_hyphen--; return XUI_ERROR_OUT_OF_MEMORY;
-    }
     if (bytes > 1 && text[bytes - 1] == '-') {
         document_format_terminal_shapes++;
         if (document_format_fail_terminal && !--document_format_fail_terminal)
@@ -70,6 +77,7 @@ static void document_format_controls(xui_test_proxy_state_t* proxy)
     xui_context context; xui_font font; xui_surface surface; xui_text_shape_proc saved = proxy->tProxy.textShape;
     unsigned sample, mode, split;
     decoration_base_shape = saved; proxy->tProxy.textShape = document_format_shape;
+    document_format_base_measure = proxy->tProxy.textMeasure; proxy->tProxy.textMeasure = document_format_measure;
     document_format_base_draw = proxy->tProxy.drawText; proxy->tProxy.drawText = document_format_draw;
     document_format_base_spans = proxy->tProxy.drawTextSpans; proxy->tProxy.drawTextSpans = document_format_spans;
     CHECK(proxy->tProxy.fontLoadFile(&proxy->tProxy, &font, "format.ttf", 20, 0) == XUI_OK &&
@@ -335,9 +343,11 @@ static void document_format_controls(xui_test_proxy_state_t* proxy)
         desc.iSize = sizeof(desc); desc.fLineGap = 4;
         CHECK(xuiDocumentAcquireSnapshot(document, &snapshot) == XUI_OK && xuiDocumentRendererCreate(context, &desc, &renderer) == XUI_OK &&
             xuiDocumentRendererSetSnapshot(renderer, snapshot, NULL) == XUI_OK); xuiDocumentSnapshotRelease(snapshot);
+        /* The isolated fallback glyph is measured independently of contextual shaping. */
         document_format_fail_hyphen = 1;
-        CHECK(xuiDocumentRendererLayout(renderer, 27, 0, 200) == XUI_ERROR_OUT_OF_MEMORY && !document_format_fail_hyphen &&
-            xuiDocumentRendererLayout(renderer, 27, 0, 200) == XUI_OK);
+        CHECK(xuiDocumentRendererLayout(renderer, 27, 0, 200) == XUI_ERROR_OUT_OF_MEMORY);
+        CHECK(!document_format_fail_hyphen);
+        CHECK(xuiDocumentRendererLayout(renderer, 27, 0, 200) == XUI_OK);
         at = decoration_position(document, last, 4);
         CHECK(xuiDocumentRendererGetCaretRect(renderer, &at, &caret) == XUI_OK && fabs(caret.x - 27) < .01 && fabs(caret.y) < .01);
         xuiDocumentRendererRelease(renderer); xuiDocumentRelease(document);
@@ -364,6 +374,7 @@ static void document_format_controls(xui_test_proxy_state_t* proxy)
     }
     document_format_hyphen_kerning = 0;
     proxy->tProxy.surfaceDestroy(&proxy->tProxy, surface); xuiDestroy(context); proxy->tProxy.fontDestroy(&proxy->tProxy, font);
+    proxy->tProxy.textMeasure = document_format_base_measure;
     proxy->tProxy.textShape = saved; proxy->tProxy.drawText = document_format_base_draw; proxy->tProxy.drawTextSpans = document_format_base_spans;
     puts("Document invisible formats: SHY/ZWSP/WJ/FEFF in Rich joined/split, code/SOURCE, projected draw, contextual discretionary candidates, narrow hyphens, previous/latest breaks and 3 failure retries passed");
 }
