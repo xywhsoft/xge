@@ -301,7 +301,7 @@ int main(void)
 	xui_widget pOverflowChild;
 	xui_widget pOverlay;
 	xui_event_t tEvent;
-	xui_debug_widget_info_t tDebugInfo;
+	xui_debug_widget_info_t tDebugInfo = { .iSize = sizeof(tDebugInfo) };
 	xui_input_tooltip_resolver_t tTooltipResolver;
 	xui_ime_composition_t tComposition;
 	xui_widget_event_proc onEvent;
@@ -579,6 +579,33 @@ int main(void)
 	XUI_TEST_CHECK((iRet == XUI_OK) && !xuiWidgetTooltipIsOpen(pContext), "tooltip should close on pointer down");
 	iRet = xuiInputPointerUp(pContext, 12.0f, 12.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tooltip pointer up cleanup failed");
+	{
+		xui_tooltip_placement_t placement = xuiTooltipPlacementDefault();
+		xui_tooltip_info_t info = { .iSize = 1, .iType = -1 };
+		XUI_TEST_CHECK(placement.iAnchor == XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM && placement.fDelay == -1.0f,
+			"tooltip placement defaults failed");
+		XUI_TEST_CHECK(xuiWidgetGetTooltipInfo(pA, &info) == XUI_ERROR_INVALID_ARGUMENT && info.iType == -1,
+			"invalid tooltip output was changed");
+		placement.iAnchor = XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT;
+		placement.bCustomAnchorRect = 1;
+		placement.tAnchorRect = (xui_rect_t){30, 30, 20, 10};
+		placement.fOffsetX = 7.0f;
+		placement.fOffsetY = 3.0f;
+		placement.fDelay = 0.25f;
+		XUI_TEST_CHECK(xuiWidgetSetTextTooltip(pA, "Tip", &placement) == XUI_OK, "positioned tooltip failed");
+		info.iSize = sizeof(info);
+		XUI_TEST_CHECK(xuiWidgetGetTooltipInfo(pA, &info) == XUI_OK && info.iType == XUI_TOOLTIP_TEXT &&
+			strcmp(info.sText, "Tip") == 0 && info.tPlacement.tAnchorRect.fW == 20 && info.tPlacement.fDelay == 0.25f,
+			"positioned tooltip metadata failed");
+		XUI_TEST_CHECK(xuiInputPointerMove(pContext, 12.0f, 12.0f, 0) == XUI_OK &&
+			xuiUpdate(pContext, 0.10f) == XUI_OK && !xuiWidgetTooltipIsOpen(pContext), "positioned tooltip opened early");
+		XUI_TEST_CHECK(xuiUpdate(pContext, 0.20f) == XUI_OK && xuiWidgetTooltipGetOwner(pContext) == pA &&
+			xuiWidgetTooltipIsOpen(pContext), "positioned tooltip did not open");
+		tRect = xuiWidgetTooltipGetRect(pContext);
+		XUI_TEST_CHECK(tRect.fX == 57 && tRect.fY == 33, "custom tooltip anchor or offsets were lost");
+		XUI_TEST_CHECK(xuiWidgetSetTextTooltip(pA, NULL, &placement) == XUI_OK && !xuiWidgetTooltipIsOpen(pContext),
+			"clearing positioned tooltip failed");
+	}
 	tTooltipResolver.sText = "Dynamic tooltip";
 	tTooltipResolver.bEnabled = 1;
 	iRet = xuiWidgetSetTooltipResolver(pB, __xuiTestTooltipResolve, &tTooltipResolver);

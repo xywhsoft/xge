@@ -6064,6 +6064,23 @@ typedef struct xui_tooltip_desc_t {
 	void* pUser;
 } xui_tooltip_desc_t;
 
+typedef struct xui_tooltip_placement_t {
+	int iAnchor;
+	int bCustomAnchorRect;
+	xui_rect_t tAnchorRect;
+	float fOffsetX;
+	float fOffsetY;
+	float fDelay;
+	int bFollowCursor;
+} xui_tooltip_placement_t;
+
+typedef struct xui_tooltip_info_t {
+	uint32_t iSize;
+	int iType;
+	const char* sText;
+	xui_tooltip_placement_t tPlacement;
+} xui_tooltip_info_t;
+
 typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser);
 
 #define XUI_EVENT_TEXT_CAPACITY 4096
@@ -14037,6 +14054,15 @@ XUI_API int xuiWidgetGetCursorQueryCallback(xui_widget pWidget, xui_widget_curso
 XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY);
 /* 以纯文本设置工具提示。 */
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText);
+/* The default placement uses the Context's interaction delay policy. */
+XUI_API xui_tooltip_placement_t xuiTooltipPlacementDefault(void);
+/* Copies text and placement. A NULL placement selects native defaults; an
+ * empty or NULL text clears the tooltip. No callbacks are registered. */
+XUI_API int xuiWidgetSetTextTooltip(xui_widget pWidget, const char* sText,
+	const xui_tooltip_placement_t* pPlacement);
+/* Read configured metadata without running the resolver. sText is borrowed
+ * until the next tooltip mutation or widget destruction. Failure writes nothing. */
+XUI_API int xuiWidgetGetTooltipInfo(xui_widget pWidget, xui_tooltip_info_t* pInfo);
 /* 以完整描述设置工具提示（文本/延迟/样式）。 */
 XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pDesc);
 /* 注册延迟解析回调（显示时才生成提示内容）。 */

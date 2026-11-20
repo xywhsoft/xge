@@ -7925,7 +7925,33 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	return iRet;
 }
 
+static xui_tooltip_placement_t __xuiTooltipPlacement(const xui_tooltip_desc_t* pDesc)
+{
+	return (xui_tooltip_placement_t){
+		.iAnchor = pDesc->iAnchor,
+		.bCustomAnchorRect = pDesc->bCustomAnchorRect,
+		.tAnchorRect = pDesc->tAnchorRect,
+		.fOffsetX = pDesc->fOffsetX,
+		.fOffsetY = pDesc->fOffsetY,
+		.fDelay = pDesc->fDelay,
+		.bFollowCursor = pDesc->bFollowCursor,
+	};
+}
+
+XUI_API xui_tooltip_placement_t xuiTooltipPlacementDefault(void)
+{
+	xui_tooltip_desc_t tDesc;
+	__xuiTooltipDefaultDesc(&tDesc);
+	return __xuiTooltipPlacement(&tDesc);
+}
+
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText)
+{
+	return xuiWidgetSetTextTooltip(pWidget, sText, NULL);
+}
+
+XUI_API int xuiWidgetSetTextTooltip(xui_widget pWidget, const char* sText,
+	const xui_tooltip_placement_t* pPlacement)
 {
 	xui_tooltip_desc_t tDesc;
 
@@ -7936,8 +7962,32 @@ XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText)
 	if ( (sText != NULL) && (sText[0] != '\0') ) {
 		tDesc.iType = XUI_TOOLTIP_TEXT;
 		tDesc.sText = sText;
+		if ( pPlacement != NULL ) {
+			tDesc.iAnchor = pPlacement->iAnchor;
+			tDesc.bCustomAnchorRect = pPlacement->bCustomAnchorRect;
+			tDesc.tAnchorRect = pPlacement->tAnchorRect;
+			tDesc.fOffsetX = pPlacement->fOffsetX;
+			tDesc.fOffsetY = pPlacement->fOffsetY;
+			tDesc.fDelay = pPlacement->fDelay;
+			tDesc.bFollowCursor = pPlacement->bFollowCursor;
+		}
 	}
 	return xuiWidgetSetTooltip(pWidget, &tDesc);
+}
+
+XUI_API int xuiWidgetGetTooltipInfo(xui_widget pWidget, xui_tooltip_info_t* pInfo)
+{
+	if ( !__xuiWidgetValid(pWidget) || pInfo == NULL || pInfo->iSize < sizeof(*pInfo) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	const xui_tooltip_desc_t* pDesc = &pWidget->tTooltip;
+	*pInfo = (xui_tooltip_info_t){
+		.iSize = sizeof(*pInfo),
+		.iType = pDesc->iType,
+		.sText = pDesc->iType == XUI_TOOLTIP_TEXT ? pDesc->sText : NULL,
+		.tPlacement = __xuiTooltipPlacement(pDesc),
+	};
+	return XUI_OK;
 }
 
 XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pDesc)
