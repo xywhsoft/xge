@@ -59,6 +59,9 @@ void doc_view_text_ranges_visual(doc_view_data*, xui_document_prepare, xui_docum
 void doc_view_find_invalidate(doc_view_data*);
 void doc_view_find_query_clear(doc_view_data*);
 int doc_view_refresh_resources(doc_view_data*);
+#if XUI_ENABLE_WEBVIEW
+void doc_view_web_objects_changed(void* widget);
+#endif
 uint32_t doc_view_style_color(xui_widget, const char*, uint32_t);
 void doc_view_resolve_style(doc_view_data*);
 int doc_view_paint_background(doc_view_data*, xui_draw_context, xui_rect_t);

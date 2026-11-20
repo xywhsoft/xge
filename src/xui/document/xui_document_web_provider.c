@@ -43,6 +43,7 @@ struct xui_doc_web_provider_t {
     xui_owned_manager_t owned;
     xui_callback_owner_t invalidate_owner;
     xui_lifetime_link_t parent_watch,worker_watch;
+    xui_lifetime_link_t* object_observers;
     unsigned working;
     bool proxy_owned;
     xui_surface pending_surface,pending_crop;
@@ -187,6 +188,10 @@ static int doc_web_entry_clear(xui_doc_web_provider provider, doc_web_entry* ent
 static int doc_web_invalidate(xui_doc_web_provider provider)
 {
     ++provider->object_generation;
+    /* Observers mark state only, before an application callback can reenter
+     * and close or detach a renderer. No iterator survives that callback. */
+    for (xui_lifetime_link_t* link = provider->object_observers; link; link = link->pNext)
+        link->onInvalidate(link->pUser);
     xui_doc_web_invalidate_proc callback=provider->on_invalidate;
     void* user=provider->user;
     if(!callback || !doc_web_business_alive(provider))return XUI_OK;
@@ -813,14 +818,18 @@ XUI_API int xuiDocumentWebProviderLifetimeWatch(xui_doc_web_provider provider,xu
 {return provider ? xuiInternalManagerWatch(&provider->owned,link,invalidate,user):XUI_ERROR_INVALID_ARGUMENT;}
 
 int doc_web_watch_renderer(xui_doc_web_provider provider, xui_context context,
-    xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+    xui_lifetime_link_t* lifetime, xui_lifetime_link_t* changes,
+    xui_lifetime_invalidate_proc gone, xui_lifetime_invalidate_proc changed, void* user)
 {
     int status = xuiInternalManagerReadStatus(&provider->owned);
     if (status != XUI_OK) return status;
     if (provider->context != context) return XUI_ERROR_INVALID_ARGUMENT;
     /* Admission is complete. Neither list operation calls a subscriber. */
-    xuiLifetimeUnwatch(link);
-    return xuiInternalManagerWatch(&provider->owned, link, invalidate, user);
+    xuiLifetimeUnwatch(changes);
+    xuiLifetimeUnwatch(lifetime);
+    status = xuiInternalManagerWatch(&provider->owned, lifetime, gone, user);
+    if (status != XUI_OK || !changed) return status;
+    return xuiInternalLifetimeWatch(&provider->object_observers, changes, changed, user);
 }
 
 uint64_t doc_web_object_generation(xui_doc_web_provider provider)

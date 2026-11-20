@@ -454,6 +454,10 @@ XUI_API int xuiDocumentViewGetScroll(xui_widget view, double* x, double* y);
 XUI_API int xuiDocumentViewSetZoom(xui_widget view, float zoom);
 /* Select visual, source or live Markdown view mode. */
 XUI_API int xuiDocumentViewSetMode(xui_widget view, uint32_t mode);
+#if XUI_ENABLE_WEBVIEW
+/* Attach a same-Context provider to this View or derived Editor. NULL detaches. */
+XUI_API int xuiDocumentViewSetWebProvider(xui_widget view, xui_doc_web_provider provider);
+#endif
 /* Explicit provider invalidation; named surface changes refresh on the next update. */
 XUI_API int xuiDocumentViewInvalidateObjects(xui_widget view);
 /* Rebuild the renderer after external font metrics change; preserve the
@@ -531,6 +535,11 @@ typedef struct xui_message_document_desc_t {
 #if XUI_ENABLE_MESSAGE_LIST
 XUI_API int xuiMessageListSetNodeDocument(xui_widget list, const char* message_id,
     const xui_message_document_desc_t* desc);
+#if XUI_ENABLE_WEBVIEW
+/* Attach to an existing Document binding. Rebinding the message clears it. */
+XUI_API int xuiMessageListSetNodeWebProvider(xui_widget list, const char* message_id,
+    xui_doc_web_provider provider);
+#endif
 XUI_API int xuiMessageListSetNodeDocumentActivateOwned(xui_widget list, const char* message_id, xui_doc_view_activate_owned_proc callback, void* user, const xui_callback_owner_t* owner);
 XUI_API int xuiMessageListSetNodeDocumentTaskToggleOwned(xui_widget list, const char* message_id, xui_doc_task_toggle_proc callback, void* user, const xui_callback_owner_t* owner);
 /* Return the Document bound to one MessageList item. */

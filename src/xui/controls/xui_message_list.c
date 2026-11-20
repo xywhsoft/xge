@@ -5,6 +5,7 @@
 #include "xui_pointer_press_internal.h"
 #include "xui_text_internal.h"
 #include "xui_document_layout_internal.h"
+#include "xui_document_web_internal.h"
 #include "xui_document_accessible_internal.h"
 #include "xui_document_ui.h"
 
@@ -534,6 +535,25 @@ static void __xuiMessageDocumentRendererDesc(xui_message_document_binding_t* pBi
 	}
 }
 
+#if XUI_ENABLE_WEBVIEW
+static void __xuiMessageWebObjectsChanged(void* raw)
+{
+    xui_message_document_binding_t* binding = raw;
+    xui_widget widget = binding->pList;
+    xui_message_list_data_t* data = __xuiMessageListGetData(widget);
+    int index = binding->iIndex;
+    if (!data || binding->bRetiring || index < 0 || index >= data->iNodeCount ||
+        data->arrNodes[index].pDocumentBinding != binding) return;
+    data->arrNodes[index].bMeasureDirty = 1;
+    data->arrNodes[index].bDocumentSizeExact = 0;
+    if (index < data->iLayoutDirtyFrom) data->iLayoutDirtyFrom = index;
+    ++data->iChangeCount;
+    const uint32_t flags = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+    if ((xuiWidgetGetDirtyFlags(widget) & flags) != flags)
+        xuiInternalWidgetMarkDirtyFlags(widget, flags);
+}
+#endif
+
 static int __xuiMessageDocumentSync(xui_message_document_binding_t* pBinding)
 {
 	xui_document_snapshot pSnapshot = NULL;
@@ -563,6 +583,11 @@ static int __xuiMessageDocumentSync(xui_message_document_binding_t* pBinding)
 		if ( pBinding->pResolvedFont != tDesc.tFonts.normal ) {
             pData->bLayoutValid=0;pData->arrNodes[pBinding->iIndex].bMeasureDirty=1;
 			iRet = xuiDocumentRendererCreate(xuiWidgetGetContext(pBinding->pList), &tDesc, &pBinding->pWorkRenderer);
+#if XUI_ENABLE_WEBVIEW
+            if (iRet == XUI_OK && pBinding->pRenderer->web_provider)
+                iRet = doc_render_set_web_provider(pBinding->pWorkRenderer,
+                    pBinding->pRenderer->web_provider, __xuiMessageWebObjectsChanged, pBinding);
+#endif
 			if ( iRet == XUI_OK ) iRet = xuiDocumentAcquireSnapshot(pBinding->pDocument, &pSnapshot);
 			if ( iRet == XUI_OK ) iRet = xuiDocumentRendererSetSnapshot(pBinding->pWorkRenderer, pSnapshot, NULL);
 			if ( pSnapshot != NULL ) xuiDocumentSnapshotRelease(pSnapshot);
@@ -4821,6 +4846,32 @@ XUI_API xui_document xuiMessageListGetNodeDocument(xui_widget pWidget, const cha
 	return iIndex < 0 || pData->arrNodes[iIndex].pDocumentBinding == NULL ? NULL :
 		pData->arrNodes[iIndex].pDocumentBinding->pDocument;
 }
+
+#if XUI_ENABLE_WEBVIEW
+XUI_API int xuiMessageListSetNodeWebProvider(xui_widget widget, const char* id,
+    xui_doc_web_provider provider)
+{
+    xui_message_list_data_t* data = __xuiMessageListGetData(widget);
+    if (!data || !id) return XUI_ERROR_INVALID_ARGUMENT;
+    int index = __xuiMessageFindNodeById(data, id);
+    if (index < 0 || !data->arrNodes[index].pDocumentBinding) return XUI_ERROR_NOT_FOUND;
+    xui_message_document_binding_t* binding = data->arrNodes[index].pDocumentBinding;
+    if (data->iCacheActivity || binding->bRetiring || binding->pWorkRenderer || !binding->pRenderer)
+        return XUI_ERROR_BUSY;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(widget->pContext, &scope);
+    if (status != XUI_OK) return status;
+    if (binding->pRenderer->web_provider != provider) {
+        data->iCacheActivity = 1;
+        status = doc_render_set_web_provider(binding->pRenderer, provider,
+            __xuiMessageWebObjectsChanged, binding);
+        data->iCacheActivity = 0;
+        if (status == XUI_OK) __xuiMessageWebObjectsChanged(binding);
+    }
+    xerror* error = xrtTakeError();
+    return xuiInternalCallScopeEndRestored(&scope, status, error);
+}
+#endif
 
 XUI_API int xuiMessageListGetNodeDocumentRenderStats(xui_widget pWidget,
 	const char* sId, xui_doc_renderer_stats_t* pStats)

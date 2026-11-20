@@ -106,33 +106,72 @@ XUI_API int xuiDocumentRendererSetObjectDrawOwned(xui_document_renderer renderer
 {return doc_renderer_set_callback(renderer,2,(doc_renderer_callback_t){.draw=callback},callback!=NULL,user,owner);}
 
 #if XUI_ENABLE_WEBVIEW
+static void doc_renderer_web_objects_changed(void* user)
+{
+    xui_document_renderer renderer = user;
+    renderer->web_objects_dirty = true;
+    if (renderer->web_owner_changed) renderer->web_owner_changed(renderer->web_owner);
+}
+
 static void doc_renderer_web_provider_gone(void* user)
 {
     xui_document_renderer renderer = user;
+    xuiLifetimeUnwatch(&renderer->web_change_link);
     renderer->web_provider = NULL;
-    renderer->web_objects_dirty = true;
+    doc_renderer_web_objects_changed(renderer);
 }
 
-XUI_API int xuiDocumentRendererSetWebProvider(xui_document_renderer renderer,
-    xui_doc_web_provider provider)
+int doc_render_set_web_provider(xui_document_renderer renderer,
+    xui_doc_web_provider provider, xui_lifetime_invalidate_proc changed, void* user)
 {
     doc_renderer_call_t call = {0};
     int status = doc_renderer_call_begin(renderer, &call, false, false);
-    if (status != XUI_OK || renderer->web_provider == provider)
+    if (status == XUI_OK && (renderer->retiring || renderer->context != call.context ||
+        call.context->bCloseRequested || call.context->bDestroyPending || call.context->bDestroying))
+        status = XUI_ERROR_INVALID_STATE;
+    if (status != XUI_OK || (renderer->web_provider == provider &&
+        renderer->web_owner_changed == changed && renderer->web_owner == user))
         return doc_renderer_call_end(&call, status);
     if (provider && (renderer->object_measure || renderer->object_draw ||
         renderer->desc.onObjectMeasure || renderer->desc.onObjectDraw))
         return doc_renderer_call_end(&call, XUI_ERROR_INVALID_STATE);
     if (provider) {
         status = doc_web_watch_renderer(provider, call.context,
-            &renderer->web_provider_link, doc_renderer_web_provider_gone, renderer);
+            &renderer->web_provider_link, &renderer->web_change_link,
+            doc_renderer_web_provider_gone, changed ? doc_renderer_web_objects_changed : NULL, renderer);
         if (status != XUI_OK) return doc_renderer_call_end(&call, status);
-    } else xuiLifetimeUnwatch(&renderer->web_provider_link);
+    } else {
+        xuiLifetimeUnwatch(&renderer->web_change_link);
+        xuiLifetimeUnwatch(&renderer->web_provider_link);
+    }
     renderer->web_provider = provider;
+    renderer->web_owner_changed = changed;
+    renderer->web_owner = user;
     renderer->web_objects_dirty = true;
     return doc_renderer_call_end(&call, XUI_OK);
 }
+
+XUI_API int xuiDocumentRendererSetWebProvider(xui_document_renderer renderer,
+    xui_doc_web_provider provider)
+{
+    return doc_render_set_web_provider(renderer, provider, NULL, NULL);
+}
 #endif
+
+static void doc_renderer_begin_retire(xui_document_renderer renderer)
+{
+    if (renderer->retiring) return;
+    renderer->retiring = true;
+#if XUI_ENABLE_WEBVIEW
+    /* No new renderer operation can start. Detach the widget observer even
+     * if paint resources make the physical retirement take another turn. */
+    xuiLifetimeUnwatch(&renderer->web_change_link);
+    xuiLifetimeUnwatch(&renderer->web_provider_link);
+    renderer->web_provider = NULL;
+    renderer->web_owner_changed = NULL;
+    renderer->web_owner = NULL;
+#endif
+}
 /* The renderer's outer operation holds native storage through snapshot Drop.
  * Snapshot selection is immutable even if Hold or the callback changes the
  * registration. The independent owner keeps the selected closure executable. */
@@ -476,7 +515,7 @@ int doc_render_destroy_prepare(xui_document_renderer renderer,bool* complete)
     if(!renderer || renderer->lifecycle!=renderer || !complete)return XUI_ERROR_INVALID_ARGUMENT;
     *complete=false;if(renderer->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(renderer->destroying)return XUI_ERROR_INVALID_STATE;
-    renderer->retiring=true;if(renderer->calls)return XUI_STATUS_DEFERRED;
+    doc_renderer_begin_retire(renderer);if(renderer->calls)return XUI_STATUS_DEFERRED;
     ++renderer->calls;int status=doc_renderer_paint_prepare(renderer,complete);--renderer->calls;
     return status;
 }
@@ -1768,7 +1807,7 @@ XUI_API int xuiDocumentRendererRequestClose(xui_document_renderer renderer)
 {
     if(!renderer || renderer->lifecycle!=renderer || renderer->destroying)return XUI_ERROR_INVALID_ARGUMENT;
     if(renderer->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
-    renderer->retiring=true;return XUI_OK;
+    doc_renderer_begin_retire(renderer);return XUI_OK;
 }
 XUI_API int xuiDocumentRendererReleaseOwnerChecked(xui_document_renderer r,bool* consumed)
 {
@@ -1776,7 +1815,7 @@ XUI_API int xuiDocumentRendererReleaseOwnerChecked(xui_document_renderer r,bool*
     *consumed=false;
     if(!r || r->lifecycle!=r || r->destroying)return XUI_ERROR_INVALID_ARGUMENT;
     if(r->creator_thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
-    r->retiring=true;if(r->calls)return XUI_STATUS_DEFERRED;
+    doc_renderer_begin_retire(r);if(r->calls)return XUI_STATUS_DEFERRED;
     xui_context context=r->context;xui_call_scope_t scope={0};
     if(context){int status=xuiInternalCleanupCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;}
     ++r->calls;
@@ -1809,9 +1848,6 @@ XUI_API int xuiDocumentRendererReleaseOwnerChecked(xui_document_renderer r,bool*
         status=xuiInternalCleanupEnd(NULL,&receipt);return status==XUI_OK ? XUI_STATUS_DEFERRED:status;
     }
     r->destroying=true;*consumed=true;
-#if XUI_ENABLE_WEBVIEW
-    xuiLifetimeUnwatch(&r->web_provider_link);
-#endif
     xuiLifetimeUnwatch(&r->context_link);xuiInternalLifetimeInvalidateAll(&r->lifetime_links);
     xuiInternalContextCleanupOutcome(context,XUI_OK,&receipt.status,&receipt.error);
     xrtMapUnit(&r->block_index);xuiDocumentSnapshotRelease(r->snapshot);xuiDocumentPrepareRelease(r->input);free(r->fonts);
@@ -2165,6 +2201,34 @@ static int doc_impl_InvalidateFonts(xui_document_renderer r)
     return doc_render_invalidate_fonts(r, xuiGetVirtualDpi(r->context),
         r->uses_default_font ? xuiGetDefaultFont(r->context) : r->desc.tFonts.normal);
 }
+
+#if XUI_ENABLE_WEBVIEW
+static uint64_t doc_render_web_generation(xui_document_renderer r)
+{
+    return r->web_provider ? doc_web_object_generation(r->web_provider) : 0;
+}
+
+bool doc_render_web_objects_pending(xui_document_renderer r)
+{
+    return r->web_objects_dirty || doc_render_web_generation(r) != r->web_object_generation;
+}
+#endif
+
+static int doc_render_invalidate_objects(xui_document_renderer r)
+{
+#if XUI_ENABLE_WEBVIEW
+    uint64_t generation = doc_render_web_generation(r);
+    bool pending = r->web_objects_dirty || generation != r->web_object_generation;
+    r->web_objects_dirty = false;
+    int status = doc_impl_InvalidateObjects(r);
+    if (status == XUI_OK) r->web_object_generation = generation;
+    else if (pending) r->web_objects_dirty = true;
+    return status;
+#else
+    return doc_impl_InvalidateObjects(r);
+#endif
+}
+
 static int doc_render_refresh_resources(xui_document_renderer r)
 {
     uint64_t generation = xuiResourceGetRegistryGeneration(r->context);
@@ -2172,25 +2236,16 @@ static int doc_render_refresh_resources(xui_document_renderer r)
     xui_font default_font = r->uses_default_font ? xuiGetDefaultFont(r->context) : r->desc.tFonts.normal;
     int result;
     if (r->freeze_dynamic_refresh) return XUI_OK;
-#if XUI_ENABLE_WEBVIEW
-    uint64_t web_generation = r->web_provider ? doc_web_object_generation(r->web_provider) : 0;
-    if (r->web_objects_dirty || web_generation != r->web_object_generation) {
-        r->web_objects_dirty = false;
-        result = doc_impl_InvalidateObjects(r);
-        if (result != XUI_OK) {
-            r->web_objects_dirty = true;
-            return result;
-        }
-        r->web_object_generation = web_generation;
-    }
-#endif
     if (dpi_scale != r->dpi_scale || default_font != r->desc.tFonts.normal) {
         result = doc_render_invalidate_fonts(r, dpi_scale, default_font);
         if (result != XUI_OK) return result;
     }
+#if XUI_ENABLE_WEBVIEW
+    if (doc_render_web_objects_pending(r)) return doc_render_invalidate_objects(r);
+#endif
     if (generation == r->resource_registry_generation) return XUI_OK;
     if (!r->has_named_images) { r->resource_registry_generation = generation; return XUI_OK; }
-    return doc_impl_InvalidateObjects(r);
+    return doc_render_invalidate_objects(r);
 }
 static int doc_impl_SetActivePosition(xui_document_renderer r, const xui_doc_position_t* p)
 {
@@ -4273,7 +4328,7 @@ XUI_API int xuiDocumentRendererSetMode(xui_document_renderer r, uint32_t mode)
 XUI_API int xuiDocumentRendererInvalidateObjects(xui_document_renderer r)
 {
     doc_renderer_call_t call={0};int status=doc_renderer_call_begin(r,&call,false,true);
-    if(status==XUI_OK)status=doc_impl_InvalidateObjects(r);
+    if(status==XUI_OK)status=doc_render_invalidate_objects(r);
     return doc_renderer_call_end(&call,status);
 }
 XUI_API int xuiDocumentRendererInvalidateFonts(xui_document_renderer r)

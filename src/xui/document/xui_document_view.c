@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_DOCUMENT_VIEW
 #include "xui_document_view_internal.h"
+#include "xui_document_web_internal.h"
 #include "xui_document_accessible_internal.h"
 #include "xui_internal.h"
 #include "xui_native_accessibility_internal.h"
@@ -211,6 +212,10 @@ int doc_view_refresh_resources(doc_view_data* v)
         if (result != XUI_OK) return result;
     }
     uint64_t generation = xuiResourceGetRegistryGeneration(context);
+#if XUI_ENABLE_WEBVIEW
+    if (doc_render_web_objects_pending(v->renderer))
+        return xuiDocumentViewInvalidateObjects(v->widget);
+#endif
     if (generation != v->renderer->resource_registry_generation && !v->renderer->has_named_images) {
         v->renderer->resource_registry_generation = generation;
         return XUI_OK;
@@ -670,6 +675,11 @@ static int doc_view_rebuild_renderer(doc_view_data* v, float zoom, int prepare_o
     desc = v->base_renderer; desc.fZoom = zoom;
     if (v->uses_default_font) desc.tFonts.normal = xuiGetDefaultFont(xuiWidgetGetContext(widget));
     result = xuiDocumentRendererCreate(xuiWidgetGetContext(widget), &desc, &renderer);
+#if XUI_ENABLE_WEBVIEW
+    if (result == XUI_OK && v->renderer->web_provider)
+        result = doc_render_set_web_provider(renderer, v->renderer->web_provider,
+            doc_view_web_objects_changed, widget);
+#endif
     if (result == XUI_OK) renderer->width = width;
     if (result == XUI_OK) result = xuiDocumentRendererSetMode(renderer, v->renderer->mode);
     if (result == XUI_OK) renderer->active_source = v->renderer->active_source;
@@ -781,6 +791,32 @@ XUI_API uint32_t xuiDocumentViewGetMode(xui_widget widget)
 {
     doc_view_data* v = doc_view_get(widget); return v ? v->renderer->mode : 0;
 }
+
+#if XUI_ENABLE_WEBVIEW
+void doc_view_web_objects_changed(void* raw)
+{
+    xui_widget widget = raw;
+    const uint32_t flags = XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+    if ((xuiWidgetGetDirtyFlags(widget) & flags) != flags)
+        xuiInternalWidgetMarkDirtyFlags(widget, flags);
+}
+
+XUI_API int xuiDocumentViewSetWebProvider(xui_widget widget, xui_doc_web_provider provider)
+{
+    doc_view_data* view = doc_view_get(widget);
+    if (!view || !view->renderer) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(widget->pContext, &scope);
+    if (status != XUI_OK) return status;
+    if (view->renderer->web_provider != provider) {
+        status = doc_render_set_web_provider(view->renderer, provider, doc_view_web_objects_changed, widget);
+        if (status == XUI_OK) doc_view_web_objects_changed(widget);
+    }
+    xerror* error = xrtTakeError();
+    return xuiInternalCallScopeEndRestored(&scope, status, error);
+}
+#endif
+
 XUI_API int xuiDocumentViewInvalidateObjects(xui_widget widget)
 {
     doc_view_data* v = doc_view_get(widget); xui_document_renderer renderer;

@@ -530,6 +530,8 @@ XUI 资源注册表提供 `xuiResourceGetRegistryGeneration(context)`。注册�
 
 独立 Renderer 可用 `xuiDocumentRendererSetWebProvider(renderer, provider)` 同时挂接浏览器对象的测量和绘制。Provider 必须属于同一个 Context，且互斥于自定义对象回调。应用继续驱动 `xuiDocumentWebProviderUpdate`，Renderer 读取缓存版本并在下一次排版或绘制时重测受影响的对象。传入 `NULL` 或关闭 Provider 后恢复占位布局。Context 持有 Provider，Renderer 在释放时解除观察。
 
+`xuiDocumentViewSetWebProvider` 适用于 DocumentView 和 DocumentEditor，缩放、字体变化和输入法预览会沿用当前 Provider。MessageList 先通过 `xuiMessageListSetNodeDocument` 绑定文档，再用 `xuiMessageListSetNodeWebProvider` 为该消息挂接 Provider。重新绑定文档后可重新挂接。应用驱动 `xuiDocumentWebProviderUpdate`，发布缓存变化时会标记已挂接的控件或消息行；View 沿用现有阅读位置保持逻辑。Provider 关闭或传入 `NULL` 后恢复占位布局。
+
 图片剪贴板当前以内存 PNG 进入 Document：XGE 可从 RGBA8 编码并正确转换预乘 alpha，Win32 优先读取注册剪贴板格式 PNG；没有 PNG 表示或延迟渲染失败时，将常见 24 位 BI_RGB `CF_DIB` 或 32 位 BI_RGB/BI_BITFIELDS `CF_DIBV5` 转换为同一 PNG 输入，按掩码提取颜色和透明度，并拒绝截断数据或重叠掩码。向 Windows 复制有效 PNG 时，XGE 同时提供带显式 alpha 的 32 位顶向下 `CF_DIBV5`，供只识别系统位图格式的应用读取；超出 1600 万像素或无法解码的 PNG 不附加 DIB，原有剪贴板项目照常发布。手动运行的 XGE 实例使用不显示的顶层窗口持有剪贴板。VISUAL View/Editor 仅在选区恰为一张图片且 context 中存在同名 surface 时附加 PNG 字节；没有可读 surface 仍复制原生片段和 HTML 资源描述。VISUAL Editor 在原生片段和 HTML 缺失时可从 PNG 或上述 DIB 表示粘贴，限制 16 MiB 编码数据和 1600 万像素，创建唯一的 context 命名资源和图片节点，失败不发布文档，成功可一步 Undo。资源由 context 持有，Undo 不删除它；宿主保存文档时仍需把这类图片归档为持久资产并维护 URI 映射。ICC 色彩管理、压缩/调色板 DIB、跨进程应用矩阵及其他平台仍需验收。
 
 Win32 DIB 回退在首次 PNG 长度查询后暂存一次转换结果，供紧接着的内容读取复用，避免 Document 粘贴把同一位图解码、编码两遍。暂存上限为 16 MiB；完整读取、XGE 写剪贴板或 `xgeUnit` 会释放，下一次 DIB 回退会按系统剪贴板序号淘汰过期数据。超出上限的图片仍可能重复转换。这只是减少重复计算，未提供跨进程快照或真实 UI 延迟保证。

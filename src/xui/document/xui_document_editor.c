@@ -2,6 +2,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_DOCUMENT_EDITOR
 #include "xui_document_view_internal.h"
+#include "xui_document_web_internal.h"
 #include "xui_internal.h"
 #include <math.h>
 #include "xui_document_worker.h"
@@ -3269,6 +3270,11 @@ static int doc_editor_composition(doc_editor_data* e, const xui_event_t* event)
         else { result = doc_snapshot_create(state, t->document->identity, t->base_revision, &snapshot); doc_state_release(state); }
     }
     if (result == XUI_OK) result = xuiDocumentRendererCreate(e->view.renderer->context, &e->view.renderer->desc, &renderer);
+#if XUI_ENABLE_WEBVIEW
+    if (result == XUI_OK && e->view.renderer->web_provider)
+        result = doc_render_set_web_provider(renderer, e->view.renderer->web_provider,
+            doc_view_web_objects_changed, e->view.widget);
+#endif
     if (result == XUI_OK) result = xuiDocumentRendererSetMode(renderer, e->view.renderer->mode);
     if (result == XUI_OK) result = xuiDocumentRendererSetSnapshot(renderer, snapshot, NULL);
     if (result == XUI_OK && preview) result = xuiDocumentRendererSetSourceInput(renderer, preview);
@@ -3826,6 +3832,13 @@ static int doc_editor_render(xui_widget w, xui_draw_context draw, uint32_t state
     result = doc_editor_sync(e); if (result != XUI_OK) return result;
     doc_view_resolve_style(&e->view);
     if (e->composing && e->projection) {
+#if XUI_ENABLE_WEBVIEW
+        if (e->projection->web_provider != e->view.renderer->web_provider) {
+            result = doc_render_set_web_provider(e->projection, e->view.renderer->web_provider,
+                doc_view_web_objects_changed, w);
+            if (result != XUI_OK) return result;
+        }
+#endif
         e->projection->desc.iTextColor = e->view.renderer->desc.iTextColor;
         e->projection->desc.iBorderColor = e->view.renderer->desc.iBorderColor;
         e->projection->desc.iCodeBackground = e->view.renderer->desc.iCodeBackground;

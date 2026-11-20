@@ -72,8 +72,9 @@ static int cpuMeasure(xui_proxy proxy,const xui_text_item_t* item,xui_vec2_t* si
 }
 static void providerSetup(ProviderTest* test)
 {
-    memset(test,0,sizeof(*test));current=test;test->base.owner.refs=1;
+    memset(test,0,sizeof(*test));current=test;test->base.owner.refs=1;test->base.ready=true;
     xuiTestProxyInit(&test->base.state);xui_proxy_t* table=&test->base.state.tProxy;
+    table->pUser=&test->base;table->textShape=layoutShape;
     table->surfaceLoadMemory=cpuSurfaceLoad;table->surfaceCreate=cpuSurfaceCreate;
     table->textMeasure=cpuMeasure;table->fontGetMetrics=metrics;table->surfaceGetDesc=cpuSurfaceDesc;table->surfaceDrawTo=cpuSurfaceDrawTo;table->drawSurface=cpuDrawSurface;
     xui_callback_owner_t owner=ownerRef(&test->base.owner);
@@ -288,12 +289,70 @@ static void rendererAttachment(void)
     xuiDocumentSnapshotRelease(snapshot);xuiDocumentRelease(document);
     providerFinish(&other);providerFinish(&test);
 }
+static unsigned webObservers(xui_doc_web_provider provider)
+{
+    unsigned count=0;
+    for (const xui_lifetime_link_t* link=provider->object_observers;link;link=link->pNext) ++count;
+    return count;
+}
+
+static void widgetAttachment(void)
+{
+    ProviderTest test;providerSetup(&test);
+    xui_context context=test.base.context;
+    xui_document document=NULL;
+    xui_widget view=NULL,editor=NULL,list=NULL;
+    xui_font font=fontCreate(test.base.proxy,&test.base.fontDrops,XUI_OK);
+    assert(xuiSetDefaultFont(context,font)==XUI_OK && xuiFontReleaseChecked(font)==XUI_OK);
+    assert(xuiDocumentCreate(NULL,&document)==XUI_OK);
+    const xui_doc_view_desc_t viewDesc={.iSize=sizeof(viewDesc),.pDocument=document};
+    const xui_doc_editor_desc_t editorDesc={.tView=viewDesc,.iSize=sizeof(editorDesc)};
+    const xui_message_node_t row={.iSize=sizeof(row),.sId="math",.sText=""};
+    const xui_message_document_desc_t binding={.iSize=sizeof(binding),.pDocument=document};
+    assert(xuiDocumentViewCreate(context,&viewDesc,&view)==XUI_OK);
+    assert(xuiDocumentEditorCreate(context,&editorDesc,&editor)==XUI_OK);
+    assert(xuiMessageListCreate(context,&list,NULL)==XUI_OK);
+    assert(xuiWidgetSetRect(list,(xui_rect_t){0,0,320,240})==XUI_OK);
+    assert(xuiMessageListSetAutoScroll(list,0)==XUI_OK);
+    assert(xuiMessageListAddNode(list,&row)==XUI_OK);
+    assert(xuiMessageListSetNodeDocument(list,row.sId,&binding)==XUI_OK);
+    assert(xuiMessageListSetNodeWebProvider(list,"missing",test.provider)==XUI_ERROR_NOT_FOUND);
+    assert(xuiDocumentViewSetWebProvider(view,test.provider)==XUI_OK);
+    assert(xuiDocumentViewSetWebProvider(editor,test.provider)==XUI_OK);
+    assert(xuiMessageListSetNodeWebProvider(list,row.sId,test.provider)==XUI_OK);
+    assert(webObservers(test.provider)==3);
+    assert(xuiDocumentViewSetZoom(view,1.25f)==XUI_OK && webObservers(test.provider)==3);
+
+    assert(xuiDocumentEditorInsertText(editor,"Abc",3)==XUI_OK);
+    xui_event_t ime={.iSize=sizeof(ime),.iType=XUI_EVENT_IME_COMPOSITION,.pTarget=editor,
+        .sText="x",.iTextSize=1,.bCompositionActive=1,.iCompositionCursor=1};
+    assert(xuiDispatchEvent(context,&ime)==XUI_OK && xuiDocumentEditorIsComposing(editor));
+    assert(webObservers(test.provider)==4);
+
+    const uint32_t dirty=XUI_WIDGET_DIRTY_LAYOUT|XUI_WIDGET_DIRTY_CACHE|XUI_WIDGET_DIRTY_RENDER;
+    xuiWidgetClearDirty(view,0);xuiWidgetClearDirty(editor,0);xuiWidgetClearDirty(list,0);
+    assert(xuiDocumentWebProviderSetPalette(test.provider,XUI_COLOR_RGBA(10,20,30,255),XUI_COLOR_WHITE)==XUI_OK);
+    assert((xuiWidgetGetDirtyFlags(view)&dirty)==dirty && (xuiWidgetGetDirtyFlags(editor)&dirty)==dirty);
+    assert((xuiWidgetGetDirtyFlags(list)&dirty)==dirty);
+
+    assert(xuiWidgetDestroyChecked(view)==XUI_OK && webObservers(test.provider)==3);
+    assert(xuiMessageListClear(list)==XUI_OK && webObservers(test.provider)==2);
+    xuiWidgetClearDirty(editor,0);xuiWidgetClearDirty(list,0);
+    assert(xuiDocumentWebProviderReleaseChecked(test.provider)==XUI_OK);
+    assert((xuiWidgetGetDirtyFlags(editor)&dirty)==dirty && !(xuiWidgetGetDirtyFlags(list)&dirty));
+    assert(xuiDocumentEditorIsComposing(editor));
+    assert(xuiWidgetDestroyChecked(editor)==XUI_OK && xuiWidgetDestroyChecked(list)==XUI_OK);
+    xuiDocumentRelease(document);
+    providerFinish(&test);
+    assert(test.base.fontDrops==1);
+}
+
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK && xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    actualSurface(false);actualSurface(true);partialOutputFailure();errorCardFontTail();errorCardFailurePrefix();soleCleanupFailure();constructorOom();destroyedDuringDecode();callbackAndQueuedWorker();parentClose();rendererAttachment();
+    actualSurface(false);actualSurface(true);partialOutputFailure();errorCardFontTail();errorCardFailurePrefix();soleCleanupFailure();constructorOom();destroyedDuringDecode();callbackAndQueuedWorker();parentClose();rendererAttachment();widgetAttachment();
     xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     puts("WebProvider actual Context-owned manager, canonical Proxy and Surface graph, partial output NULL failure, reentrant close and late COM-delegate suppression balanced");return 0;
 }

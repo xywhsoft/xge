@@ -272,6 +272,9 @@ struct xui_document_renderer_t {
 #if XUI_ENABLE_WEBVIEW
     xui_doc_web_provider web_provider;
     xui_lifetime_link_t web_provider_link;
+    xui_lifetime_link_t web_change_link;
+    xui_lifetime_invalidate_proc web_owner_changed;
+    void* web_owner;
     uint64_t web_object_generation;
     bool web_objects_dirty;
 #endif
