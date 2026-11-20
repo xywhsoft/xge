@@ -469,6 +469,13 @@ XUI_API xui_scroll_model_t* xuiScrollViewGetModel(xui_widget pWidget)
 	return (pData != NULL) ? xuiScrollFrameGetModel(pData->pFrame) : NULL;
 }
 
+XUI_API int xuiScrollViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetScrollSnapshot(pData->pFrame, pSnapshot);
+}
+
 XUI_API int xuiScrollViewSetContentSize(xui_widget pWidget, float fWidth, float fHeight)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);

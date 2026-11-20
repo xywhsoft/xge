@@ -11416,6 +11416,12 @@ XUI_API int xuiScrollModelGetOffset(const xui_scroll_model_t* pModel, float* pOf
 XUI_API int xuiScrollModelGetMaxOffset(const xui_scroll_model_t* pModel, float* pMaxX, float* pMaxY);
 /* 滚动到内容矩形可见（不足则最小滚动）。 */
 XUI_API int xuiScrollModelEnsureRectVisible(xui_scroll_model_t* pModel, xui_rect_t tContentRect);
+/* 值接口沿用原地操作的校验和钳制规则。成功时写出新模型，失败时保留输出。 */
+XUI_API int xuiScrollModelWithViewport(const xui_scroll_model_t* pModel, xui_rect_t tViewport, xui_scroll_model_t* pResult);
+XUI_API int xuiScrollModelWithContentSize(const xui_scroll_model_t* pModel, float fWidth, float fHeight, xui_scroll_model_t* pResult);
+XUI_API int xuiScrollModelWithOffset(const xui_scroll_model_t* pModel, float fOffsetX, float fOffsetY, xui_scroll_model_t* pResult);
+XUI_API int xuiScrollModelScrolledBy(const xui_scroll_model_t* pModel, float fDeltaX, float fDeltaY, xui_scroll_model_t* pResult);
+XUI_API int xuiScrollModelWithRectVisible(const xui_scroll_model_t* pModel, xui_rect_t tContentRect, xui_scroll_model_t* pResult);
 /* 屏幕坐标转视口坐标；非法坐标返回零向量。 */
 XUI_API xui_vec2_t xuiScrollModelScreenToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
 /* 视口坐标转内容坐标（加偏移）；非法坐标返回零向量。 */
@@ -11438,6 +11444,8 @@ XUI_API int xuiScrollFrameSetChange(xui_widget pWidget, xui_scroll_frame_change_
 XUI_API int xuiScrollFrameSetChangeOwned(xui_widget pWidget, xui_scroll_frame_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 /* 取内嵌滚动模型（借用指针；不要释放，修改滚动状态应优先使用 ScrollFrame API）。 */
 XUI_API xui_scroll_model_t* xuiScrollFrameGetModel(xui_widget pWidget);
+/* 复制当前已提交的滚动模型，不触发布局。 */
+XUI_API int xuiScrollFrameGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 取视口子控件（借用句柄；由 ScrollFrame 持有，不得销毁或迁移）。 */
 XUI_API xui_widget xuiScrollFrameGetViewportWidget(xui_widget pWidget);
 /* 取水平滚动条控件（借用句柄；隐藏时仍返回内部控件，不得销毁或迁移）。 */
@@ -11540,6 +11548,8 @@ XUI_API xui_widget xuiScrollViewGetContentWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollViewGetViewportWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针；不要释放，修改滚动状态应优先使用 ScrollView API）。 */
 XUI_API xui_scroll_model_t* xuiScrollViewGetModel(xui_widget pWidget);
+/* 复制内部 ScrollFrame 当前已提交的滚动模型，不触发布局。 */
+XUI_API int xuiScrollViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 设置内容尺寸。 */
 XUI_API int xuiScrollViewSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
 /* 输出内容尺寸。 */

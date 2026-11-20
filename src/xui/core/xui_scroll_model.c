@@ -220,6 +220,51 @@ XUI_API int xuiScrollModelEnsureRectVisible(xui_scroll_model_t* pModel, xui_rect
 	return xuiScrollModelSetOffset(pModel, fOffsetX, fOffsetY);
 }
 
+XUI_API int xuiScrollModelWithViewport(const xui_scroll_model_t* pModel, xui_rect_t tViewport, xui_scroll_model_t* pResult)
+{
+	if ( pResult == NULL || !__xuiScrollModelValid(pModel) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = *pModel;
+	int iRet = xuiScrollModelSetViewport(&tNext, tViewport);
+	if ( iRet == XUI_OK ) *pResult = tNext;
+	return iRet;
+}
+
+XUI_API int xuiScrollModelWithContentSize(const xui_scroll_model_t* pModel, float fWidth, float fHeight, xui_scroll_model_t* pResult)
+{
+	if ( pResult == NULL || !__xuiScrollModelValid(pModel) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = *pModel;
+	int iRet = xuiScrollModelSetContentSize(&tNext, fWidth, fHeight);
+	if ( iRet == XUI_OK ) *pResult = tNext;
+	return iRet;
+}
+
+XUI_API int xuiScrollModelWithOffset(const xui_scroll_model_t* pModel, float fOffsetX, float fOffsetY, xui_scroll_model_t* pResult)
+{
+	if ( pResult == NULL || !__xuiScrollModelValid(pModel) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = *pModel;
+	int iRet = xuiScrollModelSetOffset(&tNext, fOffsetX, fOffsetY);
+	if ( iRet == XUI_OK ) *pResult = tNext;
+	return iRet;
+}
+
+XUI_API int xuiScrollModelScrolledBy(const xui_scroll_model_t* pModel, float fDeltaX, float fDeltaY, xui_scroll_model_t* pResult)
+{
+	if ( pResult == NULL || !__xuiScrollModelValid(pModel) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = *pModel;
+	int iRet = xuiScrollModelScrollBy(&tNext, fDeltaX, fDeltaY);
+	if ( iRet == XUI_OK ) *pResult = tNext;
+	return iRet;
+}
+
+XUI_API int xuiScrollModelWithRectVisible(const xui_scroll_model_t* pModel, xui_rect_t tContentRect, xui_scroll_model_t* pResult)
+{
+	if ( pResult == NULL || !__xuiScrollModelValid(pModel) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = *pModel;
+	int iRet = xuiScrollModelEnsureRectVisible(&tNext, tContentRect);
+	if ( iRet == XUI_OK ) *pResult = tNext;
+	return iRet;
+}
+
 XUI_API xui_vec2_t xuiScrollModelScreenToViewport(const xui_scroll_model_t* pModel, float fX, float fY)
 {
 	xui_vec2_t tPoint;

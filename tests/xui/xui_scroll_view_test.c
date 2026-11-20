@@ -227,9 +227,15 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiScrollViewGetOffset(pView, &fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX == fMaxX && fOffsetY == fMaxY,
 		"wide relative scroll saturates at the content boundary");
+	xui_scroll_model_t tViewSnapshot;
+	iRet = xuiScrollViewGetScrollSnapshot(pView, &tViewSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tViewSnapshot.fScrollX == fOffsetX && tViewSnapshot.fScrollY == fOffsetY,
+		"view snapshot reads the inner frame's committed offset");
 	iRet = xuiScrollViewSetContentSize(pView, 300.0f, 220.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollViewSetOffset(pView, 0.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore ordinary scrollview after wide scroll");
+	XUI_TEST_CHECK(xuiScrollViewGetScrollSnapshot(NULL, &tViewSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+		tViewSnapshot.fScrollY == fOffsetY, "invalid view leaves the old snapshot intact");
 	iRet = xuiWidgetAddChild(pRoot, pView);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add scrollview");
 	xuiWidgetSetRect(pView, (xui_rect_t){20.0f, 20.0f, 140.0f, 110.0f});

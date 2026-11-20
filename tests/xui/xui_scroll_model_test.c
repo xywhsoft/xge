@@ -39,6 +39,34 @@ int main(void)
 	xuiScrollModelInit(&tModel);
 	XUI_TEST_CHECK(tModel.iSize == sizeof(tModel), "init size");
 
+	xui_scroll_model_t tValue;
+	XUI_TEST_CHECK(xuiScrollModelWithViewport(&tModel, (xui_rect_t){10, 20, 100, 80}, &tValue) == XUI_OK &&
+		tValue.tViewportRect.fX == 10.0f && tValue.tViewportRect.fH == 80.0f &&
+		tModel.tViewportRect.fH == 0.0f, "viewport value leaves its input unchanged");
+	XUI_TEST_CHECK(xuiScrollModelWithContentSize(&tValue, 260.0f, 180.0f, &tValue) == XUI_OK &&
+		tValue.fContentWidth == 260.0f && tValue.fContentHeight == 180.0f, "content size permits aliasing output");
+	xui_scroll_model_t tClamped;
+	XUI_TEST_CHECK(xuiScrollModelWithOffset(&tValue, -30.0f, 200.0f, &tClamped) == XUI_OK &&
+		tClamped.fScrollX == 0.0f && tClamped.fScrollY == 100.0f && tValue.fScrollY == 0.0f,
+		"offset value clamps without editing its input");
+	XUI_TEST_CHECK(xuiScrollModelScrolledBy(&tClamped, 10.0f, -20.0f, &tClamped) == XUI_OK &&
+		tClamped.fScrollX == 10.0f && tClamped.fScrollY == 80.0f, "relative value operation");
+	XUI_TEST_CHECK(xuiScrollModelWithRectVisible(&tClamped, (xui_rect_t){5, 30, 20, 20}, &tClamped) == XUI_OK &&
+		tClamped.fScrollX == 5.0f && tClamped.fScrollY == 30.0f, "rectangle value operation");
+	XUI_TEST_CHECK(xuiScrollModelWithViewport(&tValue, (xui_rect_t){0, 0, -1, 40}, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiScrollModelWithContentSize(&tValue, 0, INFINITY, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiScrollModelWithOffset(&tValue, NAN, 0, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiScrollModelScrolledBy(&tClamped, 0, INFINITY, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiScrollModelWithRectVisible(&tValue, (xui_rect_t){0, 0, 10, -1}, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		tClamped.fScrollX == 5.0f && tClamped.fScrollY == 30.0f && tClamped.fContentHeight == 180.0f,
+		"invalid inputs preserve existing output, including aliased output");
+	XUI_TEST_CHECK(xuiScrollModelWithOffset(NULL, 0, 0, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiScrollModelWithOffset(&tValue, 0, 0, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"value operation rejects null arguments");
+	tValue.iSize = 1;
+	XUI_TEST_CHECK(xuiScrollModelWithOffset(&tValue, 0, 0, &tClamped) == XUI_ERROR_INVALID_ARGUMENT &&
+		tClamped.fScrollY == 30.0f, "incorrect input ABI size does not clear output");
+
 	iRet = xuiScrollModelSetViewport(&tModel, (xui_rect_t){10.0f, 20.0f, 100.0f, 80.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "set viewport");
 	tViewport = xuiScrollModelGetViewport(&tModel);

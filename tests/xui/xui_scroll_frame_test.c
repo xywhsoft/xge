@@ -272,6 +272,11 @@ int main(void)
 		__xuiScrollFrameNear(tViewport.fH, 84.0f), "restore ordinary frame metrics");
 	iRet = xuiScrollModelGetMaxOffset(xuiScrollFrameGetModel(pFrame), &fMaxX, &fMaxY);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiScrollFrameNear(fMaxX, 136.0f) && __xuiScrollFrameNear(fMaxY, 136.0f), "model max offset");
+	xui_scroll_model_t tFrameSnapshot;
+	iRet = xuiScrollFrameGetScrollSnapshot(pFrame, &tFrameSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFrameSnapshot.tViewportRect.fW == tViewport.fW &&
+		tFrameSnapshot.fContentWidth == 240.0f && tFrameSnapshot.fContentHeight == 220.0f,
+		"snapshot contains the arranged frame and content extent");
 	iRet = xuiScrollFrameSetContentSize(pFrame, XUI_LAYOUT_UNBOUNDED,
 		XUI_LAYOUT_UNBOUNDED);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pFrame,
@@ -284,6 +289,8 @@ int main(void)
 		&fOffsetX, &fOffsetY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fOffsetX == fMaxX && fOffsetY == fMaxY,
 		"wide relative scroll saturates at the content boundary");
+	XUI_TEST_CHECK(tFrameSnapshot.fContentHeight == 220.0f && tFrameSnapshot.fScrollY != fOffsetY,
+		"frame changes do not modify the earlier snapshot");
 	iRet = xuiScrollFrameSetContentSize(pFrame, 240.0f, 220.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetOffset(pFrame, 0.0f, 0.0f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
