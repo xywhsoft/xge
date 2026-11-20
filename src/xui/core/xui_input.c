@@ -2674,7 +2674,7 @@ XUI_API int xuiDispatchPendingEvents(xui_context pContext)
 	return iRet;
 }
 
-static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, uint32_t iFlags)
+static int __xuiHitTestOperation(xui_context pContext, int fX, int fY, uint32_t iFlags, xui_widget* ppHit)
 {
 	xui_widget pHit;
 	#if XUI_ENABLE_POPUP
@@ -2684,21 +2684,21 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 	int bHasViewportClip;
 	int iRet;
 
+	*ppHit = NULL;
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (fX < -XUI_CONTEXT_MAX_VIEWPORT) || (fY < -XUI_CONTEXT_MAX_VIEWPORT) ||
 	     (fX > XUI_CONTEXT_MAX_VIEWPORT) || (fY > XUI_CONTEXT_MAX_VIEWPORT) ) {
-		return NULL;
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (pContext->pRoot == NULL) && (pContext->pOverlayRoot == NULL) ) {
-		return NULL;
+		return XUI_OK;
 	}
 	if ( iFlags == 0 ) {
 		iFlags = XUI_WIDGET_HIT_DEFAULT;
 	}
-	if ( xuiInternalEnsureLayout(pContext) != XUI_OK ) {
-		return NULL;
-	}
-	if ( xuiInternalContextDestroyPending(pContext) ) return NULL;
+	iRet = xuiInternalEnsureLayout(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( xuiInternalContextDestroyPending(pContext) ) return XUI_ERROR_INVALID_STATE;
 	tViewportClip.fX = 0;
 	tViewportClip.fY = 0;
 	tViewportClip.fW = pContext->fViewportWidth;
@@ -2710,7 +2710,7 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		xuiInternalReportError(pContext, pContext->pOverlayRoot, iRet,
 			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
 			"The hit-test stacking order could not be built.");
-		return NULL;
+		return iRet;
 	}
 	if ( (pHit != NULL) && (pHit != pContext->pOverlayRoot) ) {
 		#if XUI_ENABLE_POPUP
@@ -2723,12 +2723,12 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 				xuiInternalReportError(pContext, pPassthroughRoot, iRet,
 					XUI_ERROR_STAGE_INPUT, 1, "hit_test.popup_owner",
 					"The popup owner subtree could not be hit tested.");
-				return NULL;
+				return iRet;
 			}
-			if ( pHit != NULL ) return pHit;
 		}
 		#endif
-		return pHit;
+		*ppHit = pHit;
+		return XUI_OK;
 	}
 	iRet = __xuiInputHitTestWidget(pContext, pContext->pRoot,
 		fX, fY, iFlags, tViewportClip, bHasViewportClip, &pHit);
@@ -2736,16 +2736,17 @@ static xui_widget __xuiHitTestOperation(xui_context pContext, int fX, int fY, ui
 		xuiInternalReportError(pContext, pContext->pRoot, iRet,
 			XUI_ERROR_STAGE_INPUT, 1, "hit_test.stacking",
 			"The hit-test stacking order could not be built.");
-		return NULL;
+		return iRet;
 	}
-	return pHit;
+	*ppHit = pHit;
+	return XUI_OK;
 }
 
 XUI_API xui_widget xuiHitTest(xui_context pContext, int fX, int fY, uint32_t iFlags)
 {
 	xui_widget pHit;
 	xuiInternalOperationEnter(pContext);
-	pHit = __xuiHitTestOperation(pContext, fX, fY, iFlags);
+	(void)__xuiHitTestOperation(pContext, fX, fY, iFlags, &pHit);
 	if ( xuiInternalContextDestroyPending(pContext) ) pHit = NULL;
 	xuiInternalOperationLeave(pContext);
 	return pHit;
@@ -3151,11 +3152,59 @@ XUI_API xui_widget xuiDebugWidgetInspectAt(xui_context pContext, float fX, float
 {
 	xui_widget pWidget;
 
+	if ( !__xuiInputFloatValid(fX) || !__xuiInputFloatValid(fY) ) return NULL;
 	pWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
 	if ( (pWidget != NULL) && (pInfo != NULL) ) {
 		(void)xuiDebugWidgetInspect(pWidget, pInfo);
 	}
 	return pWidget;
+}
+
+static void __xuiDebugWidgetGone(void* pUser)
+{
+	*(xui_widget*)pUser = NULL;
+}
+
+XUI_API int xuiDebugWidgetInspectAtChecked(xui_context pContext, float fX, float fY,
+	uint32_t iFlags, xui_debug_widget_info_t* pInfo)
+{
+	if ( pInfo == NULL || !__xuiInputFloatValid(fX) || !__xuiInputFloatValid(fY) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	size_t iCopySize = pInfo->iSize;
+	if ( iCopySize == 0 || iCopySize > sizeof(*pInfo) ) iCopySize = sizeof(*pInfo);
+	xui_call_scope_t tScope = {0};
+	int iRet = xuiCallScopeBegin(pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
+
+	xui_widget pWidget;
+	xui_debug_widget_info_t tInfo = {0};
+	xui_lifetime_link_t tWidgetLife = {0}, tParentLife = {0};
+	tInfo.iSize = sizeof(tInfo);
+	iRet = __xuiHitTestOperation(pContext, (int)fX, (int)fY, iFlags, &pWidget);
+	if ( iRet == XUI_OK && xuiInternalContextDestroyPending(pContext) )
+		iRet = XUI_ERROR_INVALID_STATE;
+	if ( iRet == XUI_OK && pWidget != NULL ) {
+		iRet = xuiDebugWidgetInspect(pWidget, &tInfo);
+		if ( iRet == XUI_OK )
+			iRet = xuiWidgetLifetimeWatch(pWidget, &tWidgetLife, __xuiDebugWidgetGone, &tInfo.pWidget);
+		if ( iRet == XUI_OK && tInfo.pParent != NULL )
+			iRet = xuiWidgetLifetimeWatch(tInfo.pParent, &tParentLife, __xuiDebugWidgetGone, &tInfo.pParent);
+	}
+	bool bHadWidget = pWidget != NULL;
+	bool bHadParent = tInfo.pParent != NULL;
+	xerror* pError = xrtTakeError();
+	iRet = xuiInternalCallScopeEndOutcome(&tScope, iRet, &pError);
+	xuiLifetimeUnwatch(&tWidgetLife);
+	xuiLifetimeUnwatch(&tParentLife);
+	if ( iRet == XUI_OK && ((bHadWidget && tInfo.pWidget == NULL) ||
+	     (bHadParent && tInfo.pParent == NULL)) ) {
+		xrtErrorFree(pError);
+		pError = NULL;
+		iRet = XUI_ERROR_INVALID_STATE;
+	}
+	xrtSetErrorTake(pError);
+	if ( iRet == XUI_OK ) memcpy(pInfo, &tInfo, iCopySize);
+	return iRet;
 }
 
 #endif

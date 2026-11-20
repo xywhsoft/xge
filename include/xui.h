@@ -14225,6 +14225,10 @@ XUI_API int xuiWidgetRenderTree(xui_widget pWidget, xui_surface pTarget);
 XUI_API int xuiDebugWidgetInspect(xui_widget pWidget, xui_debug_widget_info_t* pInfo);
 /* 坐标命中控件并输出其调试信息。 */
 XUI_API xui_widget xuiDebugWidgetInspectAt(xui_context pContext, float fX, float fY, xui_debug_widget_info_t* pInfo);
+/* A miss succeeds with null handles and zero facts. On failure pInfo is
+ * unchanged. Returned handles are borrowed from the Context. */
+XUI_API int xuiDebugWidgetInspectAtChecked(xui_context pContext, float fX, float fY,
+    uint32_t iFlags, xui_debug_widget_info_t* pInfo);
 /* 导出控件树文本快照到缓冲。 */
 XUI_API int xuiDebugWidgetTreeDump(xui_context pContext, xui_widget pRoot, char* sBuffer, int iCapacity);
 /* 导出布局状态文本快照。 */
