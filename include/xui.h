@@ -3782,6 +3782,30 @@ typedef struct xui_inventory_slot_query_t {
 	void* pCompareUser;
 } xui_inventory_slot_query_t;
 
+/* Data that can be edited without replacing the slot's icon or animation. */
+typedef struct xui_inventory_slot_settings_t {
+	int iSlotId;
+	int iItemId;
+	int iCount;
+	int iMaxCount;
+	int iSlotType;
+	int iItemType;
+	uint32_t iFlags;
+	uint32_t iQualityColor;
+	float fCooldownRate;
+	float fDurabilityRate;
+} xui_inventory_slot_settings_t;
+
+typedef struct xui_inventory_slot_content_t {
+	xui_inventory_slot_settings_t tSettings;
+	/* The setter copies both strings. Getter pointers are borrowed until the
+	 * next slot mutation or grid destruction. */
+	const char* sText;
+	const char* sHotkey;
+} xui_inventory_slot_content_t;
+
+typedef struct xui_inventory_indices_t* xui_inventory_indices;
+
 typedef struct xui_inventory_gamepad_profile_t {
 	uint32_t iSize;
 	uint32_t iFlags;
@@ -10158,6 +10182,8 @@ XUI_API int xuiInventoryGridGetSlotCount(xui_widget pWidget);
 XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot);
 /* 输出槽位内容。 */
 XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory_slot_t* pSlot);
+XUI_API int xuiInventoryGridSetSlotContent(xui_widget pWidget, int iSlot, const xui_inventory_slot_content_t* pContent);
+XUI_API int xuiInventoryGridGetSlotContent(xui_widget pWidget, int iSlot, xui_inventory_slot_content_t* pContent);
 /* 清空指定槽位。 */
 XUI_API int xuiInventoryGridClearSlot(xui_widget pWidget, int iSlot);
 /* 清空全部槽位。 */
@@ -10204,6 +10230,16 @@ XUI_API int xuiInventoryGridGetLastPaintSlotCount(xui_widget pWidget);
 XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery, int* arrSlots, int iSlotCapacity, int* pSlotCount);
 /* 对槽位数组排序（模式/自定义比较器）。 */
 XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSlotCount, int iSortMode, uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser);
+
+/* The result owns immutable indices. They are positions in the grid at the
+ * start of the call and stay readable after the grid changes or closes. */
+XUI_API int xuiInventoryGridQuerySlotsOwned(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery,
+	xui_inventory_indices* pOut);
+XUI_API int xuiInventoryGridSortSlotsOwned(xui_widget pWidget, const int* arrSlots, int iSlotCount,
+	int iSortMode, uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser, xui_inventory_indices* pOut);
+XUI_API int xuiInventoryIndicesAddRef(xui_inventory_indices pIndices);
+XUI_API void xuiInventoryIndicesRelease(xui_inventory_indices pIndices);
+XUI_API int xuiInventoryIndicesGet(xui_inventory_indices pIndices, const int** ppSlots, size_t* pCount);
 /* 设置手柄导航配置。 */
 XUI_API int xuiInventoryGridSetGamepadProfile(xui_widget pWidget, const xui_inventory_gamepad_profile_t* pProfile);
 /* 输出手柄导航配置。 */

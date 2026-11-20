@@ -117,6 +117,48 @@ typedef struct xui_inventory_sort_context_t {
 	int bAborted;
 } xui_inventory_sort_context_t;
 
+struct xui_inventory_indices_t {
+	xatomic32 iReferences;
+	size_t iCount;
+	int arrSlots[];
+};
+
+static xui_inventory_indices __xuiInventoryIndicesCreate(size_t iCount)
+{
+	if ( iCount > (SIZE_MAX - sizeof(struct xui_inventory_indices_t)) / sizeof(int) ) return NULL;
+	xui_inventory_indices pIndices = xrtMalloc(sizeof(*pIndices) + iCount * sizeof(int));
+	if ( pIndices != NULL ) {
+		xrtAtomic32Store(&pIndices->iReferences, 1, XMEMORY_RELAXED);
+		pIndices->iCount = iCount;
+	}
+	return pIndices;
+}
+
+XUI_API int xuiInventoryIndicesAddRef(xui_inventory_indices pIndices)
+{
+	if ( pIndices == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	uint32_t iRefs = xrtAtomic32Load(&pIndices->iReferences, XMEMORY_RELAXED);
+	do {
+		if ( iRefs == 0 || iRefs == UINT32_MAX ) return XUI_ERROR_INVALID_STATE;
+	} while ( !xrtAtomic32CompareExchange(&pIndices->iReferences, &iRefs, iRefs + 1,
+		XMEMORY_RELAXED, XMEMORY_RELAXED) );
+	return XUI_OK;
+}
+
+XUI_API void xuiInventoryIndicesRelease(xui_inventory_indices pIndices)
+{
+	if ( pIndices != NULL && xrtAtomic32FetchSub(&pIndices->iReferences, 1, XMEMORY_ACQ_REL) == 1 )
+		xrtFree(pIndices);
+}
+
+XUI_API int xuiInventoryIndicesGet(xui_inventory_indices pIndices, const int** ppSlots, size_t* pCount)
+{
+	if ( pIndices == NULL || ppSlots == NULL || pCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pCount = pIndices->iCount;
+	*ppSlots = pIndices->iCount != 0 ? pIndices->arrSlots : NULL;
+	return XUI_OK;
+}
+
 static int __xuiInventoryAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
@@ -1140,6 +1182,8 @@ static int __xuiInventoryCompareSlots(xui_inventory_sort_context_t* pSort, int i
 			break;
 		}
 	}
+	/* A custom comparator cannot move the pivot past itself. */
+	if ( iSlotA == iSlotB ) return 0;
 	if ( iRet == 0 ) {
 		iRet = __xuiInventoryCompareInt(iSlotA, iSlotB);
 	} else {
@@ -1153,29 +1197,28 @@ static int __xuiInventoryCompareSlots(xui_inventory_sort_context_t* pSort, int i
 
 static void __xuiInventorySortIndices(xui_inventory_sort_context_t* pSort, int* arrSlots, int iLeft, int iRight)
 {
-	int i;
-	int j;
-	int iPivot;
-	int iTemp;
-
-	if ( (pSort == NULL) || (arrSlots == NULL) || (iLeft >= iRight) ) return;
-	i = iLeft;
-	j = iRight;
-	iPivot = arrSlots[iLeft + (iRight - iLeft) / 2];
-	while ( (i <= j) && !pSort->bAborted ) {
-		while ( (i <= iRight) && (__xuiInventoryCompareSlots(pSort, arrSlots[i], iPivot) < 0) ) i++;
-		while ( (j >= iLeft) && (__xuiInventoryCompareSlots(pSort, arrSlots[j], iPivot) > 0) ) j--;
-		if ( i <= j ) {
-			iTemp = arrSlots[i];
-			arrSlots[i] = arrSlots[j];
-			arrSlots[j] = iTemp;
-			i++;
-			j--;
+	while ( iLeft < iRight && !pSort->bAborted ) {
+		int i = iLeft;
+		int j = iRight;
+		int iPivot = arrSlots[iLeft + (iRight - iLeft) / 2];
+		while ( i <= j && !pSort->bAborted ) {
+			while ( i <= iRight && __xuiInventoryCompareSlots(pSort, arrSlots[i], iPivot) < 0 ) i++;
+			while ( j >= iLeft && __xuiInventoryCompareSlots(pSort, arrSlots[j], iPivot) > 0 ) j--;
+			if ( i <= j ) {
+				int iTemp = arrSlots[i];
+				arrSlots[i++] = arrSlots[j];
+				arrSlots[j--] = iTemp;
+			}
+		}
+		/* Recurse into the smaller partition to bound stack usage. */
+		if ( j - iLeft < iRight - i ) {
+			__xuiInventorySortIndices(pSort, arrSlots, iLeft, j);
+			iLeft = i;
+		} else {
+			__xuiInventorySortIndices(pSort, arrSlots, i, iRight);
+			iRight = j;
 		}
 	}
-	if ( pSort->bAborted ) return;
-	if ( iLeft < j ) __xuiInventorySortIndices(pSort, arrSlots, iLeft, j);
-	if ( i < iRight ) __xuiInventorySortIndices(pSort, arrSlots, i, iRight);
 }
 
 static int __xuiInventorySetHover(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
@@ -3949,7 +3992,8 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "inventorygrid";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_inventory_grid_data_t);
 	tDesc.onInit = __xuiInventoryInit;
 	tDesc.onDestroy = __xuiInventoryDestroy;
@@ -3998,19 +4042,30 @@ XUI_API int xuiInventoryGridGetSlotCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSlotCount : 0;
 }
 
-XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot)
+static void __xuiInventoryCopySlotMedia(xui_inventory_slot_t* pTo, const xui_inventory_slot_t* pFrom)
 {
-	xui_inventory_grid_data_t* pData;
+	pTo->pIcon = pFrom->pIcon;
+	pTo->tIconSrc = pFrom->tIconSrc;
+	pTo->iIconTint = pFrom->iIconTint;
+	pTo->pAnimation = pFrom->pAnimation;
+	pTo->iAnimationFlags = pFrom->iAnimationFlags;
+	pTo->fAnimationScale = pFrom->fAnimationScale;
+	pTo->iAnimationTint = pFrom->iAnimationTint;
+}
+
+static int __xuiInventorySetSlot(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot,
+	const xui_inventory_slot_t* pSlot, bool bKeepMedia)
+{
 	xui_inventory_slot_t tSlot;
 	int bSelectionChanged;
 	int iRet;
 
-	pData = __xuiInventoryGetData(pWidget);
 	if ( (pData == NULL) || (iSlot < 0) || (iSlot >= pData->iSlotCount) || !__xuiInventorySlotValid(pSlot) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiInventoryResetSlot(&tSlot, iSlot);
 	if ( pSlot != NULL ) {
 		tSlot = *pSlot;
 	}
+	if ( bKeepMedia ) __xuiInventoryCopySlotMedia(&tSlot, &pData->arrSlots[iSlot]);
 	tSlot.iSlotId = (tSlot.iSlotId != 0) ? tSlot.iSlotId : iSlot;
 	__xuiInventoryNormalizeSlot(&tSlot);
 	if ( pData->tLayout.iSelectionMode == XUI_INVENTORY_SELECTION_NONE ||
@@ -4021,13 +4076,21 @@ XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inv
 	if ( pData->bPointerDown && ((pData->iActiveSlot == iSlot) || (pData->iDragSource == iSlot) || (pData->iDropTarget == iSlot)) ) {
 		iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
 		if ( iRet != XUI_OK ) return iRet;
-		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !__xuiInventoryDataAlive(pWidget, pData) || iSlot >= pData->iSlotCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (pData->iSplitSlot == iSlot) &&
 	     (((tSlot.iFlags & (XUI_INVENTORY_SLOT_EMPTY | XUI_INVENTORY_SLOT_DISABLED | XUI_INVENTORY_SLOT_LOCKED)) != 0u) || (tSlot.iCount <= 1)) ) {
 		iRet = __xuiInventoryCloseSplitPopupInternal(pWidget, pData);
 		if ( iRet != XUI_OK ) return iRet;
-		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( !__xuiInventoryDataAlive(pWidget, pData) || iSlot >= pData->iSlotCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( bKeepMedia ) {
+		/* Pointer cancellation and popup close may have edited the same slot. */
+		tSlot.iFlags = pSlot->iFlags;
+		__xuiInventoryCopySlotMedia(&tSlot, &pData->arrSlots[iSlot]);
+		__xuiInventoryNormalizeSlot(&tSlot);
+		if ( pData->tLayout.iSelectionMode == XUI_INVENTORY_SELECTION_NONE ||
+		     !__xuiInventorySlotEnabled(&tSlot) ) tSlot.iFlags &= ~XUI_INVENTORY_SLOT_SELECTED;
 	}
 	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
@@ -4043,11 +4106,53 @@ XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inv
 	return XUI_OK;
 }
 
+XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	xuiInternalOperationEnter(pContext);
+	int status = __xuiInventorySetSlot(pWidget, pData, iSlot, pSlot, false);
+	xuiInternalOperationLeave(pContext);
+	return status;
+}
+
 XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory_slot_t* pSlot)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( (pData == NULL) || (pSlot == NULL) || (iSlot < 0) || (iSlot >= pData->iSlotCount) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pSlot = pData->arrSlots[iSlot];
+	return XUI_OK;
+}
+
+XUI_API int xuiInventoryGridSetSlotContent(xui_widget pWidget, int iSlot, const xui_inventory_slot_content_t* pContent)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_inventory_slot_settings_t* p = &pContent->tSettings;
+	xui_inventory_slot_t slot = {.iSize=sizeof(slot), .iSlotId=p->iSlotId, .iItemId=p->iItemId,
+		.iCount=p->iCount, .iMaxCount=p->iMaxCount, .iSlotType=p->iSlotType, .iItemType=p->iItemType,
+		.iFlags=p->iFlags, .iQualityColor=p->iQualityColor, .fCooldownRate=p->fCooldownRate,
+		.fDurabilityRate=p->fDurabilityRate};
+	__xuiInventorySafeCopy(slot.sText, sizeof(slot.sText), pContent->sText);
+	__xuiInventorySafeCopy(slot.sHotkey, sizeof(slot.sHotkey), pContent->sHotkey);
+	xui_context pContext = pWidget->pContext;
+	xuiInternalOperationEnter(pContext);
+	int status = __xuiInventorySetSlot(pWidget, pData, iSlot, &slot, true);
+	xuiInternalOperationLeave(pContext);
+	return status;
+}
+
+XUI_API int xuiInventoryGridGetSlotContent(xui_widget pWidget, int iSlot, xui_inventory_slot_content_t* pContent)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pContent == NULL || iSlot < 0 || iSlot >= pData->iSlotCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_inventory_slot_t* p = &pData->arrSlots[iSlot];
+	*pContent = (xui_inventory_slot_content_t){
+		.tSettings={.iSlotId=p->iSlotId, .iItemId=p->iItemId, .iCount=p->iCount, .iMaxCount=p->iMaxCount,
+			.iSlotType=p->iSlotType, .iItemType=p->iItemType, .iFlags=p->iFlags, .iQualityColor=p->iQualityColor,
+			.fCooldownRate=p->fCooldownRate, .fDurabilityRate=p->fDurabilityRate},
+		.sText=p->sText, .sHotkey=p->sHotkey};
 	return XUI_OK;
 }
 
@@ -4460,13 +4565,16 @@ XUI_API int xuiInventoryGridGetLastPaintSlotCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iLastPaintSlotCount : 0;
 }
 
-XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery, int* arrSlots, int iSlotCapacity, int* pSlotCount)
+static int __xuiInventoryQuerySlots(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery,
+	int* arrSlots, int iSlotCapacity, int* pSlotCount, xui_inventory_indices* pOwned)
 {
 	xui_inventory_grid_data_t* pData;
 	xui_inventory_sort_context_t tSort;
 	xui_inventory_slot_query_t tQuery;
 	const xui_inventory_slot_query_t* pEffectiveQuery;
 	xui_inventory_slot_t* arrSnapshot;
+	const xui_inventory_slot_t* arrRead;
+	xui_inventory_indices pIndices = NULL;
 	int* arrMatched;
 	char* sNeedleCopy;
 	xui_context pContext;
@@ -4493,9 +4601,14 @@ XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_s
 	}
 	*pSlotCount = 0;
 	if ( pData->iSlotCount <= 0 ) {
+		if ( pOwned != NULL ) {
+			*pOwned = __xuiInventoryIndicesCreate(0);
+			if ( *pOwned == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		}
 		return XUI_OK;
 	}
 	iSnapshotCount = pData->iSlotCount;
+	bool bCallbacks = pQuery != NULL && (pQuery->onFilter != NULL || pQuery->onCompare != NULL);
 	if ( (size_t)iSnapshotCount > ((size_t)-1) / sizeof(*arrSnapshot) ||
 	     (size_t)iSnapshotCount > ((size_t)-1) / sizeof(*arrMatched) ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -4507,34 +4620,43 @@ XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_s
 	if ( pQuery != NULL ) {
 		tQuery = *pQuery;
 		tQuery.iSize = sizeof(tQuery);
-		if ( pQuery->sTextContains != NULL ) {
+		if ( bCallbacks && pQuery->sTextContains != NULL ) {
 			sNeedleCopy = xrtStrDup(pQuery->sTextContains);
 			if ( sNeedleCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 			tQuery.sTextContains = sNeedleCopy;
 		}
 		pEffectiveQuery = &tQuery;
 	}
-	arrSnapshot = (xui_inventory_slot_t*)xrtMalloc(sizeof(*arrSnapshot) * (size_t)iSnapshotCount);
-	if ( arrSnapshot == NULL ) {
-		xrtFree(sNeedleCopy);
-		return XUI_ERROR_OUT_OF_MEMORY;
+	arrRead = pData->arrSlots;
+	if ( bCallbacks ) {
+		arrSnapshot = (xui_inventory_slot_t*)xrtMalloc(sizeof(*arrSnapshot) * (size_t)iSnapshotCount);
+		if ( arrSnapshot == NULL ) {
+			xrtFree(sNeedleCopy);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		memcpy(arrSnapshot, arrRead, sizeof(*arrSnapshot) * (size_t)iSnapshotCount);
+		arrRead = arrSnapshot;
 	}
-	arrMatched = (int*)xrtMalloc(sizeof(*arrMatched) * (size_t)iSnapshotCount);
+	if ( pOwned != NULL ) {
+		pIndices = __xuiInventoryIndicesCreate((size_t)iSnapshotCount);
+		arrMatched = pIndices != NULL ? pIndices->arrSlots : NULL;
+	} else {
+		arrMatched = (int*)xrtMalloc(sizeof(*arrMatched) * (size_t)iSnapshotCount);
+	}
 	if ( arrMatched == NULL ) {
 		xrtFree(arrSnapshot);
 		xrtFree(sNeedleCopy);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	memcpy(arrSnapshot, pData->arrSlots, sizeof(*arrSnapshot) * (size_t)iSnapshotCount);
 	pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
 	iRet = XUI_OK;
 	iMatched = 0;
 	for ( i = 0; i < iSnapshotCount; i++ ) {
-		if ( __xuiInventoryQueryMatches(pWidget, arrSnapshot, iSnapshotCount, pEffectiveQuery, i) ) {
+		if ( __xuiInventoryQueryMatches(pWidget, arrRead, iSnapshotCount, pEffectiveQuery, i) ) {
 			arrMatched[iMatched++] = i;
 		}
-		if ( !__xuiInventoryWidgetAlive(pWidget) ) {
+		if ( bCallbacks && !__xuiInventoryWidgetAlive(pWidget) ) {
 			iRet = XUI_ERROR_INVALID_ARGUMENT;
 			goto cleanup;
 		}
@@ -4547,7 +4669,7 @@ XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_s
 		if ( (iSortMode != XUI_INVENTORY_SORT_NONE) || ((pEffectiveQuery != NULL) && ((pEffectiveQuery->iFlags & XUI_INVENTORY_QUERY_SORT_DESCENDING) != 0u)) ) {
 			memset(&tSort, 0, sizeof(tSort));
 			tSort.pWidget = pWidget;
-			tSort.arrSlots = arrSnapshot;
+			tSort.arrSlots = arrRead;
 			tSort.iSlotCount = iSnapshotCount;
 			tSort.iSortMode = iSortMode;
 			tSort.iFlags = (pEffectiveQuery != NULL) ? pEffectiveQuery->iFlags : 0u;
@@ -4561,24 +4683,46 @@ XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_s
 		}
 	}
 	*pSlotCount = iMatched;
-	iCopyCount = (iMatched < iSlotCapacity) ? iMatched : iSlotCapacity;
-	for ( i = 0; i < iCopyCount; i++ ) {
-		arrSlots[i] = arrMatched[i];
+	if ( pOwned != NULL ) {
+		pIndices->iCount = (size_t)iMatched;
+		*pOwned = pIndices;
+		pIndices = NULL;
+	} else {
+		iCopyCount = (iMatched < iSlotCapacity) ? iMatched : iSlotCapacity;
+		if ( iCopyCount > 0 ) memcpy(arrSlots, arrMatched, sizeof(*arrSlots) * (size_t)iCopyCount);
 	}
 
 cleanup:
-	xrtFree(arrMatched);
+	if ( pOwned != NULL ) xuiInventoryIndicesRelease(pIndices);
+	else xrtFree(arrMatched);
 	xrtFree(arrSnapshot);
 	xrtFree(sNeedleCopy);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
-XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSlotCount, int iSortMode, uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser)
+XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery,
+	int* arrSlots, int iSlotCapacity, int* pSlotCount)
+{
+	return __xuiInventoryQuerySlots(pWidget, pQuery, arrSlots, iSlotCapacity, pSlotCount, NULL);
+}
+
+XUI_API int xuiInventoryGridQuerySlotsOwned(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery,
+	xui_inventory_indices* pOut)
+{
+	if ( pOut == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pOut = NULL;
+	int iCount = 0;
+	return __xuiInventoryQuerySlots(pWidget, pQuery, NULL, 0, &iCount, pOut);
+}
+
+static int __xuiInventorySortSlots(xui_widget pWidget, const int* arrSlots, int iSlotCount, int iSortMode,
+	uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser, int* arrOutput, xui_inventory_indices* pOwned)
 {
 	xui_inventory_grid_data_t* pData;
 	xui_inventory_sort_context_t tSort;
-	xui_inventory_slot_t* arrSnapshot;
+	xui_inventory_slot_t* arrSnapshot = NULL;
+	xui_inventory_indices pIndices = NULL;
 	int* arrWork;
 	xui_context pContext;
 	int i;
@@ -4596,29 +4740,38 @@ XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSl
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
-	if ( iSlotCount <= 1 ) {
-		return XUI_OK;
-	}
 	if ( (iSortMode == XUI_INVENTORY_SORT_NONE) && (onCompare != NULL) ) {
 		iSortMode = XUI_INVENTORY_SORT_CUSTOM;
 	}
-	if ( (iSortMode == XUI_INVENTORY_SORT_NONE) && ((iFlags & XUI_INVENTORY_QUERY_SORT_DESCENDING) == 0u) ) {
+	bool bSort = iSlotCount > 1 && (iSortMode != XUI_INVENTORY_SORT_NONE ||
+		(iFlags & XUI_INVENTORY_QUERY_SORT_DESCENDING) != 0u);
+	if ( !bSort && pOwned == NULL ) return XUI_OK;
+	if ( (size_t)iSlotCount > SIZE_MAX / sizeof(*arrWork) ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( pOwned != NULL ) {
+		pIndices = __xuiInventoryIndicesCreate((size_t)iSlotCount);
+		arrWork = pIndices != NULL ? pIndices->arrSlots : NULL;
+	} else {
+		arrWork = (int*)xrtMalloc(sizeof(*arrWork) * (size_t)iSlotCount);
+	}
+	if ( arrWork == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iSlotCount > 0 ) memcpy(arrWork, arrSlots, sizeof(*arrWork) * (size_t)iSlotCount);
+	if ( !bSort ) {
+		*pOwned = pIndices;
 		return XUI_OK;
 	}
-	if ( ((size_t)pData->iSlotCount > ((size_t)-1) / sizeof(*arrSnapshot)) ||
-	     ((size_t)iSlotCount > ((size_t)-1) / sizeof(*arrWork)) ) return XUI_ERROR_OUT_OF_MEMORY;
-	arrSnapshot = (xui_inventory_slot_t*)xrtMalloc(sizeof(*arrSnapshot) * (size_t)pData->iSlotCount);
-	arrWork = (int*)xrtMalloc(sizeof(*arrWork) * (size_t)iSlotCount);
-	if ( (arrSnapshot == NULL) || (arrWork == NULL) ) {
-		xrtFree(arrSnapshot);
-		xrtFree(arrWork);
-		return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iSortMode == XUI_INVENTORY_SORT_CUSTOM ) {
+		if ( (size_t)pData->iSlotCount <= SIZE_MAX / sizeof(*arrSnapshot) )
+			arrSnapshot = (xui_inventory_slot_t*)xrtMalloc(sizeof(*arrSnapshot) * (size_t)pData->iSlotCount);
+		if ( arrSnapshot == NULL ) {
+			if ( pOwned != NULL ) xuiInventoryIndicesRelease(pIndices);
+			else xrtFree(arrWork);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		memcpy(arrSnapshot, pData->arrSlots, sizeof(*arrSnapshot) * (size_t)pData->iSlotCount);
 	}
-	memcpy(arrSnapshot, pData->arrSlots, sizeof(*arrSnapshot) * (size_t)pData->iSlotCount);
-	memcpy(arrWork, arrSlots, sizeof(*arrWork) * (size_t)iSlotCount);
 	memset(&tSort, 0, sizeof(tSort));
 	tSort.pWidget = pWidget;
-	tSort.arrSlots = arrSnapshot;
+	tSort.arrSlots = arrSnapshot != NULL ? arrSnapshot : pData->arrSlots;
 	tSort.iSlotCount = pData->iSlotCount;
 	tSort.iSortMode = iSortMode;
 	tSort.iFlags = iFlags;
@@ -4628,11 +4781,30 @@ XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSl
 	xuiInternalOperationEnter(pContext);
 	__xuiInventorySortIndices(&tSort, arrWork, 0, iSlotCount - 1);
 	iRet = tSort.bAborted ? XUI_ERROR_INVALID_ARGUMENT : XUI_OK;
-	if ( iRet == XUI_OK ) memcpy(arrSlots, arrWork, sizeof(*arrSlots) * (size_t)iSlotCount);
+	if ( pOwned != NULL ) {
+		if ( iRet == XUI_OK ) *pOwned = pIndices;
+		else xuiInventoryIndicesRelease(pIndices);
+	} else {
+		if ( iRet == XUI_OK ) memcpy(arrOutput, arrWork, sizeof(*arrOutput) * (size_t)iSlotCount);
+		xrtFree(arrWork);
+	}
 	xrtFree(arrSnapshot);
-	xrtFree(arrWork);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
+}
+
+XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSlotCount, int iSortMode,
+	uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser)
+{
+	return __xuiInventorySortSlots(pWidget, arrSlots, iSlotCount, iSortMode, iFlags, onCompare, pUser, arrSlots, NULL);
+}
+
+XUI_API int xuiInventoryGridSortSlotsOwned(xui_widget pWidget, const int* arrSlots, int iSlotCount,
+	int iSortMode, uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser, xui_inventory_indices* pOut)
+{
+	if ( pOut == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pOut = NULL;
+	return __xuiInventorySortSlots(pWidget, arrSlots, iSlotCount, iSortMode, iFlags, onCompare, pUser, NULL, pOut);
 }
 
 XUI_API int xuiInventoryGridSetGamepadProfile(xui_widget pWidget, const xui_inventory_gamepad_profile_t* pProfile)

@@ -224,6 +224,18 @@ static int __xuiInventoryGridTestMutatingFilter(xui_widget pWidget, int iSlot, c
 	return 1;
 }
 
+static int __xuiInventoryGridTestNonReflexiveCompare(xui_widget pWidget, int iLeft, const xui_inventory_slot_t* pLeft,
+	int iRight, const xui_inventory_slot_t* pRight, void* pUser)
+{
+	(void)pWidget;
+	(void)iLeft;
+	(void)pLeft;
+	(void)iRight;
+	(void)pRight;
+	(void)pUser;
+	return -1;
+}
+
 static void __xuiInventoryGridTestMutatingSelect(xui_widget pWidget, int iSlot, void* pUser)
 {
 	xui_inventory_grid_reentry_state_t* pState = (xui_inventory_grid_reentry_state_t*)pUser;
@@ -1191,6 +1203,59 @@ int main(void)
 	xuiWidgetDestroy(pTempGrid);
 	pTempGrid = NULL;
 
+	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create owned query grid");
+	__xuiInventoryGridTestSlot(&tSlot, 0, 500, 2, "Old", "1", XUI_COLOR_WHITE);
+	tSlot.pAnimation = (xui_animation_object_t*)0x2345;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlot(pTempGrid, 0, &tSlot) == XUI_OK, "set slot with native animation");
+	xui_inventory_slot_content_t content = { .tSettings = { .iItemId = 501, .iCount = 5, .iMaxCount = 20 },
+		.sText = "Potion", .sHotkey = "2" };
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotContent(pTempGrid, 0, &content) == XUI_OK &&
+		xuiInventoryGridGetSlot(pTempGrid, 0, &tOutSlot) == XUI_OK && tOutSlot.pAnimation == tSlot.pAnimation,
+		"content update preserves native animation");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotContent(pTempGrid, 0, &content) == XUI_OK &&
+		content.tSettings.iCount == 5 && strcmp(content.sText, "Potion") == 0 && strcmp(content.sHotkey, "2") == 0,
+		"content read returns scalar settings and text");
+
+	xui_inventory_indices snapshot = NULL;
+	memset(&tQuery, 0, sizeof(tQuery));
+	tQuery.iSize = sizeof(tQuery);
+	tQuery.iFlags = XUI_INVENTORY_QUERY_EXCLUDE_EMPTY;
+	tQuery.sTextContains = "Pot";
+#if defined(XRT_FEATURE_MEMORY_DEBUG)
+	xmemdebugsnapshot beforeQuery, afterQuery;
+	XUI_TEST_CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true), "measure native allocations");
+	xrtMemDebugSnapshot(&beforeQuery);
+	iRet = xuiInventoryGridQuerySlotsOwned(pTempGrid, &tQuery, &snapshot);
+	xrtMemDebugSnapshot(&afterQuery);
+	XUI_TEST_CHECK(iRet == XUI_OK && afterQuery.AllocCount == beforeQuery.AllocCount + 1 &&
+		xuiInventoryIndicesAddRef(snapshot) == XUI_OK, "query immutable indices and retain");
+	XUI_TEST_CHECK(xrtMemDebugFailAfter(0), "install allocation failure");
+	xui_inventory_indices failed = snapshot;
+	iRet = xuiInventoryGridQuerySlotsOwned(pTempGrid, &tQuery, &failed);
+	xrtMemDebugFailClear();
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && failed == NULL, "failed query clears its output");
+#else
+	XUI_TEST_CHECK(xuiInventoryGridQuerySlotsOwned(pTempGrid, &tQuery, &snapshot) == XUI_OK &&
+		xuiInventoryIndicesAddRef(snapshot) == XUI_OK, "query immutable indices and retain");
+#endif
+	xuiInventoryIndicesRelease(snapshot);
+	const int inputSlots[] = {2, 0, 1};
+	xui_inventory_indices sorted = NULL;
+	XUI_TEST_CHECK(xuiInventoryGridSortSlotsOwned(pTempGrid, inputSlots, 3, XUI_INVENTORY_SORT_CUSTOM, 0u,
+		__xuiInventoryGridTestNonReflexiveCompare, NULL, &sorted) == XUI_OK, "nonreflexive compare terminates");
+	xuiWidgetDestroy(pTempGrid);
+	pTempGrid = NULL;
+	const int* indices = NULL;
+	size_t length = 0;
+	XUI_TEST_CHECK(xuiInventoryIndicesGet(snapshot, &indices, &length) == XUI_OK &&
+		length == 1 && indices[0] == 0, "result outlives grid and initial reference");
+	xuiInventoryIndicesRelease(snapshot);
+	XUI_TEST_CHECK(xuiInventoryIndicesGet(sorted, &indices, &length) == XUI_OK && length == 3 &&
+		indices[0] >= 0 && indices[0] < 3 && indices[1] >= 0 && indices[1] < 3 && indices[2] >= 0 && indices[2] < 3 &&
+		indices[0] != indices[1] && indices[0] != indices[2] && indices[1] != indices[2], "sort returns a permutation");
+	xuiInventoryIndicesRelease(sorted);
+
 	tDesc.iSlotCount = 2;
 	iRet = xuiInventoryGridCreate(pContext, &pTempGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTempGrid != NULL, "create query destroy grid");
@@ -1283,7 +1348,8 @@ int main(void)
 	iRet = tProxyState.tProxy.surfaceUpdateRGBA(&tProxyState.tProxy, pIcon,
 		(xui_rect_i_t){0, 0, 1, 1}, NULL, 0);
 	if ( iRet == XUI_OK ) iRet = xuiRenderPrepare(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pCache) > 0,
+	pCache = xuiWidgetGetCacheSurface(pGrid, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && pCache != NULL && xuiTestSurfaceGetDrawCount(pCache) > 0,
 		"borrowed slot icon generation rebuilds cache");
 
 	iRet = xuiInventoryGridSetSlotCount(pGrid, 10000);
