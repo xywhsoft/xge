@@ -10188,6 +10188,10 @@ XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inv
 XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory_slot_t* pSlot);
 XUI_API int xuiInventoryGridSetSlotContent(xui_widget pWidget, int iSlot, const xui_inventory_slot_content_t* pContent);
 XUI_API int xuiInventoryGridGetSlotContent(xui_widget pWidget, int iSlot, xui_inventory_slot_content_t* pContent);
+/* 绑定拥有式 Proxy 的网格保留图标引用；旧式借用 Proxy 的网格沿用 C 借用规则。 */
+XUI_API int xuiInventoryGridSetSlotIcon(xui_widget pWidget, int iSlot, xui_surface pIcon, xui_rect_t tSource, uint32_t iTint);
+/* 输出图标由网格借出。需要独立使用时调用 xuiSurfaceAddRef。 */
+XUI_API int xuiInventoryGridGetSlotIcon(xui_widget pWidget, int iSlot, xui_surface* pIcon, xui_rect_t* pSource, uint32_t* pTint);
 /* 清空指定槽位。 */
 XUI_API int xuiInventoryGridClearSlot(xui_widget pWidget, int iSlot);
 /* 清空全部槽位。 */

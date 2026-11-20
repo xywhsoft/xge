@@ -71,6 +71,115 @@ static bool __xuiInventoryGridTestCallbackDrop(const void* raw)
 	return true;
 }
 
+typedef struct inventory_icon_probe {
+	xui_widget grid;
+	int releases;
+	bool verifyClear;
+} inventory_icon_probe;
+
+typedef struct inventory_icon_trace {
+	const void* first;
+	const void* second;
+	int visits;
+} inventory_icon_trace;
+
+static bool __xuiInventoryVisitIcon(xrtownershipref value, void* user)
+{
+	inventory_icon_trace* trace = user;
+	if ( value.Data == trace->first || value.Data == trace->second ) trace->visits++;
+	return true;
+}
+
+static int __xuiInventoryIconFinalize(xui_proxy proxy, void* payload)
+{
+	(void)proxy;
+	inventory_icon_probe* probe = *(inventory_icon_probe**)payload;
+	probe->releases++;
+	if ( probe->verifyClear ) {
+		probe->verifyClear = false;
+		xui_surface icon = NULL;
+		if ( xuiInventoryGridGetSlotIcon(probe->grid, 1, &icon, NULL, NULL) != XUI_OK || icon != NULL ) {
+			return XUI_ERROR_INVALID_STATE;
+		}
+		return xuiInventoryGridSetSlotCount(probe->grid, 1);
+	}
+	return XUI_OK;
+}
+
+static int __xuiInventoryNewTestIcon(xui_proxy proxy, inventory_icon_probe* probe, xui_surface* output)
+{
+	void* payload = NULL;
+	int status = xuiSurfaceCreateOwned(proxy, sizeof(probe), __xuiInventoryIconFinalize, output, &payload);
+	if ( status == XUI_OK ) *(inventory_icon_probe**)payload = probe;
+	return status;
+}
+
+static int __xuiInventoryCheckOwnedIcons(void)
+{
+	static const xrtownershipops ops = {__xuiInventoryGridTestCallbackCount, __xuiInventoryGridTestCallbackTrace};
+	xui_inventory_grid_test_state_t state = {.iCallbackRefs = 1};
+	const xui_callback_owner_t owner = {{&state, &ops}, __xuiInventoryGridTestCallbackHold, __xuiInventoryGridTestCallbackDrop};
+	xui_test_proxy_state_t backend;
+	xuiTestProxyInit(&backend);
+	xui_proxy proxy = NULL;
+	xui_proxy otherProxy = NULL;
+	xui_context ui = NULL;
+	xui_surface first = NULL, second = NULL;
+	inventory_icon_probe probe = {0};
+	int iFailed = 0;
+	XUI_TEST_CHECK(xuiProxyCreateOwned(&backend.tProxy, &owner, &proxy) == XUI_OK, "create icon owner proxy");
+	xui_context_desc_t config = {.iSize=sizeof(config), .iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED};
+	XUI_TEST_CHECK(xuiCreateOwnedEx(proxy, &config, &ui) == XUI_OK, "create owned icon context");
+	XUI_TEST_CHECK(__xuiInventoryNewTestIcon(proxy, &probe, &first) == XUI_OK &&
+		__xuiInventoryNewTestIcon(proxy, &probe, &second) == XUI_OK, "create independently owned icons");
+	xui_inventory_slot_t slots[2] = {{.iSize=sizeof(slots[0]),.pIcon=first},
+		{.iSize=sizeof(slots[0]),.pIcon=second}};
+	xui_inventory_grid_desc_t desc = {.iSize=sizeof(desc),.iSlotCount=2,.arrSlots=slots};
+	XUI_TEST_CHECK(xuiInventoryGridCreate(ui, &probe.grid, &desc) == XUI_OK, "descriptor retains each icon");
+	inventory_icon_trace trace = {xuiSurfaceOwnership(first).Data, xuiSurfaceOwnership(second).Data, 0};
+	XUI_TEST_CHECK(xuiContextTraceOwnership(ui, __xuiInventoryVisitIcon, &trace) && trace.visits == 2,
+		"ownership graph sees both slots");
+	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(first) == XUI_OK, "drop first caller icon reference");
+	first = NULL;
+	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(second) == XUI_OK, "drop second caller icon reference");
+	second = NULL;
+	XUI_TEST_CHECK(probe.releases == 0, "grid keeps icons after caller drops");
+
+#if defined(XRT_FEATURE_MEMORY_DEBUG)
+	XUI_TEST_CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true), "enable icon allocation fault injection");
+	XUI_TEST_CHECK(xrtMemDebugFailAfter(0), "reject clear-all icon retirement storage");
+	int status = xuiInventoryGridClearAll(probe.grid);
+	xrtMemDebugFailClear();
+	XUI_TEST_CHECK(status == XUI_ERROR_OUT_OF_MEMORY && probe.releases == 0 &&
+		xuiInventoryGridGetSlotCount(probe.grid) == 2, "failed clear retains all icons");
+	xrtClearError();
+#endif
+	probe.verifyClear = true;
+	XUI_TEST_CHECK(xuiInventoryGridClearAll(probe.grid) == XUI_OK && probe.releases == 2 &&
+		xuiInventoryGridGetSlotCount(probe.grid) == 1, "icon finalizer observes committed clear and can resize");
+	XUI_TEST_CHECK(xuiProxyCreateOwned(&backend.tProxy, &owner, &otherProxy) == XUI_OK &&
+		__xuiInventoryNewTestIcon(otherProxy, &probe, &second) == XUI_OK, "create mismatched proxy icon");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotIcon(probe.grid, 0, second, (xui_rect_t){0}, 0) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject an icon from another owned proxy");
+	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(second) == XUI_OK && probe.releases == 3, "foreign icon was not retained");
+	second = NULL;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(probe.grid, 100000) == XUI_OK, "large grid grows without owner recursion");
+	XUI_TEST_CHECK(__xuiInventoryNewTestIcon(proxy, &probe, &first) == XUI_OK &&
+		xuiInventoryGridSetSlotIcon(probe.grid, 99999, first, (xui_rect_t){0}, 0) == XUI_OK,
+		"install last icon in large grid");
+	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(first) == XUI_OK, "drop last caller icon reference");
+	first = NULL;
+	XUI_TEST_CHECK(xuiWidgetDestroyChecked(probe.grid) == XUI_OK && probe.releases == 4, "destroy large owned grid on bounded stack");
+
+cleanup:
+	if ( first != NULL ) (void)xuiSurfaceReleaseChecked(first);
+	if ( second != NULL ) (void)xuiSurfaceReleaseChecked(second);
+	if ( ui != NULL ) (void)xuiDestroyChecked(ui);
+	if ( proxy != NULL ) (void)xuiProxyReleaseChecked(proxy);
+	if ( otherProxy != NULL ) (void)xuiProxyReleaseChecked(otherProxy);
+	return !iFailed && state.iCallbackRefs == 1;
+}
+
 typedef struct xui_inventory_grid_reentry_state_t {
 	int iCalls;
 	int iNewSlotCount;
@@ -1489,6 +1598,7 @@ cleanup:
 		if ( !iFailed ) printf("xui_inventory_grid_test failed: callback registration left after context destruction\n");
 		return 1;
 	}
+	if ( !__xuiInventoryCheckOwnedIcons() ) return 1;
 	printf("xui_inventory_grid_test passed\n");
 	return 0;
 }
