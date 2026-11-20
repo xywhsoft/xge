@@ -108,22 +108,26 @@ static int doc_web_integer(const xvalue* value, int* out)
 
 static int doc_web_u64(const xvalue* value, uint64_t* out)
 {
-    uint64 number;
+    xvaluetype type = xrtValueType(value);
     int64 integer;
-    if (xrtValueGetUInt(value, &number)) { *out = number; return 1; }
-    if (!xrtValueGetInt(value, &integer) || integer < 0) return 0;
+    if (type == XVALUE_UINT) return xrtValueGetUInt(value, out);
+    if (type != XVALUE_INT || !xrtValueGetInt(value, &integer) || integer < 0)
+        return 0;
     *out = (uint64_t)integer;
     return 1;
 }
 
 static int doc_web_number(const xvalue* value, float* out)
 {
+    xvaluetype type = xrtValueType(value);
     double number;
     int64 integer;
-    if (!xrtValueGetFloat(value, &number)) {
+    if (type == XVALUE_FLOAT) {
+        if (!xrtValueGetFloat(value, &number)) return 0;
+    } else if (type == XVALUE_INT) {
         if (!xrtValueGetInt(value, &integer)) return 0;
         number = (double)integer;
-    }
+    } else return 0;
     if (!isfinite(number) || number < 0 || number > 4096) return 0;
     *out = (float)number;
     return 1;
