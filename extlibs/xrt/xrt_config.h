@@ -74,6 +74,9 @@
 	#include "extlibs/xwork/include/xwork/features.h"
 	#include "extlibs/xllm-session/include/xllm-session/features.h"
 	#include "extlibs/xllm/include/xllm/features.h"
+	#include "extlibs/xhttp-client/include/xhttp-client/features.h"
+	#include "extlibs/xhttp-policy/include/xhttp-policy/features.h"
+	#include "extlibs/xhttp/include/xhttp/features.h"
 	#define XRT_MODULE_CODEC_HEX
 	#define XRT_MODULE_CODEC_PERCENT
 	#define XRT_MODULE_FILE_TEMP

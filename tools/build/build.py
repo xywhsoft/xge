@@ -108,10 +108,21 @@ def main():
         flags += ["-DXGE_XRT_HOST=1", "-I"+host_generated.resolve().as_posix(),
                   "-include", "extlibs/xrt/xrt_config.h", "-include",
                   (host_generated.resolve()/"xge_host_xrt_imports.h").as_posix()]
+    extension_sources = {}
     if args.profile == "ide":
+        xrt_root = ROOT / "extlibs/xrt"
+        snapshot = json.loads((xrt_root / "upstream.json").read_text(encoding="utf-8"))
+        extensions = [
+            json.loads((xrt_root / "extlibs" / product / "config/modules.json").read_text(encoding="utf-8"))
+            for product in snapshot["extensions"]
+        ]
+        extension_sources = dict.fromkeys(
+            "extlibs/xrt/" + source
+            for extension in extensions for module in extension["modules"] for source in module["sources"]
+        )
         flags += ["-DXGE_XRT_PROFILE_IDE"]
         flags += ["-include", "extlibs/xrt/xrt_config.h", "-Iextlibs/xrt", "-Iextlibs/xrt/include"]
-        flags += [f"-Iextlibs/xrt/extlibs/{p}/include" for p in ("xllm", "xllm-session", "xwork")]
+        flags += ["-Iextlibs/xrt/" + directory for extension in extensions for directory in extension["include_dirs"]]
     if not windows:
         flags += ["-fPIC"]
     names = set(re.findall(r"(?:XGE|XUI|XGE3D)_ENABLE_\w+", (ROOT / "include/xge_config.h").read_text() + (ROOT / "include/xui_config.h").read_text()))
@@ -132,10 +143,7 @@ def main():
     source_probe = '#include "xge_config.h"\n' + "".join(f"#if {guard}\nXGE_SOURCE_{i}\n#endif\n" for i, (_, guard) in enumerate(selections))
     selected = run([cc, *flags, "-E", "-P", "-x", "c", "-"], input=source_probe, text=True, capture_output=True).stdout
     sources += [selections[int(i)][0] for i in re.findall(r"^XGE_SOURCE_(\d+)$", selected, re.M)]
-    if args.profile == "ide":
-        for product in ("xllm", "xllm-session", "xwork"):
-            extension = json.loads((ROOT / f"extlibs/xrt/extlibs/{product}/config/modules.json").read_text())
-            sources += ["extlibs/xrt/" + source for module in extension["modules"] for source in module["sources"]]
+    sources.extend(extension_sources)
     config = "#ifndef XGE_BUILD_CONFIG_H\n#define XGE_BUILD_CONFIG_H\n"
     api_major = int(re.search(r"#define\s+XGE_VERSION_MAJOR\s+(\d+)", (ROOT / "include/xge.h").read_text(encoding="utf-8")).group(1))
     config += f"#define XGE_BUILD_API_MAJOR {api_major}\n"
@@ -217,7 +225,10 @@ def main():
         link_objects.append(obj)
 
     for source in sources:
-        compile_object(source, cc, flags)
+        # Split XRT extensions may include modular headers instead of xrt.h.
+        # Give them the core feature macros after the IDE selects its modules.
+        source_flags = flags + ["-include", "extlibs/xrt/include/xrt/features.h"] if source in extension_sources else flags
+        compile_object(source, cc, source_flags)
     if "XGE_ENABLE_HARFBUZZ" in features:
         cxx = shutil.which(os.environ.get("CXX", "g++"))
         if not cxx:
@@ -266,7 +277,13 @@ def main():
         print(f"[link] {library}", flush=True)
         if link_record.exists():
             link_record.unlink()
-        run(link_args)
+        if windows:
+            response = out / "link.rsp"
+            arguments = ['"' + arg.replace("\\", "\\\\").replace('"', '\\"') + '"' for arg in link_args[1:]]
+            response.write_text("\n".join(arguments) + "\n", encoding="utf-8")
+            run([cc, "@" + str(response)])
+        else:
+            run(link_args)
         if args.host_xrt:
             defined = run([nm, "-g", "--defined-only", library], capture_output=True, text=True).stdout
             if re.search(r"\b(?:__)?xrt[A-Z]\w*\s*$", defined, re.M):
