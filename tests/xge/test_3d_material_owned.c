@@ -28,6 +28,70 @@ static int wrong_thread(void *data)
     return 0;
 }
 
+static int snapshot_wrong_thread(void *data)
+{
+    xge3d_material_snapshot *snapshot=data;
+    xge3d_material_settings_t settings;
+    xge3d_texture *texture=NULL;
+    bool consumed=true;
+    assert(xge3dMaterialSnapshotGetSettings(snapshot,&settings)==XGE_ERROR_INVALID_STATE);
+    assert(xge3dMaterialSnapshotMapTextureOwned(snapshot,XGE3D_MAP_BASE_COLOR,&texture)==XGE_ERROR_INVALID_STATE && !texture);
+    assert(xge3dMaterialSnapshotReleaseOwnerChecked(snapshot,&consumed)==XGE_ERROR_INVALID_STATE && !consumed);
+    return 0;
+}
+
+static void check_snapshot(void)
+{
+    const unsigned char pixels[4]={255,0,0,255};
+    xge_image_t image={.iWidth=1,.iHeight=1,.iStride=4,.iFormat=XGE_PIXEL_RGBA8,.pPixels=(void*)pixels};
+    xge3d_texture_desc_t texture_desc={.image=&image};
+    xge3d_texture *texture=NULL;
+    assert(xge3dTextureCreate(&texture_desc,&texture)==XGE_OK);
+    xge3d_material_desc_t desc=xge3dMaterialDefault();
+    desc.roughness=.25f;
+    for(int slot=0;slot<XGE3D_MAP_COUNT;++slot)desc.maps[slot].offset[0]=(float)slot;
+    desc.maps[XGE3D_MAP_BASE_COLOR].texture=texture;
+    desc.maps[XGE3D_MAP_EMISSIVE].texture=texture;
+    xge3d_material *source=NULL;
+    assert(xge3dMaterialCreate(&desc,&source)==XGE_OK);
+    xge3dTextureFree(texture);
+    xge3d_material_snapshot *snapshot=NULL;
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dMaterialCaptureOwned(source,&snapshot)==XGE_ERROR_OUT_OF_MEMORY && !snapshot);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtClearError();
+    xge3d_resource_info_t info={.size=sizeof(info)};
+    assert(xge3dTextureResourceInfo(texture,&info)==XGE_OK && info.references==2);
+    assert(xgeGraphicsOwnedResourceCount()==0);
+    assert(xge3dMaterialCaptureOwned(source,&snapshot)==XGE_OK);
+    assert(xgeGraphicsOwnedResourceCount()==1);
+    assert(xge3dTextureResourceInfo(texture,&info)==XGE_OK && info.references==4);
+    xge3d_material_desc_t replacement=xge3dMaterialDefault();
+    assert(xge3dMaterialSetDesc(source,&replacement)==XGE_OK);
+    xge3dMaterialFree(source);
+    assert(xgeGraphicsOwnedResourceCount()==1 && xgeUnitChecked()==XGE_ERROR_BUSY);
+
+    xthread *worker=xrtThreadCreate(snapshot_wrong_thread,snapshot,0);
+    assert(worker && xrtThreadWait(worker)==XWAIT_OK);
+    xrtThreadDestroy(worker);
+    xge3d_material_settings_t settings;
+    assert(xge3dMaterialSnapshotGetSettings(snapshot,&settings)==XGE_OK);
+    assert(settings.params.roughness==.25f);
+    for(int slot=0;slot<XGE3D_MAP_COUNT;++slot)assert(settings.maps[slot].offset[0]==(float)slot);
+    xge3d_texture *held=texture,*alias=NULL;
+    assert(xge3dMaterialSnapshotMapTextureOwned(snapshot,-1,&held)==XGE_ERROR_INVALID_ARGUMENT && !held);
+    assert(xge3dMaterialSnapshotMapTextureOwned(snapshot,XGE3D_MAP_NORMAL,&held)==XGE_OK && !held);
+    assert(xge3dMaterialSnapshotMapTextureOwned(snapshot,XGE3D_MAP_BASE_COLOR,&held)==XGE_OK && held==texture);
+    assert(xge3dMaterialSnapshotMapTextureOwned(snapshot,XGE3D_MAP_EMISSIVE,&alias)==XGE_OK && alias==texture);
+    assert(xgeGraphicsOwnedResourceCount()==2);
+    bool consumed=false;
+    assert(xge3dMaterialSnapshotReleaseOwnerChecked(snapshot,&consumed)==XGE_OK && consumed);
+    assert(xge3dTextureResourceInfo(held,&info)==XGE_OK && info.references==2);
+    assert(xge3dTextureReleaseChecked(held)==XGE_OK);
+    assert(xge3dTextureReleaseChecked(alias)==XGE_OK);
+    assert(xgeGraphicsOwnedResourceCount()==0);
+}
+
 static int frame(void *unused)
 {
     (void)unused;
@@ -90,6 +154,7 @@ int main(void)
     xge_desc_t window={.iWidth=64,.iHeight=64,.sTitle="XGE managed 3D material"};
     assert(xgeInit(&window)==XGE_OK);
     assert(xrtMemDebugEnabled() || xrtMemDebugEnable(true));
+    check_snapshot();
     assert(xrtMemDebugFailAfter(0));
     assert(xge3dMaterialCreateOwned(NULL,&material)==XGE_ERROR_OUT_OF_MEMORY && !material);
     assert(xrtMemDebugFailAfter(-1));

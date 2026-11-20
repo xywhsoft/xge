@@ -4379,6 +4379,7 @@ typedef struct xge3d_renderer xge3d_renderer;
 typedef struct xge3d_target xge3d_target;
 typedef struct xge3d_texture xge3d_texture;
 typedef struct xge3d_material xge3d_material;
+typedef struct xge3d_material_snapshot xge3d_material_snapshot;
 typedef struct xge3d_environment xge3d_environment;
 #if XGE3D_ENABLE_ASYNC
 typedef struct xge3d_loader xge3d_loader;
@@ -4803,6 +4804,13 @@ XGE_API int xge3dMaterialMapTextureOwned(const xge3d_material *material,int slot
 XGE_API void xge3dMaterialFree(xge3d_material *material);
 /* 读取材质描述，其中纹理指针为借用引用。 */
 XGE_API int xge3dMaterialGetDesc(const xge3d_material *material, xge3d_material_desc_t *out);
+/* Capture material settings and all texture references on the calling thread.
+ * Texture contents remain shared; each acquired texture has its own lifetime. */
+XGE_API int xge3dMaterialCaptureOwned(const xge3d_material *material,xge3d_material_snapshot **out);
+XGE_API int xge3dMaterialSnapshotGetSettings(const xge3d_material_snapshot *snapshot,xge3d_material_settings_t *out);
+XGE_API int xge3dMaterialSnapshotMapTextureOwned(const xge3d_material_snapshot *snapshot,int slot,xge3d_texture **out);
+XGE_API int xge3dMaterialSnapshotReleaseOwnerChecked(xge3d_material_snapshot *snapshot,bool *consumed);
+XGE_API int xge3dMaterialSnapshotReleaseChecked(xge3d_material_snapshot *snapshot);
 /* 为节点设置材质并由节点持有相应引用。 */
 XGE_API int xge3dNodeSetMaterial(xge3d_scene *scene, xge3d_node_t node, xge3d_material *material);
 XGE_API int xge3dNodeGetMaterialOwned(xge3d_scene *scene,xge3d_node_t node,xge3d_material **out);
