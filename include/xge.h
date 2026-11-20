@@ -5766,6 +5766,11 @@ XGE_API int xge3dParticlesBillboards(const xge3d_particles *particles,xge3d_text
  * and valid for as long as a batch reference is held. */
 XGE_API int xge3dParticlesCollectBillboards(const xge3d_particles *particles,int blend,
     xge3d_billboard_batch **out);
+/* Replaces the renderer's billboards with the current live particles, using
+ * its reusable staging storage. The renderer retains the submitted textures.
+ * Empty particles clear the list; failure preserves the previous submission. */
+XGE_API int xge3dBillboardsSetParticles(xge3d_renderer *renderer,const xge3d_particles *particles,
+    int blend,xge3d_texture *texture);
 #endif
 
 /* 将 TRS 变换转换为 4x4 仿射矩阵。 */

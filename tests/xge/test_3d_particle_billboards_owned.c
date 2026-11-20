@@ -74,7 +74,8 @@ static int frame(void *user)
     assert(xge3dTargetCreate(128,64,&target)==XGE_OK);
     assert(xge3dTextureCreateRGBAOwned(1,1,texture_pixels,4,1,NULL,&texture)==XGE_OK);
     xge3d_particle_desc_t settings=xge3dParticlesDefault();
-    settings.capacity=3;
+    settings.capacity=64;
+    settings.life_min=settings.life_max=.5f;
     settings.position.z=-2;
     settings.size_start=settings.size_end=.6f;
     settings.color_start[0]=settings.color_start[1]=settings.color_start[2]=1;
@@ -84,8 +85,6 @@ static int frame(void *user)
     size_t count;
     assert(xge3dParticlesBillboards(particles,texture,XGE3D_BILLBOARD_ALPHA,legacy,3,&count)==XGE_OK && count==3);
     assert(xge3dParticlesCollectBillboards(particles,XGE3D_BILLBOARD_ALPHA,&batch)==XGE_OK);
-    xge3dParticlesFree(particles);
-
     xge3d_camera_t camera;
     assert(xge3dCameraOrthographic(&camera,4,2,.1f,20)==XGE_OK);
     xge3d_render_desc_t render={.camera=&camera,.target=target,.clear_color={0,0,0,1},.clear_flags=3};
@@ -96,12 +95,20 @@ static int frame(void *user)
     assert(xge3dTargetReadPixels(target,before,sizeof(before),512)==XGE_OK);
     assert(before[(32*128+64)*4+1]>100);
     assert(xge3dBillboardsSetBatch(renderer,batch,texture)==XGE_OK);
+    assert(xge3dBillboardsSetParticles(renderer,particles,XGE3D_BILLBOARD_ALPHA,texture)==XGE_OK);
     assert(xrtMemDebugFailAfter(0));
     for(int iteration=0;iteration<64;++iteration){
         assert(xge3dBillboardsSet(renderer,legacy,count)==XGE_OK);
         assert(xge3dBillboardsSetBatch(renderer,batch,texture)==XGE_OK);
+        assert(xge3dBillboardsSetParticles(renderer,particles,XGE3D_BILLBOARD_ALPHA,texture)==XGE_OK);
     }
     assert(xrtMemDebugFailAfter(-1) && !xrtGetError());
+    assert(xge3dBillboardsSetParticles(renderer,particles,-1,texture)==XGE_ERROR_INVALID_ARGUMENT);
+    assert(xge3dParticlesEmit(particles,61)==XGE_OK);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dBillboardsSetParticles(renderer,particles,XGE3D_BILLBOARD_ALPHA,texture)==XGE_ERROR_OUT_OF_MEMORY);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtClearError();
     xge3d_resource_info_t info={.size=sizeof(info)};
     assert(xge3dTextureResourceInfo(texture,&info)==XGE_OK && info.references==4);
     assert(xge3dTextureReleaseChecked(texture)==XGE_OK && xgeGraphicsOwnedResourceCount()==2);
@@ -118,8 +125,11 @@ static int frame(void *user)
     assert(xge3dRender(renderer,scene,&render,&stats)==XGE_OK && stats.triangles==6);
     assert(xge3dTargetReadPixels(target,after,sizeof(after),512)==XGE_OK);
     assert(!memcmp(before,after,sizeof(before)));
-    assert(xge3dBillboardsSetGeometry(renderer,NULL,0,NULL)==XGE_OK);
+    assert(xge3dParticlesUpdate(particles,1,0)==XGE_OK);
+    assert(xge3dBillboardsSetParticles(renderer,particles,XGE3D_BILLBOARD_ALPHA,NULL)==XGE_OK);
+    xge3dParticlesFree(particles);
     assert(xgeGraphicsOwnedResourceCount()==1);
+    assert(xge3dRender(renderer,scene,&render,&stats)==XGE_OK && stats.triangles==0);
     assert(xge3dRendererReleaseChecked(renderer)==XGE_OK && xgeGraphicsOwnedResourceCount()==0);
     assert(xge3dRendererCreateOwned(&after_frame_renderer)==XGE_OK);
     assert(xge3dTextureCreateRGBAOwned(1,1,texture_pixels,4,1,NULL,&after_frame_texture)==XGE_OK);

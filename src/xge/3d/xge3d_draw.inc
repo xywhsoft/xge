@@ -344,6 +344,44 @@ int xge3dBillboardsSetTexturedBatch(xge3d_renderer *renderer,
     if(!batch||batch->count!=count||(count&&!textures))return XGE_ERROR_INVALID_ARGUMENT;
     return d3_billboards_set_geometry(renderer,batch->items,count,NULL,textures,batch->validated);
 }
+#if XGE3D_ENABLE_PARTICLES
+int xge3dBillboardsSetParticles(xge3d_renderer *r,const xge3d_particles *particles,
+    int blend,xge3d_texture *texture)
+{
+    if(!r)return XGE_ERROR_INVALID_ARGUMENT;
+    if(r->context!=__xge3dContext() ||
+        (r->owner_thread && r->owner_thread!=xrtThreadCurrentId()) ||
+        (texture && (!d3_texture_thread(texture) || (texture->context && texture->context!=r->context))))
+        return XGE_ERROR_INVALID_STATE;
+
+    size_t count;
+    int status=xge3dParticlesBillboards(particles,NULL,blend,NULL,0,&count);
+    if(status!=XGE_OK)return status;
+    if(count>65536)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!xrtArrayResize(&r->billboard_staging,count))return XGE_ERROR_OUT_OF_MEMORY;
+    xge3d_billboard_t *staged=(xge3d_billboard_t*)r->billboard_staging.Data;
+    if(count){
+        size_t written;
+        status=xge3dParticlesBillboards(particles,texture,blend,staged,count,&written);
+        if(status!=XGE_OK || written!=count){
+            xrtArrayClear(&r->billboard_staging);
+            return status==XGE_OK?XGE_ERROR_INVALID_STATE:status;
+        }
+    }
+    for(size_t i=0;i<count;++i){
+        if(!d3_billboard_valid(staged+i)){
+            d3_billboards_drop(&r->billboard_staging,i);
+            return XGE_ERROR_INVALID_ARGUMENT;
+        }
+        if(texture&&!d3_texture_retain(texture)){
+            d3_billboards_drop(&r->billboard_staging,i);
+            return XGE_ERROR_INVALID_STATE;
+        }
+    }
+    d3_billboards_publish(r);
+    return XGE_OK;
+}
+#endif
 static int d3_billboard_compare(const void *a,const void *b)
 {const d3_billboard_order *x=a,*y=b;return x->depth>y->depth?-1:x->depth<y->depth?1:x->index<y->index?-1:x->index>y->index;}
 static int d3_billboards_render(xge3d_renderer *r,const xge3d_render_desc_t *d,xge3d_mat4_t vp,xge3d_render_stats_t *stats)
