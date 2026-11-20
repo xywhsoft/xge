@@ -5,19 +5,33 @@
 #define XGE_EMOJI_CACHE_MAX_SOURCE_BYTES (16u * 1024u * 1024u)
 #define XGE_EMOJI_MAX_SVG_SIZE (1024u * 1024u)
 
+/* The pack mutex protects this reference count. A pending reader keeps the
+ * source alive even if a provider replaces its entry while SVG is parsed. */
+typedef struct xge_emoji_source_t {
+	unsigned iReferences;
+	unsigned char arrData[];
+} xge_emoji_source_t;
+
+typedef struct xge_emoji_cache_t {
+	xge_svg pSvg;
+	struct xge_emoji_cache_t* pNext;
+	uint64_t iDrawThread;
+	unsigned iReferences;
+} xge_emoji_cache_t;
+
 typedef struct xge_emoji_entry_t {
 	char* sSequence;
 	int iSequenceSize;
-	unsigned char* pSvgData;
+	xge_emoji_source_t* pSource;
 	int iSvgSize;
 	const unsigned char* pCompressedData;
 	int iCompressedSize;
 	xge_emoji_metrics_t tMetrics;
-	xge_svg pSvg;
+	xge_emoji_cache_t* pCache;
 	uint64_t iCacheStamp;
 	int bOwnSequence;
-	int bOwnSvgData;
-	volatile int bLoadFailed;
+	bool bLoading;
+	bool bLoadFailed;
 } xge_emoji_entry_t;
 
 typedef struct xge_emoji_trie_node_t {
@@ -51,7 +65,10 @@ struct xge_emoji_pack_t {
 
 static xge_emoji_pack g_xgeBuiltinEmojiPack;
 static xge_emoji_pack g_xgeDefaultEmojiPack;
+static uint64_t g_xgeEmojiGeneration;
 static xspinlock g_xgeEmojiGlobalSpin = XRT_SPIN_INIT;
+static xge_emoji_cache_t* g_xgeEmojiRetired;
+static xatomic32 g_xgeEmojiHasRetired = XRT_ATOMIC32_INIT(0);
 
 static void __xgeEmojiGlobalLock(void)
 {
@@ -61,6 +78,54 @@ static void __xgeEmojiGlobalLock(void)
 static void __xgeEmojiGlobalUnlock(void)
 {
 	(void)xrtSpinUnlock(&g_xgeEmojiGlobalSpin);
+}
+
+static void __xgeEmojiCacheDestroy(xge_emoji_cache_t* cache)
+{
+	xgeSvgDestroy(cache->pSvg);
+	xrtFree(cache);
+}
+
+/* Cache references only belong to the pack and to active borrowers. Their
+ * last drop may be on a different thread from the SVG's first draw. */
+static void __xgeEmojiCacheDrop(xge_emoji_cache_t* cache)
+{
+	if ( !cache || --cache->iReferences ) return;
+	if ( !cache->iDrawThread || cache->iDrawThread == xrtThreadCurrentId() ) {
+		__xgeEmojiCacheDestroy(cache);
+		return;
+	}
+	__xgeEmojiGlobalLock();
+	cache->pNext = g_xgeEmojiRetired;
+	g_xgeEmojiRetired = cache;
+	xrtAtomic32Store(&g_xgeEmojiHasRetired, 1, XMEMORY_RELEASE);
+	__xgeEmojiGlobalUnlock();
+}
+
+static void __xgeEmojiDrainRetired(void)
+{
+	if ( !xrtAtomic32Load(&g_xgeEmojiHasRetired, XMEMORY_ACQUIRE) ) return;
+	uint64_t thread = xrtThreadCurrentId();
+	xge_emoji_cache_t* ready = NULL;
+	__xgeEmojiGlobalLock();
+	xge_emoji_cache_t** link = &g_xgeEmojiRetired;
+	while ( *link ) {
+		xge_emoji_cache_t* cache = *link;
+		if ( cache->iDrawThread != thread ) {
+			link = &cache->pNext;
+			continue;
+		}
+		*link = cache->pNext;
+		cache->pNext = ready;
+		ready = cache;
+	}
+	xrtAtomic32Store(&g_xgeEmojiHasRetired, g_xgeEmojiRetired != NULL, XMEMORY_RELEASE);
+	__xgeEmojiGlobalUnlock();
+	while ( ready ) {
+		xge_emoji_cache_t* cache = ready;
+		ready = cache->pNext;
+		__xgeEmojiCacheDestroy(cache);
+	}
 }
 
 static uint32_t __xgeEmojiReadU32(const unsigned char* pData)
@@ -340,6 +405,21 @@ int xgeEmojiPackAddRef(xge_emoji_pack pPack)
 	return (int)(refs + 1);
 }
 
+int xgeEmojiPackShareOwned(xge_emoji_pack pPack, xge_emoji_pack* ppShared)
+{
+	if ( !ppShared ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppShared = NULL;
+	int retained = xgeEmojiPackAddRef(pPack);
+	if ( retained <= 0 ) return retained;
+	*ppShared = pPack;
+	return XGE_OK;
+}
+
+static void __xgeEmojiSourceDrop(xge_emoji_source_t* pSource)
+{
+	if ( pSource && --pSource->iReferences == 0 ) xrtFree(pSource);
+}
+
 void xgeEmojiPackFree(xge_emoji_pack pPack)
 {
 	int i;
@@ -349,8 +429,8 @@ void xgeEmojiPackFree(xge_emoji_pack pPack)
 	xrtMutexLock(pPack->pCacheMutex);
 	for ( i = 0; i < pPack->iEntryCount; i++ ) {
 		if ( pPack->pEntries[i].bOwnSequence ) xrtFree(pPack->pEntries[i].sSequence);
-		if ( pPack->pEntries[i].bOwnSvgData ) xrtFree(pPack->pEntries[i].pSvgData);
-		xgeSvgDestroy(pPack->pEntries[i].pSvg);
+		__xgeEmojiSourceDrop(pPack->pEntries[i].pSource);
+		__xgeEmojiCacheDrop(pPack->pEntries[i].pCache);
 	}
 	ZSTD_freeDDict((ZSTD_DDict*)pPack->pZstdDictionary);
 	ZSTD_freeDCtx((ZSTD_DCtx*)pPack->pZstdContext);
@@ -366,7 +446,8 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 {
 	xge_emoji_metrics_t tMetrics;
 	xge_emoji_entry_t* pEntry;
-	unsigned char* pSvgCopy;
+	xge_emoji_source_t* pSource;
+	xge_emoji_entry_t previous = {0};
 	char* sSequenceCopy;
 	int iEntry;
 	int iExistingNode;
@@ -379,7 +460,6 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 	int codepoints = 0;
 	iRet = __xgeEmojiSequenceCount(sSequence, (int)sequenceSize, &codepoints);
 	if ( iRet != XGE_OK ) return iRet;
-	if ( codepoints > INT32_MAX - pPack->iNodeCount ) return XGE_ERROR_OUT_OF_MEMORY;
 	tMetrics = __xgeEmojiMetricsDefault();
 	if ( pMetrics != NULL ) {
 		if ( (pMetrics->iSize != 0) && (pMetrics->iSize < sizeof(*pMetrics)) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -390,16 +470,25 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 		if ( !(tMetrics.fHeightEm > 0.0f) ) tMetrics.fHeightEm = 1.0f;
 		if ( !(tMetrics.fBaselineRatio > 0.0f) || !(tMetrics.fBaselineRatio < 1.0f) ) tMetrics.fBaselineRatio = 0.82f;
 	}
-	pSvgCopy = (unsigned char*)xrtMalloc((size_t)iSvgSize);
+	pSource = (xge_emoji_source_t*)xrtMalloc(sizeof(*pSource) + (size_t)iSvgSize);
 	sSequenceCopy = (char*)xrtMalloc(sequenceSize + 1u);
-	if ( (pSvgCopy == NULL) || (sSequenceCopy == NULL) ) {
-		xrtFree(pSvgCopy);
+	if ( (pSource == NULL) || (sSequenceCopy == NULL) ) {
+		xrtFree(pSource);
 		xrtFree(sSequenceCopy);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	memcpy(pSvgCopy, pSvgData, (size_t)iSvgSize);
+	pSource->iReferences = 1;
+	memcpy(pSource->arrData, pSvgData, (size_t)iSvgSize);
 	memcpy(sSequenceCopy, sSequence, sequenceSize + 1u);
 
+	if ( !xrtMutexLock(pPack->pCacheMutex) ) {
+		iRet = XGE_ERROR_BUSY;
+		goto fail;
+	}
+	if ( codepoints > INT32_MAX - pPack->iNodeCount ) {
+		iRet = XGE_ERROR_OUT_OF_MEMORY;
+		goto unlockFail;
+	}
 	iExistingNode = 0;
 	{
 		const char* sScan = sSequenceCopy;
@@ -412,34 +501,39 @@ int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const 
 	}
 	iEntry = (iExistingNode >= 0) ? pPack->pNodes[iExistingNode].iEntry : -1;
 	if ( iEntry < 0 ) {
-		if ( pPack->iEntryCount == INT32_MAX ) { xrtFree(pSvgCopy); xrtFree(sSequenceCopy); return XGE_ERROR_OUT_OF_MEMORY; }
-		iRet = __xgeEmojiEnsureEntries(pPack, pPack->iEntryCount + 1);
-		if ( iRet != XGE_OK ) {
-			xrtFree(pSvgCopy);
-			xrtFree(sSequenceCopy);
-			return iRet;
+		if ( pPack->iEntryCount == INT32_MAX ) {
+			iRet = XGE_ERROR_OUT_OF_MEMORY;
+			goto unlockFail;
 		}
+		iRet = __xgeEmojiEnsureEntries(pPack, pPack->iEntryCount + 1);
+		if ( iRet != XGE_OK ) goto unlockFail;
 	}
 	iRet = __xgeEmojiEnsureNodes(pPack, pPack->iNodeCount + codepoints);
-	if ( iRet != XGE_OK ) { xrtFree(pSvgCopy); xrtFree(sSequenceCopy); return iRet; }
-	xge_emoji_entry_t previous = {0};
+	if ( iRet != XGE_OK ) goto unlockFail;
 	if ( iEntry < 0 ) iEntry = pPack->iEntryCount++;
 	else previous = pPack->pEntries[iEntry];
 	pEntry = &pPack->pEntries[iEntry];
 	memset(pEntry, 0, sizeof(*pEntry));
 	pEntry->sSequence = sSequenceCopy;
 	pEntry->iSequenceSize = (int)sequenceSize;
-	pEntry->pSvgData = pSvgCopy;
+	pEntry->pSource = pSource;
 	pEntry->iSvgSize = iSvgSize;
 	pEntry->tMetrics = tMetrics;
 	pEntry->bOwnSequence = 1;
-	pEntry->bOwnSvgData = 1;
 	__xgeEmojiTriePublish(pPack, sSequenceCopy, (int)sequenceSize, iEntry, tMetrics.iFlags, 1);
 	if ( pEmojiId != NULL ) *pEmojiId = (uint32_t)iEntry + 1u;
 	if ( previous.bOwnSequence ) xrtFree(previous.sSequence);
-	if ( previous.bOwnSvgData ) xrtFree(previous.pSvgData);
-	xgeSvgDestroy(previous.pSvg);
+	__xgeEmojiSourceDrop(previous.pSource);
+	__xgeEmojiCacheDrop(previous.pCache);
+	xrtMutexUnlock(pPack->pCacheMutex);
 	return XGE_OK;
+
+unlockFail:
+	xrtMutexUnlock(pPack->pCacheMutex);
+fail:
+	xrtFree(pSource);
+	xrtFree(sSequenceCopy);
+	return iRet;
 }
 
 static int __xgeEmojiMatchPath(xge_emoji_pack pPack, const char* sText, const char* sEnd,
@@ -482,7 +576,7 @@ static int __xgeEmojiMatchPath(xge_emoji_pack pPack, const char* sText, const ch
 	return XGE_OK;
 }
 
-int xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch)
+static int __xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch)
 {
 	const char* sEnd;
 	const char* sExactEnd;
@@ -497,10 +591,6 @@ int xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xg
 	int iExactRet;
 	int iNormalizedRet;
 
-	if ( (pPack == NULL) || (sText == NULL) || (pMatch == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( (pMatch->iSize != 0) && (pMatch->iSize < sizeof(*pMatch)) ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
-	if ( iTextSize <= 0 ) return XGE_ERROR_NOT_FOUND;
 	sEnd = sText + iTextSize;
 	sExactEnd = NULL;
 	sNormalizedEnd = NULL;
@@ -528,6 +618,34 @@ int xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xg
 	pMatch->tMetrics = pPack->pEntries[iBestEntry].tMetrics;
 	pMatch->tMetrics.iFlags = iBestFlags;
 	return XGE_OK;
+}
+
+int xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch)
+{
+	if ( !pPack || !sText || !pMatch || (pMatch->iSize && pMatch->iSize < sizeof(*pMatch)) )
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if ( iTextSize < 0 ) {
+		size_t size = strlen(sText);
+		if ( size > INT32_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
+		iTextSize = (int)size;
+	}
+	if ( !iTextSize ) return XGE_ERROR_NOT_FOUND;
+	if ( pPack->bBuiltin ) return __xgeEmojiPackMatch(pPack, sText, iTextSize, pMatch);
+	if ( !xrtMutexLock(pPack->pCacheMutex) ) return XGE_ERROR_BUSY;
+	int status = __xgeEmojiPackMatch(pPack, sText, iTextSize, pMatch);
+	xrtMutexUnlock(pPack->pCacheMutex);
+	return status;
+}
+
+int xgeEmojiPackFind(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch)
+{
+	if ( !sText && iTextSize == 0 ) sText = "";
+	int status = xgeEmojiPackMatch(pPack, sText, iTextSize, pMatch);
+	if ( status == XGE_OK ) return 1;
+	if ( status != XGE_ERROR_NOT_FOUND ) return status;
+	memset(pMatch, 0, sizeof(*pMatch));
+	pMatch->iSize = sizeof(*pMatch);
+	return 0;
 }
 
 static int __xgeEmojiBuiltinLoad(xge_emoji_pack* ppPack)
@@ -658,6 +776,11 @@ int xgeEmojiPackLoadBuiltin(xge_emoji_pack* ppPack)
 	if ( ppPack == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	*ppPack = NULL;
 	__xgeEmojiGlobalLock();
+	if ( xrtAtomic32Load(&g_xgeCallbackShutdown, XMEMORY_ACQUIRE) ) {
+		__xgeEmojiGlobalUnlock();
+		return XGE_ERROR_INVALID_STATE;
+	}
+	uint64_t generation = g_xgeEmojiGeneration;
 	xge_emoji_pack pack = g_xgeBuiltinEmojiPack;
 	int retained = pack ? xgeEmojiPackAddRef(pack) : 0;
 	__xgeEmojiGlobalUnlock();
@@ -676,6 +799,12 @@ int xgeEmojiPackLoadBuiltin(xge_emoji_pack* ppPack)
 		return status;
 	}
 	__xgeEmojiGlobalLock();
+	if ( generation != g_xgeEmojiGeneration ||
+	     xrtAtomic32Load(&g_xgeCallbackShutdown, XMEMORY_ACQUIRE) ) {
+		__xgeEmojiGlobalUnlock();
+		xgeEmojiPackFree(candidate);
+		return XGE_ERROR_INVALID_STATE;
+	}
 	if ( g_xgeBuiltinEmojiPack == NULL ) {
 		g_xgeBuiltinEmojiPack = candidate;
 		candidate = NULL;
@@ -697,6 +826,11 @@ int xgeEmojiPackSetDefault(xge_emoji_pack pPack)
 		if ( xgeEmojiPackAddRef(pPack) <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeEmojiGlobalLock();
+	if ( pPack && xrtAtomic32Load(&g_xgeCallbackShutdown, XMEMORY_ACQUIRE) ) {
+		__xgeEmojiGlobalUnlock();
+		xgeEmojiPackFree(pPack);
+		return XGE_ERROR_INVALID_STATE;
+	}
 	pOld = g_xgeDefaultEmojiPack;
 	g_xgeDefaultEmojiPack = pPack;
 	__xgeEmojiGlobalUnlock();
@@ -704,40 +838,54 @@ int xgeEmojiPackSetDefault(xge_emoji_pack pPack)
 	return XGE_OK;
 }
 
-static xge_emoji_pack __xgeEmojiDefaultAcquire(void)
+int xgeEmojiPackGetDefault(xge_emoji_pack* ppPack)
 {
-	xge_emoji_pack pPack;
-	xge_emoji_pack pResult;
+	if ( !ppPack ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppPack = NULL;
 
 	__xgeEmojiGlobalLock();
-	pResult = g_xgeDefaultEmojiPack;
-	if ( pResult != NULL ) (void)xgeEmojiPackAddRef(pResult);
+	if ( xrtAtomic32Load(&g_xgeCallbackShutdown, XMEMORY_ACQUIRE) ) {
+		__xgeEmojiGlobalUnlock();
+		return XGE_ERROR_INVALID_STATE;
+	}
+	uint64_t generation = g_xgeEmojiGeneration;
+	xge_emoji_pack pResult = g_xgeDefaultEmojiPack;
+	int retained = pResult ? xgeEmojiPackAddRef(pResult) : 0;
 	__xgeEmojiGlobalUnlock();
-	if ( pResult != NULL ) return pResult;
-	pPack = NULL;
-	if ( xgeEmojiPackLoadBuiltin(&pPack) != XGE_OK ) return NULL;
+
+	if ( pResult ) {
+		if ( retained <= 0 ) return retained;
+		*ppPack = pResult;
+		return XGE_OK;
+	}
+	xge_emoji_pack pPack = NULL;
+	int status = xgeEmojiPackLoadBuiltin(&pPack);
+	if ( status != XGE_OK ) return status;
 	__xgeEmojiGlobalLock();
+	if ( generation != g_xgeEmojiGeneration ||
+	     xrtAtomic32Load(&g_xgeCallbackShutdown, XMEMORY_ACQUIRE) ) {
+		__xgeEmojiGlobalUnlock();
+		xgeEmojiPackFree(pPack);
+		return XGE_ERROR_INVALID_STATE;
+	}
 	if ( g_xgeDefaultEmojiPack == NULL ) {
 		g_xgeDefaultEmojiPack = pPack;
 		pPack = NULL;
 	}
 	pResult = g_xgeDefaultEmojiPack;
-	if ( pResult != NULL ) (void)xgeEmojiPackAddRef(pResult);
+	retained = xgeEmojiPackAddRef(pResult);
 	__xgeEmojiGlobalUnlock();
 	xgeEmojiPackFree(pPack);
-	return pResult;
+	if ( retained <= 0 ) return retained;
+	*ppPack = pResult;
+	return XGE_OK;
 }
 
-int xgeEmojiPackGetDefault(xge_emoji_pack* ppPack)
+static xge_emoji_pack __xgeEmojiDefaultAcquire(void)
 {
-	xge_emoji_pack pPack;
-
-	if ( ppPack == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	*ppPack = NULL;
-	pPack = __xgeEmojiDefaultAcquire();
-	if ( pPack == NULL ) return XGE_ERROR_RESOURCE_FAILED;
-	*ppPack = pPack;
-	return XGE_OK;
+	xge_emoji_pack pPack = NULL;
+	(void)xgeEmojiPackGetDefault(&pPack);
+	return pPack;
 }
 
 void xgeEmojiPackClearDefault(void)
@@ -761,6 +909,7 @@ static void __xgeEmojiGlobalClear(void)
 	pBuiltin = g_xgeBuiltinEmojiPack;
 	g_xgeDefaultEmojiPack = NULL;
 	g_xgeBuiltinEmojiPack = NULL;
+	++g_xgeEmojiGeneration;
 	__xgeEmojiGlobalUnlock();
 	xgeEmojiPackFree(pDefault);
 	xgeEmojiPackFree(pBuiltin);
@@ -864,96 +1013,140 @@ static void __xgeEmojiCacheTrim(xge_emoji_pack pPack, int iProtectedEntry)
 		int i;
 
 		for ( i = 0; i < pPack->iEntryCount; i++ ) {
-			if ( (i != iProtectedEntry) && (pPack->pEntries[i].pSvg != NULL) &&
+			if ( (i != iProtectedEntry) && (pPack->pEntries[i].pCache != NULL) &&
 			     (pPack->pEntries[i].iCacheStamp < iOldestStamp) ) {
 				iOldestStamp = pPack->pEntries[i].iCacheStamp;
 				iOldestEntry = i;
 			}
 		}
 		if ( iOldestEntry < 0 ) break;
-		xgeSvgDestroy(pPack->pEntries[iOldestEntry].pSvg);
-		pPack->pEntries[iOldestEntry].pSvg = NULL;
+		__xgeEmojiCacheDrop(pPack->pEntries[iOldestEntry].pCache);
+		pPack->pEntries[iOldestEntry].pCache = NULL;
 		pPack->pEntries[iOldestEntry].iCacheStamp = 0;
 		pPack->iCachedSvgCount--;
 		pPack->iCachedSourceBytes -= (uint64_t)pPack->pEntries[iOldestEntry].iSvgSize;
 	}
 }
 
-static int __xgeEmojiEntryLoadLocked(xge_emoji_pack pPack, int iEntry)
+static int __xgeEmojiEntryAcquire(xge_emoji_pack pPack, int iEntry, uint64_t drawThread,
+	xge_emoji_cache_t** ppCache)
 {
-	xge_emoji_entry_t* pEntry;
-	unsigned char* pSvgData;
-	xge_svg pSvg;
-	size_t iDecoded;
-	int iRet;
-
-	pEntry = &pPack->pEntries[iEntry];
-	if ( pEntry->pSvg != NULL ) {
+	*ppCache = NULL;
+	if ( !xrtMutexLock(pPack->pCacheMutex) ) return XGE_ERROR_BUSY;
+	if ( iEntry < 0 || iEntry >= pPack->iEntryCount ) {
+		xrtMutexUnlock(pPack->pCacheMutex);
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xge_emoji_entry_t* pEntry = &pPack->pEntries[iEntry];
+	if ( pEntry->pCache != NULL ) {
+		xge_emoji_cache_t* cache = pEntry->pCache;
+		if ( drawThread && cache->iDrawThread && cache->iDrawThread != drawThread ) {
+			xrtMutexUnlock(pPack->pCacheMutex);
+			return XGE_ERROR_INVALID_STATE;
+		}
+		if ( cache->iReferences == UINT_MAX ) {
+			xrtMutexUnlock(pPack->pCacheMutex);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		if ( drawThread ) cache->iDrawThread = drawThread;
 		pEntry->iCacheStamp = ++pPack->iCacheClock;
+		++cache->iReferences;
+		*ppCache = cache;
+		xrtMutexUnlock(pPack->pCacheMutex);
 		return XGE_OK;
 	}
-	if ( pEntry->bLoadFailed ) return XGE_ERROR_RESOURCE_FAILED;
-	pSvgData = pEntry->pSvgData;
+	if ( pEntry->bLoadFailed || pEntry->bLoading ) {
+		int status = pEntry->bLoadFailed ? XGE_ERROR_RESOURCE_FAILED : XGE_ERROR_BUSY;
+		xrtMutexUnlock(pPack->pCacheMutex);
+		return status;
+	}
+	xge_emoji_source_t* source = pEntry->pSource;
+	int svgSize = pEntry->iSvgSize;
+	unsigned char* decoded = NULL;
+	const unsigned char* svgData;
 	if ( pEntry->pCompressedData != NULL ) {
-		pSvgData = (unsigned char*)xrtMalloc((size_t)pEntry->iSvgSize);
-		if ( pSvgData == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
-		iDecoded = ZSTD_decompress_usingDDict(
-			(ZSTD_DCtx*)pPack->pZstdContext, pSvgData, (size_t)pEntry->iSvgSize,
+		decoded = (unsigned char*)xrtMalloc((size_t)svgSize);
+		if ( !decoded ) {
+			xrtMutexUnlock(pPack->pCacheMutex);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		size_t bytes = ZSTD_decompress_usingDDict(
+			(ZSTD_DCtx*)pPack->pZstdContext, decoded, (size_t)svgSize,
 			pEntry->pCompressedData, (size_t)pEntry->iCompressedSize,
 			(const ZSTD_DDict*)pPack->pZstdDictionary
 		);
-		if ( ZSTD_isError(iDecoded) || (iDecoded != (size_t)pEntry->iSvgSize) ) {
-			xrtFree(pSvgData);
-			pEntry->bLoadFailed = 1;
+		if ( ZSTD_isError(bytes) || bytes != (size_t)svgSize ) {
+			pEntry->bLoadFailed = true;
+			xrtMutexUnlock(pPack->pCacheMutex);
+			xrtFree(decoded);
 			__xgeReportErrorInternal(XGE_ERROR_RESOURCE_FAILED, 1, "emoji",
 				"decompress SVG", "built-in Emoji entry is corrupt");
 			return XGE_ERROR_RESOURCE_FAILED;
 		}
+		svgData = decoded;
+	} else {
+		++source->iReferences;
+		svgData = source->arrData;
 	}
-	pSvg = NULL;
-	iRet = xgeSvgCreate(&pSvg);
-	if ( iRet == XGE_OK ) iRet = xgeSvgLoadMemory(pSvg, pSvgData, pEntry->iSvgSize);
-	if ( pEntry->pCompressedData != NULL ) xrtFree(pSvgData);
-	if ( iRet != XGE_OK ) {
-		xgeSvgDestroy(pSvg);
-		/* Allocation pressure is transient. Keep the immutable source and let
-		 * a later draw retry instead of permanently poisoning this entry. */
-		if ( iRet != XGE_ERROR_OUT_OF_MEMORY ) pEntry->bLoadFailed = 1;
-		__xgeReportErrorInternal(iRet, 1, "emoji", "parse SVG",
-			"built-in Emoji SVG could not be parsed");
-		return iRet;
+	pEntry->bLoading = true;
+	xrtMutexUnlock(pPack->pCacheMutex);
+
+	/* SVG parsing can invoke resource providers. Run it outside the pack
+	 * mutex and publish only if this is still the same entry revision. */
+	xge_emoji_cache_t* cache = xrtCalloc(1, sizeof(*cache));
+	int status = cache ? xgeSvgCreate(&cache->pSvg) : XGE_ERROR_OUT_OF_MEMORY;
+	if ( status == XGE_OK ) status = xgeSvgLoadMemory(cache->pSvg, svgData, svgSize);
+	xrtFree(decoded);
+
+	xrtMutexLock(pPack->pCacheMutex);
+	pEntry = &pPack->pEntries[iEntry];
+	if ( pEntry->pSource == source ) {
+		pEntry->bLoading = false;
+		if ( status == XGE_OK ) {
+			pEntry->pCache = cache;
+			++cache->iReferences;
+			pEntry->iCacheStamp = ++pPack->iCacheClock;
+			if ( pPack->bBuiltin ) {
+				pPack->iCachedSvgCount++;
+				pPack->iCachedSourceBytes += (uint64_t)svgSize;
+				__xgeEmojiCacheTrim(pPack, iEntry);
+			}
+		} else if ( status != XGE_ERROR_OUT_OF_MEMORY && status != XGE_ERROR_BUSY ) {
+			pEntry->bLoadFailed = true;
+		}
 	}
-	pEntry->pSvg = pSvg;
-	pEntry->iCacheStamp = ++pPack->iCacheClock;
-	if ( pPack->bBuiltin ) {
-		pPack->iCachedSvgCount++;
-		pPack->iCachedSourceBytes += (uint64_t)pEntry->iSvgSize;
-		__xgeEmojiCacheTrim(pPack, iEntry);
+	if ( status == XGE_OK ) {
+		cache->iDrawThread = drawThread;
+		++cache->iReferences;
+		*ppCache = cache;
 	}
-	return XGE_OK;
+	__xgeEmojiSourceDrop(source);
+	xrtMutexUnlock(pPack->pCacheMutex);
+	if ( status != XGE_OK ) {
+		if ( cache ) __xgeEmojiCacheDestroy(cache);
+		__xgeReportErrorInternal(status, 1, "emoji", "parse SVG", "Emoji SVG could not be parsed");
+	}
+	return status;
+}
+
+static void __xgeEmojiEntryRelease(xge_emoji_pack pPack, xge_emoji_cache_t* cache)
+{
+	xrtMutexLock(pPack->pCacheMutex);
+	__xgeEmojiCacheDrop(cache);
+	xrtMutexUnlock(pPack->pCacheMutex);
 }
 
 static int __xgeEmojiDraw(xge_emoji_pack pPack, uint32_t iEmojiId, xge_rect_t tDst,
 	int bScreenSpace)
 {
-	xge_svg pSvg;
-	int iEntry;
-	int iRet;
-
-	if ( (pPack == NULL) || (iEmojiId == 0) || (iEmojiId > (uint32_t)pPack->iEntryCount) ) {
+	if ( pPack == NULL || iEmojiId == 0 || iEmojiId > INT32_MAX ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iEntry = (int)iEmojiId - 1;
-	pSvg = NULL;
-	xrtMutexLock(pPack->pCacheMutex);
-	iRet = __xgeEmojiEntryLoadLocked(pPack, iEntry);
-	if ( iRet == XGE_OK ) {
-		pSvg = pPack->pEntries[iEntry].pSvg;
-		iRet = xgeSvgAddRef(pSvg);
-	}
-	xrtMutexUnlock(pPack->pCacheMutex);
+	xge_emoji_cache_t* cache = NULL;
+	int iRet = __xgeEmojiEntryAcquire(pPack, (int)iEmojiId - 1, xrtThreadCurrentId(), &cache);
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = bScreenSpace ? xgeSvgDrawPx(pSvg, tDst, 0.35f) : xgeSvgDraw(pSvg, tDst, 0.35f);
-	xgeSvgDestroy(pSvg);
+	iRet = bScreenSpace ? xgeSvgDrawPx(cache->pSvg, tDst, 0.35f) :
+		xgeSvgDraw(cache->pSvg, tDst, 0.35f);
+	__xgeEmojiEntryRelease(pPack, cache);
 	return iRet;
 }

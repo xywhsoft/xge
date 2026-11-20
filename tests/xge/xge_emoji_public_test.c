@@ -56,6 +56,11 @@ int main(void)
     assert(xgeEmojiPackAddSvgMemory(pack,"AB",svg,sizeof(svg)-1,NULL,&id)==XGE_OK && id==2);
     xge_emoji_match_t match;memset(&match,0,sizeof(match));
     assert(xgeEmojiPackMatch(pack,"ABtail",6,&match)==XGE_OK && match.iEmojiId==2 && match.iTextSize==2);
+    assert(xgeEmojiPackFind(pack,"ABtail",1,&match)==1 && match.iEmojiId==1 && match.iTextSize==1);
+    assert(xgeEmojiPackFind(pack,NULL,0,&match)==0 && !match.iEmojiId && !match.iTextSize);
+    xge_emoji_pack alias=NULL;
+    assert(xgeEmojiPackShareOwned(pack,&alias)==XGE_OK && alias==pack);
+    xgeEmojiPackFree(alias);
     assert(xrtMemDebugFailAfter(0));
     assert(xgeEmojiPackAddSvgMemory(pack,"Z\xff",svg,sizeof(svg)-1,NULL,NULL)==XGE_ERROR_RESOURCE_FAILED);
     assert(!xrtMemDebugFailTriggered());
@@ -71,7 +76,9 @@ int main(void)
     for(unsigned i=0;i<3;++i){assert(xrtThreadWaitFor(jobs[i],30000)==XWAIT_OK && !xrtThreadExitCode(jobs[i]));xrtThreadDestroy(jobs[i]);}
     assert(xgeEmojiPackAddRef(pack)==3);xgeEmojiPackFree(pack);
     int callbacks=0;assert(xgeSetErrorCallback(reenterError,&callbacks)==XGE_OK);
-    assert(xrtMemDebugFailAfter(0));xge_emoji_pack builtin=NULL;int status=xgeEmojiPackLoadBuiltin(&builtin);
+    assert(xrtMemDebugFailAfter(0));xge_emoji_pack builtin=NULL;
+    xgeEmojiPackClearDefault();
+    int status=xgeEmojiPackGetDefault(&builtin);
     xrtMemDebugFailClear();xrtClearError();assert(status==XGE_ERROR_OUT_OF_MEMORY && !builtin && callbacks==1);
     assert(xgeSetErrorCallback(NULL,NULL)==XGE_OK);
     assert(xgeEmojiPackAddRef(pack)==2);xgeEmojiPackFree(pack);
@@ -88,7 +95,12 @@ int main(void)
     assert(xgeUnitChecked()==XGE_OK && !xgeGraphicsOwnedResourceCount());
     /* The caller's independent CPU owner survives both global slot drops. */
     assert(xgeEmojiPackAddRef(builtin)==2);xgeEmojiPackFree(builtin);
-    assert(xgeEmojiPackMatch(builtin,grin,sizeof(grin)-1,&match)==XGE_OK);xgeEmojiPackFree(builtin);
+    assert(xgeEmojiPackMatch(builtin,grin,sizeof(grin)-1,&match)==XGE_OK);
+    assert(xgeEmojiPackSetDefault(builtin)==XGE_OK);
+    assert(xgeUnitChecked()==XGE_OK);
+    assert(xgeEmojiPackGetDefault(&shared)==XGE_OK && shared!=builtin);
+    xgeEmojiPackFree(shared);xgeEmojiPackFree(builtin);
+    assert(xgeUnitChecked()==XGE_OK);
     xrtMemDebugSnapshot(&after);assert(before.InvalidFreeCount==after.InvalidFreeCount && before.DoubleFreeCount==after.DoubleFreeCount);
     puts("Public Emoji host/static ABI, shared refs, callback reentry, Unit ownership and 1000 hot hits passed");return 0;
 }

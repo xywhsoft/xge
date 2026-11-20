@@ -2814,12 +2814,16 @@ XGE_API int xgeEmojiPackCreate(xge_emoji_pack* ppPack);
 XGE_API int xgeEmojiPackLoadBuiltin(xge_emoji_pack* ppPack);
 /* emoji 包引用计数加一。 */
 XGE_API int xgeEmojiPackAddRef(xge_emoji_pack pPack);
+/* Acquires an independent owned reference and clears the output on failure. */
+XGE_API int xgeEmojiPackShareOwned(xge_emoji_pack pPack, xge_emoji_pack* ppShared);
 /* emoji 包引用计数减一，归零时释放。 */
 XGE_API void xgeEmojiPackFree(xge_emoji_pack pPack);
 /* 向包添加一个 SVG emoji（sSequence 为码点序列）；*pEmojiId 输出编号。 */
 XGE_API int xgeEmojiPackAddSvgMemory(xge_emoji_pack pPack, const char* sSequence, const void* pSvgData, int iSvgSize, const xge_emoji_metrics_t* pMetrics, uint32_t* pEmojiId);
 /* 在文本头部做 emoji 最长匹配（Trie 检索）。 */
 XGE_API int xgeEmojiPackMatch(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch);
+/* Returns 1 on a prefix match, 0 with an empty result on miss, or a negative error. */
+XGE_API int xgeEmojiPackFind(xge_emoji_pack pPack, const char* sText, int iTextSize, xge_emoji_match_t* pMatch);
 /* 设为全局默认 emoji 包（文本整形时使用）。 */
 XGE_API int xgeEmojiPackSetDefault(xge_emoji_pack pPack);
 /* 获取全局默认 emoji 包。 */

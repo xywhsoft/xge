@@ -4,7 +4,7 @@ Exercise actual host/static products through public C/C++ clients, and the
 matched aggregate for private invariants. Optional Linux sanitizers instrument
 the aggregate; TSan also rebuilds canonical XRT, not the other archive objects.
 No window, graphics/audio device, network or language delivery is exercised.
-Mutable pack publication semantics are a separate, currently open contract.
+The aggregate exercises mutable default publication and provider reentry.
 """
 from pathlib import Path
 import argparse,hashlib,json,os,shutil,subprocess
@@ -80,7 +80,7 @@ def main():
                 '-I'+str(folder),'-I'+str(engine/'host-xrt'),'-include',folder/'xge_build_config.h',
                 public,library,runtime,*systems,'-Wl,--gc-sections','-o',binary])
             assert b'Public Emoji host/static ABI'in run(name+'-run',[binary],90)
-    report.update(passed=True,inputsUnchanged=all(sha(v)==h for v,h in inputs.items()))
+    report.update(passed=True,mutablePublicationQualified=True,inputsUnchanged=all(sha(v)==h for v,h in inputs.items()))
     assert report['inputsUnchanged'];save()
 
 

@@ -188,6 +188,13 @@ int xgeUnitChecked(void)
     if(busyFrame || xrtAtomic32Load(&g_xgeCallbackShutdown,XMEMORY_ACQUIRE)){
         (void)xrtSpinUnlock(&g_xgeFrameSpin);return XGE_ERROR_INVALID_STATE;
     }
+#if XGE_ENABLE_EMOJI
+    (void)xrtSpinLock(&g_xgeGraphicsLifetime.lock);
+    bool needsCurrent=g_xgeGraphicsLifetime.phase==XGE_GRAPHICS_RUNNING ||
+        g_xgeGraphicsLifetime.phase==XGE_GRAPHICS_ATTACHING;
+    (void)xrtSpinUnlock(&g_xgeGraphicsLifetime.lock);
+    if(!needsCurrent)__xgeEmojiDrainRetired();
+#endif
     int graphicsAdmission=__xgeGraphicsCloseBegin(&g_xgeGraphicsLifetime);
     if(graphicsAdmission!=XGE_OK){(void)xrtSpinUnlock(&g_xgeFrameSpin);return graphicsAdmission;}
 	bool shutdown=!busyFrame && xrtAtomic32CompareExchange(&g_xgeCallbackShutdown,&expected,1,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE);
@@ -223,7 +230,12 @@ int xgeUnitChecked(void)
 	 * snapshots held by in-flight readers release their own references later. */
 	XGE_UNIT_STEP(xgeSoundFallbackClear());
 #endif
-	if(!initialized)goto finish;
+	if(!initialized){
+#if XGE_ENABLE_EMOJI
+		XGE_UNIT_STEP(__xgeEmojiGlobalClear());
+#endif
+		goto finish;
+	}
 	g_xge.bRunning = 0;
 #if XGE_ENABLE_2D
 	XGE_UNIT_STEP(__xgeRenderThreadJoin());
@@ -499,6 +511,9 @@ static int __xgeFrameWithDelta(float fDelta)
 	if ( g_xge.bRunning == 0 ) {
 		return 0;
 	}
+#if XGE_ENABLE_EMOJI
+	__xgeEmojiDrainRetired();
+#endif
 	fFrameStart = xrtTimer();
 #if XGE_ENABLE_2D
 	__xgeRenderCommandReset();

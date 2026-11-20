@@ -143,6 +143,9 @@ static int __xgeHostObjectFinalize(void* raw,bool* complete)
 #if XGE_ENABLE_2D
         __xgeRenderCommandReset();__xgeShapeAutoBatchReset();
 #endif
+#if XGE_ENABLE_EMOJI
+        __xgeEmojiDrainRetired();
+#endif
         __xgeTextureUploadQueueFree();
         if(__xgeGraphicsOwnerCount(&g_xgeGraphicsLifetime)>1){
             __xgeHostOutcomeAdd(&outcome,XGE_STATUS_DEFERRED);return __xgeHostOutcomeEnd(&outcome,NULL);
@@ -282,6 +285,9 @@ int xgeHostSessionBegin(xge_host_session host)
     if(status==XGE_OK && host->resizePending)status=__xgeHostValidate(host,size);
     bool accepted=false;
     if(status==XGE_OK){
+#if XGE_ENABLE_EMOJI
+        __xgeEmojiDrainRetired();
+#endif
         int raw=host->graphicsTable->begin ? host->graphicsTable->begin(host->graphicsTable->pUser):XGE_OK;
         accepted=raw==XGE_OK;status=__xgeHostStatus(raw);
     }

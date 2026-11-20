@@ -459,6 +459,9 @@ static int __xgeInputEventQueueReserve(int iCapacity);
 static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent);
 static void __xgeInputEventQueueReset(void);
 static void __xgeInputEventQueueUnit(void);
+#if XGE_ENABLE_EMOJI
+static void __xgeEmojiDrainRetired(void);
+#endif
 #if defined(_WIN32) || defined(_WIN64)
 static void __xgeImeInstallWin32(void);
 static void __xgeImeUninstallWin32(void);
@@ -1545,6 +1548,9 @@ static void __xgeSokolFrame(void)
 		sapp_quit();
 		return;
 	}
+#if XGE_ENABLE_EMOJI
+	__xgeEmojiDrainRetired();
+#endif
 
 	fFrameStart = xrtTimer();
 	if ( g_xge.fOnDemandRenderDeadline > 0.0 && fFrameStart >= g_xge.fOnDemandRenderDeadline ) {
@@ -1641,6 +1647,9 @@ static void __xgeSokolFrame(void)
 static void __xgeSokolCleanup(void)
 {
     __xgeGraphicsBackendEnding(&g_xgeGraphicsLifetime);
+#if XGE_ENABLE_EMOJI
+	__xgeEmojiDrainRetired();
+#endif
 	__xgeClipboardPlatformCleanup();
 	#if defined(_WIN32) || defined(_WIN64)
 		__xgeDragDropPlatformUnit();

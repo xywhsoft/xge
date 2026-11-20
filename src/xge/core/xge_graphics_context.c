@@ -126,6 +126,9 @@ static int __xgeContextFinalize(void* data,bool* complete)
 #if XGE_ENABLE_2D
         __xgeRenderCommandReset();__xgeShapeAutoBatchReset();
 #endif
+#if XGE_ENABLE_EMOJI
+        __xgeEmojiDrainRetired();
+#endif
         __xgeTextureUploadQueueFree();
         if(__xgeGraphicsOwnerCount(&g_xgeGraphicsLifetime)>1)return XGE_STATUS_DEFERRED;
         context->nativeCleanupStarted=true;
