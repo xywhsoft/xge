@@ -57,6 +57,7 @@ typedef struct xui_chart_data_t {
 	int bLegendVisible;
 	int bTooltipVisible;
 	xui_chart_tooltip_proc onTooltip;
+	xui_chart_tooltip_owned_proc onTooltipOwned;
 	void* pTooltipUser;
 	xui_chart_context_proc onContext;
 	void* pContextUser;
@@ -2011,6 +2012,34 @@ static void __xuiChartTargetRect(xui_widget pWidget, xui_chart_data_t* pData, xu
 		xuiInternalRectFromFloatNearest(px - 6.0f, py - 6.0f, 12.0f, 12.0f) : (xui_rect_t){0, 0, 0, 0};
 }
 
+static int __xuiChartReadTooltip(xui_widget pWidget, xui_chart_data_t* pData, int iSeries, int iItem,
+	char* sText, int iCapacity)
+{
+	xui_chart_tooltip_owned_proc onTooltip = pData->onTooltipOwned;
+	void* pUser = pData->pTooltipUser;
+	if ( onTooltip == NULL ) {
+		if ( pData->onTooltip != NULL &&
+			pData->onTooltip(pWidget, iSeries, iItem, sText, iCapacity, pUser) != XUI_OK ) sText[0] = 0;
+		return XUI_OK;
+	}
+	uint64_t iVersion = pData->iVersion;
+	xui_callback_snapshot_t tSnapshot = {0};
+	int iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onTooltipOwned, &pUser, &tSnapshot);
+	if ( iRet != XUI_OK ) return iRet;
+	xstrview tText = {0};
+	if ( pData->iVersion == iVersion ) tText = onTooltip(pWidget, iSeries, iItem, pUser);
+	if ( xrtGetError() != NULL ) iRet = XUI_ERROR_CALLBACK_FAILED;
+	else if ( tText.Data == NULL && tText.Size != 0 ) iRet = XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iRet);
+	if ( iRet == XUI_OK && tText.Size != 0 ) {
+		size_t iCopy = tText.Size < (size_t)iCapacity ? tText.Size : (size_t)iCapacity - 1;
+		memcpy(sText, tText.Data, iCopy);
+		sText[iCopy] = 0;
+	}
+	xrtFree((void*)tText.Data);
+	return iRet;
+}
+
 static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_draw_context pDraw,
 	xui_chart_data_t* pData, int bDrawOverlay, int bDrawTooltip)
 {
@@ -2051,8 +2080,8 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	     (pHit->iItem >= 0) && (pHit->iItem < pData->arrSeries[pHit->iSeries].iCount) ) {
 		char sText[128];
 		char sDefault[128];
-		xui_chart_tooltip_proc onTooltip = pData->onTooltip;
-		void* pTooltipUser = pData->pTooltipUser;
+		xui_chart_data_t* pLive = __xuiChartGetData(pWidget);
+		if ( pLive == NULL || pLive->iVersion != pData->iVersion ) return XUI_OK;
 		xui_font pFont = pData->pFont;
 		uint32_t iTooltipColor = pData->iTooltipColor;
 		uint32_t iTooltipTextColor = pData->iTooltipTextColor;
@@ -2064,14 +2093,11 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 			(pPoint->label != NULL) ? pPoint->label : pData->arrSeries[iSeries].sName,
 			pPoint->value != 0.0 ? pPoint->value : pPoint->y);
 		sText[0] = 0;
-		if ( onTooltip != NULL ) {
-			iRet = onTooltip(pWidget, iSeries, iItem, sText, (int)sizeof(sText), pTooltipUser);
-			sText[sizeof(sText) - 1u] = 0;
-			if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_OK;
-			if ( iRet != XUI_OK ) {
-				sText[0] = 0;
-			}
-		}
+		iRet = __xuiChartReadTooltip(pWidget, pLive, iSeries, iItem, sText, (int)sizeof(sText));
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !xuiInternalWidgetIsValid(pWidget) || pWidget->pContext->bCloseRequested ||
+			pLive->iVersion != pData->iVersion ) return XUI_OK;
+		sText[sizeof(sText) - 1u] = 0;
 		if ( sText[0] == 0 ) {
 			strncpy(sText, sDefault, sizeof(sText) - 1u);
 			sText[sizeof(sText) - 1u] = 0;
@@ -2631,7 +2657,18 @@ static int __xuiChartEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			}
 		}
 		xuiInternalContextMenuPoint(pEvent, tAnchor, &fX, &fY);
-		return pData->onContext(pWidget, &tHit, fX, fY, pData->pContextUser);
+		xui_chart_context_proc onContext = pData->onContext;
+		if ( onContext == NULL ) return XUI_OK;
+		void* pContextUser = pData->pContextUser;
+		if ( !xuiInternalCallbackSlotOwned(pWidget, &pData->onContext) )
+			return onContext(pWidget, &tHit, fX, fY, pContextUser);
+		uint64_t iVersion = pData->iVersion;
+		xui_callback_snapshot_t tSnapshot = {0};
+		iRet = xuiInternalCallbackSnapshotBeginReported(pWidget, &pData->onContext, &pContextUser, &tSnapshot);
+		if ( iRet != XUI_OK ) return iRet;
+		int iHandled = pData->iVersion == iVersion ? onContext(pWidget, &tHit, fX, fY, pContextUser) : XUI_OK;
+		iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iHandled < 0 ? iHandled : XUI_OK);
+		return iRet != XUI_OK ? iRet : iHandled;
 	}
 	/* Pointer events carry world coordinates; chart hit/range helpers use local coordinates. */
 	tLocal = *pEvent;
@@ -3465,20 +3502,63 @@ XUI_API int xuiChartGetTooltipVisible(xui_widget pWidget)
 	return (pData != NULL) ? pData->bTooltipVisible : 0;
 }
 
+static int __xuiChartSetTooltip(xui_widget pWidget, xui_chart_data_t* pData,
+	xui_chart_tooltip_proc onTooltip, xui_chart_tooltip_owned_proc onTooltipOwned,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBegin(pWidget, &pData->onTooltipOwned,
+		onTooltipOwned != NULL, pUser, pOwner, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onTooltip = onTooltip;
+	pData->onTooltipOwned = onTooltipOwned;
+	pData->pTooltipUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	iRet = __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, iRet);
+}
+
+XUI_API int xuiChartSetTooltipCallbackOwned(xui_widget pWidget, xui_chart_tooltip_owned_proc onTooltip,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiChartSetTooltip(pWidget, pData, NULL, onTooltip, pUser, pOwner);
+}
+
 XUI_API int xuiChartSetTooltipCallback(xui_widget pWidget, xui_chart_tooltip_proc onTooltip, void* pUser)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->onTooltipOwned != NULL ) return __xuiChartSetTooltip(pWidget, pData, onTooltip, NULL, pUser, NULL);
 	if ( pData->onTooltip == onTooltip && pData->pTooltipUser == pUser ) return XUI_OK;
 	pData->onTooltip = onTooltip;
 	pData->pTooltipUser = pUser;
 	return __xuiChartInvalidate(pWidget, pData, XUI_CHART_DIRTY_OVERLAY, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiChartSetContextMenuOwned(xui_widget pWidget, xui_chart_context_proc onContext,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBegin(pWidget, &pData->onContext, onContext != NULL, pUser, pOwner, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onContext = onContext;
+	pData->pContextUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	iRet = __xuiChartInvalidateAndSyncFocus(pWidget, pData, XUI_CHART_DIRTY_OVERLAY,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER, 0);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, iRet);
+}
+
 XUI_API int xuiChartSetContextMenu(xui_widget pWidget, xui_chart_context_proc onContext, void* pUser)
 {
 	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onContext) )
+		return xuiChartSetContextMenuOwned(pWidget, onContext, pUser, NULL);
 	if ( pData->onContext == onContext && pData->pContextUser == pUser ) return XUI_OK;
 	pData->onContext = onContext;
 	pData->pContextUser = pUser;

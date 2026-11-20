@@ -3222,6 +3222,7 @@ typedef int (*xui_statusbar_context_proc)(xui_widget_t* pWidget, int iIndex, int
  * the chart or its context. Context hit data is a read-only snapshot borrowed
  * only for the callback duration. */
 typedef int (*xui_chart_tooltip_proc)(xui_widget_t* pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser);
+typedef xstrview (*xui_chart_tooltip_owned_proc)(xui_widget_t* pWidget, int iSeries, int iItem, void* pUser);
 typedef int (*xui_chart_context_proc)(xui_widget_t* pWidget, const xui_chart_hit_t* pHit, float fX, float fY, void* pUser);
 typedef int (*xui_tag_input_context_proc)(xui_widget_t* pWidget, int iIndex, float fX, float fY, void* pUser);
 typedef int (*xui_flow_context_proc)(xui_widget_t* pWidget, const xui_flow_hit_t* pHit, float fX, float fY, void* pUser);
@@ -7784,8 +7785,14 @@ XUI_API int xuiChartSetTooltipVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiChartGetTooltipVisible(xui_widget pWidget);
 /* 注册自定义提示内容回调。 */
 XUI_API int xuiChartSetTooltipCallback(xui_widget pWidget, xui_chart_tooltip_proc onTooltip, void* pUser);
+/* The callback transfers XRT-allocated counted UTF-8. Empty text selects the
+ * default tooltip. The display uses at most 127 bytes at a UTF-8 boundary. */
+XUI_API int xuiChartSetTooltipCallbackOwned(xui_widget pWidget, xui_chart_tooltip_owned_proc onTooltip,
+	void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键回调。 */
 XUI_API int xuiChartSetContextMenu(xui_widget pWidget, xui_chart_context_proc onContext, void* pUser);
+XUI_API int xuiChartSetContextMenuOwned(xui_widget pWidget, xui_chart_context_proc onContext,
+	void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置内边距。 */
 XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding);
 /* 读取内边距。 */

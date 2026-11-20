@@ -109,6 +109,79 @@ static int __xuiChartDestroyTooltip(xui_widget pWidget, int iSeries, int iItem, 
 	return XUI_OK;
 }
 
+typedef struct chart_callback_probe {
+	size_t references;
+	int tooltips;
+	int menus;
+} chart_callback_probe;
+
+static bool chartProbeCount(const void* raw, size_t* count)
+{
+	*count = ((const chart_callback_probe*)raw)->references;
+	return true;
+}
+
+static bool chartProbeTrace(const void* raw, xrtownershipvisitor visit, void* user)
+{
+	(void)raw; (void)visit; (void)user;
+	return true;
+}
+
+static bool chartProbeHold(const void* raw)
+{
+	++((chart_callback_probe*)raw)->references;
+	return true;
+}
+
+static bool chartProbeDrop(const void* raw)
+{
+	--((chart_callback_probe*)raw)->references;
+	return true;
+}
+
+static xstrview chartOwnedTooltip(xui_widget widget, int series, int item, void* user)
+{
+	static const char text[] = "owned tooltip";
+	chart_callback_probe* probe = user;
+	(void)widget; (void)series; (void)item;
+	if ( probe->references == 4 ) ++probe->tooltips;
+	char* copy = xrtMalloc(sizeof(text));
+	if ( copy == NULL ) return (xstrview){0};
+	memcpy(copy, text, sizeof(text));
+	return (xstrview){copy, sizeof(text) - 1};
+}
+
+static int chartOwnedContext(xui_widget widget, const xui_chart_hit_t* hit, float x, float y, void* user)
+{
+	chart_callback_probe* probe = user;
+	(void)x; (void)y;
+	if ( hit->iPart != XUI_CHART_HIT_SERIES || probe->references != 4 ) return XUI_ERROR_INVALID_STATE;
+	int result = xuiChartSetContextMenu(widget, NULL, NULL);
+	if ( result != XUI_OK || probe->references != 3 ) return XUI_ERROR_INVALID_STATE;
+	++probe->menus;
+	return 1;
+}
+
+static int checkChartOwnedCallbacks(xui_context context, xui_widget widget, xui_vec2_t point)
+{
+	static const xrtownershipops ops = {chartProbeCount, chartProbeTrace};
+	chart_callback_probe probe = {.references = 1};
+	const xui_callback_owner_t owner = {{&probe, &ops}, chartProbeHold, chartProbeDrop};
+	int result = xuiChartSetTooltipCallbackOwned(widget, chartOwnedTooltip, &probe, &owner);
+	if ( result == XUI_OK ) result = xuiChartSetContextMenuOwned(widget, chartOwnedContext, &probe, &owner);
+	if ( result == XUI_OK ) result = xuiRenderPrepare(context);
+	xui_surface cache = xuiWidgetGetCacheSurface(widget, xuiWidgetGetStateId(widget));
+	const char* text = xuiTestSurfaceGetLastText(cache);
+	bool drawn = probe.tooltips > 0 && text != NULL && strcmp(text, "owned tooltip") == 0;
+	xui_event_t menu = {.iSize = sizeof(menu), .iType = XUI_EVENT_CONTEXT_MENU, .pTarget = widget,
+		.fX = point.fX, .fY = point.fY, .iButton = XUI_POINTER_BUTTON_RIGHT};
+	if ( result == XUI_OK ) result = xuiDispatchEvent(context, &menu);
+	bool delivered = probe.menus == 1 && probe.references == 2;
+	int menuClear = xuiChartSetContextMenu(widget, NULL, NULL);
+	int tooltipClear = xuiChartSetTooltipCallback(widget, NULL, NULL);
+	return result >= XUI_OK && drawn && delivered && menuClear == XUI_OK && tooltipClear == XUI_OK && probe.references == 1;
+}
+
 static int __xuiChartSameValueSettersStayClean(xui_widget pChart, xui_font pFont,
 	int iLine, int iPie, const xui_chart_point_t* pLine, int iLineCount)
 {
@@ -630,6 +703,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch hover");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && g_iTooltipCalls > 0, "custom tooltip render");
+	XUI_TEST_CHECK(checkChartOwnedCallbacks(pContext, pChart, tPixel), "owned tooltip and menu retain their active callback");
 	XUI_TEST_CHECK(tState.iDrawClipGetCount > 0 && tState.iDrawClipSetCount > 0 &&
 	               tState.iDrawClipClearCount > 0 && !tState.bLastDrawClipActive,
 	               "plot clip applied and restored");
