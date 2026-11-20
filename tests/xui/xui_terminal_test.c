@@ -689,8 +689,19 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal scroll offset query");
 	iRet = xuiScrollModelGetMaxOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fMaxY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fMaxY == 64.0f && fScrollY == fMaxY, "terminal follows scrollback row tail");
-	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 0.0f);
+	xui_scroll_model_t tTailSnapshot;
+	XUI_TEST_CHECK(xuiTerminalGetScrollSnapshot(pTerminal, &tTailSnapshot) == XUI_OK &&
+		tTailSnapshot.fScrollY == fMaxY, "terminal snapshot includes tail offset");
+	int iBeforeScroll = xuiTerminalGetChangeCount(pTerminal);
+	iRet = xuiTerminalScrollBy(pTerminal, -XUI_LAYOUT_UNBOUNDED);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal manual scroll up");
+	XUI_TEST_CHECK(xuiTerminalGetChangeCount(pTerminal) == iBeforeScroll + 1 &&
+		xuiTerminalSetScrollOffset(pTerminal, -1.0f) == XUI_OK &&
+		xuiTerminalGetChangeCount(pTerminal) == iBeforeScroll + 1,
+		"unchanged terminal offset keeps the render cache");
+	XUI_TEST_CHECK(xuiTerminalScrollBy(pTerminal, XUI_LAYOUT_UNBOUNDED * 2.0f) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiTerminalGetChangeCount(pTerminal) == iBeforeScroll + 1 && tTailSnapshot.fScrollY == fMaxY,
+		"invalid delta keeps terminal state and existing snapshot");
 	iRet = xuiTerminalWriteText(pTerminal, "\r\nheld");
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal write while scrolled up");
 	iRet = xuiTerminalFlush(pTerminal);
@@ -723,10 +734,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "write fractional scroll rows");
 	iRet = xuiTerminalFlush(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "flush fractional scroll rows");
-	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 5.0f);
+	iRet = xuiTerminalSetScrollOffset(pTerminal, 5.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set fractional terminal scroll offset");
-	iRet = xuiWidgetInvalidate(pTerminal, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate fractional terminal scroll offset");
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render fractional terminal scroll offset");
 	pCache = xuiWidgetGetCacheSurface(pTerminal, xuiWidgetGetStateId(pTerminal));

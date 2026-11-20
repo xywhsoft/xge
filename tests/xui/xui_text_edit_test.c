@@ -756,6 +756,10 @@ int main(void)
 	XUI_TEST_CHECK(pScrollModel != NULL, "textedit scroll model");
 	iRet = xuiScrollModelGetOffset(pScrollModel, &fScrollX, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "textedit scroll model offset");
+	xui_scroll_model_t tScrollSnapshot;
+	iRet = xuiTextEditGetScrollSnapshot(pTextEdit, &tScrollSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tScrollSnapshot.fScrollY == fScrollY &&
+		tScrollSnapshot.tViewportRect.fH > 0.0f, "textedit scroll snapshot matches the arranged model");
 	pHScrollBar = xuiTextEditGetHScrollBarWidget(pTextEdit);
 	pVScrollBar = xuiTextEditGetVScrollBarWidget(pTextEdit);
 	XUI_TEST_CHECK(pHScrollBar != NULL && pVScrollBar != NULL, "textedit internal scrollbars");
@@ -768,6 +772,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set short scroll text");
 	iRet = xuiTextEditSetScroll(pTextEdit, 0.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset short scroll");
+	XUI_TEST_CHECK(tScrollSnapshot.fScrollY == fScrollY, "old textedit snapshot retains its scroll");
 	XUI_TEST_CHECK(!xuiWidgetGetVisible(pHScrollBar) && !xuiWidgetGetVisible(pVScrollBar), "textedit scrollbars hidden for short content");
 	iRet = xuiTextEditSetWordWrap(pTextEdit, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "disable wrap for horizontal scrollbar");

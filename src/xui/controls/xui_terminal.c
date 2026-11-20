@@ -7132,6 +7132,38 @@ XUI_API xui_scroll_model_t* xuiTerminalGetScrollModel(xui_widget pWidget)
 	return (pData != NULL) ? &pData->tScroll : NULL;
 }
 
+XUI_API int xuiTerminalGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL || pSnapshot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pSnapshot = pData->tScroll;
+	return XUI_OK;
+}
+
+static int __xuiTerminalChangeScroll(xui_widget pWidget, float fY, bool bRelative)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_scroll_model_t tNext = pData->tScroll;
+	int iRet = bRelative ? xuiScrollModelScrollBy(&tNext, 0.0f, fY)
+	                     : xuiScrollModelSetOffset(&tNext, 0.0f, fY);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->tScroll.fScrollY == tNext.fScrollY ) return XUI_OK;
+	pData->tScroll = tNext;
+	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSetScrollOffset(xui_widget pWidget, float fOffsetY)
+{
+	return __xuiTerminalChangeScroll(pWidget, fOffsetY, false);
+}
+
+XUI_API int xuiTerminalScrollBy(xui_widget pWidget, float fDeltaY)
+{
+	return __xuiTerminalChangeScroll(pWidget, fDeltaY, true);
+}
+
 XUI_API int xuiTerminalGetCell(xui_widget pWidget, int iColumn, int iRow, xui_terminal_cell_t* pCell)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);

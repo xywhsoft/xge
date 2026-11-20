@@ -1503,6 +1503,13 @@ int main(void)
 	XUI_TEST_CHECK(pScrollModel != NULL, "codeedit scroll model");
 	iRet = xuiScrollModelGetOffset(pScrollModel, &fScrollX, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == 16.0f && fScrollY == 18.0f, "scroll model offset");
+	xui_scroll_model_t tScrollSnapshot;
+	iRet = xuiCodeEditGetScrollSnapshot(pCodeEdit, &tScrollSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tScrollSnapshot.fScrollX == fScrollX &&
+		tScrollSnapshot.fScrollY == fScrollY && tScrollSnapshot.tViewportRect.fH > 0.0f,
+		"codeedit scroll snapshot matches the arranged model");
+	XUI_TEST_CHECK(xuiCodeEditGetScrollSnapshot(NULL, &tScrollSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+		tScrollSnapshot.fScrollY == fScrollY, "invalid codeedit snapshot leaves output intact");
 	pHScrollBar = xuiCodeEditGetHScrollBarWidget(pCodeEdit);
 	pVScrollBar = xuiCodeEditGetVScrollBarWidget(pCodeEdit);
 	XUI_TEST_CHECK(pHScrollBar != NULL && pVScrollBar != NULL, "codeedit internal scrollbars");

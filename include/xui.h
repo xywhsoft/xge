@@ -8890,6 +8890,8 @@ XUI_API int xuiCodeEditSetDefaultMargins(xui_widget pWidget, int bShowLineNumber
 XUI_API int xuiCodeEditGetDefaultMargins(xui_widget pWidget, int* pShowLineNumbers, int* pShowMarkerMargin, int* pShowFoldMargin, int* pShowDiagnosticMargin);
 /* 取滚动模型（编辑器持有）。 */
 XUI_API xui_scroll_model_t* xuiCodeEditGetScrollModel(xui_widget pWidget);
+/* 输出当前布局的滚动模型值；失败时保留输出参数。 */
+XUI_API int xuiCodeEditGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 取水平滚动条控件；不可见返回 NULL。 */
 XUI_API xui_widget xuiCodeEditGetHScrollBarWidget(xui_widget pWidget);
 /* 取垂直滚动条控件；不可见返回 NULL。 */
@@ -9379,6 +9381,8 @@ XUI_API int xuiTextEditCanUndo(xui_widget pWidget);
 XUI_API int xuiTextEditCanRedo(xui_widget pWidget);
 /* 取滚动模型。 */
 XUI_API xui_scroll_model_t* xuiTextEditGetScrollModel(xui_widget pWidget);
+/* 输出当前布局的滚动模型值；失败时保留输出参数。 */
+XUI_API int xuiTextEditGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 取内部水平滚动条控件；始终返回实例，可见性用 xuiWidgetGetVisible 查询。 */
 XUI_API xui_widget xuiTextEditGetHScrollBarWidget(xui_widget pWidget);
 /* 取内部垂直滚动条控件；始终返回实例，可见性用 xuiWidgetGetVisible 查询。 */
@@ -10414,6 +10418,11 @@ XUI_API int xuiTerminalSetPalette(xui_widget pWidget, int iIndex, uint32_t iColo
 XUI_API uint32_t xuiTerminalGetPalette(xui_widget pWidget, int iIndex);
 /* 取滚动模型（控件持有）。 */
 XUI_API xui_scroll_model_t* xuiTerminalGetScrollModel(xui_widget pWidget);
+/* 输出当前滚动模型值，快照独立于终端。 */
+XUI_API int xuiTerminalGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
+/* 以像素设置绝对纵向偏移（0 为回滚区顶部），或在当前偏移上增减。 */
+XUI_API int xuiTerminalSetScrollOffset(xui_widget pWidget, float fOffsetY);
+XUI_API int xuiTerminalScrollBy(xui_widget pWidget, float fDeltaY);
 /* 按列/行输出单元格（字符与属性，测试用）。 */
 XUI_API int xuiTerminalGetCell(xui_widget pWidget, int iColumn, int iRow, xui_terminal_cell_t* pCell);
 /* 开关括号粘贴模式（回传加转义包裹）。 */

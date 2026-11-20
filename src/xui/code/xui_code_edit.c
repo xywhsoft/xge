@@ -10098,6 +10098,26 @@ XUI_API xui_scroll_model_t* xuiCodeEditGetScrollModel(xui_widget pWidget)
 	return &pData->tScrollModel;
 }
 
+XUI_API int xuiCodeEditGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || pSnapshot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iCacheActivity || pData->bProducingLineLayout ) return XUI_ERROR_BUSY;
+	xui_context pContext = pWidget->pContext;
+	xui_call_scope_t tScope = {0};
+	int iRet = xuiCallScopeBegin(pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iCacheActivity = 2;
+	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
+	xui_scroll_model_t tSnapshot = pData->tScrollModel;
+	pData->iCacheActivity = 0;
+	if ( iRet == XUI_OK && (pWidget->bDestroyPending || pContext->bCloseRequested || pContext->bDestroyPending) )
+		iRet = XUI_ERROR_INVALID_STATE;
+	iRet = xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
+	if ( iRet == XUI_OK ) *pSnapshot = tSnapshot;
+	return iRet;
+}
+
 XUI_API xui_widget xuiCodeEditGetHScrollBarWidget(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
