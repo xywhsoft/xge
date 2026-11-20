@@ -7,7 +7,7 @@
 
 #define DOC_IMAGE_DEFAULT_ENCODED_BYTES (UINT64_C(16) * 1024 * 1024)
 #define DOC_IMAGE_DEFAULT_PIXELS UINT64_C(16000000)
-static void doc_image_context_gone(void* raw){*(bool*)raw=false;}
+static void doc_image_watch_gone(void* raw){*(bool*)raw=false;}
 
 static xui_proxy doc_image_proxy(xui_context context)
 {
@@ -143,20 +143,54 @@ failed:
     }
 }
 
-XUI_API int xuiDocumentImageResourceLoadMemory(xui_context context,const char* resource_name,
+typedef struct doc_image_load_scope_t {
+    xui_call_scope_t call;
+    xui_lifetime_link_t context_watch;
+    bool context_alive;
+} doc_image_load_scope_t;
+
+static bool doc_image_context_closing(xui_context context)
+{
+    return context->bCloseRequested || context->bDestroyPending || context->bDestroying;
+}
+
+static int doc_image_load_begin(xui_context context,doc_image_load_scope_t* scope)
+{
+    int status=xuiCallScopeBegin(context,&scope->call);
+    if(status!=XUI_OK)return status;
+    scope->context_alive=true;
+    status=xuiContextLifetimeWatch(context,&scope->context_watch,doc_image_watch_gone,&scope->context_alive);
+    if(status!=XUI_OK)return xuiInternalCallScopeEndRestored(&scope->call,status,xrtTakeError());
+    return XUI_OK;
+}
+
+static int doc_image_load_end(xui_context context,doc_image_load_scope_t* scope,int status,
+    xui_resource published,xui_resource* out)
+{
+    xui_lifetime_link_t resource_watch={0};
+    bool resource_alive=published!=NULL;
+    if(status==XUI_OK && doc_image_context_closing(context))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK && published)
+        status=xuiResourceLifetimeWatch(published,&resource_watch,doc_image_watch_gone,&resource_alive);
+    /* Deferred cleanup can retire this exact resource even while the Context
+     * stays alive. The stack watch carries identity through the native tail. */
+    status=xuiInternalCallScopeEndRestored(&scope->call,status,xrtTakeError());
+    xuiLifetimeUnwatch(&resource_watch);
+    xuiLifetimeUnwatch(&scope->context_watch);
+    if(status==XUI_OK && (!scope->context_alive || doc_image_context_closing(context)))status=XUI_ERROR_INVALID_STATE;
+    if(status==XUI_OK && out && resource_alive)*out=published;
+    return status;
+}
+
+static int doc_image_load_memory_sync(xui_context context,const char* resource_name,
     const void* encoded,uint64_t encoded_bytes,const xui_doc_image_load_limits_t* limits,xui_resource* out)
 {
     if(out)*out=NULL;
-    xui_call_scope_t scope={0};int result=xuiCallScopeBegin(context,&scope);if(result!=XUI_OK)return result;
-    bool alive=true;xui_lifetime_link_t watch={0};
-    result=xuiContextLifetimeWatch(context,&watch,doc_image_context_gone,&alive);
-    if(result!=XUI_OK){xerror* first=xrtTakeError();result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xrtSetErrorTake(first);return result;}
-    result=doc_image_load_memory(context,resource_name,encoded,encoded_bytes,limits,out);
-    if(result==XUI_OK && (context->bCloseRequested || context->bDestroyPending || context->bDestroying)){if(out)*out=NULL;result=XUI_ERROR_INVALID_STATE;}
-    xerror* first=xrtTakeError();result=xuiInternalCallScopeEndOutcome(&scope,result,&first);xuiLifetimeUnwatch(&watch);
-    if(result==XUI_OK && (!alive || context->bCloseRequested || context->bDestroyPending || context->bDestroying))result=XUI_ERROR_INVALID_STATE;
-    if(result!=XUI_OK && out)*out=NULL;
-    xrtSetErrorTake(first);return result;
+    doc_image_load_scope_t scope={0};int status=doc_image_load_begin(context,&scope);
+    if(status!=XUI_OK)return status;
+    xui_resource published=NULL;
+    status=doc_image_load_memory(context,resource_name,encoded,encoded_bytes,limits,out ? &published:NULL);
+    return doc_image_load_end(context,&scope,status,published,out);
 }
 
 static int doc_image_load_file(xui_context context, const char* resource_name,
@@ -174,24 +208,43 @@ static int doc_image_load_file(xui_context context, const char* resource_name,
     if (!encoded) return xrtErrorFind(xrtGetError(), "xrt.file", XFILE_ERROR_LIMIT) ?
         XUI_DOC_ERROR_LIMIT : XUI_DOC_ERROR_IO;
     (void)max_pixels;
-    result = xuiDocumentImageResourceLoadMemory(context, resource_name, encoded, bytes, limits, out);
+    result = doc_image_load_memory(context, resource_name, encoded, bytes, limits, out);
     xrtFree(encoded);
     return result;
 }
 
-XUI_API int xuiDocumentImageResourceLoadFile(xui_context context,const char* name,const char* path,const xui_doc_image_load_limits_t* limits,xui_resource* out)
+static int doc_image_load_file_sync(xui_context context,const char* name,const char* path,const xui_doc_image_load_limits_t* limits,xui_resource* out)
 {
     if(out)*out=NULL;
-    xui_call_scope_t scope={0};int status=xuiCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;
-    bool alive=true;xui_lifetime_link_t watch={0};
-    status=xuiContextLifetimeWatch(context,&watch,doc_image_context_gone,&alive);
-    if(status!=XUI_OK){xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xrtSetErrorTake(first);return status;}
-    status=doc_image_load_file(context,name,path,limits,out);
-    if(status==XUI_OK && (context->bCloseRequested || context->bDestroyPending || context->bDestroying)){if(out)*out=NULL;status=XUI_ERROR_INVALID_STATE;}
-    xerror* first=xrtTakeError();status=xuiInternalCallScopeEndOutcome(&scope,status,&first);xuiLifetimeUnwatch(&watch);
-    if(status==XUI_OK && (!alive || context->bCloseRequested || context->bDestroyPending || context->bDestroying))status=XUI_ERROR_INVALID_STATE;
-    if(status!=XUI_OK && out)*out=NULL;
-    xrtSetErrorTake(first);return status;
+    doc_image_load_scope_t scope={0};int status=doc_image_load_begin(context,&scope);
+    if(status!=XUI_OK)return status;
+    xui_resource published=NULL;
+    status=doc_image_load_file(context,name,path,limits,out ? &published:NULL);
+    return doc_image_load_end(context,&scope,status,published,out);
+}
+
+XUI_API int xuiDocumentImageResourceLoadMemory(xui_context context,const char* resource_name,
+    const void* encoded,uint64_t encoded_bytes,const xui_doc_image_load_limits_t* limits,xui_resource* out)
+{
+    return doc_image_load_memory_sync(context,resource_name,encoded,encoded_bytes,limits,out);
+}
+
+XUI_API int xuiDocumentImageResourceLoadFile(xui_context context,const char* name,const char* path,
+    const xui_doc_image_load_limits_t* limits,xui_resource* out)
+{
+    return doc_image_load_file_sync(context,name,path,limits,out);
+}
+
+XUI_API int xuiDocumentImageResourceLoadMemoryStatus(xui_context context,const char* resource_name,
+    const void* encoded,uint64_t encoded_bytes,const xui_doc_image_load_limits_t* limits)
+{
+    return doc_image_load_memory_sync(context,resource_name,encoded,encoded_bytes,limits,NULL);
+}
+
+XUI_API int xuiDocumentImageResourceLoadFileStatus(xui_context context,const char* name,const char* path,
+    const xui_doc_image_load_limits_t* limits)
+{
+    return doc_image_load_file_sync(context,name,path,limits,NULL);
 }
 
 #endif

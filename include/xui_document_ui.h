@@ -95,7 +95,9 @@ typedef struct xui_doc_image_load_limits_t {
     uint64_t iMaxEncodedBytes;
     uint64_t iMaxPixels;
 } xui_doc_image_load_limits_t;
-/* Decode host-supplied image bytes into a named XUI resource. */
+/* Decode host-supplied image bytes into a named XUI resource. The optional
+ * output borrows the new Context entry. Errors and a cleanup callback that
+ * removes or replaces that entry leave the output NULL. */
 #if XUI_ENABLE_DOCUMENT_VIEW
 XUI_API int xuiDocumentImageResourceLoadMemory(xui_context context, const char* resource_name,
     const void* encoded, uint64_t encoded_bytes, const xui_doc_image_load_limits_t* limits,
@@ -103,6 +105,11 @@ XUI_API int xuiDocumentImageResourceLoadMemory(xui_context context, const char* 
 /* Load a host-authorized image file into a named XUI resource. */
 XUI_API int xuiDocumentImageResourceLoadFile(xui_context context, const char* resource_name,
     const char* authorized_path, const xui_doc_image_load_limits_t* limits, xui_resource* out);
+/* Status-only forms skip observation of the published entry. */
+XUI_API int xuiDocumentImageResourceLoadMemoryStatus(xui_context context, const char* resource_name,
+    const void* encoded, uint64_t encoded_bytes, const xui_doc_image_load_limits_t* limits);
+XUI_API int xuiDocumentImageResourceLoadFileStatus(xui_context context, const char* resource_name,
+    const char* authorized_path, const xui_doc_image_load_limits_t* limits);
 #endif
 /* XGE decodes the explicitly authorized local file on a worker. Requests are
  * queued per context: at most 4 workers, 64 outstanding requests and 64 MiB
