@@ -508,6 +508,8 @@ struct xui_context_t {
 	char* sActiveTooltipText;
 	uint64_t iTooltipRevision;
 	bool bTooltipMeasuring;
+	bool bTooltipResolving;
+	bool bTooltipRefreshPending;
 	float fTooltipHoverTime;
 	int fTooltipMouseX;
 	int fTooltipMouseY;
@@ -875,6 +877,8 @@ struct xui_widget_t {
 	xui_tooltip_desc_t tTooltip;
 	char* sTooltipText;
 	xui_tooltip_resolve_proc onTooltipResolve;
+	xui_tooltip_reply_proc onTooltipReply;
+	uint64_t iTooltipRegistrationRevision;
 	void* pTooltipUser;
 	xui_widget_action_proc onDefaultAction;
 	void* pDefaultActionUser;

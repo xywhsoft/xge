@@ -6091,6 +6091,17 @@ typedef struct xui_custom_tooltip_desc_t {
 
 typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser);
 
+typedef struct xui_tooltip_reply_t xui_tooltip_reply_t;
+typedef int (*xui_tooltip_reply_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_reply_t* pReply, void* pUser);
+
+typedef struct xui_tooltip_resolver_desc_t {
+	uint32_t iSize;
+	xui_tooltip_reply_proc onResolve;
+	xui_tooltip_measure_proc onMeasure;
+	xui_tooltip_paint_proc onPaint;
+	void* pUser;
+} xui_tooltip_resolver_desc_t;
+
 #define XUI_EVENT_TEXT_CAPACITY 4096
 
 /* Platform IME display attribute for the current marked-text range. */
@@ -14079,6 +14090,14 @@ XUI_API int xuiWidgetGetTooltipInfo(xui_widget pWidget, xui_tooltip_info_t* pInf
 XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pDesc);
 /* 注册延迟解析回调（显示时才生成提示内容）。 */
 XUI_API int xuiWidgetSetTooltipResolver(xui_widget pWidget, xui_tooltip_resolve_proc onResolve, void* pUser);
+/* XUI_OK accepts the reply. An untouched reply means no tooltip. The custom
+ * callbacks are optional as a pair; all callbacks share the retained owner. */
+XUI_API int xuiWidgetSetTooltipResolverOwned(xui_widget pWidget, const xui_tooltip_resolver_desc_t* pDesc,
+	const xui_callback_owner_t* pOwner);
+/* Replies are valid only during resolution. Text is UTF-8 without embedded
+ * NUL. Empty text clears the reply. NULL placement selects native defaults. */
+XUI_API int xuiTooltipReplySetText(xui_tooltip_reply_t* pReply, xstrview tText, const xui_tooltip_placement_t* pPlacement);
+XUI_API int xuiTooltipReplySetCustom(xui_tooltip_reply_t* pReply, const xui_tooltip_placement_t* pPlacement);
 /* 移除工具提示。 */
 XUI_API int xuiWidgetClearTooltip(xui_widget pWidget);
 /* 读取工具提示描述；未设置返回 NULL。 */

@@ -1918,6 +1918,7 @@ static void __xuiWidgetDestroyTooltipData(xui_widget pWidget)
 	}
 	memset(&pWidget->tTooltip, 0, sizeof(pWidget->tTooltip));
 	pWidget->onTooltipResolve = NULL;
+	pWidget->onTooltipReply = NULL;
 	pWidget->pTooltipUser = NULL;
 }
 
@@ -7302,20 +7303,32 @@ static void __xuiTooltipClearActiveDesc(xui_context pContext)
 	++pContext->iTooltipRevision;
 }
 
-static int __xuiTooltipSetActiveDesc(xui_context pContext, const xui_tooltip_desc_t* pDesc)
-{
+struct xui_tooltip_reply_t {
+	xui_tooltip_desc_t tDesc;
+	xui_context pContext;
+	xui_widget pWidget;
+	xui_tooltip_measure_proc onMeasure;
+	xui_tooltip_paint_proc onPaint;
+	void* pUser;
 	char* sText;
+	uint64_t iRevision;
+};
 
-	if ( (pContext == NULL) || (pDesc == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	sText = NULL;
-	if ( (pDesc->iType == XUI_TOOLTIP_TEXT) && (pDesc->sText != NULL) ) {
-		sText = __xuiStringDuplicate(pDesc->sText);
-		if ( sText == NULL ) {
-			return XUI_ERROR_OUT_OF_MEMORY;
+static int __xuiTooltipSetActiveDesc(xui_context pContext, xui_tooltip_reply_t* pReply)
+{
+	const xui_tooltip_desc_t* pDesc = &pReply->tDesc;
+	char* sText = pReply->sText;
+
+	if ( sText == NULL && pDesc->iType == XUI_TOOLTIP_TEXT && pDesc->sText != NULL ) {
+		if ( pDesc->sText == pContext->sActiveTooltipText ) {
+			sText = pContext->sActiveTooltipText;
+			pContext->sActiveTooltipText = NULL;
+		} else {
+			sText = __xuiStringDuplicate(pDesc->sText);
+			if ( sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
+	pReply->sText = NULL;
 	__xuiTooltipClearActiveDesc(pContext);
 	pContext->tActiveTooltip = *pDesc;
 	pContext->tActiveTooltip.iSize = sizeof(pContext->tActiveTooltip);
@@ -7336,36 +7349,58 @@ static void __xuiTooltipResolveDelay(xui_context pContext, xui_tooltip_desc_t* p
 	}
 }
 
-static int __xuiTooltipResolveWidget(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc)
+static int __xuiTooltipCallbackEnd(xui_context pContext, xui_callback_snapshot_t* pSnapshot, int iResult)
 {
-	if ( pDesc == NULL ) {
-		return 0;
-	}
-	__xuiTooltipDefaultDesc(pDesc);
+	iResult = xuiInternalCallbackSnapshotEnd(pSnapshot, iResult);
+	if ( iResult != XUI_OK ) xuiInternalContextRecordOutcome(pContext, iResult, xrtGetError());
+	return iResult;
+}
+
+/* The resolver may change the widget or hover path synchronously. In that
+ * case stop ancestor lookup and discard the result of the superseded call. */
+enum { XUI_TOOLTIP_RESOLUTION_SUPERSEDED = 1 };
+
+static int __xuiTooltipResolveWidget(xui_context pContext, xui_widget pWidget, xui_tooltip_reply_t* pReply)
+{
+	*pReply = (xui_tooltip_reply_t){.pContext = pContext, .pWidget = pWidget, .iRevision = pContext->iTooltipRevision};
+	__xuiTooltipDefaultDesc(&pReply->tDesc);
 	if ( !__xuiWidgetValid(pWidget) || (pWidget->pContext != pContext) ) {
-		return 0;
+		return XUI_OK;
 	}
-	if ( pWidget->onTooltipResolve != NULL ) {
-		if ( pWidget->onTooltipResolve(pContext, pWidget, pDesc, pWidget->pTooltipUser) == 0 ) {
-			__xuiTooltipDefaultDesc(pDesc);
-			return 0;
+	if ( pWidget->onTooltipReply != NULL || pWidget->onTooltipResolve != NULL ) {
+		uint64_t iRegistration = pWidget->iTooltipRegistrationRevision;
+		int iResult = XUI_OK;
+		pContext->bTooltipResolving = true;
+		if ( pWidget->onTooltipReply != NULL ) {
+			xui_tooltip_reply_proc onReply = pWidget->onTooltipReply;
+			pReply->onMeasure = pWidget->tTooltip.onMeasure;
+			pReply->onPaint = pWidget->tTooltip.onPaint;
+			pReply->pUser = pWidget->pTooltipUser;
+			xui_callback_snapshot_t tSnapshot = {0};
+			iResult = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pWidget->tTooltip, &pReply->pUser, &tSnapshot);
+			if ( iResult == XUI_OK && iRegistration == pWidget->iTooltipRegistrationRevision &&
+			     pReply->iRevision == pContext->iTooltipRevision ) {
+				iResult = onReply(pContext, pWidget, pReply, pReply->pUser);
+				if ( iResult > XUI_OK ) iResult = XUI_ERROR_CALLBACK_FAILED;
+			}
+			iResult = __xuiTooltipCallbackEnd(pContext, &tSnapshot, iResult);
+		} else if ( pWidget->onTooltipResolve(pContext, pWidget, &pReply->tDesc, pWidget->pTooltipUser) == 0 ) {
+			__xuiTooltipDefaultDesc(&pReply->tDesc);
 		}
-		__xuiTooltipNormalizeDesc(pDesc);
-		__xuiTooltipResolveDelay(pContext, pDesc);
-		if ( __xuiTooltipDescEnabled(pDesc) ) {
-			return 1;
+		pContext->bTooltipResolving = false;
+		if ( iResult != XUI_OK ) return iResult;
+		if ( xuiInternalContextDestroyPending(pContext) || !__xuiWidgetValid(pWidget) ) return XUI_TOOLTIP_RESOLUTION_SUPERSEDED;
+		if ( iRegistration != pWidget->iTooltipRegistrationRevision ) {
+			pContext->bTooltipRefreshPending = true;
+			return XUI_TOOLTIP_RESOLUTION_SUPERSEDED;
 		}
-		__xuiTooltipDefaultDesc(pDesc);
-		return 0;
+		if ( pReply->iRevision != pContext->iTooltipRevision ) return XUI_TOOLTIP_RESOLUTION_SUPERSEDED;
+	} else {
+		pReply->tDesc = pWidget->tTooltip;
 	}
-	*pDesc = pWidget->tTooltip;
-	__xuiTooltipNormalizeDesc(pDesc);
-	__xuiTooltipResolveDelay(pContext, pDesc);
-	if ( __xuiTooltipDescEnabled(pDesc) ) {
-		return 1;
-	}
-	__xuiTooltipDefaultDesc(pDesc);
-	return 0;
+	__xuiTooltipNormalizeDesc(&pReply->tDesc);
+	__xuiTooltipResolveDelay(pContext, &pReply->tDesc);
+	return XUI_OK;
 }
 
 static int __xuiWidgetContains(xui_widget pRoot, xui_widget pWidget)
@@ -7383,22 +7418,17 @@ static int __xuiWidgetContains(xui_widget pRoot, xui_widget pWidget)
 	return 0;
 }
 
-static xui_widget __xuiTooltipFindOwner(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc)
+static int __xuiTooltipFindOwner(xui_context pContext, xui_widget pWidget, xui_widget* ppOwner, xui_tooltip_reply_t* pReply)
 {
-	xui_tooltip_desc_t tDesc;
-
 	for ( ; pWidget != NULL; pWidget = pWidget->pParent ) {
-		if ( __xuiTooltipResolveWidget(pContext, pWidget, &tDesc) ) {
-			if ( pDesc != NULL ) {
-				*pDesc = tDesc;
-			}
-			return pWidget;
+		int iResult = __xuiTooltipResolveWidget(pContext, pWidget, pReply);
+		if ( iResult != XUI_OK ) return iResult;
+		if ( __xuiTooltipDescEnabled(&pReply->tDesc) ) {
+			*ppOwner = pWidget;
+			break;
 		}
 	}
-	if ( pDesc != NULL ) {
-		__xuiTooltipDefaultDesc(pDesc);
-	}
-	return NULL;
+	return XUI_OK;
 }
 
 static float __xuiTooltipClamp(float fValue, float fMin, float fMax)
@@ -7413,13 +7443,6 @@ static float __xuiTooltipClamp(float fValue, float fMin, float fMax)
 		return fMax;
 	}
 	return fValue;
-}
-
-static int __xuiTooltipCallbackEnd(xui_context pContext, xui_callback_snapshot_t* pSnapshot, int iResult)
-{
-	iResult = xuiInternalCallbackSnapshotEnd(pSnapshot, iResult);
-	if ( iResult != XUI_OK ) xuiInternalContextRecordOutcome(pContext, iResult, xrtGetError());
-	return iResult;
 }
 
 static int __xuiTooltipMeasure(xui_context pContext, xui_widget pOwner, xui_vec2_t* pSize)
@@ -7762,6 +7785,7 @@ void xuiInternalTooltipCancel(xui_context pContext)
 	}
 	(void)__xuiTooltipClose(pContext);
 	pContext->pTooltipOwner = NULL;
+	pContext->bTooltipRefreshPending = false;
 	pContext->fTooltipHoverTime = 0.0f;
 	__xuiTooltipClearActiveDesc(pContext);
 }
@@ -7782,33 +7806,28 @@ void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget)
 	}
 }
 
-int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget)
+static int __xuiTooltipApplyPointerOwner(xui_context pContext, xui_widget pOwner, xui_tooltip_reply_t* pReply)
 {
-	xui_tooltip_desc_t tDesc;
-	xui_widget pOwner;
 	int bWasOpen;
 	int iRet;
 
-	if ( !xuiInternalContextIsValid(pContext) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	pContext->fTooltipMouseX = pContext->fPointerX;
-	pContext->fTooltipMouseY = pContext->fPointerY;
-	if ( pContext->pPointerCaptureWidget != NULL ) {
-		pOwner = NULL;
-		__xuiTooltipDefaultDesc(&tDesc);
-	} else {
-		pOwner = __xuiTooltipFindOwner(pContext, pHitWidget, &tDesc);
-	}
 	if ( pOwner != pContext->pTooltipOwner ) {
+		uint64_t iRevision = pContext->iTooltipRevision;
+		uint64_t iRegistration = pOwner != NULL ? pOwner->iTooltipRegistrationRevision : 0;
 		iRet = __xuiTooltipClose(pContext);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
+		if ( xuiInternalContextDestroyPending(pContext) || iRevision != pContext->iTooltipRevision ||
+		     (pOwner != NULL && !__xuiWidgetValid(pOwner)) ) return XUI_OK;
+		if ( pOwner != NULL && iRegistration != pOwner->iTooltipRegistrationRevision ) {
+			pContext->bTooltipRefreshPending = true;
+			return XUI_OK;
+		}
 		pContext->pTooltipOwner = pOwner;
 		pContext->fTooltipHoverTime = 0.0f;
 		if ( pOwner != NULL ) {
-			iRet = __xuiTooltipSetActiveDesc(pContext, &tDesc);
+			iRet = __xuiTooltipSetActiveDesc(pContext, pReply);
 			if ( iRet != XUI_OK ) {
 				pContext->pTooltipOwner = NULL;
 				__xuiTooltipClearActiveDesc(pContext);
@@ -7817,9 +7836,9 @@ int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget)
 		} else {
 			__xuiTooltipClearActiveDesc(pContext);
 		}
-	} else if ( (pOwner != NULL) && !__xuiTooltipDescSame(&pContext->tActiveTooltip, &tDesc) ) {
+	} else if ( (pOwner != NULL) && !__xuiTooltipDescSame(&pContext->tActiveTooltip, &pReply->tDesc) ) {
 		bWasOpen = pContext->bTooltipOpen;
-		iRet = __xuiTooltipSetActiveDesc(pContext, &tDesc);
+		iRet = __xuiTooltipSetActiveDesc(pContext, pReply);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -7834,9 +7853,29 @@ int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget)
 	return XUI_OK;
 }
 
+int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget)
+{
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext->fTooltipMouseX = pContext->fPointerX;
+	pContext->fTooltipMouseY = pContext->fPointerY;
+	if ( pContext->bTooltipResolving ) {
+		++pContext->iTooltipRevision;
+		pContext->bTooltipRefreshPending = true;
+		return XUI_OK;
+	}
+	pContext->bTooltipRefreshPending = false;
+	xui_tooltip_reply_t tReply = {0};
+	xui_widget pOwner = NULL;
+	int iRet = XUI_OK;
+	if ( pContext->pPointerCaptureWidget == NULL ) iRet = __xuiTooltipFindOwner(pContext, pHitWidget, &pOwner, &tReply);
+	if ( iRet == XUI_OK ) iRet = __xuiTooltipApplyPointerOwner(pContext, pOwner, &tReply);
+	xrtFree(tReply.sText);
+	return iRet == XUI_TOOLTIP_RESOLUTION_SUPERSEDED ? XUI_OK : iRet;
+}
+
 int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 {
-	xui_tooltip_desc_t tDesc;
+	xui_tooltip_reply_t tReply;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ) {
@@ -7848,6 +7887,13 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 	if ( fDelta < 0.0f ) {
 		fDelta = 0.0f;
 	}
+	if ( pContext->bTooltipResolving ) return XUI_OK;
+	if ( pContext->bTooltipRefreshPending ) {
+		iRet = xuiInternalTooltipPointerMove(pContext, pContext->pHoverWidget);
+		if ( iRet != XUI_OK || pContext->bTooltipRefreshPending ) return iRet;
+		/* Pointer reconciliation already resolved the current registration. */
+		goto advance;
+	}
 	if ( pContext->pTooltipOwner == NULL ) {
 		return XUI_OK;
 	}
@@ -7855,14 +7901,21 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 		xuiInternalTooltipCancel(pContext);
 		return XUI_OK;
 	}
-	if ( !__xuiTooltipResolveWidget(pContext, pContext->pTooltipOwner, &tDesc) ||
+	iRet = __xuiTooltipResolveWidget(pContext, pContext->pTooltipOwner, &tReply);
+	if ( iRet != XUI_OK ) {
+		xrtFree(tReply.sText);
+		return iRet == XUI_TOOLTIP_RESOLUTION_SUPERSEDED ? XUI_OK : iRet;
+	}
+	if ( !__xuiTooltipDescEnabled(&tReply.tDesc) ||
 	     !__xuiWidgetEffectiveVisible(pContext->pTooltipOwner) ||
 	     !__xuiWidgetEffectiveEnabled(pContext->pTooltipOwner) ) {
+		xrtFree(tReply.sText);
 		xuiInternalTooltipCancel(pContext);
 		return XUI_OK;
 	}
-	if ( !__xuiTooltipDescSame(&pContext->tActiveTooltip, &tDesc) ) {
-		iRet = __xuiTooltipSetActiveDesc(pContext, &tDesc);
+	if ( !__xuiTooltipDescSame(&pContext->tActiveTooltip, &tReply.tDesc) ) {
+		iRet = __xuiTooltipSetActiveDesc(pContext, &tReply);
+		xrtFree(tReply.sText);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -7870,7 +7923,11 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 			return __xuiTooltipOpen(pContext);
 		}
 		pContext->fTooltipHoverTime = 0.0f;
+	} else {
+		xrtFree(tReply.sText);
 	}
+advance:
+	if ( pContext->pTooltipOwner == NULL ) return XUI_OK;
 	pContext->fTooltipHoverTime += fDelta;
 	if ( (pContext->fTooltipHoverTime >= pContext->tActiveTooltip.fDelay) &&
 	     (pContext->bTooltipOpen == 0) ) {
@@ -8007,6 +8064,55 @@ static void __xuiTooltipApplyPlacement(xui_tooltip_desc_t* pDesc, const xui_tool
 	pDesc->bFollowCursor = pPlacement->bFollowCursor;
 }
 
+XUI_API int xuiTooltipReplySetText(xui_tooltip_reply_t* pReply, xstrview tText, const xui_tooltip_placement_t* pPlacement)
+{
+	if ( pReply == NULL || tText.Size > INT_MAX || (tText.Size && tText.Data == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_tooltip_desc_t tDesc;
+	__xuiTooltipDefaultDesc(&tDesc);
+	char* sOwned = NULL;
+	if ( tText.Size != 0 ) {
+		tDesc.iType = XUI_TOOLTIP_TEXT;
+		if ( pPlacement != NULL ) __xuiTooltipApplyPlacement(&tDesc, pPlacement);
+		if ( !__xuiTooltipDescStructValid(&tDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+		xui_context pContext = pReply->pContext;
+		const char* sActive = pContext->sActiveTooltipText;
+		if ( pReply->iRevision == pContext->iTooltipRevision && pReply->pWidget == pContext->pTooltipOwner &&
+		     sActive != NULL && strlen(sActive) == tText.Size && memcmp(sActive, tText.Data, tText.Size) == 0 ) {
+			/* This pointer is consumed only if the resolver's revision stays current. */
+			tDesc.sText = sActive;
+		} else {
+			if ( memchr(tText.Data, 0, tText.Size) != NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+			sOwned = xrtMalloc(tText.Size + 1);
+			if ( sOwned == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+			memcpy(sOwned, tText.Data, tText.Size);
+			sOwned[tText.Size] = 0;
+			tDesc.sText = sOwned;
+		}
+	}
+	xrtFree(pReply->sText);
+	pReply->sText = sOwned;
+	pReply->tDesc = tDesc;
+	return XUI_OK;
+}
+
+XUI_API int xuiTooltipReplySetCustom(xui_tooltip_reply_t* pReply, const xui_tooltip_placement_t* pPlacement)
+{
+	if ( pReply == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pReply->onMeasure == NULL || pReply->onPaint == NULL ) return XUI_ERROR_INVALID_STATE;
+	xui_tooltip_desc_t tDesc;
+	__xuiTooltipDefaultDesc(&tDesc);
+	tDesc.iType = XUI_TOOLTIP_CUSTOM;
+	if ( pPlacement != NULL ) __xuiTooltipApplyPlacement(&tDesc, pPlacement);
+	if ( !__xuiTooltipDescStructValid(&tDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	tDesc.onMeasure = pReply->onMeasure;
+	tDesc.onPaint = pReply->onPaint;
+	tDesc.pUser = pReply->pUser;
+	xrtFree(pReply->sText);
+	pReply->sText = NULL;
+	pReply->tDesc = tDesc;
+	return XUI_OK;
+}
+
 XUI_API int xuiWidgetSetTextTooltip(xui_widget pWidget, const char* sText,
 	const xui_tooltip_placement_t* pPlacement)
 {
@@ -8040,7 +8146,7 @@ XUI_API int xuiWidgetGetTooltipInfo(xui_widget pWidget, xui_tooltip_info_t* pInf
 }
 
 static int __xuiTooltipInstall(xui_widget pWidget, xui_tooltip_desc_t tDesc,
-	xui_tooltip_resolve_proc onResolve, void* pUser, bool bRefresh,
+	xui_tooltip_resolve_proc onResolve, xui_tooltip_reply_proc onReply, void* pUser, bool bRefresh,
 	const xui_callback_owner_t* pOwner)
 {
 	xui_callback_update_t tUpdate = {0};
@@ -8054,8 +8160,9 @@ static int __xuiTooltipInstall(xui_widget pWidget, xui_tooltip_desc_t tDesc,
 		}
 	}
 	if ( pOwner != NULL || xuiInternalCallbackSlotOwned(pWidget, &pWidget->tTooltip) ) {
+		bool bHasCallback = tDesc.iType == XUI_TOOLTIP_CUSTOM || onReply != NULL;
 		iRet = xuiInternalCallbackUpdateBegin(pWidget, &pWidget->tTooltip,
-			tDesc.iType == XUI_TOOLTIP_CUSTOM, tDesc.pUser, pOwner, &tUpdate);
+			bHasCallback, onReply != NULL ? pUser : tDesc.pUser, pOwner, &tUpdate);
 		if ( iRet != XUI_OK ) {
 			xrtFree(sText);
 			return iRet;
@@ -8069,15 +8176,21 @@ static int __xuiTooltipInstall(xui_widget pWidget, xui_tooltip_desc_t tDesc,
 		pWidget->tTooltip.sText = sText;
 	}
 	pWidget->onTooltipResolve = onResolve;
+	pWidget->onTooltipReply = onReply;
 	pWidget->pTooltipUser = pUser;
+	++pWidget->iTooltipRegistrationRevision;
 	if ( tUpdate.pContext != NULL ) xuiInternalCallbackUpdatePublish(&tUpdate);
 	xrtFree(sOldText);
 	iRet = xuiWidgetSetEventInterest(pWidget, XUI_EVENT_MASK_TOOLTIP,
-		tDesc.iType != XUI_TOOLTIP_NONE || onResolve != NULL);
+		tDesc.iType != XUI_TOOLTIP_NONE || onResolve != NULL || onReply != NULL);
 	xui_context pContext = pWidget->pContext;
 	if ( pContext != NULL && pContext->pTooltipOwner == pWidget ) {
+		/* Legacy native callers may change the resolver outside any call scope. */
+		xuiInternalOperationEnter(pContext);
 		xuiInternalTooltipCancel(pContext);
-		if ( iRet == XUI_OK && bRefresh ) iRet = xuiInternalTooltipPointerMove(pContext, pContext->pHoverWidget);
+		if ( iRet == XUI_OK && bRefresh && !xuiInternalContextDestroyPending(pContext) )
+			iRet = xuiInternalTooltipPointerMove(pContext, pContext->pHoverWidget);
+		xuiInternalOperationLeave(pContext);
 	}
 	return tUpdate.pContext != NULL ? xuiInternalCallbackUpdateEnd(&tUpdate, iRet) : iRet;
 }
@@ -8096,7 +8209,7 @@ XUI_API int xuiWidgetSetCustomTooltipOwned(xui_widget pWidget, const xui_custom_
 	tDesc.pUser = pDesc->pUser;
 	if ( !__xuiTooltipDescStructValid(&tDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTooltipNormalizeDesc(&tDesc);
-	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, true, pOwner);
+	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, NULL, true, pOwner);
 }
 
 XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pDesc)
@@ -8107,7 +8220,7 @@ XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pD
 	xui_tooltip_desc_t tDesc = *pDesc;
 	__xuiTooltipNormalizeDesc(&tDesc);
 	if ( !__xuiTooltipDescEnabled(&tDesc) ) return xuiWidgetClearTooltip(pWidget);
-	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, true, NULL);
+	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, NULL, true, NULL);
 }
 
 XUI_API int xuiWidgetSetTooltipResolver(xui_widget pWidget, xui_tooltip_resolve_proc onResolve, void* pUser)
@@ -8115,7 +8228,19 @@ XUI_API int xuiWidgetSetTooltipResolver(xui_widget pWidget, xui_tooltip_resolve_
 	xui_tooltip_desc_t tDesc;
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTooltipDefaultDesc(&tDesc);
-	return __xuiTooltipInstall(pWidget, tDesc, onResolve, pUser, true, NULL);
+	return __xuiTooltipInstall(pWidget, tDesc, onResolve, NULL, pUser, true, NULL);
+}
+
+XUI_API int xuiWidgetSetTooltipResolverOwned(xui_widget pWidget, const xui_tooltip_resolver_desc_t* pDesc,
+	const xui_callback_owner_t* pOwner)
+{
+	if ( !__xuiWidgetValid(pWidget) || pDesc == NULL || pDesc->iSize < sizeof(*pDesc) ||
+	     pDesc->onResolve == NULL || (pDesc->onMeasure == NULL) != (pDesc->onPaint == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_tooltip_desc_t tDesc;
+	__xuiTooltipDefaultDesc(&tDesc);
+	tDesc.onMeasure = pDesc->onMeasure;
+	tDesc.onPaint = pDesc->onPaint;
+	return __xuiTooltipInstall(pWidget, tDesc, NULL, pDesc->onResolve, pDesc->pUser, true, pOwner);
 }
 
 XUI_API int xuiWidgetClearTooltip(xui_widget pWidget)
@@ -8123,7 +8248,7 @@ XUI_API int xuiWidgetClearTooltip(xui_widget pWidget)
 	xui_tooltip_desc_t tDesc;
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTooltipDefaultDesc(&tDesc);
-	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, false, NULL);
+	return __xuiTooltipInstall(pWidget, tDesc, NULL, NULL, NULL, false, NULL);
 }
 
 XUI_API const xui_tooltip_desc_t* xuiWidgetGetTooltip(xui_widget pWidget)

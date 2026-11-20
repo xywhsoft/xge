@@ -950,6 +950,8 @@ typedef struct tooltip_probe {
 	size_t refs;
 	unsigned measures, paints;
 	bool replace, valid;
+	unsigned resolves;
+	bool resolveCustom, resolveWithFault;
 } tooltip_probe;
 
 static bool __xuiTooltipCount(const void* user, size_t* count)
@@ -1001,6 +1003,28 @@ static int __xuiOwnedTooltipPaint(xui_context context, xui_widget widget, xui_dr
 	return XUI_OK;
 }
 
+static int __xuiOwnedTooltipResolve(xui_context context, xui_widget widget, xui_tooltip_reply_t* reply, void* user)
+{
+	tooltip_probe* probe = user;
+	++probe->resolves;
+	probe->valid &= probe->refs == 3;
+	xui_tooltip_placement_t placement = xuiTooltipPlacementDefault();
+	placement.fDelay = 0;
+	if ( probe->resolveCustom ) return xuiTooltipReplySetCustom(reply, &placement);
+
+	char text[] = "dynamic";
+	if ( probe->resolveWithFault ) probe->valid &= xrtMemDebugFailAfter(0);
+	int status = xuiTooltipReplySetText(reply, (xstrview){text, sizeof(text) - 1}, &placement);
+	if ( probe->resolveWithFault ) xrtMemDebugFailClear();
+	text[0] = 0;
+	if ( status == XUI_OK && probe->replace ) {
+		probe->valid &= xuiUpdate(context, 0) == XUI_OK;
+		probe->valid &= xuiWidgetSetTextTooltip(widget, "replacement", &placement) == XUI_OK;
+		probe->valid &= probe->refs == 2;
+	}
+	return status;
+}
+
 static int __xuiTestOwnedTooltip(void)
 {
 	static const xrtownershipops ops = {__xuiTooltipCount, __xuiTooltipTrace};
@@ -1036,6 +1060,33 @@ static int __xuiTestOwnedTooltip(void)
 		probe.measures == 2 && xuiWidgetTooltipIsOpen(context), "owned tooltip did not open");
 	XUI_TEST_CHECK(xuiRender(context, target, NULL, 0) == XUI_OK && probe.paints == 1 &&
 		probe.refs == 1 && probe.valid && !xuiWidgetTooltipIsOpen(context), "clear inside owned tooltip paint");
+	const xui_tooltip_resolver_desc_t resolver = {
+		.iSize = sizeof(resolver), .onResolve = __xuiOwnedTooltipResolve,
+		.onMeasure = __xuiOwnedTooltipMeasure, .onPaint = __xuiOwnedTooltipPaint, .pUser = &probe,
+	};
+	probe.replace = true;
+	XUI_TEST_CHECK(xuiWidgetSetTooltipResolverOwned(widget, &resolver, &owner) == XUI_OK && probe.refs == 2 &&
+		xuiInputPointerMove(context, 8, 8, 0) == XUI_OK && probe.resolves == 1 && probe.refs == 1 &&
+		xuiWidgetTooltipGetOwner(context) == NULL && !xuiWidgetTooltipIsOpen(context), "resolver installed a stale answer");
+	XUI_TEST_CHECK(xuiUpdate(context, 0) == XUI_OK && xuiWidgetTooltipIsOpen(context) &&
+		xuiWidgetGetTooltip(widget)->iType == XUI_TOOLTIP_TEXT, "resolver replacement did not open on the next update");
+	XUI_TEST_CHECK(xuiWidgetClearTooltip(widget) == XUI_OK, "resolver replacement cleanup");
+
+	probe.replace = false;
+	XUI_TEST_CHECK(xuiWidgetSetTooltipResolverOwned(widget, &resolver, &owner) == XUI_OK && probe.refs == 2 &&
+		xuiInputPointerMove(context, 9, 8, 0) == XUI_OK && xuiUpdate(context, 0) == XUI_OK &&
+		xuiWidgetTooltipIsOpen(context), "owned text reply did not survive its callback");
+	XUI_TEST_CHECK(xuiWidgetTooltipGetRect(context).fW > 20, "borrowed resolver buffer was read after return");
+	if ( !xrtMemDebugEnabled() ) XUI_TEST_CHECK(xrtMemDebugEnable(true), "resolver allocator diagnostics");
+	probe.resolveWithFault = true;
+	XUI_TEST_CHECK(xuiUpdate(context, 0) == XUI_OK && xuiWidgetTooltipIsOpen(context) && probe.valid,
+		"unchanged active text attempted allocation");
+	probe.resolveWithFault = false;
+	probe.resolveCustom = true;
+	XUI_TEST_CHECK(xuiUpdate(context, 0) == XUI_OK && xuiWidgetTooltipIsOpen(context) &&
+		xuiWidgetTooltipGetRect(context).fW == 32 && probe.measures == 3, "resolver custom measurement");
+	XUI_TEST_CHECK(xuiRender(context, target, NULL, 0) == XUI_OK && probe.paints == 2 &&
+		probe.refs == 1 && probe.valid && !xuiWidgetTooltipIsOpen(context), "resolver custom paint and clear");
 	XUI_TEST_CHECK(xuiWidgetSetCustomTooltipOwned(widget, &desc, &owner) == XUI_OK && probe.refs == 2,
 		"owned tooltip restore before destroy");
 	xuiWidgetDestroy(widget);
