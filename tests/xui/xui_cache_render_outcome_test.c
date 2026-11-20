@@ -47,9 +47,53 @@ static void check(int action,int diagnostic,int ambientPresent,int tail)
     if(!s.gone)xuiDestroy(s.context);
     assert(s.gone==1);backend.tProxy.surfaceDestroy(&backend.tProxy,target);xrtClearError();
 }
+
+typedef struct cache_invalidation {
+    uint32_t flags;
+    int paints;
+} cache_invalidation;
+
+static int invalidateOnFirstPaint(xui_widget widget,xui_draw_context draw,uint32_t state,void* raw)
+{
+    cache_invalidation* test=raw;
+    (void)draw;(void)state;
+    if(++test->paints==1)return xuiWidgetInvalidate(widget,test->flags);
+    return XUI_OK;
+}
+
+static void checkInvalidationDuringPaint(bool allStates,uint32_t flags)
+{
+    xui_test_proxy_state_t backend;
+    xui_context context=NULL;
+    xui_widget widget=NULL;
+    cache_invalidation test={.flags=flags};
+    xuiTestProxyInit(&backend);
+    assert(xuiCreate(&context)==XUI_OK && xuiSetProxy(context,&backend.tProxy)==XUI_OK);
+    assert(xuiInputViewport(context,64,64)==XUI_OK);
+    assert(xuiWidgetCreate(context,&widget)==XUI_OK && xuiWidgetSetRect(widget,(xui_rect_t){0,0,64,64})==XUI_OK);
+    assert(xuiSetRootWidget(context,widget)==XUI_OK);
+    const xui_cache_policy_t policy={.iSize=sizeof(policy),.iPolicy=XUI_CACHE_POLICY_SELF,
+        .iFlags=XUI_CACHE_CLEAR_ON_UPDATE|(allStates ? XUI_CACHE_UPDATE_ALL_STATES : 0u)};
+    assert(xuiWidgetSetCachePolicy(widget,&policy)==XUI_OK);
+    if(allStates)assert(xuiWidgetSetCacheStateCount(widget,2)==XUI_OK);
+    assert(xuiWidgetSetCacheRenderCallback(widget,invalidateOnFirstPaint,&test)==XUI_OK);
+    const int states=allStates ? 2 : 1;
+    assert(xuiRenderPrepare(context)==XUI_OK && test.paints==states);
+    bool refresh=flags==XUI_WIDGET_DIRTY_CACHE;
+    assert(((xuiWidgetGetDirtyFlags(widget)&XUI_WIDGET_DIRTY_CACHE)!=0)==refresh);
+    const int expected=states*(refresh ? 2 : 1);
+    assert(xuiRenderPrepare(context)==XUI_OK && test.paints==expected);
+    assert(xuiRenderPrepare(context)==XUI_OK && test.paints==expected);
+    xuiDestroy(context);
+}
+
 int main(void)
 {
     for(int action=0;action<3;++action)for(int diagnostic=0;diagnostic<2;++diagnostic)
         for(int ambient=0;ambient<2;++ambient)for(int tail=0;tail<2;++tail)check(action,diagnostic,ambient,tail);
-    puts("Cache render outcomes: 24 status/NULL/diagnostic/ambient/close/tail cases passed");return 0;
+    for(int all=0;all<2;++all){
+        checkInvalidationDuringPaint(all!=0,XUI_WIDGET_DIRTY_CACHE);
+        checkInvalidationDuringPaint(all!=0,XUI_WIDGET_DIRTY_RENDER);
+    }
+    puts("Cache render outcomes: 24 status/NULL/diagnostic/ambient/close/tail and 4 repaint cases passed");return 0;
 }

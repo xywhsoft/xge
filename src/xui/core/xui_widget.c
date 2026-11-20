@@ -8819,8 +8819,9 @@ static int __xuiWidgetCacheStateNeedsUpdate(xui_widget pWidget, xui_widget_cache
 	return 0;
 }
 
-static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
+static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId, uint32_t* pPendingFlags)
 {
+	const uint32_t iCacheFlags = XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_TREE;
 	xui_draw_context pDraw;
 	const xui_widget* ppChildren;
 	int iChildCount;
@@ -8841,6 +8842,10 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	/* Consume the current cache request before calling user code. Requests
+	 * made by the painter or draw cleanup belong to a later cache pass. */
+	uint32_t iConsumed = pWidget->iDirtyFlags & iCacheFlags;
+	pWidget->iDirtyFlags &= ~iCacheFlags;
 	if ( pWidget->onCacheRender != NULL ) {
 		iRet = xuiInternalInvokeCacheRenderCallback(pWidget,pDraw,iStateId);
 		/* RenderPrepare walks a void, best-effort tree. Seal a callback failure
@@ -8870,14 +8875,15 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 		iRet = iEndRet;
 	}
 	if ( iRet != XUI_OK ) {
+		pWidget->iDirtyFlags |= iConsumed;
 		return iRet;
 	}
-	pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_TREE);
+	*pPendingFlags |= pWidget->iDirtyFlags & iCacheFlags;
 	pWidget->pContext->tRenderStats.iUpdatedCaches++;
 	return XUI_OK;
 }
 
-static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, int bForce)
+static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, int bForce, uint32_t* pPendingFlags)
 {
 	xui_widget_cache_slot_t* pSlot;
 	int iWidth;
@@ -8904,7 +8910,7 @@ static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, i
 	if ( !bForce && !__xuiWidgetCacheStateNeedsUpdate(pWidget, pSlot) ) {
 		return XUI_OK;
 	}
-	iRet = __xuiWidgetUpdateCacheState(pWidget, iStateId);
+	iRet = __xuiWidgetUpdateCacheState(pWidget, iStateId, pPendingFlags);
 	if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return XUI_OK;
 	pSlot = __xuiWidgetFindCacheSlot(pWidget, iStateId);
 	if ( iRet != XUI_OK ) {
@@ -8919,6 +8925,7 @@ static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, i
 
 static int __xuiWidgetPrepareCache(xui_widget pWidget)
 {
+	uint32_t iPendingFlags = 0;
 	int i;
 	int iCount;
 	int iRet;
@@ -8951,15 +8958,19 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 		             ((pWidget->iSubtreeDirtyFlags & XUI_RENDER_SUBTREE_DIRTY_FLAGS) != 0));
 		iCount = pWidget->iCacheCount;
 		for ( i = 0; i < iCount; i++ ) {
-			iRet = __xuiWidgetPrepareCacheState(pWidget, pWidget->pCacheSlots[i].iStateId, bForceAll);
+			iRet = __xuiWidgetPrepareCacheState(pWidget, pWidget->pCacheSlots[i].iStateId, bForceAll, &iPendingFlags);
 			if ( !__xuiWidgetValid(pWidget) || xuiInternalContextDestroyPending(pWidget->pContext) ) return XUI_OK;
 			if ( iRet != XUI_OK ) {
+				pWidget->iDirtyFlags |= iPendingFlags;
 				return iRet;
 			}
 		}
+		/* A later cache state can consume flags raised by an earlier one.
+		 * Preserve those flags so that the earlier state is refreshed too. */
+		pWidget->iDirtyFlags |= iPendingFlags;
 		return XUI_OK;
 	}
-	return __xuiWidgetPrepareCacheState(pWidget, pWidget->iStateId, 0);
+	return __xuiWidgetPrepareCacheState(pWidget, pWidget->iStateId, 0, &iPendingFlags);
 }
 
 static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
