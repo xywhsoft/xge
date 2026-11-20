@@ -3239,6 +3239,8 @@ typedef int (*xui_inventory_drag_proc)(xui_widget_t* pWidget, int iSlot, void* p
 typedef int (*xui_inventory_drop_proc)(xui_widget_t* pWidget, int iFromSlot, int iToSlot, int iDropMode, void* pUser);
 typedef void (*xui_inventory_split_proc)(xui_widget_t* pWidget, int iSlot, int iCount, void* pUser);
 typedef int (*xui_inventory_tooltip_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, char* sBuffer, int iCapacity, void* pUser);
+/* 返回同一 XRT 分配的文本所有权；由控件复制并释放。 */
+typedef xstrview (*xui_inventory_tooltip_owned_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser);
 typedef int (*xui_inventory_slot_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
 typedef int (*xui_inventory_animation_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_animation_object_t* pAnimation, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser);
 /* Filter/compare callbacks receive const snapshots. They may mutate or destroy the grid; the operation then aborts safely. */
@@ -10257,8 +10259,10 @@ XUI_API int xuiInventoryGridSetContextCallback(xui_widget pWidget, xui_inventory
 XUI_API int xuiInventoryGridSetContextCallbackOwned(xui_widget pWidget, xui_inventory_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册拖出回调。 */
 XUI_API int xuiInventoryGridSetDragCallback(xui_widget pWidget, xui_inventory_drag_proc onDrag, void* pUser);
+XUI_API int xuiInventoryGridSetDragCallbackOwned(xui_widget pWidget, xui_inventory_drag_proc onDrag, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册放置回调。 */
 XUI_API int xuiInventoryGridSetDropCallback(xui_widget pWidget, xui_inventory_drop_proc onDrop, void* pUser);
+XUI_API int xuiInventoryGridSetDropCallbackOwned(xui_widget pWidget, xui_inventory_drop_proc onDrop, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册拆分堆叠回调。 */
 XUI_API int xuiInventoryGridSetSplitCallback(xui_widget pWidget, xui_inventory_split_proc onSplit, void* pUser);
 XUI_API int xuiInventoryGridSetSplitCallbackOwned(xui_widget pWidget, xui_inventory_split_proc onSplit, void* pUser, const xui_callback_owner_t* pOwner);
@@ -10268,6 +10272,7 @@ XUI_API int xuiInventoryGridSetTooltipVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiInventoryGridGetTooltipVisible(xui_widget pWidget);
 /* 注册物品提示内容回调。 */
 XUI_API int xuiInventoryGridSetTooltipCallback(xui_widget pWidget, xui_inventory_tooltip_proc onTooltip, void* pUser);
+XUI_API int xuiInventoryGridSetTooltipCallbackOwned(xui_widget pWidget, xui_inventory_tooltip_owned_proc onTooltip, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册槽位自绘回调（覆盖默认物品绘制）。 */
 XUI_API int xuiInventoryGridSetRenderCallback(xui_widget pWidget, xui_inventory_slot_render_proc onRender, void* pUser);
 /* 注册槽位动画层自绘回调。 */

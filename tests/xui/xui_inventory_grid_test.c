@@ -16,6 +16,8 @@
 	} while ( 0 )
 
 typedef struct xui_inventory_grid_test_state_t {
+	size_t iCallbackRefs;
+	size_t iPeakCallbackRefs;
 	int iSelects;
 	int iLastSelect;
 	int iActivates;
@@ -41,6 +43,33 @@ typedef struct xui_inventory_grid_test_state_t {
 	uint32_t iAnimationFlags;
 	uint32_t iAnimationTint;
 } xui_inventory_grid_test_state_t;
+
+static bool __xuiInventoryGridTestCallbackCount(const void* raw, size_t* count)
+{
+	*count = ((const xui_inventory_grid_test_state_t*)raw)->iCallbackRefs;
+	return true;
+}
+
+static bool __xuiInventoryGridTestCallbackTrace(const void* raw, xrtownershipvisitor visit, void* user)
+{
+	(void)raw;
+	(void)visit;
+	(void)user;
+	return true;
+}
+
+static bool __xuiInventoryGridTestCallbackHold(const void* raw)
+{
+	xui_inventory_grid_test_state_t* state = (xui_inventory_grid_test_state_t*)raw;
+	if ( ++state->iCallbackRefs > state->iPeakCallbackRefs ) state->iPeakCallbackRefs = state->iCallbackRefs;
+	return true;
+}
+
+static bool __xuiInventoryGridTestCallbackDrop(const void* raw)
+{
+	--((xui_inventory_grid_test_state_t*)raw)->iCallbackRefs;
+	return true;
+}
 
 typedef struct xui_inventory_grid_reentry_state_t {
 	int iCalls;
@@ -163,6 +192,15 @@ static int __xuiInventoryGridTestTooltip(xui_widget pWidget, int iSlot, const xu
 		sBuffer[iCapacity - 1] = '\0';
 	}
 	return XUI_OK;
+}
+
+static xstrview __xuiInventoryGridTestOwnedTooltip(xui_widget widget, int index, const xui_inventory_slot_t* slot, void* user)
+{
+	const int capacity = 96;
+	char* text = xrtMalloc(capacity);
+	if ( text == NULL ) return (xstrview){0};
+	(void)__xuiInventoryGridTestTooltip(widget, index, slot, text, capacity, user);
+	return (xstrview){text, strlen(text)};
 }
 
 static int __xuiInventoryGridTestRender(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser)
@@ -532,14 +570,19 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "activate callback");
 	iRet = xuiInventoryGridSetContextCallback(pGrid, __xuiInventoryGridTestContext, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "context callback");
-	iRet = xuiInventoryGridSetDragCallback(pGrid, __xuiInventoryGridTestDrag, &tState);
+	static const xrtownershipops tCallbackOps = {__xuiInventoryGridTestCallbackCount, __xuiInventoryGridTestCallbackTrace};
+	const xui_callback_owner_t tCallbackOwner = {{&tState, &tCallbackOps},
+		__xuiInventoryGridTestCallbackHold, __xuiInventoryGridTestCallbackDrop};
+	tState.iCallbackRefs = 1;
+	iRet = xuiInventoryGridSetDragCallbackOwned(pGrid, __xuiInventoryGridTestDrag, &tState, &tCallbackOwner);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag callback");
-	iRet = xuiInventoryGridSetDropCallback(pGrid, __xuiInventoryGridTestDrop, &tState);
+	iRet = xuiInventoryGridSetDropCallbackOwned(pGrid, __xuiInventoryGridTestDrop, &tState, &tCallbackOwner);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drop callback");
 	iRet = xuiInventoryGridSetSplitCallback(pGrid, __xuiInventoryGridTestSplit, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "split callback");
-	iRet = xuiInventoryGridSetTooltipCallback(pGrid, __xuiInventoryGridTestTooltip, &tState);
+	iRet = xuiInventoryGridSetTooltipCallbackOwned(pGrid, __xuiInventoryGridTestOwnedTooltip, &tState, &tCallbackOwner);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tooltip callback");
+	XUI_TEST_CHECK(tState.iCallbackRefs == 4, "grid holds each callback");
 	iRet = xuiInventoryGridSetRenderCallback(pGrid, __xuiInventoryGridTestRender, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render callback");
 	iRet = xuiInventoryGridSetAnimationRenderCallback(pGrid, __xuiInventoryGridTestAnimationRender, &tState);
@@ -811,6 +854,9 @@ int main(void)
 	tTooltipRect = xuiWidgetTooltipGetRect(pContext);
 	XUI_TEST_CHECK(xuiWidgetTooltipIsOpen(pContext) != 0 && xuiWidgetTooltipGetOwner(pContext) == pGrid, "tooltip opens");
 	XUI_TEST_CHECK(xuiInventoryGridGetTooltipSlot(pGrid) == 0 && tState.iTooltips > 0 && tState.iLastTooltipSlot == 0, "tooltip slot callback");
+	XUI_TEST_CHECK(tState.iCallbackRefs == 4 && tState.iPeakCallbackRefs == 5, "tooltip invocation owns a temporary reference");
+	XUI_TEST_CHECK(xuiInventoryGridSetTooltipCallback(pGrid, __xuiInventoryGridTestTooltip, &tState) == XUI_OK &&
+		tState.iCallbackRefs == 3, "legacy tooltip retires the managed registration");
 	XUI_TEST_CHECK(tTooltipRect.fW >= 200.0f && tTooltipRect.fH >= 58.0f, "tooltip rect");
 	iRet = xuiInventoryGridSetTooltipVisible(pGrid, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridGetTooltipVisible(pGrid) == 0 && xuiInventoryGridGetTooltipSlot(pGrid) == -1, "tooltip hide");
@@ -1050,11 +1096,13 @@ int main(void)
 	iRet = xuiInventoryGridGetSlot(pGrid, 5, &tOutSlot);
 	XUI_TEST_CHECK(iRet == XUI_OK && tOutSlot.iItemId == 100, "rejected target unchanged");
 	XUI_TEST_CHECK(tState.iDropCalls == 2 && tState.iDrops == 1, "rejected drop not accepted");
+	XUI_TEST_CHECK(tState.iCallbackRefs == 3, "drag and drop have released their invocation references");
 	tState.iDropAccept = 1;
 
 	iCallbackCalls = 0;
 	XUI_TEST_CHECK(xuiInventoryGridSetDragCallback(pGrid, __xuiInventoryGridTestDisablingDrag, &iCallbackCalls) == XUI_OK,
 		"set disabling drag callback");
+	XUI_TEST_CHECK(tState.iCallbackRefs == 2, "legacy drag retires the managed registration");
 	memset(&tPointer, 0, sizeof(tPointer));
 	tPointer.iSize = sizeof(tPointer);
 	tPointer.pTarget = pGrid;
@@ -1405,7 +1453,8 @@ cleanup:
 	if ( pAltFont != NULL ) {
 		tProxyState.tProxy.fontDestroy(&tProxyState.tProxy, pAltFont);
 	}
-	if ( iFailed ) {
+	if ( iFailed || tState.iCallbackRefs != 1 ) {
+		if ( !iFailed ) printf("xui_inventory_grid_test failed: callback registration left after context destruction\n");
 		return 1;
 	}
 	printf("xui_inventory_grid_test passed\n");

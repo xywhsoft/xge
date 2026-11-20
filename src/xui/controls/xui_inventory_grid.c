@@ -43,7 +43,9 @@ typedef struct xui_inventory_grid_data_t {
 	xui_inventory_split_proc onSplit;
 	void* pSplitUser;
 	xui_inventory_tooltip_proc onTooltip;
+	xui_inventory_tooltip_owned_proc onTooltipOwned;
 	void* pTooltipUser;
+	uint64_t iTooltipRevision;
 	xui_inventory_slot_render_proc onRenderSlot;
 	void* pRenderSlotUser;
 	xui_inventory_animation_render_proc onRenderAnimation;
@@ -1590,6 +1592,38 @@ static xui_vec2_t __xuiInventoryMeasureText(xui_proxy pProxy, xui_font pFont, co
 	return tSize;
 }
 
+static int __xuiInventoryBuildOwnedTooltip(xui_widget pWidget, xui_inventory_grid_data_t* pData,
+	int iSlot, const xui_inventory_slot_t* pSlot)
+{
+	xui_inventory_slot_t tSlot = *pSlot;
+	uint64_t iRevision = pData->iTooltipRevision;
+	xui_inventory_tooltip_owned_proc onTooltip = pData->onTooltipOwned;
+	xui_context pContext = pWidget->pContext;
+	void* pUser = pData->pTooltipUser;
+	xui_callback_snapshot_t tSnapshot = {0};
+	if ( xuiInternalCallbackSnapshotBeginReported(pWidget, &pData->onTooltipOwned, &pUser, &tSnapshot) != XUI_OK ) {
+		return 0;
+	}
+	xstrview tText = {0};
+	if ( pData->iTooltipRevision == iRevision ) tText = onTooltip(pWidget, iSlot, &tSlot, pUser);
+	int iRet = (tText.Size != 0 && tText.Data == NULL) ? XUI_ERROR_INVALID_ARGUMENT : XUI_OK;
+	if ( xrtGetError() != NULL ) iRet = XUI_ERROR_CALLBACK_FAILED;
+	iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iRet);
+	if ( iRet != XUI_OK ) xuiInternalContextRecordOutcome(pContext, iRet, xrtGetError());
+	int bCurrent = iRet == XUI_OK && __xuiInventoryDataAlive(pWidget, pData) &&
+		pData->bTooltipVisible && pData->iTooltipRevision == iRevision && iSlot < pData->iSlotCount &&
+		__xuiInventorySlotEqual(&tSlot, &pData->arrSlots[iSlot]);
+	if ( bCurrent ) {
+		size_t iCapacity = sizeof(pData->sTooltipText);
+		size_t iCopy = tText.Size < iCapacity ? tText.Size : iCapacity - 1u;
+		if ( iCopy != 0 ) memcpy(pData->sTooltipText, tText.Data, iCopy);
+		pData->sTooltipText[iCopy] = '\0';
+		xuiInternalUtf8TrimIncomplete(pData->sTooltipText);
+	}
+	xrtFree((void*)tText.Data);
+	return bCurrent;
+}
+
 static int __xuiInventoryBuildTooltip(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot, const xui_inventory_slot_t* pSlot)
 {
 	int iRet;
@@ -1615,6 +1649,9 @@ static int __xuiInventoryBuildTooltip(xui_widget pWidget, xui_inventory_grid_dat
 	pData->sTooltipMeta[sizeof(pData->sTooltipMeta) - 1u] = '\0';
 	xuiInternalUtf8TrimIncomplete(pData->sTooltipMeta);
 
+	if ( pData->onTooltipOwned != NULL ) {
+		return __xuiInventoryBuildOwnedTooltip(pWidget, pData, iSlot, pSlot);
+	}
 	if ( pData->onTooltip != NULL ) {
 		pData->sTooltipText[0] = '\0';
 		iRet = pData->onTooltip(pWidget, iSlot, pSlot, pData->sTooltipText, (int)sizeof(pData->sTooltipText), pData->pTooltipUser);
@@ -2220,7 +2257,8 @@ static int __xuiInventoryPointerMove(xui_widget pWidget, xui_inventory_grid_data
 		if ( !pData->bDragging && ((fDX * fDX + fDY * fDY) >= (tResolved.tLayout.fDragThreshold * tResolved.tLayout.fDragThreshold)) ) {
 			bCanDrag = 1;
 			if ( pData->onDrag != NULL ) {
-				bCanDrag = pData->onDrag(pWidget, pData->iActiveSlot, pData->pDragUser);
+				XUI_INTERNAL_CALLBACK_RESULT(pWidget, pData->onDrag, xui_inventory_drag_proc, pData->pDragUser,
+					bCanDrag, 0, pWidget, pData->iActiveSlot);
 			}
 			if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
 			if ( !__xuiInventoryCanInteract(pWidget) ) {
@@ -2242,7 +2280,7 @@ static int __xuiInventoryPointerMove(xui_widget pWidget, xui_inventory_grid_data
 			tWorld = xuiWidgetGetWorldRect(pWidget);
 			pData->fDragX = pEvent->fX - tWorld.fX;
 			pData->fDragY = pEvent->fY - tWorld.fY;
-			pData->iDropTarget = (tHit.iSlot >= 0 && tHit.iSlot != pData->iDragSource &&
+			pData->iDropTarget = (tHit.iSlot >= 0 && tHit.iSlot < pData->iSlotCount && tHit.iSlot != pData->iDragSource &&
 			                         __xuiInventorySlotEnabled(&pData->arrSlots[tHit.iSlot])) ? tHit.iSlot : -1;
 			pData->iDropMode = (pData->iDropTarget >= 0) ? __xuiInventorySuggestedDropMode(&pData->arrSlots[pData->iDragSource], &pData->arrSlots[pData->iDropTarget]) : XUI_INVENTORY_DROP_NONE;
 			if ( (iOldDrop != pData->iDropTarget) || (fOldDragX != pData->fDragX) || (fOldDragY != pData->fDragY) ) {
@@ -2252,7 +2290,7 @@ static int __xuiInventoryPointerMove(xui_widget pWidget, xui_inventory_grid_data
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 	}
-	return __xuiInventorySetHover(pWidget, pData, tHit.iSlot);
+	return __xuiInventorySetHover(pWidget, pData, tHit.iSlot < pData->iSlotCount ? tHit.iSlot : -1);
 }
 
 static int __xuiInventoryPointerDown(xui_widget pWidget, xui_inventory_grid_data_t* pData, const xui_event_t* pEvent)
@@ -2361,6 +2399,7 @@ static int __xuiInventoryPointerUp(xui_widget pWidget, xui_inventory_grid_data_t
 	int iActiveSlot;
 	xui_inventory_drop_proc onDrop;
 	void* pDropUser;
+	xui_callback_snapshot_t tDrop = {0};
 	int iRet;
 
 	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) ) {
@@ -2376,28 +2415,42 @@ static int __xuiInventoryPointerUp(xui_widget pWidget, xui_inventory_grid_data_t
 	iMode = pData->iDropMode;
 	bDragging = pData->bDragging;
 	iActiveSlot = pData->iActiveSlot;
-	onDrop = pData->onDrop;
-	pDropUser = pData->pDropUser;
 	iRet = __xuiInventoryHitWorld(pWidget, pData, pEvent->fX, pEvent->fY, &tHit);
 	if ( iRet != XUI_OK ) return iRet;
+	/* Capture the publisher before releasing pointer capture, which can reenter. */
+	onDrop = pData->onDrop;
+	pDropUser = pData->pDropUser;
+	if ( bDragging && iFrom >= 0 && iTo >= 0 && onDrop != NULL &&
+	     xuiInternalCallbackSlotOwned(pWidget, &pData->onDrop) &&
+	     xuiInternalCallbackSnapshotBeginReported(pWidget, &pData->onDrop, &pDropUser, &tDrop) != XUI_OK ) {
+		onDrop = NULL;
+	}
+	if ( !__xuiInventoryDataAlive(pWidget, pData) ) goto stop;
 	iRet = __xuiInventoryCancelPointer(pWidget, pData, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
-	iRet = __xuiInventorySetHover(pWidget, pData, tHit.iSlot);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( bDragging && (iFrom >= 0) && (iTo >= 0) && (onDrop != NULL) ) {
+	if ( iRet != XUI_OK ) goto done;
+	if ( !__xuiInventoryDataAlive(pWidget, pData) ) goto stop;
+	iRet = __xuiInventorySetHover(pWidget, pData, tHit.iSlot < pData->iSlotCount ? tHit.iSlot : -1);
+	if ( iRet != XUI_OK ) goto done;
+	if ( bDragging && iFrom >= 0 && iFrom < pData->iSlotCount &&
+	     iTo >= 0 && iTo < pData->iSlotCount && onDrop != NULL ) {
 		iAccept = onDrop(pWidget, iFrom, iTo, iMode, pDropUser);
-		if ( !__xuiInventoryDataAlive(pWidget, pData) ) return XUI_EVENT_DISPATCH_STOP;
+		iRet = xuiInternalCallbackSnapshotEnd(&tDrop, XUI_OK);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( !__xuiInventoryDataAlive(pWidget, pData) ) goto stop;
 		if ( iAccept ) {
 			__xuiInventoryIncrementCounter(&pData->iDropCount);
 			__xuiInventoryIncrementCounter(&pData->iChangeCount);
 		}
 	}
-	if ( !bDragging && (tHit.iSlot >= 0) && (tHit.iSlot == iActiveSlot) &&
+	if ( !bDragging && (tHit.iSlot >= 0) && (tHit.iSlot < pData->iSlotCount) && (tHit.iSlot == iActiveSlot) &&
 	     __xuiInventorySlotEnabled(&pData->arrSlots[tHit.iSlot]) ) {
 		__xuiInventoryNotifyActivate(pWidget, pData, tHit.iSlot, pEvent->iButton);
 	}
-	return XUI_EVENT_DISPATCH_STOP;
+stop:
+	iRet = XUI_OK;
+done:
+	iRet = xuiInternalCallbackSnapshotEnd(&tDrop, iRet);
+	return iRet == XUI_OK ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiInventoryContextMenu(xui_widget pWidget, xui_inventory_grid_data_t* pData, const xui_event_t* pEvent)
@@ -5011,19 +5064,49 @@ XUI_API int xuiInventoryGridSetContextCallback(xui_widget pWidget, xui_inventory
 	return XUI_OK;
 }
 
+XUI_API int xuiInventoryGridSetDragCallbackOwned(xui_widget pWidget, xui_inventory_drag_proc onDrag, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onDrag, onDrag != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onDrag = onDrag;
+	pData->pDragUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiInventoryGridSetDragCallback(xui_widget pWidget, xui_inventory_drag_proc onDrag, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onDrag) )
+		return xuiInventoryGridSetDragCallbackOwned(pWidget, onDrag, pUser, NULL);
 	pData->onDrag = onDrag;
 	pData->pDragUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiInventoryGridSetDropCallbackOwned(xui_widget pWidget, xui_inventory_drop_proc onDrop, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onDrop, onDrop != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onDrop = onDrop;
+	pData->pDropUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 }
 
 XUI_API int xuiInventoryGridSetDropCallback(xui_widget pWidget, xui_inventory_drop_proc onDrop, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onDrop) )
+		return xuiInventoryGridSetDropCallbackOwned(pWidget, onDrop, pUser, NULL);
 	pData->onDrop = onDrop;
 	pData->pDropUser = pUser;
 	return XUI_OK;
@@ -5078,14 +5161,43 @@ XUI_API int xuiInventoryGridGetTooltipVisible(xui_widget pWidget)
 	return (pData != NULL) ? pData->bTooltipVisible : 0;
 }
 
+static int __xuiInventorySetTooltip(xui_widget pWidget, xui_inventory_grid_data_t* pData,
+	xui_inventory_tooltip_proc onTooltip, xui_inventory_tooltip_owned_proc onTooltipOwned,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onTooltipOwned,
+		onTooltipOwned != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	pData->onTooltip = onTooltip;
+	pData->onTooltipOwned = onTooltipOwned;
+	pData->pTooltipUser = pUser;
+	pData->iTooltipRevision++;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	xui_context pContext = pWidget->pContext;
+	if ( xuiWidgetTooltipGetOwner(pContext) == pWidget ) xuiInternalTooltipCancel(pContext);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
+XUI_API int xuiInventoryGridSetTooltipCallbackOwned(xui_widget pWidget, xui_inventory_tooltip_owned_proc onTooltip,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiInventorySetTooltip(pWidget, pData, NULL, onTooltip, pUser, pOwner);
+}
+
 XUI_API int xuiInventoryGridSetTooltipCallback(xui_widget pWidget, xui_inventory_tooltip_proc onTooltip, void* pUser)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	xui_context pContext;
 
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->onTooltipOwned != NULL )
+		return __xuiInventorySetTooltip(pWidget, pData, onTooltip, NULL, pUser, NULL);
 	pData->onTooltip = onTooltip;
 	pData->pTooltipUser = pUser;
+	pData->iTooltipRevision++;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( (pContext != NULL) && (xuiWidgetTooltipGetOwner(pContext) == pWidget) ) {
 		xuiInternalTooltipCancel(pContext);
