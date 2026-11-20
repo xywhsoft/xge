@@ -2157,6 +2157,7 @@ typedef struct xui_code_hit_t xui_code_hit_t;
 typedef struct xui_code_edit_text_hit_t xui_code_edit_text_hit_t;
 typedef struct xui_code_search_result_t xui_code_search_result_t;
 typedef struct xui_find_result_t xui_find_result_t;
+typedef struct xui_find_matches_t xui_find_matches_t;
 typedef struct xui_find_options_t xui_find_options_t;
 typedef struct xui_code_find_result_t xui_code_find_result_t;
 typedef struct xui_code_marker_t xui_code_marker_t;
@@ -8176,6 +8177,16 @@ XUI_API int xuiFindLocateText(const char* sText, int iTextLength, const char* sP
     xui_find_result_t* pResult, char* sError, int iErrorCapacity);
 /* 收集区间内全部非重叠匹配；pResultCount 返回总数，可大于 iResultCapacity。 */
 XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity);
+/* Search once. Keep at most iLimit matches (-1 keeps all) and record the
+ * total. The immutable snapshot owns its records, independently of sText. */
+XUI_API int xuiFindCollectMatches(const char* sText, int iTextLength, const char* sPattern,
+    int iRangeStart, int iRangeEnd, uint32_t iFlags, int iLimit,
+    xui_find_matches_t** ppMatches, char* sError, int iErrorCapacity);
+XUI_API int xuiFindMatchesAddRef(xui_find_matches_t* pMatches);
+XUI_API void xuiFindMatchesRelease(xui_find_matches_t* pMatches);
+XUI_API int xuiFindMatchesCount(const xui_find_matches_t* pMatches);
+XUI_API int xuiFindMatchesGet(const xui_find_matches_t* pMatches,
+    const xui_find_result_t** ppResults, size_t* pCount);
 /* 全部替换；*psOutput 输出新文本（FindFreeText 释放）。 */
 XUI_API int xuiFindReplaceAllText(const char* sText, int iTextLength, const char* sPattern, const char* sReplacement, int iRangeStart, int iRangeEnd, uint32_t iFlags, char** psOutput, int* pOutputLength, int* pReplaceCount, char* sError, int iErrorCapacity);
 /* 为单次匹配构建替换文本；正则分组引用支持 $0..$9 和 \0..\9，

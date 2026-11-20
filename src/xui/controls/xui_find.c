@@ -18,6 +18,13 @@ typedef struct xui_find_engine_t {
 #endif
 } xui_find_engine_t;
 
+struct xui_find_matches_t {
+	xatomic32 iReferences;
+	int iTotal;
+	size_t iStored;
+	xui_find_result_t arrResults[];
+};
+
 static int __xuiFindFlagsValid(uint32_t iFlags)
 {
 	return (iFlags & ~(XUI_FIND_CASE_SENSITIVE | XUI_FIND_WHOLE_WORD |
@@ -733,10 +740,29 @@ XUI_API int xuiFindLocateText(const char* sText, int iTextLength, const char* sP
 		iRangeEnd, iFlags, pResult, sError, iErrorCapacity, true);
 }
 
-XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity)
+static int __xuiFindGrowMatches(xui_find_matches_t** ppMatches, int* pCapacity, int iLimit)
+{
+	int iCapacity = *pCapacity;
+	int iNext = iCapacity == 0 ? 8 : iCapacity <= INT_MAX / 2 ? iCapacity * 2 : INT_MAX;
+	if ( iNext > iLimit ) iNext = iLimit;
+	if ( (size_t)iNext > (SIZE_MAX - sizeof(xui_find_matches_t)) / sizeof(xui_find_result_t) )
+		return XUI_ERROR_LIMIT_EXCEEDED;
+	xui_find_matches_t* pMatches = (xui_find_matches_t*)xrtRealloc(*ppMatches,
+		sizeof(xui_find_matches_t) + (size_t)iNext * sizeof(xui_find_result_t));
+	if ( pMatches == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	*ppMatches = pMatches;
+	*pCapacity = iNext;
+	return XUI_OK;
+}
+
+static int __xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern,
+	int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults,
+	int iLimit, int* pResultCount, xui_find_matches_t** ppMatches, char* sError, int iErrorCapacity)
 {
 	xui_find_engine_t tEngine;
 	xui_find_result_t tResult;
+	xui_find_matches_t* pMatches = NULL;
+	int iCapacity = 0;
 	int iOffset;
 	int iNext;
 	int iCount;
@@ -744,7 +770,10 @@ XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* s
 
 	__xuiFindSetError(sError, iErrorCapacity, "");
 	if ( pResultCount != NULL ) *pResultCount = 0;
-	if ( sText == NULL || sPattern == NULL || pResultCount == NULL || iResultCapacity < 0 || (iResultCapacity > 0 && pResults == NULL) ) {
+	if ( ppMatches != NULL ) *ppMatches = NULL;
+	if ( sText == NULL && iTextLength == 0 ) sText = "";
+	if ( sText == NULL || sPattern == NULL || iLimit < (ppMatches != NULL ? -1 : 0) ||
+	     (ppMatches == NULL && (pResultCount == NULL || (iLimit > 0 && pResults == NULL))) ) {
 		__xuiFindSetStatusError(sError, iErrorCapacity, XUI_ERROR_INVALID_ARGUMENT);
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -753,6 +782,7 @@ XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* s
 		__xuiFindSetStatusError(sError, iErrorCapacity, iRet);
 		return iRet;
 	}
+	if ( iLimit < 0 ) iLimit = INT_MAX;
 	iOffset = iRangeStart;
 	__xuiFindNormalizeRange(iTextLength, &iRangeStart, &iRangeEnd, &iOffset);
 	iFlags &= ~(XUI_FIND_BACKWARD | XUI_FIND_WRAP);
@@ -768,10 +798,20 @@ XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* s
 		iRet = __xuiFindEngineFind(&tEngine, sText, iTextLength, iOffset, iRangeStart, iRangeEnd, &tResult);
 		if ( iRet == XUI_ERROR_UNSUPPORTED ) break;
 		if ( iRet != XUI_OK ) goto cleanup;
-		if ( pResults != NULL && iCount < iResultCapacity ) pResults[iCount] = tResult;
 		if ( iCount == INT_MAX ) {
 			iRet = XUI_ERROR_LIMIT_EXCEEDED;
 			goto cleanup;
+		}
+		if ( iCount < iLimit ) {
+			if ( ppMatches != NULL ) {
+				if ( iCount == iCapacity ) {
+					iRet = __xuiFindGrowMatches(&pMatches, &iCapacity, iLimit);
+					if ( iRet != XUI_OK ) goto cleanup;
+				}
+				pMatches->arrResults[iCount] = tResult;
+			} else {
+				pResults[iCount] = tResult;
+			}
 		}
 		iCount++;
 		iNext = (tResult.iEnd > tResult.iStart) ? tResult.iEnd :
@@ -780,15 +820,74 @@ XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* s
 		iOffset = iNext;
 		if ( iOffset > iRangeEnd ) break;
 	}
-	*pResultCount = iCount;
+	if ( ppMatches != NULL ) {
+		if ( pMatches == NULL ) {
+			iRet = __xuiFindGrowMatches(&pMatches, &iCapacity, 0);
+			if ( iRet != XUI_OK ) goto cleanup;
+		}
+		xrtAtomic32Store(&pMatches->iReferences, 1, XMEMORY_RELAXED);
+		pMatches->iTotal = iCount;
+		pMatches->iStored = (size_t)(iCount < iLimit ? iCount : iLimit);
+		*ppMatches = pMatches;
+	}
+	if ( pResultCount != NULL ) *pResultCount = iCount;
 	__xuiFindEngineDestroy(&tEngine);
 	__xuiFindSetError(sError, iErrorCapacity, "");
 	return XUI_OK;
 
 cleanup:
+	xrtFree(pMatches);
 	__xuiFindEngineDestroy(&tEngine);
 	__xuiFindSetStatusError(sError, iErrorCapacity, iRet);
 	return iRet;
+}
+
+XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern,
+	int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults,
+	int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity)
+{
+	return __xuiFindCollectText(sText, iTextLength, sPattern, iRangeStart, iRangeEnd,
+		iFlags, pResults, iResultCapacity, pResultCount, NULL, sError, iErrorCapacity);
+}
+
+XUI_API int xuiFindCollectMatches(const char* sText, int iTextLength, const char* sPattern,
+	int iRangeStart, int iRangeEnd, uint32_t iFlags, int iLimit,
+	xui_find_matches_t** ppMatches, char* sError, int iErrorCapacity)
+{
+	return __xuiFindCollectText(sText, iTextLength, sPattern, iRangeStart, iRangeEnd,
+		iFlags, NULL, iLimit, NULL, ppMatches, sError, iErrorCapacity);
+}
+
+XUI_API int xuiFindMatchesAddRef(xui_find_matches_t* pMatches)
+{
+	if ( pMatches == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	uint32_t iRefs = xrtAtomic32Load(&pMatches->iReferences, XMEMORY_RELAXED);
+	do {
+		if ( iRefs == 0 ) return XUI_ERROR_INVALID_STATE;
+		if ( iRefs == UINT32_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	} while ( !xrtAtomic32CompareExchange(&pMatches->iReferences, &iRefs, iRefs + 1,
+		XMEMORY_RELAXED, XMEMORY_RELAXED) );
+	return XUI_OK;
+}
+
+XUI_API void xuiFindMatchesRelease(xui_find_matches_t* pMatches)
+{
+	if ( pMatches != NULL && xrtAtomic32FetchSub(&pMatches->iReferences, 1, XMEMORY_ACQ_REL) == 1 )
+		xrtFree(pMatches);
+}
+
+XUI_API int xuiFindMatchesCount(const xui_find_matches_t* pMatches)
+{
+	return pMatches != NULL ? pMatches->iTotal : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiFindMatchesGet(const xui_find_matches_t* pMatches,
+	const xui_find_result_t** ppResults, size_t* pCount)
+{
+	if ( pMatches == NULL || ppResults == NULL || pCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppResults = pMatches->iStored != 0 ? pMatches->arrResults : NULL;
+	*pCount = pMatches->iStored;
+	return XUI_OK;
 }
 
 XUI_API int xuiFindReplaceAllText(const char* sText, int iTextLength, const char* sPattern, const char* sReplacement, int iRangeStart, int iRangeEnd, uint32_t iFlags, char** psOutput, int* pOutputLength, int* pReplaceCount, char* sError, int iErrorCapacity)
@@ -808,6 +907,7 @@ XUI_API int xuiFindReplaceAllText(const char* sText, int iTextLength, const char
 	if ( psOutput != NULL ) *psOutput = NULL;
 	if ( pOutputLength != NULL ) *pOutputLength = 0;
 	if ( pReplaceCount != NULL ) *pReplaceCount = 0;
+	if ( sText == NULL && iTextLength == 0 ) sText = "";
 	if ( sText == NULL || sPattern == NULL || sReplacement == NULL || psOutput == NULL ) {
 		__xuiFindSetStatusError(sError, iErrorCapacity, XUI_ERROR_INVALID_ARGUMENT);
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -893,6 +993,7 @@ XUI_API int xuiFindBuildReplacement(const char* sText, int iTextLength, const ch
 	__xuiFindSetError(sError, iErrorCapacity, "");
 	if ( psOutput != NULL ) *psOutput = NULL;
 	if ( pOutputLength != NULL ) *pOutputLength = 0;
+	if ( sText == NULL && iTextLength == 0 ) sText = "";
 	if ( sText == NULL || sPattern == NULL || sReplacement == NULL || pResult == NULL || psOutput == NULL ) {
 		__xuiFindSetStatusError(sError, iErrorCapacity, XUI_ERROR_INVALID_ARGUMENT);
 		return XUI_ERROR_INVALID_ARGUMENT;
