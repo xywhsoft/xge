@@ -205,6 +205,97 @@ static void pixels(void)
     for(unsigned i=0;i<4;++i)assert(bytes[i*4]==80 && bytes[i*4+1]==90 && bytes[i*4+2]==100 && bytes[i*4+3]==255);
     xgePassFree(pass);xgeRenderTargetFree(target);
 }
+#if defined(_WIN32)
+#define TEST_GL_CALL APIENTRY
+#else
+#define TEST_GL_CALL
+#endif
+static void windowPixels(Test* t)
+{
+    xge_render_target first=NULL,second=NULL,nested=NULL,window=NULL;
+    xge_pass outer=NULL,screen=NULL;
+    assert(xgeRenderTargetCreateOwned(&first,3,2)==XGE_OK);
+    assert(xgeRenderTargetCreateOwned(&second,2,2)==XGE_OK);
+    assert(xgeRenderTargetCreateOwned(&nested,1,1)==XGE_OK);
+    assert(first->iFramebufferId && second->iFramebufferId!=first->iFramebufferId);
+    assert(xgeHostSessionResize(t->host,3,2,1,first->iFramebufferId)==XGE_OK);
+    assert(xgeHostSessionBegin(t->host)==XGE_OK);
+    xgeClear(XGE_COLOR_RGBA(255,0,0,255));
+    assert(xgePassCreateOwned(&outer,nested,XGE_PASS_CLEAR_COLOR,XGE_COLOR_RGBA(0,0,255,255))==XGE_OK);
+    assert(xgePassBegin(outer)==XGE_OK && xgeGetWidth()==1);
+    assert(xgeRenderTargetWindowOwned(&window)==XGE_OK && window->iWidth==3 && window->iHeight==2);
+    assert(xgePassCreateOwned(&screen,window,XGE_PASS_CLEAR_COLOR,XGE_COLOR_RGBA(0,255,0,255))==XGE_OK);
+    assert(xgePassBegin(screen)==XGE_OK && xgeGetWidth()==3);
+    assert(xgePassEnd(screen)==XGE_OK && xgePassIsCurrent(outer) && xgeGetWidth()==1);
+
+    typedef void (TEST_GL_CALL *glBind)(unsigned,unsigned);
+    typedef void (TEST_GL_CALL *glGet)(unsigned,int*);
+    typedef void (TEST_GL_CALL *glPixelStore)(unsigned,int);
+    typedef void (TEST_GL_CALL *glReadBufferProc)(unsigned);
+    typedef void (TEST_GL_CALL *glGen)(int,unsigned*);
+    typedef void (TEST_GL_CALL *glDelete)(int,const unsigned*);
+    glBind bindFramebuffer=(glBind)load("glBindFramebuffer",t);
+    glBind bindBuffer=(glBind)load("glBindBuffer",t);
+    glGet get=(glGet)load("glGetIntegerv",t);
+    glPixelStore pixelStore=(glPixelStore)load("glPixelStorei",t);
+    glReadBufferProc readBuffer=(glReadBufferProc)load("glReadBuffer",t);
+    glGen genBuffers=(glGen)load("glGenBuffers",t);
+    glDelete deleteBuffers=(glDelete)load("glDeleteBuffers",t);
+    assert(bindFramebuffer && bindBuffer && get && pixelStore && readBuffer && genBuffers && deleteBuffers);
+    const unsigned readFramebuffer=0x8CA8,packBuffer=0x88EB;
+    const unsigned packing[]={0x0D05,0x0D02,0x0D03,0x0D04};
+    const int configured[]={8,8,1,1};
+    unsigned buffer=0;
+    genBuffers(1,&buffer);
+    bindBuffer(packBuffer,buffer);
+    for(unsigned i=0;i<4;++i)pixelStore(packing[i],configured[i]);
+    bindFramebuffer(readFramebuffer,second->iFramebufferId);
+    unsigned char bytes[28];
+    memset(bytes,0x7B,sizeof(bytes));
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,sizeof(bytes)-1,16)==XGE_ERROR_INVALID_ARGUMENT);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,sizeof(bytes),16)==XGE_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();xrtClearError();
+    bindFramebuffer(readFramebuffer,first->iFramebufferId);
+    readBuffer(0);
+    bindFramebuffer(readFramebuffer,second->iFramebufferId);
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,sizeof(bytes),16)==XGE_ERROR_GPU_FAILED);
+    for(unsigned i=0;i<sizeof(bytes);++i)assert(bytes[i]==0x7B);
+    bindFramebuffer(readFramebuffer,first->iFramebufferId);
+    readBuffer(0x8CE0);
+    bindFramebuffer(readFramebuffer,second->iFramebufferId);
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,sizeof(bytes),16)==XGE_OK);
+    const unsigned char green[]={0,255,0,255};
+    for(unsigned y=0;y<2;++y)for(unsigned x=0;x<3;++x)assert(!memcmp(bytes+y*16+x*4,green,4));
+    for(unsigned i=12;i<16;++i)assert(bytes[i]==0x7B);
+    int value;
+    get(0x8CAA,&value);assert((unsigned)value==second->iFramebufferId);
+    get(0x8CA6,&value);assert((unsigned)value==nested->iFramebufferId);
+    get(0x88ED,&value);assert((unsigned)value==buffer);
+    for(unsigned i=0;i<4;++i){get(packing[i],&value);assert(value==configured[i]);}
+    bindBuffer(packBuffer,0);deleteBuffers(1,&buffer);
+    for(unsigned i=0;i<4;++i)pixelStore(packing[i],i==0?4:0);
+    assert(xgePassEnd(outer)==XGE_OK && xgeGetWidth()==3);
+    assert(xgeHostSessionEnd(t->host)==XGE_OK && xgeHostSessionDiscardFrame(t->host)==XGE_OK);
+
+    assert(xgeHostSessionResize(t->host,2,2,1,second->iFramebufferId)==XGE_OK);
+    assert(xgeHostSessionBegin(t->host)==XGE_OK);
+    xgeClear(XGE_COLOR_RGBA(255,0,0,255));
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,sizeof(bytes),16)==XGE_ERROR_INVALID_ARGUMENT);
+    assert(xgeRenderTargetResize(window,2,2)==XGE_OK);
+    assert(xgeRenderTargetReadPixelsSized(window,bytes,16,8)==XGE_OK);
+    const unsigned char red[]={255,0,0,255};
+    for(unsigned i=0;i<4;++i)assert(!memcmp(bytes+i*4,red,4));
+    assert(xgeHostSessionEnd(t->host)==XGE_OK && xgeHostSessionDiscardFrame(t->host)==XGE_OK);
+    assert(xgeHostSessionResize(t->host,4,4,1,0)==XGE_OK);
+    assert(xgeHostSessionBegin(t->host)==XGE_OK && xgeHostSessionEnd(t->host)==XGE_OK &&
+        xgeHostSessionDiscardFrame(t->host)==XGE_OK);
+    xgePassFree(screen);xgePassFree(outer);
+    xgeRenderTargetFree(window);xgeRenderTargetFree(nested);
+    xgeRenderTargetFree(second);xgeRenderTargetFree(first);
+    puts("HOST_WINDOW_FRAMEBUFFER_AND_PACK_OK");
+}
+#undef TEST_GL_CALL
 static int32 foreign(void* raw)
 {
     Test* t=raw;bool consumed=true,current=true;xge_host_session copy=NULL;xge_host_session_info_t i={0};i.size=sizeof(i);
@@ -312,6 +403,7 @@ static void run(unsigned mode,int64_t failAfter)
             assert(xgeHostSessionBegin(t.host)==XGE_ERROR_UNSUPPORTED && info(&t).width==4);
             assert(xgeHostSessionResize(t.host,4,4,1,0)==XGE_OK);
         }
+        if(mode==29)windowPixels(&t);
         if(mode==14)graph(&t);
         else{
             xge_texture child=NULL;
@@ -334,7 +426,7 @@ static void run(unsigned mode,int64_t failAfter)
 }
 int main(int argc,char** argv)
 {
-    assert(argc==2);unsigned mode=(unsigned)atoi(argv[1]);assert(mode<=28);
+    assert(argc==2);unsigned mode=(unsigned)atoi(argv[1]);assert(mode<=29);
 #if !defined(XGE_TEST_STATIC)
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_OK);

@@ -27,7 +27,7 @@ int xgePassBegin(xge_pass pass)
     pass->iPrevWidth=g_xge.iWidth;pass->iPrevHeight=g_xge.iHeight;pass->iPrevFramebufferId=g_xge.iCurrentFramebufferId;
     pass->tPrevCamera=g_xge.tCamera;pass->bPrevViewportEnabled=g_xge.bViewportEnabled;pass->tPrevViewportRect=g_xge.tViewportRect;
     pass->bPrevClipEnabled=g_xge.bClipEnabled;pass->tPrevClipRect=g_xge.tClipRect;
-    uint32_t framebuffer=(target->iFlags&XGE_RENDER_TARGET_WINDOW) ? 0:target->iFramebufferId;
+    uint32_t framebuffer=__xgeRenderTargetFramebuffer(target);
     xge_glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)framebuffer);g_xge.iCurrentFramebufferId=framebuffer;
     g_xge.iWidth=target->iWidth;g_xge.iHeight=target->iHeight;
 #if XGE_ENABLE_2D

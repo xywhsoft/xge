@@ -88,7 +88,7 @@ def main():
         for opt in ('O0', 'O2'):
             binary = out / (variant + '-' + opt + ('.exe' if windows else ''))
             run(variant + '-' + opt + '-build', [cc, *flags, '-' + opt, source, lib, xrt, *systems, '-o', binary])
-            for mode in range(29):
+            for mode in range(30):
                 run(variant + '-' + opt + '-mode' + str(mode), [binary, str(mode)])
     header = out / 'public.h'
     header.write_text('#include <xge.h>\n', encoding='utf8')

@@ -8,7 +8,7 @@ typedef struct xge_graphics_snapshot_t {
     xge_gpu_caps_t caps;
     int width,height,windowWidth,windowHeight,framebufferWidth,framebufferHeight;
     float dpi;
-    uint32_t framebuffer;
+    uint32_t framebuffer,windowFramebuffer;
     xge_camera_t camera;
     int viewportEnabled,clipEnabled;
     xge_rect_t viewport,clip;
@@ -62,7 +62,7 @@ static void __xgeContextSave(xge_graphics_snapshot_t* previous)
 {
     *previous=(xge_graphics_snapshot_t){g_xge.tPlatformBackend,g_xge.tGraphicsBackend,g_xge.tGpuCaps,
         g_xge.iWidth,g_xge.iHeight,g_xge.iWindowWidth,g_xge.iWindowHeight,
-        g_xge.iFramebufferWidth,g_xge.iFramebufferHeight,g_xge.fDpiScale,g_xge.iCurrentFramebufferId,
+        g_xge.iFramebufferWidth,g_xge.iFramebufferHeight,g_xge.fDpiScale,g_xge.iCurrentFramebufferId,g_xge.iWindowFramebufferId,
         g_xge.tCamera,g_xge.bViewportEnabled,g_xge.bClipEnabled,g_xge.tViewportRect,g_xge.tClipRect};
 }
 static void __xgeContextRestore(const xge_graphics_snapshot_t* previous)
@@ -72,6 +72,7 @@ static void __xgeContextRestore(const xge_graphics_snapshot_t* previous)
     g_xge.iWindowWidth=previous->windowWidth;g_xge.iWindowHeight=previous->windowHeight;
     g_xge.iFramebufferWidth=previous->framebufferWidth;g_xge.iFramebufferHeight=previous->framebufferHeight;
     g_xge.fDpiScale=previous->dpi;g_xge.iCurrentFramebufferId=previous->framebuffer;
+    g_xge.iWindowFramebufferId=previous->windowFramebuffer;
     g_xge.tCamera=previous->camera;g_xge.bViewportEnabled=previous->viewportEnabled;g_xge.bClipEnabled=previous->clipEnabled;
     g_xge.tViewportRect=previous->viewport;g_xge.tClipRect=previous->clip;
     __xgePlatformRuntimeUpdate();
@@ -269,7 +270,7 @@ int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int hei
             context->tableLoaded=true;context->attached=true;
             g_xge.iWidth=g_xge.iWindowWidth=g_xge.iFramebufferWidth=width;
             g_xge.iHeight=g_xge.iWindowHeight=g_xge.iFramebufferHeight=height;
-            g_xge.fDpiScale=1;g_xge.iCurrentFramebufferId=0;g_xge.bClipEnabled=g_xge.bViewportEnabled=0;
+            g_xge.fDpiScale=1;g_xge.iCurrentFramebufferId=g_xge.iWindowFramebufferId=0;g_xge.bClipEnabled=g_xge.bViewportEnabled=0;
             memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));memset(&g_xge.tViewportRect,0,sizeof(g_xge.tViewportRect));
 #if XGE_ENABLE_2D
             g_xge.tCamera=xgeCameraDefault((float)width,(float)height);

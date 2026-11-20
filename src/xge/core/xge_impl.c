@@ -237,6 +237,7 @@ typedef struct xge_context_t {
 	int iBlend;
 	int bDepthTestEnabled;
 	uint32_t iCurrentFramebufferId;
+	uint32_t iWindowFramebufferId;
 	int iTextureCount;
 	uint64_t iTextureMemoryBytes;
 	int iAudioCount;

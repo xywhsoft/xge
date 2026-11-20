@@ -111,7 +111,8 @@ static void __xgeHostDimensionsApply(const xge_host_session_desc_t* size)
     g_xge.iWidth=g_xge.iFramebufferWidth=size->width;g_xge.iHeight=g_xge.iFramebufferHeight=size->height;
     g_xge.iWindowWidth=(int)((double)size->width/(double)size->dpiScale);
     g_xge.iWindowHeight=(int)((double)size->height/(double)size->dpiScale);
-    g_xge.fDpiScale=size->dpiScale;g_xge.iCurrentFramebufferId=size->framebuffer;
+    g_xge.fDpiScale=size->dpiScale;
+    g_xge.iCurrentFramebufferId=g_xge.iWindowFramebufferId=size->framebuffer;
     g_xge.tCamera.tViewport.fW=(float)size->width;g_xge.tCamera.tViewport.fH=(float)size->height;
     __xgePlatformRuntimeUpdate();
 }
