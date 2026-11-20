@@ -946,6 +946,106 @@ static int __xuiTestHideOnLayout(xui_widget pWidget, xui_rect_t tContent, void* 
 	return XUI_OK;
 }
 
+typedef struct tooltip_probe {
+	size_t refs;
+	unsigned measures, paints;
+	bool replace, valid;
+} tooltip_probe;
+
+static bool __xuiTooltipCount(const void* user, size_t* count)
+{
+	*count = ((const tooltip_probe*)user)->refs;
+	return true;
+}
+
+static bool __xuiTooltipTrace(const void* user, xrtownershipvisitor visit, void* state)
+{
+	(void)user; (void)visit; (void)state;
+	return true;
+}
+
+static bool __xuiTooltipHold(const void* user)
+{
+	++((tooltip_probe*)user)->refs;
+	return true;
+}
+
+static bool __xuiTooltipDrop(const void* user)
+{
+	--((tooltip_probe*)user)->refs;
+	return true;
+}
+
+static xui_vec2_t __xuiOwnedTooltipMeasure(xui_context context, xui_widget widget, void* user)
+{
+	(void)context;
+	tooltip_probe* probe = user;
+	++probe->measures;
+	probe->valid &= probe->refs == 3;
+	if ( probe->replace ) {
+		probe->valid &= xuiWidgetSetTooltipText(widget, "replacement") == XUI_OK;
+		probe->valid &= probe->refs == 2;
+	}
+	return (xui_vec2_t){32, 20};
+}
+
+static int __xuiOwnedTooltipPaint(xui_context context, xui_widget widget, xui_draw_context draw,
+	xui_rect_t rect, void* user)
+{
+	(void)context;
+	tooltip_probe* probe = user;
+	++probe->paints;
+	probe->valid &= probe->refs == 3 && draw != NULL && rect.fW == 32 && rect.fH == 20;
+	probe->valid &= xuiWidgetClearTooltip(widget) == XUI_OK;
+	probe->valid &= probe->refs == 2;
+	return XUI_OK;
+}
+
+static int __xuiTestOwnedTooltip(void)
+{
+	static const xrtownershipops ops = {__xuiTooltipCount, __xuiTooltipTrace};
+	tooltip_probe probe = {.refs = 1, .replace = true, .valid = true};
+	const xui_callback_owner_t owner = {{&probe, &ops}, __xuiTooltipHold, __xuiTooltipDrop};
+	const xui_custom_tooltip_desc_t desc = {
+		.iSize = sizeof(desc), .tPlacement = {.iAnchor = XUI_TOOLTIP_ANCHOR_CURSOR},
+		.onMeasure = __xuiOwnedTooltipMeasure, .onPaint = __xuiOwnedTooltipPaint, .pUser = &probe,
+	};
+	xui_proxy_t proxy = __xuiTestProxy();
+	xui_context context = NULL;
+	xui_widget root = NULL, widget = NULL;
+	xui_surface target = NULL;
+	int iFailed = 0;
+	XUI_TEST_CHECK(xuiCreate(&context) == XUI_OK && xuiSetProxy(context, &proxy) == XUI_OK &&
+		xuiSetViewportSize(context, 64, 64) == XUI_OK, "owned tooltip context setup");
+	XUI_TEST_CHECK(xuiWidgetCreate(context, &root) == XUI_OK && xuiSetRootWidget(context, root) == XUI_OK &&
+		xuiWidgetSetLayoutType(root, XUI_LAYOUT_MANUAL) == XUI_OK && xuiWidgetCreate(context, &widget) == XUI_OK &&
+		xuiWidgetSetRect(widget, (xui_rect_t){0, 0, 32, 32}) == XUI_OK &&
+		xuiWidgetAddChild(root, widget) == XUI_OK, "owned tooltip widget setup");
+	const xui_surface_desc_t surface = {.iWidth = 64, .iHeight = 64, .iKind = XUI_SURFACE_KIND_TEXTURE,
+		.iFormat = XUI_SURFACE_FORMAT_RGBA8, .iFlags = XUI_SURFACE_USAGE_TARGET};
+	XUI_TEST_CHECK(proxy.surfaceCreate(&proxy, &target, &surface) == XUI_OK &&
+		xuiRender(context, target, NULL, 0) == XUI_OK, "owned tooltip target setup");
+	XUI_TEST_CHECK(xuiWidgetSetCustomTooltipOwned(widget, &desc, &owner) == XUI_OK && probe.refs == 2 &&
+		xuiInputPointerMove(context, 8, 8, 0) == XUI_OK && xuiUpdate(context, 0) == XUI_OK &&
+		probe.measures == 1 && probe.refs == 1 && probe.valid && !xuiWidgetTooltipIsOpen(context),
+		"replacement inside owned measurement");
+	XUI_TEST_CHECK(xuiWidgetGetTooltip(widget)->iType == XUI_TOOLTIP_TEXT, "measurement replacement lost");
+	probe.replace = false;
+	XUI_TEST_CHECK(xuiWidgetSetCustomTooltipOwned(widget, &desc, &owner) == XUI_OK && probe.refs == 2 &&
+		xuiInputPointerMove(context, 9, 8, 0) == XUI_OK && xuiUpdate(context, 0) == XUI_OK &&
+		probe.measures == 2 && xuiWidgetTooltipIsOpen(context), "owned tooltip did not open");
+	XUI_TEST_CHECK(xuiRender(context, target, NULL, 0) == XUI_OK && probe.paints == 1 &&
+		probe.refs == 1 && probe.valid && !xuiWidgetTooltipIsOpen(context), "clear inside owned tooltip paint");
+	XUI_TEST_CHECK(xuiWidgetSetCustomTooltipOwned(widget, &desc, &owner) == XUI_OK && probe.refs == 2,
+		"owned tooltip restore before destroy");
+	xuiWidgetDestroy(widget);
+	XUI_TEST_CHECK(probe.refs == 1, "widget destruction did not release tooltip owner");
+cleanup:
+	if ( target != NULL ) proxy.surfaceDestroy(&proxy, target);
+	if ( context != NULL ) xuiDestroy(context);
+	return !iFailed;
+}
+
 static int __xuiTestLayoutDamage(void)
 {
 	xui_render_schedule_test_state_t tState;
@@ -1700,6 +1800,7 @@ cleanup:
 		return 1;
 	}
 	if ( !__xuiTestLayoutDamage() ) return 1;
+	if ( !__xuiTestOwnedTooltip() ) return 1;
 	if ( !__xuiTestCacheStacking() ) return 1;
 	if ( !__xuiTestDpiCaches() ) return 1;
 	if ( !__xuiTestCacheClipping() ) return 1;

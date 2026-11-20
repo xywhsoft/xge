@@ -6081,6 +6081,14 @@ typedef struct xui_tooltip_info_t {
 	xui_tooltip_placement_t tPlacement;
 } xui_tooltip_info_t;
 
+typedef struct xui_custom_tooltip_desc_t {
+	uint32_t iSize;
+	xui_tooltip_placement_t tPlacement;
+	xui_tooltip_measure_proc onMeasure;
+	xui_tooltip_paint_proc onPaint;
+	void* pUser;
+} xui_custom_tooltip_desc_t;
+
 typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser);
 
 #define XUI_EVENT_TEXT_CAPACITY 4096
@@ -14060,6 +14068,10 @@ XUI_API xui_tooltip_placement_t xuiTooltipPlacementDefault(void);
  * empty or NULL text clears the tooltip. No callbacks are registered. */
 XUI_API int xuiWidgetSetTextTooltip(xui_widget pWidget, const char* sText,
 	const xui_tooltip_placement_t* pPlacement);
+/* Both callbacks share one owner. Registration retains it until replacement,
+ * clear or widget destruction; dispatch holds it across each callback. */
+XUI_API int xuiWidgetSetCustomTooltipOwned(xui_widget pWidget, const xui_custom_tooltip_desc_t* pDesc,
+	const xui_callback_owner_t* pOwner);
 /* Read configured metadata without running the resolver. sText is borrowed
  * until the next tooltip mutation or widget destruction. Failure writes nothing. */
 XUI_API int xuiWidgetGetTooltipInfo(xui_widget pWidget, xui_tooltip_info_t* pInfo);
