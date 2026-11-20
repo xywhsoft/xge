@@ -4,6 +4,7 @@
 #include "xui_document_web_internal.h"
 #include "xui_text_internal.h"
 #include "xui_internal.h"
+#include "xui_proxy_resource.h"
 #include "xui_callback_hold_internal.h"
 #include <math.h>
 #include <float.h>
@@ -4046,6 +4047,9 @@ static int doc_impl_Draw(xui_document_renderer r, xui_draw_context draw, double 
 {
     size_t index, i; xui_rect_t saved = {0}; int had_clip = 0, result = XUI_OK;
     if (!r || !r->snapshot || !draw || !isfinite(ox) || !isfinite(oy)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (xuiInternalProxyResourceManaged(draw, XUI_OWNED_DRAW) &&
+            (!r->owned_proxy || xuiDrawGetProxy(draw) != r->owned_proxy))
+        return XUI_ERROR_INVALID_ARGUMENT;
     result = doc_render_refresh_resources(r); if (result != XUI_OK) return result;
     if (r->proxy->drawClipGet) {
         result = r->proxy->drawClipGet(r->proxy, draw, &saved, &had_clip);

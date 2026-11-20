@@ -1199,6 +1199,63 @@ XUI_API int xuiDocumentWebProviderGetStats(xui_doc_web_provider provider,xui_doc
     if(provider->owned.creatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     return xuiDocumentWebProviderGetStats_impl(provider,output);
 }
+
+XUI_API int xuiDocumentWebProviderMeasureObject(xui_doc_web_provider provider,
+    xui_document_snapshot snapshot, xui_doc_node_id node, float width, float zoom,
+    bool* ready, xui_vec2_t* size, float* baseline)
+{
+    if (!snapshot || !ready || !size || !baseline ||
+            !isfinite(width) || width <= 0 || !isfinite(zoom) || zoom <= 0)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    xui_manager_scope_t scope = {0};
+    int status = doc_web_business_begin(provider, &scope);
+    if (status != XUI_OK) return status;
+    xui_vec2_t measured_size = {0};
+    float measured_baseline = 0;
+    status = xuiDocumentWebObjectMeasure_impl(snapshot, node, width, zoom,
+        &measured_size, &measured_baseline, provider);
+    bool measured = status == XUI_OK;
+    if (status == XUI_ERROR_UNSUPPORTED && !xrtGetError()) status = XUI_OK;
+    status = doc_web_business_end(provider, &scope, status);
+    if (status == XUI_OK) {
+        *ready = measured;
+        *size = measured_size;
+        *baseline = measured_baseline;
+    }
+    return status;
+}
+
+XUI_API int xuiDocumentWebProviderDrawObject(xui_doc_web_provider provider,
+    xui_document_snapshot snapshot, xui_doc_node_id node, xui_draw_context draw,
+    xui_rect_t bounds, bool* drawn)
+{
+    if (!snapshot || !draw || !drawn || bounds.fW <= 0 || bounds.fH <= 0)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    xui_manager_scope_t scope = {0};
+    int status = doc_web_business_begin(provider, &scope);
+    if (status != XUI_OK) return status;
+    xui_draw_scope_t drawing = {0};
+    bool rendered = false;
+    status = xuiDrawCallScopeBegin(draw, &drawing);
+    if (status == XUI_OK) {
+        xui_proxy proxy = xuiDrawGetProxy(draw);
+        if (!proxy || proxy != provider->proxy) {
+            status = XUI_ERROR_INVALID_ARGUMENT;
+        } else {
+            status = xuiDocumentWebObjectDraw_impl(snapshot, node, proxy, draw, bounds, provider);
+            rendered = status == XUI_OK;
+            if (status == XUI_ERROR_UNSUPPORTED && !xrtGetError()) status = XUI_OK;
+        }
+        xui_cleanup_receipt_t receipt = {0};
+        xuiInternalCleanupStart(&receipt, status);
+        xuiInternalCleanupAdd(&receipt, xuiDrawCallScopeEnd(&drawing));
+        status = xuiInternalCleanupEnd(NULL, &receipt);
+    }
+    status = doc_web_business_end(provider, &scope, status);
+    if (status == XUI_OK) *drawn = rendered;
+    return status;
+}
+
 XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,xui_doc_node_id node,float width,float zoom,xui_vec2_t* size,float* baseline,void* raw)
 {
     xui_doc_web_provider provider=raw;xui_manager_scope_t scope={0};int status=doc_web_business_begin(provider,&scope);if(status!=XUI_OK)return status;

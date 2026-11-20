@@ -349,6 +349,17 @@ typedef struct xui_doc_web_provider_stats_t {
 #if XUI_ENABLE_WEBVIEW
 XUI_API int xuiDocumentWebProviderGetStats(xui_doc_web_provider provider,
     xui_doc_web_provider_stats_t* out);
+/* Request or measure a browser-backed object. A pending or unsupported object
+ * returns XUI_OK with ready=false and zero geometry. On failure, no outputs
+ * are written. */
+XUI_API int xuiDocumentWebProviderMeasureObject(xui_doc_web_provider provider,
+    xui_document_snapshot snapshot, xui_doc_node_id node, float width, float zoom,
+    bool* ready, xui_vec2_t* size, float* baseline);
+/* Draw a cached object through an active owned draw session from the same
+ * Proxy. A cache miss or unsupported object returns XUI_OK with drawn=false. */
+XUI_API int xuiDocumentWebProviderDrawObject(xui_doc_web_provider provider,
+    xui_document_snapshot snapshot, xui_doc_node_id node, xui_draw_context draw,
+    xui_rect_t bounds, bool* drawn);
 /* Measure a browser-backed formula or diagram object. */
 XUI_API int xuiDocumentWebObjectMeasure(xui_document_snapshot snapshot,
     xui_doc_node_id node, float width, float zoom, xui_vec2_t* size,
