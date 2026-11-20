@@ -679,20 +679,32 @@ static int __xuiInventorySyncLayout(xui_widget pWidget, xui_inventory_grid_data_
 	if ( (pData->iSlotCount % iColumns) != 0 ) iRows++;
 	if ( iRows < 0 ) iRows = 0;
 	fStride = pResolved->tLayout.fSlotSize + pResolved->tLayout.fSlotGap;
-	pData->iResolvedColumns = iColumns;
-	pData->iResolvedRows = iRows;
-	pData->fContentWidth = (pResolved->tLayout.fPadding * 2.0f) +
+	float fContentWidth = (pResolved->tLayout.fPadding * 2.0f) +
 		((iColumns > 0) ? ((float)iColumns * pResolved->tLayout.fSlotSize + (float)(iColumns - 1) * pResolved->tLayout.fSlotGap) : 0.0f);
-	pData->fContentHeight = (pResolved->tLayout.fPadding * 2.0f) +
+	float fContentHeight = (pResolved->tLayout.fPadding * 2.0f) +
 		((iRows > 0) ? ((float)iRows * pResolved->tLayout.fSlotSize + (float)(iRows - 1) * pResolved->tLayout.fSlotGap) : 0.0f);
 	if ( fStride <= 0.0f ) {
-		pData->fContentHeight = pResolved->tLayout.fPadding * 2.0f;
+		fContentHeight = pResolved->tLayout.fPadding * 2.0f;
 	}
-	iRet = xuiScrollModelSetViewport(&pData->tScroll, tViewport);
+	/* Clamp to the new viewport and content together. An intermediate clamp
+	 * against the old content must not discard an offset that still fits. */
+	xui_scroll_model_t tScroll = pData->tScroll;
+	iRet = xuiScrollModelSetViewport(&tScroll, tViewport);
 	if ( iRet != XUI_OK ) return iRet;
-	return xuiScrollModelSetContentSize(&pData->tScroll,
-		__xuiInventoryMaxFloat(tViewport.fW, pData->fContentWidth),
-		__xuiInventoryMaxFloat(tViewport.fH, pData->fContentHeight));
+	iRet = xuiScrollModelSetContentSize(&tScroll,
+		__xuiInventoryMaxFloat(tViewport.fW, fContentWidth),
+		__xuiInventoryMaxFloat(tViewport.fH, fContentHeight));
+	if ( iRet != XUI_OK ) return iRet;
+	if ( tScroll.fScrollX != pData->tScroll.fScrollX || tScroll.fScrollY != pData->tScroll.fScrollY ) {
+		iRet = xuiScrollModelSetOffset(&tScroll, pData->tScroll.fScrollX, pData->tScroll.fScrollY);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pData->iResolvedColumns = iColumns;
+	pData->iResolvedRows = iRows;
+	pData->fContentWidth = fContentWidth;
+	pData->fContentHeight = fContentHeight;
+	pData->tScroll = tScroll;
+	return XUI_OK;
 }
 
 static xui_rect_t __xuiInventorySlotContentRect(const xui_inventory_grid_data_t* pData, const xui_inventory_grid_style_t* pResolved, int iSlot)
@@ -2936,13 +2948,23 @@ static int __xuiInventoryKeyDown(xui_widget pWidget, xui_inventory_grid_data_t* 
 	return XUI_OK;
 }
 
+static int __xuiInventoryCommitScroll(xui_widget pWidget, xui_inventory_grid_data_t* pData,
+	const xui_scroll_model_t* pNext, bool bCountChange, bool* pChanged)
+{
+	if ( pChanged != NULL ) *pChanged = false;
+	if ( pData->tScroll.fScrollX == pNext->fScrollX && pData->tScroll.fScrollY == pNext->fScrollY ) return XUI_OK;
+	int iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->tScroll = *pNext;
+	if ( bCountChange ) __xuiInventoryIncrementCounter(&pData->iChangeCount);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	if ( pChanged != NULL ) *pChanged = true;
+	return XUI_OK;
+}
+
 static int __xuiInventoryWheel(xui_widget pWidget, xui_inventory_grid_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_inventory_grid_style_t tResolved;
-	float fOldX;
-	float fOldY;
-	float fNewX;
-	float fNewY;
 	float fDX;
 	float fDY;
 	int iRet;
@@ -2957,24 +2979,12 @@ static int __xuiInventoryWheel(xui_widget pWidget, xui_inventory_grid_data_t* pD
 	fDX = -pEvent->fWheelX * tResolved.tLayout.fWheelStep;
 	fDY = -pEvent->fWheelY * tResolved.tLayout.fWheelStep;
 	if ( fDX == 0.0f && fDY == 0.0f ) return XUI_OK;
-	fOldX = 0.0f;
-	fOldY = 0.0f;
-	(void)xuiScrollModelGetOffset(&pData->tScroll, &fOldX, &fOldY);
-	(void)xuiScrollModelScrollBy(&pData->tScroll, fDX, fDY);
-	fNewX = 0.0f;
-	fNewY = 0.0f;
-	(void)xuiScrollModelGetOffset(&pData->tScroll, &fNewX, &fNewY);
-	if ( fNewX != fOldX || fNewY != fOldY ) {
-		iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) {
-			(void)xuiScrollModelSetOffset(&pData->tScroll, fOldX, fOldY);
-			return iRet;
-		}
-		__xuiInventoryIncrementCounter(&pData->iChangeCount);
-		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	return XUI_OK;
+	xui_scroll_model_t tNext = pData->tScroll;
+	iRet = xuiScrollModelScrollBy(&tNext, fDX, fDY);
+	if ( iRet != XUI_OK ) return iRet;
+	bool bChanged = false;
+	iRet = __xuiInventoryCommitScroll(pWidget, pData, &tNext, true, &bChanged);
+	return iRet == XUI_OK && bChanged ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
 }
 
 static int __xuiInventoryEventBody(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
@@ -4698,6 +4708,69 @@ XUI_API xui_scroll_model_t* xuiInventoryGridGetScrollModel(xui_widget pWidget)
 	return (pData != NULL) ? &pData->tScroll : NULL;
 }
 
+static int __xuiInventoryReadScroll(xui_widget pWidget, xui_inventory_grid_data_t* pData, xui_scroll_model_t* pSnapshot)
+{
+	xui_inventory_grid_style_t tResolved;
+	__xuiInventoryResolve(pWidget, pData, &tResolved);
+	int iRet = __xuiInventorySyncLayout(pWidget, pData, &tResolved);
+	if ( iRet == XUI_OK ) *pSnapshot = pData->tScroll;
+	return iRet;
+}
+
+XUI_API int xuiInventoryGridGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pSnapshot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiInventoryReadScroll(pWidget, pData, pSnapshot);
+}
+
+static int __xuiInventoryScrollOffset(xui_widget pWidget, float fX, float fY, bool bRelative)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || !__xuiInventoryFloatFinite(fX) || !__xuiInventoryFloatFinite(fY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	xuiInternalOperationEnter(pContext);
+	xui_scroll_model_t tNext;
+	int iRet = __xuiInventoryReadScroll(pWidget, pData, &tNext);
+	if ( iRet == XUI_OK ) {
+		iRet = bRelative ? xuiScrollModelScrollBy(&tNext, fX, fY) : xuiScrollModelSetOffset(&tNext, fX, fY);
+		if ( iRet == XUI_OK ) iRet = __xuiInventoryCommitScroll(pWidget, pData, &tNext, true, NULL);
+	}
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
+XUI_API int xuiInventoryGridSetScrollOffset(xui_widget pWidget, float fX, float fY)
+{
+	return __xuiInventoryScrollOffset(pWidget, fX, fY, false);
+}
+
+XUI_API int xuiInventoryGridScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY)
+{
+	return __xuiInventoryScrollOffset(pWidget, fDeltaX, fDeltaY, true);
+}
+
+static int __xuiInventoryRevealRect(xui_widget pWidget, xui_inventory_grid_data_t* pData,
+	xui_rect_t tContentRect, xui_scroll_model_t* pNext, bool bCountChange)
+{
+	int iRet = xuiScrollModelEnsureRectVisible(pNext, tContentRect);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiInventoryCommitScroll(pWidget, pData, pNext, bCountChange, NULL);
+}
+
+XUI_API int xuiInventoryGridEnsureContentRectVisible(xui_widget pWidget, xui_rect_t tContentRect)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	xuiInternalOperationEnter(pContext);
+	xui_scroll_model_t tNext;
+	int iRet = __xuiInventoryReadScroll(pWidget, pData, &tNext);
+	if ( iRet == XUI_OK ) iRet = __xuiInventoryRevealRect(pWidget, pData, tContentRect, &tNext, true);
+	xuiInternalOperationLeave(pContext);
+	return iRet;
+}
+
 XUI_API int xuiInventoryGridGetSlotRect(xui_widget pWidget, int iSlot, xui_rect_t* pRect)
 {
 	xui_inventory_grid_data_t* pData;
@@ -4725,11 +4798,6 @@ XUI_API int xuiInventoryGridEnsureSlotVisible(xui_widget pWidget, int iSlot)
 {
 	xui_inventory_grid_data_t* pData;
 	xui_inventory_grid_style_t tResolved;
-	xui_rect_t tContent;
-	float fOldX;
-	float fOldY;
-	float fNewX;
-	float fNewY;
 	int iRet;
 
 	pData = __xuiInventoryGetData(pWidget);
@@ -4738,29 +4806,9 @@ XUI_API int xuiInventoryGridEnsureSlotVisible(xui_widget pWidget, int iSlot)
 	__xuiInventoryResolve(pWidget, pData, &tResolved);
 	iRet = __xuiInventorySyncLayout(pWidget, pData, &tResolved);
 	if ( iRet != XUI_OK ) return iRet;
-	tContent = __xuiInventorySlotContentRect(pData, &tResolved, iSlot);
-	fOldX = 0.0f;
-	fOldY = 0.0f;
-	iRet = xuiScrollModelGetOffset(&pData->tScroll, &fOldX, &fOldY);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiScrollModelEnsureRectVisible(&pData->tScroll, tContent);
-	if ( iRet != XUI_OK ) return iRet;
-	fNewX = 0.0f;
-	fNewY = 0.0f;
-	iRet = xuiScrollModelGetOffset(&pData->tScroll, &fNewX, &fNewY);
-	if ( iRet != XUI_OK ) {
-		(void)xuiScrollModelSetOffset(&pData->tScroll, fOldX, fOldY);
-		return iRet;
-	}
-	if ( (fOldX != fNewX) || (fOldY != fNewY) ) {
-		iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		if ( iRet != XUI_OK ) {
-			(void)xuiScrollModelSetOffset(&pData->tScroll, fOldX, fOldY);
-			return iRet;
-		}
-		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	}
-	return XUI_OK;
+	xui_scroll_model_t tNext = pData->tScroll;
+	xui_rect_t tContent = __xuiInventorySlotContentRect(pData, &tResolved, iSlot);
+	return __xuiInventoryRevealRect(pWidget, pData, tContent, &tNext, false);
 }
 
 XUI_API int xuiInventoryGridGetVisibleRange(xui_widget pWidget, xui_inventory_visible_range_t* pRange)

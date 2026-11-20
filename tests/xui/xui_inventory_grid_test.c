@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -178,6 +179,61 @@ cleanup:
 	if ( proxy != NULL ) (void)xuiProxyReleaseChecked(proxy);
 	if ( otherProxy != NULL ) (void)xuiProxyReleaseChecked(otherProxy);
 	return !iFailed && state.iCallbackRefs == 1;
+}
+
+static int __xuiInventoryCheckScrollSnapshot(void)
+{
+	xui_context context = NULL;
+	xui_widget grid = NULL;
+	int iFailed = 0;
+	XUI_TEST_CHECK(xuiCreate(&context) == XUI_OK && xuiInventoryGridCreate(context, &grid, NULL) == XUI_OK,
+		"create grid for scroll snapshot");
+	XUI_TEST_CHECK(xuiSetRootWidget(context, grid) == XUI_OK && xuiSetViewportSize(context, 80, 50) == XUI_OK &&
+		xuiWidgetSetRect(grid, (xui_rect_t){0, 0, 80, 50}) == XUI_OK, "set scroll viewport");
+	xui_inventory_grid_layout_t layout;
+	XUI_TEST_CHECK(xuiInventoryGridGetLayout(grid, &layout) == XUI_OK, "read scroll layout");
+	layout.iColumns = 4;
+	XUI_TEST_CHECK(xuiInventoryGridSetLayout(grid, &layout) == XUI_OK &&
+		xuiInventoryGridSetMetrics(grid, 20, 4, 0, 1, 1) == XUI_OK &&
+		xuiInventoryGridSetSlotCount(grid, 40) == XUI_OK && xuiLayout(context) == XUI_OK, "configure scroll grid");
+	xui_scroll_model_t initial, actual;
+	XUI_TEST_CHECK(xuiInventoryGridGetScrollSnapshot(grid, &initial) == XUI_OK && initial.fScrollX == 0 &&
+		initial.fScrollY == 0 && initial.tViewportRect.fW == 80 && initial.tViewportRect.fH == 50, "snapshot arranged viewport");
+	float maxX = 0, maxY = 0;
+	XUI_TEST_CHECK(xuiScrollModelGetMaxOffset(&initial, &maxX, &maxY) == XUI_OK && maxX > 0 && maxY > 100,
+		"snapshot contains both scroll limits");
+	int before = xuiInventoryGridGetChangeCount(grid);
+	XUI_TEST_CHECK(xuiInventoryGridSetScrollOffset(grid, -10, 100000) == XUI_OK &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == 0 && actual.fScrollY == maxY &&
+		xuiInventoryGridGetChangeCount(grid) == before + 1, "absolute scroll clamps and counts the change");
+	XUI_TEST_CHECK(xuiInventoryGridSetScrollOffset(grid, -10, 100000) == XUI_OK &&
+		xuiInventoryGridGetChangeCount(grid) == before + 1, "same clamped offset is a no-op");
+	XUI_TEST_CHECK(xuiInventoryGridScrollBy(grid, FLT_MAX, -FLT_MAX) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == 0 && actual.fScrollY == maxY,
+		"out-of-range finite deltas leave scrolling intact");
+	XUI_TEST_CHECK(xuiInventoryGridScrollBy(grid, XUI_LAYOUT_UNBOUNDED, -XUI_LAYOUT_UNBOUNDED) == XUI_OK &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == maxX && actual.fScrollY == 0,
+		"largest supported deltas clamp to the scroll range");
+	XUI_TEST_CHECK(xuiInventoryGridSetScrollOffset(grid, NAN, 0) == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == maxX && actual.fScrollY == 0,
+		"nonfinite offset leaves scrolling intact");
+	XUI_TEST_CHECK(xuiInventoryGridEnsureContentRectVisible(grid, (xui_rect_t){0, 120, 8, 12}) == XUI_OK &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == 0 && actual.fScrollY == 82,
+		"reveal content-space rectangle");
+
+	XUI_TEST_CHECK(xuiInventoryGridSetScrollOffset(grid, 0, maxY) == XUI_OK &&
+		xuiInventoryGridSetSlotCount(grid, 80) == XUI_OK && xuiSetViewportSize(context, 80, 110) == XUI_OK &&
+		xuiWidgetSetRect(grid, (xui_rect_t){0, 0, 80, 110}) == XUI_OK && xuiLayout(context) == XUI_OK &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.tViewportRect.fH == 110 &&
+		actual.fScrollY == maxY, "simultaneous viewport and content growth preserve a valid offset");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(grid, 0) == XUI_OK &&
+		xuiInventoryGridGetScrollSnapshot(grid, &actual) == XUI_OK && actual.fScrollX == 0 && actual.fScrollY == 0,
+		"empty model resets offset");
+	XUI_TEST_CHECK(initial.tViewportRect.fH == 50 && initial.fScrollY == 0, "old snapshot is independent");
+
+cleanup:
+	if ( context != NULL ) (void)xuiDestroyChecked(context);
+	return !iFailed;
 }
 
 typedef struct xui_inventory_grid_reentry_state_t {
@@ -1599,6 +1655,7 @@ cleanup:
 		return 1;
 	}
 	if ( !__xuiInventoryCheckOwnedIcons() ) return 1;
+	if ( !__xuiInventoryCheckScrollSnapshot() ) return 1;
 	printf("xui_inventory_grid_test passed\n");
 	return 0;
 }

@@ -10222,6 +10222,13 @@ XUI_API int xuiInventoryGridSetColors(xui_widget pWidget, const xui_inventory_gr
 XUI_API int xuiInventoryGridGetColors(xui_widget pWidget, xui_inventory_grid_colors_t* pColors);
 /* 取滚动模型（控件持有）。 */
 XUI_API xui_scroll_model_t* xuiInventoryGridGetScrollModel(xui_widget pWidget);
+/* 复制按当前控件布局同步后的滚动模型，输出独立于网格。 */
+XUI_API int xuiInventoryGridGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
+/* 更新滚动偏移并自动限制在有效范围内。 */
+XUI_API int xuiInventoryGridSetScrollOffset(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiInventoryGridScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
+/* 矩形采用滚动内容坐标。 */
+XUI_API int xuiInventoryGridEnsureContentRectVisible(xui_widget pWidget, xui_rect_t tContentRect);
 /* 输出槽位矩形。 */
 XUI_API int xuiInventoryGridGetSlotRect(xui_widget pWidget, int iSlot, xui_rect_t* pRect);
 /* 坐标命中测试（槽位/角标/分页符）。 */
