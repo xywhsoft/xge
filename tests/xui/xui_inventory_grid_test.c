@@ -240,6 +240,12 @@ static int __xuiInventoryGridTestAnimationRender(xui_widget pWidget, int iSlot, 
 	return XUI_OK;
 }
 
+static int __xuiInventoryGridTestAnimationLayer(xui_widget widget, int index, const xui_inventory_slot_t* slot,
+	xui_draw_context_t* draw, xui_rect_t rect, uint32_t state, uint32_t flags, uint32_t tint, void* user)
+{
+	return __xuiInventoryGridTestAnimationRender(widget, index, slot, NULL, draw, rect, state, flags, tint, user);
+}
+
 static int __xuiInventoryGridTestMinCountFilter(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser)
 {
 	int* pMinCount;
@@ -1283,6 +1289,7 @@ int main(void)
 	iRet = xuiInventoryGridQuerySlotsOwned(pTempGrid, &tQuery, &failed);
 	xrtMemDebugFailClear();
 	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && failed == NULL, "failed query clears its output");
+	xrtErrorFree(xrtTakeError());
 #else
 	XUI_TEST_CHECK(xuiInventoryGridQuerySlotsOwned(pTempGrid, &tQuery, &snapshot) == XUI_OK &&
 		xuiInventoryIndicesAddRef(snapshot) == XUI_OK, "query immutable indices and retain");
@@ -1421,6 +1428,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "ensure large last visible");
 	iRet = xuiInventoryGridGetVisibleRange(pGrid, &tVisibleRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tVisibleRange.iFirstSlot <= 9999 && tVisibleRange.iLastSlot >= 9999, "large visible range includes last slot");
+
+	const uint32_t iPaintTint = XUI_COLOR_RGBA(15, 90, 180, 255);
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(pGrid, 2) == XUI_OK &&
+		xuiInventoryGridEnsureSlotVisible(pGrid, 0) == XUI_OK, "prepare owned render slots");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimation(pGrid, 0, (xui_animation_object_t*)0x2345, 9u, 1.0f, 0u) == XUI_OK &&
+		xuiInventoryGridSetSlotAnimationStyle(pGrid, 0, 21u, 0.5f, iPaintTint) == XUI_OK &&
+		xuiInventoryGridGetSlotAnimation(pGrid, 0, NULL, NULL, NULL) == (xui_animation_object_t*)0x2345,
+		"animation style preserves the legacy payload");
+	int iPaintActive = 0;
+	uint32_t iPaintFlags = 0;
+	float fPaintScale = 0.0f;
+	uint32_t iReadPaintTint = 0;
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotAnimationStyle(pGrid, 0, &iPaintActive, &iPaintFlags, &fPaintScale, &iReadPaintTint) == XUI_OK &&
+		iPaintActive && iPaintFlags == 21u && fPaintScale == 0.5f && iReadPaintTint == iPaintTint, "animation style round trip");
+	XUI_TEST_CHECK(xuiInventoryGridSetRenderCallbackOwned(pGrid, __xuiInventoryGridTestRender, &tState, &tCallbackOwner) == XUI_OK &&
+		xuiInventoryGridSetAnimationLayerOwned(pGrid, __xuiInventoryGridTestAnimationLayer, &tState, &tCallbackOwner) == XUI_OK &&
+		tState.iCallbackRefs == 4, "grid owns both render callbacks");
+	tState.iRenders = 0;
+	tState.iAnimationRenders = 0;
+	XUI_TEST_CHECK(xuiRender(pContext, pTarget, &tFullRect, 1) == XUI_OK && tState.iRenders > 0 && tState.iAnimationRenders == 1 &&
+		tState.iAnimationSlot == 0 && tState.iAnimationFlags == 21u && tState.iAnimationTint == iPaintTint &&
+		tState.iCallbackRefs == 4, "render invokes owned layers with retained payloads");
+	XUI_TEST_CHECK(xuiInventoryGridSetRenderCallback(pGrid, NULL, NULL) == XUI_OK &&
+		xuiInventoryGridSetAnimationRenderCallback(pGrid, NULL, NULL) == XUI_OK && tState.iCallbackRefs == 2,
+		"legacy clear retires both managed registrations");
 
 cleanup:
 	if ( pTempGrid != NULL ) {

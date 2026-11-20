@@ -3243,6 +3243,8 @@ typedef int (*xui_inventory_tooltip_proc)(xui_widget_t* pWidget, int iSlot, cons
 typedef xstrview (*xui_inventory_tooltip_owned_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser);
 typedef int (*xui_inventory_slot_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
 typedef int (*xui_inventory_animation_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_animation_object_t* pAnimation, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser);
+/* 动画绘制层使用槽位数据和回调环境，无需应用私有的动画指针。 */
+typedef int (*xui_inventory_animation_layer_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser);
 /* Filter/compare callbacks receive const snapshots. They may mutate or destroy the grid; the operation then aborts safely. */
 typedef int (*xui_inventory_filter_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser);
 typedef int (*xui_inventory_compare_proc)(xui_widget_t* pWidget, int iSlotA, const xui_inventory_slot_t* pSlotA, int iSlotB, const xui_inventory_slot_t* pSlotB, void* pUser);
@@ -10275,8 +10277,10 @@ XUI_API int xuiInventoryGridSetTooltipCallback(xui_widget pWidget, xui_inventory
 XUI_API int xuiInventoryGridSetTooltipCallbackOwned(xui_widget pWidget, xui_inventory_tooltip_owned_proc onTooltip, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册槽位自绘回调（覆盖默认物品绘制）。 */
 XUI_API int xuiInventoryGridSetRenderCallback(xui_widget pWidget, xui_inventory_slot_render_proc onRender, void* pUser);
+XUI_API int xuiInventoryGridSetRenderCallbackOwned(xui_widget pWidget, xui_inventory_slot_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册槽位动画层自绘回调。 */
 XUI_API int xuiInventoryGridSetAnimationRenderCallback(xui_widget pWidget, xui_inventory_animation_render_proc onRender, void* pUser);
+XUI_API int xuiInventoryGridSetAnimationLayerOwned(xui_widget pWidget, xui_inventory_animation_layer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 打开堆叠拆分弹窗。 */
 XUI_API int xuiInventoryGridOpenSplitPopup(xui_widget pWidget, int iSlot, float fX, float fY);
 /* 提交拆分数量。 */
@@ -10295,6 +10299,9 @@ XUI_API int xuiInventoryGridGetSplitSlot(xui_widget pWidget);
 XUI_API int xuiInventoryGridGetSplitCount(xui_widget pWidget);
 /* 为槽位设置动画对象（含缩放/着色）。 */
 XUI_API int xuiInventoryGridSetSlotAnimation(xui_widget pWidget, int iSlot, xui_animation_object_t* pAnimation, uint32_t iFlags, float fScale, uint32_t iTint);
+/* 设置由绘制回调提供的动画层，保留该槽位已有的 C 动画指针。 */
+XUI_API int xuiInventoryGridSetSlotAnimationStyle(xui_widget pWidget, int iSlot, uint32_t iFlags, float fScale, uint32_t iTint);
+XUI_API int xuiInventoryGridGetSlotAnimationStyle(xui_widget pWidget, int iSlot, int* pActive, uint32_t* pFlags, float* pScale, uint32_t* pTint);
 /* 输出槽位动画对象与参数。 */
 XUI_API xui_animation_object_t* xuiInventoryGridGetSlotAnimation(xui_widget pWidget, int iSlot, uint32_t* pFlags, float* pScale, uint32_t* pTint);
 /* 清除槽位动画。 */
