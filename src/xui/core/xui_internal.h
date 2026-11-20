@@ -506,6 +506,8 @@ struct xui_context_t {
 	xui_tooltip_desc_t tActiveTooltip;
 	xui_rect_t tTooltipRect;
 	char* sActiveTooltipText;
+	uint64_t iTooltipRevision;
+	bool bTooltipMeasuring;
 	float fTooltipHoverTime;
 	int fTooltipMouseX;
 	int fTooltipMouseY;

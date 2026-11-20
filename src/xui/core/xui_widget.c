@@ -7299,6 +7299,7 @@ static void __xuiTooltipClearActiveDesc(xui_context pContext)
 		pContext->sActiveTooltipText = NULL;
 	}
 	__xuiTooltipDefaultDesc(&pContext->tActiveTooltip);
+	++pContext->iTooltipRevision;
 }
 
 static int __xuiTooltipSetActiveDesc(xui_context pContext, const xui_tooltip_desc_t* pDesc)
@@ -7646,9 +7647,11 @@ static int __xuiTooltipOpen(xui_context pContext)
 	xui_vec2_t tSize;
 	xui_rect_t tRect;
 	xui_widget pPopup;
+	xui_widget pOwner;
+	uint64_t iRevision;
 	int iRet;
 
-	if ( !xuiInternalContextIsValid(pContext) || (pContext->pTooltipOwner == NULL) ) {
+	if ( !xuiInternalContextIsValid(pContext) || (pContext->pTooltipOwner == NULL) || pContext->bTooltipMeasuring ) {
 		return XUI_OK;
 	}
 	if ( !__xuiTooltipDescEnabled(&pContext->tActiveTooltip) ||
@@ -7662,8 +7665,18 @@ static int __xuiTooltipOpen(xui_context pContext)
 		return iRet;
 	}
 	pPopup = pContext->pTooltipPopupWidget;
-	tSize = __xuiTooltipMeasure(pContext, pContext->pTooltipOwner, &pContext->tActiveTooltip);
-	tRect = __xuiTooltipResolveRect(pContext, pContext->pTooltipOwner, &pContext->tActiveTooltip, tSize);
+	pOwner = pContext->pTooltipOwner;
+	iRevision = pContext->iTooltipRevision;
+	pContext->bTooltipMeasuring = true;
+	tSize = __xuiTooltipMeasure(pContext, pOwner, &pContext->tActiveTooltip);
+	pContext->bTooltipMeasuring = false;
+	/* Measurement can replace the tooltip, detach its owner or request close.
+	 * The enclosing operation keeps storage alive until this check finishes. */
+	if ( pContext->bCloseRequested || xuiInternalContextDestroyPending(pContext) ||
+	     pContext->iTooltipRevision != iRevision || pContext->pTooltipPopupWidget != pPopup ) {
+		return XUI_OK;
+	}
+	tRect = __xuiTooltipResolveRect(pContext, pOwner, &pContext->tActiveTooltip, tSize);
 	pContext->tTooltipRect = tRect;
 	if ( pPopup->pParent == NULL ) {
 		iRet = xuiOverlayAttach(pContext, pContext->pTooltipOwner, pPopup, XUI_LAYER_TOOLTIP, 0);
@@ -7729,6 +7742,12 @@ void xuiInternalTooltipCancel(xui_context pContext)
 void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget)
 {
 	if ( !xuiInternalContextIsValid(pContext) || (pWidget == NULL) ) {
+		return;
+	}
+	if ( pContext->pTooltipPopupWidget != NULL && pContext->pTooltipPopupWidget->bDestroyPending &&
+	     __xuiWidgetContains(pWidget, pContext->pTooltipPopupWidget) ) {
+		pContext->pTooltipPopupWidget = NULL;
+		xuiInternalTooltipCancel(pContext);
 		return;
 	}
 	if ( __xuiWidgetContains(pWidget, pContext->pTooltipOwner) ) {

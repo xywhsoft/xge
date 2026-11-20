@@ -286,6 +286,46 @@ static int __xuiTestTooltipResolve(xui_context pContext, xui_widget pWidget, xui
 	return 1;
 }
 
+typedef struct xui_input_tooltip_measure_t {
+	int iCalls;
+	int iStatus;
+	int iAction;
+} xui_input_tooltip_measure_t;
+
+enum {
+	TOOLTIP_MEASURE_CLEAR,
+	TOOLTIP_MEASURE_REPLACE,
+	TOOLTIP_MEASURE_UPDATE,
+};
+
+static xui_vec2_t __xuiTestTooltipMeasure(xui_context pContext, xui_widget pWidget, void* pUser)
+{
+	xui_input_tooltip_measure_t* pMeasure = pUser;
+	if ( ++pMeasure->iCalls == 1 ) {
+		if ( pMeasure->iAction == TOOLTIP_MEASURE_CLEAR ) {
+			pMeasure->iStatus = xuiWidgetClearTooltip(pWidget);
+		} else if ( pMeasure->iAction == TOOLTIP_MEASURE_REPLACE ) {
+			xui_tooltip_placement_t tPlacement = xuiTooltipPlacementDefault();
+			tPlacement.fDelay = 0.0f;
+			pMeasure->iStatus = xuiWidgetSetTextTooltip(pWidget, "R", &tPlacement);
+		} else {
+			pMeasure->iStatus = xuiUpdate(pContext, 0.0f);
+		}
+	}
+	return (xui_vec2_t){96.0f, 64.0f};
+}
+
+static int __xuiTestTooltipPaint(xui_context pContext, xui_widget pWidget, xui_draw_context pDraw,
+	xui_rect_t tRect, void* pUser)
+{
+	(void)pContext;
+	(void)pWidget;
+	(void)pDraw;
+	(void)tRect;
+	(void)pUser;
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xui_input_dispatch_log_t tLog;
@@ -654,6 +694,40 @@ int main(void)
 	               ((xuiWidgetGetEventMask(pB) & XUI_EVENT_MASK_TOOLTIP) == 0), "tooltip clear failed");
 	iRet = xuiWidgetClearTooltip(pA);
 	XUI_TEST_CHECK((iRet == XUI_OK) && ((xuiWidgetGetEventMask(pA) & XUI_EVENT_MASK_TOOLTIP) == 0), "tooltip clear A failed");
+	{
+		xui_input_tooltip_measure_t tMeasure;
+		const xui_tooltip_desc_t tCustom = {
+			.iSize = sizeof(tCustom), .iType = XUI_TOOLTIP_CUSTOM, .iAnchor = XUI_TOOLTIP_ANCHOR_CURSOR,
+			.onMeasure = __xuiTestTooltipMeasure, .onPaint = __xuiTestTooltipPaint, .pUser = &tMeasure,
+		};
+		for ( int iAction = TOOLTIP_MEASURE_CLEAR; iAction <= TOOLTIP_MEASURE_UPDATE; ++iAction ) {
+			tMeasure = (xui_input_tooltip_measure_t){.iAction = iAction, .iStatus = XUI_ERROR};
+			XUI_TEST_CHECK(xuiWidgetSetTooltip(pA, &tCustom) == XUI_OK &&
+				xuiInputPointerMove(pContext, 12.0f, 12.0f, 0) == XUI_OK && xuiUpdate(pContext, 0.0f) == XUI_OK,
+				"reentrant custom tooltip setup failed");
+			XUI_TEST_CHECK(tMeasure.iCalls == 1 && tMeasure.iStatus == XUI_OK, "tooltip measurement was repeated or failed");
+			if ( iAction == TOOLTIP_MEASURE_CLEAR ) {
+				XUI_TEST_CHECK(!xuiWidgetTooltipIsOpen(pContext) && xuiWidgetTooltipGetOwner(pContext) == NULL,
+					"cleared tooltip reopened after its measurement returned");
+			} else if ( iAction == TOOLTIP_MEASURE_REPLACE ) {
+				XUI_TEST_CHECK(!xuiWidgetTooltipIsOpen(pContext) && xuiUpdate(pContext, 0.0f) == XUI_OK &&
+					xuiWidgetTooltipIsOpen(pContext), "replacement tooltip did not open on the next update");
+				XUI_TEST_CHECK(xuiWidgetTooltipGetRect(pContext).fW < 96.0f, "replacement used the stale measured width");
+			} else {
+				XUI_TEST_CHECK(xuiWidgetTooltipIsOpen(pContext) && xuiWidgetTooltipGetRect(pContext).fW == 96.0f,
+					"nested update lost the custom tooltip size");
+				xui_widget pTooltip = xuiOverlayTop(pContext);
+				XUI_TEST_CHECK(pTooltip != NULL && pTooltip != pA, "tooltip popup missing");
+				xuiWidgetDestroy(pTooltip);
+				XUI_TEST_CHECK(!xuiWidgetTooltipIsOpen(pContext) && xuiWidgetTooltipGetOwner(pContext) == NULL,
+					"destroyed popup remained active");
+				XUI_TEST_CHECK(xuiInputPointerMove(pContext, 12.0f, 12.0f, 0) == XUI_OK &&
+					xuiUpdate(pContext, 0.0f) == XUI_OK && xuiWidgetTooltipIsOpen(pContext),
+					"tooltip popup was not recreated after destruction");
+			}
+			XUI_TEST_CHECK(xuiWidgetClearTooltip(pA) == XUI_OK, "reentrant tooltip cleanup failed");
+		}
+	}
 	iRet = xuiSetFocusWidget(pContext, pB);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (xuiGetFocusWidget(pContext) == pB), "restore focus before capture failed");
 	iRet = xuiInputPointerMove(pContext, 12.0f, 12.0f, 0);
