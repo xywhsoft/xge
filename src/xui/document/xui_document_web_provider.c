@@ -3,7 +3,7 @@
 #if XUI_ENABLE_WEBVIEW
 /* Optional, application-owned static math/Mermaid/HTML renderer. The Document
  * remains authoritative; the one browser worker only produces cached pixels. */
-#include "xui_document_ui.h"
+#include "xui_document_web_internal.h"
 #include "xui_internal.h"
 #include "xui_webview_internal.h"
 #include <math.h>
@@ -57,7 +57,7 @@ struct xui_doc_web_provider_t {
     size_t entry_count, cache_bytes;
     uint64_t clock, next_request_id;
     uint64_t draw_calls;
-    uint64_t palette_generation;
+    uint64_t palette_generation, object_generation;
     uint32_t foreground, background;
     doc_web_entry* active;
     xui_web_request capture;
@@ -186,6 +186,7 @@ static int doc_web_entry_clear(xui_doc_web_provider provider, doc_web_entry* ent
 
 static int doc_web_invalidate(xui_doc_web_provider provider)
 {
+    ++provider->object_generation;
     xui_doc_web_invalidate_proc callback=provider->on_invalidate;
     void* user=provider->user;
     if(!callback || !doc_web_business_alive(provider))return XUI_OK;
@@ -810,6 +811,22 @@ XUI_API xui_context xuiDocumentWebProviderGetContext(xui_doc_web_provider provid
 {return provider && xuiInternalManagerAlive(&provider->owned) ? provider->context:NULL;}
 XUI_API int xuiDocumentWebProviderLifetimeWatch(xui_doc_web_provider provider,xui_lifetime_link_t* link,xui_lifetime_invalidate_proc invalidate,void* user)
 {return provider ? xuiInternalManagerWatch(&provider->owned,link,invalidate,user):XUI_ERROR_INVALID_ARGUMENT;}
+
+int doc_web_watch_renderer(xui_doc_web_provider provider, xui_context context,
+    xui_lifetime_link_t* link, xui_lifetime_invalidate_proc invalidate, void* user)
+{
+    int status = xuiInternalManagerReadStatus(&provider->owned);
+    if (status != XUI_OK) return status;
+    if (provider->context != context) return XUI_ERROR_INVALID_ARGUMENT;
+    /* Admission is complete. Neither list operation calls a subscriber. */
+    xuiLifetimeUnwatch(link);
+    return xuiInternalManagerWatch(&provider->owned, link, invalidate, user);
+}
+
+uint64_t doc_web_object_generation(xui_doc_web_provider provider)
+{
+    return provider->object_generation;
+}
 XUI_API int xuiDocumentWebProviderSetInvalidateOwned(xui_doc_web_provider provider,xui_doc_web_invalidate_proc callback,void* user,const xui_callback_owner_t* owner)
 {
     if(!provider)return XUI_ERROR_INVALID_ARGUMENT;

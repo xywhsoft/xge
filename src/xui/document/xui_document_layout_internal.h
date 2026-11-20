@@ -269,6 +269,12 @@ struct xui_document_renderer_t {
     xui_callback_owner_t callback_owners[3];
     uint64_t callback_generation[3];
     uint8_t callback_owned_modes;
+#if XUI_ENABLE_WEBVIEW
+    xui_doc_web_provider web_provider;
+    xui_lifetime_link_t web_provider_link;
+    uint64_t web_object_generation;
+    bool web_objects_dirty;
+#endif
     uint64_t resource_registry_generation;
     float dpi_scale;
     int has_named_images;

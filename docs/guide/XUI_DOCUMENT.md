@@ -528,6 +528,8 @@ IME 预编辑使用未发布候选的独立渲染投影，确认形成一个根�
 
 XUI 资源注册表提供 `xuiResourceGetRegistryGeneration(context)`。注册、替换、移除或 `Touch` 命名 surface 后，Renderer 在下次排版/绘制时自动重测相关图片；View 在更新帧请求布局和缓存刷新，无需宿主逐个调用失效接口。命名图片在构建块目录时登记，即使尚未进入可见区也能响应后续资源变化；没有命名图片的视图不会因无关资源变化而重排。自定义对象 provider 自行改变尺寸时仍调用 `xuiDocumentViewInvalidateObjects(view)`（或独立 Renderer 的 `xuiDocumentRendererInvalidateObjects(renderer)`）。对象失效只释放含对象块的布局缓存；固定高度 View 重新测量视口上方的对象，并以块高度和已排版片段修正阅读位置。Document 内容和撤销历史不变。宿主可用 `xuiDocumentImageResourceLoadMemory/File` 同步提交编码图片或授权文件路径，默认限制编码 16 MiB、解码后 1600 万像素，失败替换保留原资源。
 
+独立 Renderer 可用 `xuiDocumentRendererSetWebProvider(renderer, provider)` 同时挂接浏览器对象的测量和绘制。Provider 必须属于同一个 Context，且互斥于自定义对象回调。应用继续驱动 `xuiDocumentWebProviderUpdate`，Renderer 读取缓存版本并在下一次排版或绘制时重测受影响的对象。传入 `NULL` 或关闭 Provider 后恢复占位布局。Context 持有 Provider，Renderer 在释放时解除观察。
+
 图片剪贴板当前以内存 PNG 进入 Document：XGE 可从 RGBA8 编码并正确转换预乘 alpha，Win32 优先读取注册剪贴板格式 PNG；没有 PNG 表示或延迟渲染失败时，将常见 24 位 BI_RGB `CF_DIB` 或 32 位 BI_RGB/BI_BITFIELDS `CF_DIBV5` 转换为同一 PNG 输入，按掩码提取颜色和透明度，并拒绝截断数据或重叠掩码。向 Windows 复制有效 PNG 时，XGE 同时提供带显式 alpha 的 32 位顶向下 `CF_DIBV5`，供只识别系统位图格式的应用读取；超出 1600 万像素或无法解码的 PNG 不附加 DIB，原有剪贴板项目照常发布。手动运行的 XGE 实例使用不显示的顶层窗口持有剪贴板。VISUAL View/Editor 仅在选区恰为一张图片且 context 中存在同名 surface 时附加 PNG 字节；没有可读 surface 仍复制原生片段和 HTML 资源描述。VISUAL Editor 在原生片段和 HTML 缺失时可从 PNG 或上述 DIB 表示粘贴，限制 16 MiB 编码数据和 1600 万像素，创建唯一的 context 命名资源和图片节点，失败不发布文档，成功可一步 Undo。资源由 context 持有，Undo 不删除它；宿主保存文档时仍需把这类图片归档为持久资产并维护 URI 映射。ICC 色彩管理、压缩/调色板 DIB、跨进程应用矩阵及其他平台仍需验收。
 
 Win32 DIB 回退在首次 PNG 长度查询后暂存一次转换结果，供紧接着的内容读取复用，避免 Document 粘贴把同一位图解码、编码两遍。暂存上限为 16 MiB；完整读取、XGE 写剪贴板或 `xgeUnit` 会释放，下一次 DIB 回退会按系统剪贴板序号淘汰过期数据。超出上限的图片仍可能重复转换。这只是减少重复计算，未提供跨进程快照或真实 UI 延迟保证。

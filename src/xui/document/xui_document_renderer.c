@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XUI_ENABLE_DOCUMENT_VIEW
 #include "xui_document_layout_internal.h"
+#include "xui_document_web_internal.h"
 #include "xui_text_internal.h"
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
@@ -66,6 +67,10 @@ static int doc_renderer_set_callback(xui_document_renderer renderer,unsigned slo
     if(!renderer->owned_proxy || (slot==0 && renderer->desc.onFont) ||
         (slot==1 && renderer->desc.onObjectMeasure) || (slot==2 && renderer->desc.onObjectDraw))
         return doc_renderer_call_end(&call,XUI_ERROR_INVALID_STATE);
+#if XUI_ENABLE_WEBVIEW
+    if (slot != 0 && present && renderer->web_provider)
+        return doc_renderer_call_end(&call, XUI_ERROR_INVALID_STATE);
+#endif
     uint64 generation=renderer->callback_generation[slot];
     xui_callback_owner_t candidate=owner ? *owner:(xui_callback_owner_t){0};
     bool held=false;status=xuiInternalCallbackHoldFresh(&candidate,&held);
@@ -99,6 +104,35 @@ XUI_API int xuiDocumentRendererSetObjectMeasureOwned(xui_document_renderer rende
 XUI_API int xuiDocumentRendererSetObjectDrawOwned(xui_document_renderer renderer,
     xui_doc_object_draw_owned_proc callback,void* user,const xui_callback_owner_t* owner)
 {return doc_renderer_set_callback(renderer,2,(doc_renderer_callback_t){.draw=callback},callback!=NULL,user,owner);}
+
+#if XUI_ENABLE_WEBVIEW
+static void doc_renderer_web_provider_gone(void* user)
+{
+    xui_document_renderer renderer = user;
+    renderer->web_provider = NULL;
+    renderer->web_objects_dirty = true;
+}
+
+XUI_API int xuiDocumentRendererSetWebProvider(xui_document_renderer renderer,
+    xui_doc_web_provider provider)
+{
+    doc_renderer_call_t call = {0};
+    int status = doc_renderer_call_begin(renderer, &call, false, false);
+    if (status != XUI_OK || renderer->web_provider == provider)
+        return doc_renderer_call_end(&call, status);
+    if (provider && (renderer->object_measure || renderer->object_draw ||
+        renderer->desc.onObjectMeasure || renderer->desc.onObjectDraw))
+        return doc_renderer_call_end(&call, XUI_ERROR_INVALID_STATE);
+    if (provider) {
+        status = doc_web_watch_renderer(provider, call.context,
+            &renderer->web_provider_link, doc_renderer_web_provider_gone, renderer);
+        if (status != XUI_OK) return doc_renderer_call_end(&call, status);
+    } else xuiLifetimeUnwatch(&renderer->web_provider_link);
+    renderer->web_provider = provider;
+    renderer->web_objects_dirty = true;
+    return doc_renderer_call_end(&call, XUI_OK);
+}
+#endif
 /* The renderer's outer operation holds native storage through snapshot Drop.
  * Snapshot selection is immutable even if Hold or the callback changes the
  * registration. The independent owner keeps the selected closure executable. */
@@ -176,6 +210,11 @@ int doc_render_resolve_font(xui_document_renderer renderer,const char* family,ui
 int doc_render_measure_object(xui_document_renderer renderer,xui_doc_node_id node,float width,xui_vec2_t* size,float* baseline)
 {
     xui_document_renderer root=doc_renderer_root(renderer);
+#if XUI_ENABLE_WEBVIEW
+    if (root->web_provider)
+        return xuiDocumentWebObjectMeasure(renderer->snapshot, node, width,
+            renderer->desc.fZoom, size, baseline, root->web_provider);
+#endif
     xui_doc_object_measure_owned_proc callback=root->object_measure;
     if(!callback)return renderer->desc.onObjectMeasure ? renderer->desc.onObjectMeasure(renderer->snapshot,node,width,renderer->desc.fZoom,size,baseline,renderer->desc.pUser):XUI_ERROR_UNSUPPORTED;
     void* user=root->callback_users[1];xui_callback_snapshot_t snapshot={0};
@@ -187,6 +226,13 @@ int doc_render_measure_object(xui_document_renderer renderer,xui_doc_node_id nod
 static int doc_render_draw_object(xui_document_renderer renderer,xui_doc_node_id node,xui_draw_context draw,xui_rect_t bounds)
 {
     xui_document_renderer root=doc_renderer_root(renderer);
+#if XUI_ENABLE_WEBVIEW
+    if (root->web_provider) {
+        xui_proxy proxy = root->owned_proxy ? root->owned_proxy : renderer->proxy;
+        return xuiDocumentWebObjectDraw(renderer->snapshot, node, proxy, draw,
+            bounds, root->web_provider);
+    }
+#endif
     xui_doc_object_draw_owned_proc callback=root->object_draw;
     if(!callback)return renderer->desc.onObjectDraw ? renderer->desc.onObjectDraw(renderer->snapshot,node,renderer->proxy,draw,bounds,renderer->desc.pUser):XUI_ERROR_UNSUPPORTED;
     void* user=root->callback_users[2];xui_callback_snapshot_t snapshot={0};
@@ -1763,6 +1809,9 @@ XUI_API int xuiDocumentRendererReleaseOwnerChecked(xui_document_renderer r,bool*
         status=xuiInternalCleanupEnd(NULL,&receipt);return status==XUI_OK ? XUI_STATUS_DEFERRED:status;
     }
     r->destroying=true;*consumed=true;
+#if XUI_ENABLE_WEBVIEW
+    xuiLifetimeUnwatch(&r->web_provider_link);
+#endif
     xuiLifetimeUnwatch(&r->context_link);xuiInternalLifetimeInvalidateAll(&r->lifetime_links);
     xuiInternalContextCleanupOutcome(context,XUI_OK,&receipt.status,&receipt.error);
     xrtMapUnit(&r->block_index);xuiDocumentSnapshotRelease(r->snapshot);xuiDocumentPrepareRelease(r->input);free(r->fonts);
@@ -2123,6 +2172,18 @@ static int doc_render_refresh_resources(xui_document_renderer r)
     xui_font default_font = r->uses_default_font ? xuiGetDefaultFont(r->context) : r->desc.tFonts.normal;
     int result;
     if (r->freeze_dynamic_refresh) return XUI_OK;
+#if XUI_ENABLE_WEBVIEW
+    uint64_t web_generation = r->web_provider ? doc_web_object_generation(r->web_provider) : 0;
+    if (r->web_objects_dirty || web_generation != r->web_object_generation) {
+        r->web_objects_dirty = false;
+        result = doc_impl_InvalidateObjects(r);
+        if (result != XUI_OK) {
+            r->web_objects_dirty = true;
+            return result;
+        }
+        r->web_object_generation = web_generation;
+    }
+#endif
     if (dpi_scale != r->dpi_scale || default_font != r->desc.tFonts.normal) {
         result = doc_render_invalidate_fonts(r, dpi_scale, default_font);
         if (result != XUI_OK) return result;

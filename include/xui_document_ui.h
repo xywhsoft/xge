@@ -8,6 +8,7 @@ extern "C" {
 
 typedef struct xui_document_renderer_t* xui_document_renderer;
 typedef struct xui_doc_range_rects_t* xui_document_range_rects;
+typedef struct xui_doc_web_provider_t* xui_doc_web_provider;
 /* Callback-period output. SetFont takes a real native Font owner; the consumer
  * moves that owner before disposing the automatic record. Never copy a live
  * record or keep its borrowed backend identity after its callback period. */
@@ -175,6 +176,14 @@ XUI_API int xuiDocumentRendererSetObjectMeasureOwned(xui_document_renderer rende
     xui_doc_object_measure_owned_proc callback,void* user,const xui_callback_owner_t* owner);
 XUI_API int xuiDocumentRendererSetObjectDrawOwned(xui_document_renderer renderer,
     xui_doc_object_draw_owned_proc callback,void* user,const xui_callback_owner_t* owner);
+#if XUI_ENABLE_WEBVIEW
+/* Attach both browser object operations from a provider in the same Context.
+ * NULL detaches it. Closure or replacement invalidates cached object geometry.
+ * A provider attachment and custom object callbacks are mutually exclusive.
+ * The Context still owns the provider and the caller still drives its Update. */
+XUI_API int xuiDocumentRendererSetWebProvider(xui_document_renderer renderer,
+    xui_doc_web_provider provider);
+#endif
 /* Release renderer layout and its retained snapshot. */
 XUI_API void xuiDocumentRendererRelease(xui_document_renderer renderer);
 /* Logical close request: no native owner is consumed; existing metadata
@@ -290,7 +299,6 @@ XUI_API int xuiDocumentRendererGetStats(xui_document_renderer renderer, xui_doc_
  * closure, and parent/Context closure also retires it. Returned handles do not
  * outlive that Context. The worker uses a one-pixel
  * visible host slot to keep WebView2 rendering while capturing full viewport. */
-typedef struct xui_doc_web_provider_t* xui_doc_web_provider;
 typedef void (*xui_doc_web_invalidate_proc)(void* user);
 typedef struct xui_doc_web_provider_desc_t {
     uint32_t iSize;

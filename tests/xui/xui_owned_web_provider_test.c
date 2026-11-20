@@ -16,7 +16,7 @@ typedef struct ProviderTest {
     xui_doc_web_provider provider;
     unsigned surfaceDrops,invalidations;
     int surfaceStatus,measureStatus;
-    bool closeOnLoad,failLoad,nestedDrop,swapFont;
+    bool closeOnLoad,closeOnDraw,failLoad,nestedDrop,swapFont;
     xui_font nextFont;
 } ProviderTest;
 typedef struct CpuSurface {ProviderTest* test;xui_surface_desc_t desc;int status;} CpuSurface;
@@ -49,7 +49,16 @@ static int cpuSurfaceLoad(xui_proxy proxy,xui_surface* output,const void* encode
 static int cpuSurfaceDesc(xui_proxy proxy,xui_surface surface,xui_surface_desc_t* output)
 {assert(xuiSurfaceGetProxy(surface)==proxy);*output=((CpuSurface*)xuiInternalProxyResourcePayload(surface))->desc;return XUI_OK;}
 static int cpuDrawSurface(xui_proxy proxy,xui_draw_context draw,xui_surface surface,xui_rect_t from,xui_rect_t to,uint32_t color,uint32_t flags)
-{(void)draw;(void)from;(void)to;(void)color;(void)flags;assert(xuiSurfaceGetProxy(surface)==proxy);return XUI_OK;}
+{
+    (void)draw;(void)from;(void)to;(void)color;(void)flags;
+    assert(xuiSurfaceGetProxy(surface)==proxy);
+    if(current->closeOnDraw){
+        current->closeOnDraw=false;
+        assert(xuiDocumentWebProviderReleaseChecked(current->provider)==XUI_OK);
+        assert(xuiSurfaceGetProxy(surface)==proxy);
+    }
+    return XUI_OK;
+}
 static int cpuSurfaceDrawTo(xui_proxy proxy,xui_surface target,xui_surface source,xui_rect_t from,xui_rect_t to,uint32_t color,uint32_t flags)
 {assert(xuiSurfaceGetProxy(target)==proxy);return cpuDrawSurface(proxy,NULL,source,from,to,color,flags);}
 static int cpuMeasure(xui_proxy proxy,const xui_text_item_t* item,xui_vec2_t* size)
@@ -68,7 +77,11 @@ static void providerSetup(ProviderTest* test)
     table->surfaceLoadMemory=cpuSurfaceLoad;table->surfaceCreate=cpuSurfaceCreate;
     table->textMeasure=cpuMeasure;table->fontGetMetrics=metrics;table->surfaceGetDesc=cpuSurfaceDesc;table->surfaceDrawTo=cpuSurfaceDrawTo;table->drawSurface=cpuDrawSurface;
     xui_callback_owner_t owner=ownerRef(&test->base.owner);
-    assert(xuiProxyCreateOwned(table,&owner,&test->base.proxy)==XUI_OK && xuiCreateOwned(test->base.proxy,&test->base.context)==XUI_OK);
+    /* The generic CPU test proxy's system font loader returns a legacy raw
+     * font. Tests that need a Font install an owned one explicitly. */
+    xui_context_desc_t contextDesc={.iSize=sizeof(contextDesc),.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED};
+    assert(xuiProxyCreateOwned(table,&owner,&test->base.proxy)==XUI_OK);
+    assert(xuiCreateOwnedEx(test->base.proxy,&contextDesc,&test->base.context)==XUI_OK);
     xui_widget parent=NULL;assert(xuiWidgetCreate(test->base.context,&parent)==XUI_OK);
     xui_doc_web_provider_desc_t desc={.iSize=sizeof(desc),.pContext=test->base.context,.pParent=parent,.sAssetsFolder="cpu-local-assets"};
     assert(xuiDocumentWebProviderCreate(&desc,&test->provider)==XUI_OK);
@@ -206,12 +219,81 @@ static void parentClose(void)
     assert(xuiWidgetDestroyChecked(parent)==XUI_OK && !test.base.context->pOwnedManagers);
     providerFinish(&test);
 }
+
+static int unhandledMeasure(xui_document_renderer renderer,xui_document_snapshot snapshot,
+    xui_doc_node_id node,float width,float zoom,xui_vec2_t* size,float* baseline,void* user)
+{
+    (void)renderer;(void)snapshot;(void)node;(void)width;(void)zoom;(void)size;(void)baseline;(void)user;
+    return XUI_ERROR_UNSUPPORTED;
+}
+
+static void rendererAttachment(void)
+{
+    ProviderTest test,other;providerSetup(&test);providerSetup(&other);current=&test;
+    xui_context context=test.base.context;
+    xui_document_renderer renderer=NULL, releasedFirst=NULL;
+    assert(xuiDocumentRendererCreate(context,NULL,&renderer)==XUI_OK);
+    assert(xuiDocumentRendererCreate(context,NULL,&releasedFirst)==XUI_OK);
+    assert(xuiDocumentRendererSetWebProvider(releasedFirst,test.provider)==XUI_OK);
+    assert(xuiDocumentRendererReleaseChecked(releasedFirst)==XUI_OK);
+    assert(xuiDocumentRendererSetObjectMeasureOwned(renderer,unhandledMeasure,NULL,NULL)==XUI_OK);
+    assert(xuiDocumentRendererSetWebProvider(renderer,test.provider)==XUI_ERROR_INVALID_STATE);
+    assert(xuiDocumentRendererSetObjectMeasureOwned(renderer,NULL,NULL,NULL)==XUI_OK);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xuiDocumentRendererSetWebProvider(renderer,test.provider)==XUI_OK);
+    assert(!xrtMemDebugFailTriggered());
+    xrtMemDebugFailClear();assert(!xrtGetError());
+    assert(xuiDocumentRendererSetWebProvider(renderer,test.provider)==XUI_OK);
+    assert(xuiDocumentRendererSetWebProvider(renderer,other.provider)==XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiDocumentRendererSetObjectMeasureOwned(renderer,unhandledMeasure,NULL,NULL)==XUI_ERROR_INVALID_STATE);
+
+    xui_document document=NULL;xui_document_transaction transaction=NULL;
+    xui_document_snapshot snapshot=NULL;xui_doc_node_id formula=0;
+    xui_doc_node_desc_t node={.iSize=sizeof(node),.iKind=XUI_DOC_MATH,.sText="x^2+1",.iTextBytes=5};
+    assert(xuiDocumentCreate(NULL,&document)==XUI_OK);
+    assert(xuiDocumentBeginTransaction(document,NULL,&transaction)==XUI_OK);
+    assert(xuiDocumentTxnInsertNode(transaction,1,XUI_DOCUMENT_APPEND,&node,&formula)==XUI_OK);
+    assert(xuiDocumentTxnCommit(transaction,NULL)==XUI_OK);xuiDocumentTxnRelease(transaction);
+    assert(xuiDocumentAcquireSnapshot(document,&snapshot)==XUI_OK);
+    assert(xuiDocumentRendererSetSnapshot(renderer,snapshot,NULL)==XUI_OK);
+    assert(xuiDocumentRendererLayout(renderer,180,0,140)==XUI_OK);
+    assert(test.provider->entry_count==1 && test.provider->entries[0].state==DOC_WEB_QUEUED);
+    xui_doc_rect_t pending,ready,afterClose;
+    assert(xuiDocumentRendererGetNodeRect(renderer,formula,&pending)==XUI_OK);
+    queuedCapture(&test,true);
+    assert(xuiDocumentWebProviderUpdate(test.provider)==XUI_OK);
+    assert(xuiDocumentRendererLayout(renderer,180,0,140)==XUI_OK);
+    assert(xuiDocumentRendererGetNodeRect(renderer,formula,&ready)==XUI_OK);
+    assert(ready.height>0 && ready.height<pending.height);
+    xui_test_proxy_state_t paint;
+    xuiTestProxyInit(&paint);
+    xui_surface target=NULL;xui_draw_context draw=NULL;
+    xui_surface_desc_t targetDesc={.iKind=XUI_SURFACE_KIND_TEXTURE,.iFormat=XUI_SURFACE_FORMAT_RGBA8,
+        .iWidth=180,.iHeight=140,.iFlags=XUI_SURFACE_USAGE_TARGET};
+    assert(paint.tProxy.surfaceCreate(&paint.tProxy,&target,&targetDesc)==XUI_OK);
+    assert(paint.tProxy.drawBegin(&paint.tProxy,&draw,target)==XUI_OK);
+    xui_rect_t clip={0,0,180,140};
+    assert(xuiDocumentRendererDraw(renderer,draw,0,0,clip,NULL,0)==XUI_OK);
+    assert(test.provider->entries[0].drawn && test.provider->draw_calls==1);
+    test.closeOnDraw=true;
+    assert(xuiDocumentRendererDraw(renderer,draw,0,0,clip,NULL,0)==XUI_ERROR_INVALID_STATE);
+    assert(!test.closeOnDraw && !context->pOwnedManagers);
+    assert(paint.tProxy.drawEnd(&paint.tProxy,draw)==XUI_OK);
+    paint.tProxy.surfaceDestroy(&paint.tProxy,target);
+    assert(xuiDocumentRendererLayout(renderer,180,0,140)==XUI_OK);
+    assert(xuiDocumentRendererGetNodeRect(renderer,formula,&afterClose)==XUI_OK);
+    assert(afterClose.width==pending.width && afterClose.height==pending.height);
+    assert(xuiDocumentRendererSetWebProvider(renderer,NULL)==XUI_OK);
+    assert(xuiDocumentRendererReleaseChecked(renderer)==XUI_OK);
+    xuiDocumentSnapshotRelease(snapshot);xuiDocumentRelease(document);
+    providerFinish(&other);providerFinish(&test);
+}
 int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK && xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    actualSurface(false);actualSurface(true);partialOutputFailure();errorCardFontTail();errorCardFailurePrefix();soleCleanupFailure();constructorOom();destroyedDuringDecode();callbackAndQueuedWorker();parentClose();
+    actualSurface(false);actualSurface(true);partialOutputFailure();errorCardFontTail();errorCardFailurePrefix();soleCleanupFailure();constructorOom();destroyedDuringDecode();callbackAndQueuedWorker();parentClose();rendererAttachment();
     xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     puts("WebProvider actual Context-owned manager, canonical Proxy and Surface graph, partial output NULL failure, reentrant close and late COM-delegate suppression balanced");return 0;
 }
