@@ -100,9 +100,22 @@ int main(void)
     assert(xge3dMaterialSetParams(material,&params)==XGE_ERROR_INVALID_ARGUMENT);
     assert(xge3dMaterialGetParams(material,&params)==XGE_OK && params.roughness==1);
 
-    unsigned char pixels[16]={0};
+    unsigned char pixels[24]={0};
+    xge_image_t image={.iWidth=2,.iHeight=2,.iStride=12,.iFormat=XGE_PIXEL_RGBA8,.pPixels=pixels};
     xge3d_texture *texture=NULL;
-    assert(xge3dTextureCreateRGBAOwned(2,2,pixels,sizeof(pixels),0,NULL,&texture)==XGE_OK);
+    image.iFlags=XGE_IMAGE_PREMULTIPLIED;
+    assert(xge3dTextureCreateFromImageOwned(&image,0,NULL,&texture)==XGE_ERROR_INVALID_ARGUMENT && !texture);
+    image.iFlags=0;
+    for(int prefix=0;prefix<2;++prefix){
+        assert(xrtMemDebugFailAfter(prefix));
+        assert(xge3dTextureCreateFromImageOwned(&image,0,NULL,&texture)==XGE_ERROR_OUT_OF_MEMORY && !texture);
+        assert(xrtMemDebugFailAfter(-1));
+        xrtClearError();
+        assert(xgeGraphicsOwnedResourceCount()==1);
+    }
+    assert(xge3dTextureCreateFromImageOwned(&image,0,NULL,&texture)==XGE_OK);
+    xge3d_resource_info_t image_info={.size=sizeof(image_info)};
+    assert(xge3dTextureResourceInfo(texture,&image_info)==XGE_OK && image_info.cpu_payload_bytes==16);
     xge3d_texture_mapping_t mapping=xge3dTextureMappingDefault();
     mapping.texcoord=1;
     assert(xge3dMaterialSetMap(material,XGE3D_MAP_BASE_COLOR,texture,&mapping)==XGE_OK);

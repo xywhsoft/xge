@@ -4752,6 +4752,10 @@ XGE_API int xge3dTextureCreate(const xge3d_texture_desc_t *desc, xge3d_texture *
  * The final reference releases the engine lease, including renderer references. */
 XGE_API int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t bytes,
     int srgb,const xge3d_sampler_t *sampler,xge3d_texture **out);
+/* Copies the straight RGBA8 image, respecting its row stride. The caller
+ * keeps the image alive only for this call. NULL selects the default sampler. */
+XGE_API int xge3dTextureCreateFromImageOwned(const xge_image_t *image,int srgb,
+    const xge3d_sampler_t *sampler,xge3d_texture **out);
 XGE_API int xge3dTextureShareOwned(xge3d_texture *texture,xge3d_texture **out);
 /* Bounds the last row by bytes. A stride of zero uses tightly packed RGBA8. */
 XGE_API int xge3dTextureUpdateRGBA(xge3d_texture *texture,int x,int y,int width,int height,

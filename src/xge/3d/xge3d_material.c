@@ -135,6 +135,30 @@ int xge3dTextureCreate(const xge3d_texture_desc_t *d, xge3d_texture **out)
     *out=t; return XGE_OK;
 }
 
+static inline int d3_texture_create_image_owned(const xge_image_t *image,int srgb,
+    const xge3d_sampler_t *sampler,xge3d_texture **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xgeInternalGraphicsOwnerAcquire();
+    if(status!=XGE_OK)return status;
+    xge3d_texture_desc_t desc={.image=image,.srgb=srgb};
+    if(sampler)desc.sampler=*sampler;
+    status=xge3dTextureCreate(&desc,out);
+    if(status!=XGE_OK){
+        (void)xgeInternalGraphicsOwnerRelease();
+        return status;
+    }
+    (*out)->owner_thread=xrtThreadCurrentId();
+    return XGE_OK;
+}
+
+int xge3dTextureCreateFromImageOwned(const xge_image_t *image,int srgb,
+    const xge3d_sampler_t *sampler,xge3d_texture **out)
+{
+    return d3_texture_create_image_owned(image,srgb,sampler,out);
+}
+
 int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t bytes,
     int srgb,const xge3d_sampler_t *sampler,xge3d_texture **out)
 {
@@ -144,19 +168,9 @@ int xge3dTextureCreateRGBAOwned(int width,int height,const void *pixels,size_t b
         (size_t)height>SIZE_MAX/(size_t)(width*4) ||
         bytes<(size_t)(width*4)*(size_t)height)
         return XGE_ERROR_INVALID_ARGUMENT;
-    int status=xgeInternalGraphicsOwnerAcquire();
-    if(status!=XGE_OK)return status;
     xge_image_t image={.iWidth=width,.iHeight=height,.iStride=width*4,
         .iFormat=XGE_PIXEL_RGBA8,.pPixels=(void*)pixels};
-    xge3d_texture_desc_t desc={.image=&image,.srgb=srgb};
-    if(sampler)desc.sampler=*sampler;
-    status=xge3dTextureCreate(&desc,out);
-    if(status!=XGE_OK){
-        (void)xgeInternalGraphicsOwnerRelease();
-        return status;
-    }
-    (*out)->owner_thread=xrtThreadCurrentId();
-    return XGE_OK;
+    return d3_texture_create_image_owned(&image,srgb,sampler,out);
 }
 /* Called only inside a renderer's saved GL state, on its context thread. */
 int d3_texture_upload(xge3d_texture *t, uint64_t *bytes)
