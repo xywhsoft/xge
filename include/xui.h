@@ -8170,6 +8170,10 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
  * 未定义的 flags 位会返回 XUI_ERROR_INVALID_ARGUMENT。 */
 #if XUI_ENABLE_FIND
 XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResult, char* sError, int iErrorCapacity);
+/* Counted search with 1 for a match, 0 for a miss, or a negative error. */
+XUI_API int xuiFindLocateText(const char* sText, int iTextLength, const char* sPattern,
+    int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags,
+    xui_find_result_t* pResult, char* sError, int iErrorCapacity);
 /* 收集区间内全部非重叠匹配；pResultCount 返回总数，可大于 iResultCapacity。 */
 XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity);
 /* 全部替换；*psOutput 输出新文本（FindFreeText 释放）。 */
@@ -8261,6 +8265,13 @@ XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char*
 XUI_API int xuiCodeSearchFindRegex(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_search_result_t* pResult, char* sError, int iErrorCapacity);
 /* 正则在限定区间内查找。 */
 XUI_API int xuiCodeSearchFindRegexRange(xui_code_document pDocument, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_search_result_t* pResult, char* sError, int iErrorCapacity);
+/* Checked search results: 1 for a match, 0 for a miss, or a negative error.
+ * A negative range end means the document end. A miss clears the result. */
+XUI_API int xuiCodeSearchLocatePlain(xui_code_document pDocument, const char* sPattern,
+    int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_range_t* pRange);
+XUI_API int xuiCodeSearchLocateRegex(xui_code_document pDocument, const char* sPattern,
+    int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags,
+    xui_code_search_result_t* pResult, char* sError, int iErrorCapacity);
 /* 纯文本全部替换；*pReplaceCount 输出替换数。 */
 XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
 /* 正则全部替换（支持分组引用）；失败输出原因。 */

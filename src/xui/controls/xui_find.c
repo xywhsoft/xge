@@ -598,11 +598,11 @@ static int __xuiFindEngineFind(const xui_find_engine_t* pEngineConst, const char
 #else
 		if ( (iFlags & XUI_FIND_BACKWARD) != 0 ) {
 			iRet = __xuiFindRegexBackward(pEngine, sText, iTextLength, iRangeStart, iStartOffset, pResult);
-			if ( iRet == XUI_OK || (iFlags & XUI_FIND_WRAP) == 0 ) return iRet;
+			if ( iRet != XUI_ERROR_UNSUPPORTED || (iFlags & XUI_FIND_WRAP) == 0 ) return iRet;
 			return __xuiFindRegexBackward(pEngine, sText, iTextLength, iStartOffset, iRangeEnd, pResult);
 		}
 		iRet = __xuiFindRegexForward(pEngine, sText, iTextLength, iStartOffset, iRangeEnd, pResult);
-		if ( iRet == XUI_OK || (iFlags & XUI_FIND_WRAP) == 0 ) return iRet;
+		if ( iRet != XUI_ERROR_UNSUPPORTED || (iFlags & XUI_FIND_WRAP) == 0 ) return iRet;
 		return __xuiFindRegexForward(pEngine, sText, iTextLength, iRangeStart, iStartOffset, pResult);
 #endif
 	}
@@ -685,13 +685,16 @@ static int __xuiFindValidateResult(const xui_find_result_t* pResult, int iTextLe
 	return XUI_OK;
 }
 
-XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResult, char* sError, int iErrorCapacity)
+static int __xuiFindText(const char* sText, int iTextLength, const char* sPattern,
+	int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags,
+	xui_find_result_t* pResult, char* sError, int iErrorCapacity, bool bLocate)
 {
 	xui_find_engine_t tEngine;
 	int iRet;
 
 	__xuiFindSetError(sError, iErrorCapacity, "");
 	if ( pResult != NULL ) memset(pResult, 0, sizeof(*pResult));
+	if ( bLocate && sText == NULL && iTextLength == 0 ) sText = "";
 	if ( sText == NULL || sPattern == NULL || pResult == NULL ) {
 		__xuiFindSetStatusError(sError, iErrorCapacity, XUI_ERROR_INVALID_ARGUMENT);
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -704,10 +707,30 @@ XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern
 	__xuiFindNormalizeRange(iTextLength, &iRangeStart, &iRangeEnd, &iStartOffset);
 	memset(&tEngine, 0, sizeof(tEngine));
 	iRet = __xuiFindEngineCreate(&tEngine, sPattern, NULL, iFlags, sError, iErrorCapacity);
-	if ( iRet == XUI_OK ) iRet = __xuiFindEngineFind(&tEngine, sText, iTextLength, iStartOffset, iRangeStart, iRangeEnd, pResult);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiFindEngineFind(&tEngine, sText, iTextLength, iStartOffset, iRangeStart, iRangeEnd, pResult);
+		if ( bLocate && iRet == XUI_ERROR_UNSUPPORTED ) iRet = XUI_OK;
+		else if ( bLocate && iRet == XUI_OK ) iRet = 1;
+	}
 	__xuiFindEngineDestroy(&tEngine);
-	__xuiFindSetStatusError(sError, iErrorCapacity, iRet);
+	if ( iRet < XUI_OK ) __xuiFindSetStatusError(sError, iErrorCapacity, iRet);
 	return iRet;
+}
+
+XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern,
+	int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags,
+	xui_find_result_t* pResult, char* sError, int iErrorCapacity)
+{
+	return __xuiFindText(sText, iTextLength, sPattern, iStartOffset, iRangeStart,
+		iRangeEnd, iFlags, pResult, sError, iErrorCapacity, false);
+}
+
+XUI_API int xuiFindLocateText(const char* sText, int iTextLength, const char* sPattern,
+	int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags,
+	xui_find_result_t* pResult, char* sError, int iErrorCapacity)
+{
+	return __xuiFindText(sText, iTextLength, sPattern, iStartOffset, iRangeStart,
+		iRangeEnd, iFlags, pResult, sError, iErrorCapacity, true);
 }
 
 XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity)

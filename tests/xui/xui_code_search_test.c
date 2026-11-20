@@ -60,6 +60,8 @@ static int test_regex_allocation_failures(xui_code_document pDocument)
 		     strcmp(sError, "out of memory") != 0 ||
 		     tResult.iStart != 0 || tResult.iEnd != 0 ) return 0;
 		bSawFailure = 1;
+		/* The expected allocator error has been checked. */
+		xrtClearError();
 	}
 	return bSawFailure && bSawSuccess;
 }
@@ -160,6 +162,7 @@ int main(void)
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9]", 0, 0, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && strcmp(sError, "regex compile failed") == 0,
 		"regex invalid pattern preserves diagnostic");
+	xrtClearError();
 	XUI_TEST_CHECK(test_regex_allocation_failures(pDocument),
 		"regex search reports allocation failures transactionally");
 
