@@ -166,6 +166,8 @@ XUI_API int xuiDocumentImageResourceGetAsyncStats(xui_context context, xui_doc_i
 XUI_API int xuiDocumentRendererCreate(xui_context context, const xui_doc_renderer_desc_t* desc, xui_document_renderer* out);
 XUI_API int xuiDocumentFontOutputInit(xui_document_renderer renderer,xui_doc_font_output_t* output);
 XUI_API int xuiDocumentFontOutputSetFont(xui_doc_font_output_t* output,xui_font font);
+/* Clear the selection while keeping the callback output ready for reuse. */
+XUI_API int xuiDocumentFontOutputClear(xui_doc_font_output_t* output);
 XUI_API xui_font xuiDocumentFontOutputGetFont(const xui_doc_font_output_t* output); /* borrowed */
 XUI_API int xuiDocumentFontOutputDisposeChecked(xui_doc_font_output_t* output);
 /* Independent owning callback slots. Font: 0 fallback, 1 selected, negative

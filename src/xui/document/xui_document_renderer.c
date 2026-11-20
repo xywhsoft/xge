@@ -26,16 +26,27 @@ XUI_API int xuiDocumentFontOutputInit(xui_document_renderer renderer,xui_doc_fon
 }
 XUI_API int xuiDocumentFontOutputSetFont(xui_doc_font_output_t* output,xui_font font)
 {
+    if(!font)return xuiDocumentFontOutputClear(output);
     if(!output || output->_iMagic!=XUI_DOC_FONT_OUTPUT_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
     if(output->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(font==output->_pFont)return XUI_OK;
-    if(font){
-        xui_proxy proxy=xuiFontGetProxy(font);
-        if(!proxy || proxy->_pCapability!=output->_pProxy->_pCapability)return XUI_ERROR_INVALID_ARGUMENT;
-        int status=xuiFontAddRef(font);if(status!=XUI_OK)return status;
-    }
+    xui_proxy proxy=xuiFontGetProxy(font);
+    if(!proxy || proxy->_pCapability!=output->_pProxy->_pCapability)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=xuiFontAddRef(font);if(status!=XUI_OK)return status;
     xui_font previous=output->_pFont;output->_pFont=font;
     return previous ? xuiFontReleaseChecked(previous):XUI_OK;
+}
+XUI_API int xuiDocumentFontOutputClear(xui_doc_font_output_t* output)
+{
+    if(!output || output->_iMagic!=XUI_DOC_FONT_OUTPUT_MAGIC)return XUI_ERROR_INVALID_ARGUMENT;
+    if(output->_iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    xui_font previous=output->_pFont;
+    if(!previous)return XUI_OK;
+    output->_pFont=NULL;
+    bool consumed=false;
+    int status=xuiFontReleaseOwnerChecked(previous,&consumed);
+    if(!consumed)output->_pFont=previous;
+    return status;
 }
 XUI_API xui_font xuiDocumentFontOutputGetFont(const xui_doc_font_output_t* output)
 {return output && output->_iMagic==XUI_DOC_FONT_OUTPUT_MAGIC ? output->_pFont:NULL;}

@@ -21,6 +21,25 @@ static int rendererFont(xui_document_renderer renderer,const char* family,uint32
     if(owner->selfClear){assert(xuiDocumentRendererSetFontResolverOwned(renderer,NULL,NULL,NULL)==XUI_OK);assert(owner->counted.refs>=2);}
     if(owner->closeContext)assert(xuiDestroyChecked(owner->context)==XUI_STATUS_DEFERRED);
     if(owner->failNull){xrtClearError();return XUI_ERROR_BACKEND_FAILED;}
+    assert(xuiDocumentFontOutputGetFont(output)==NULL);
+    unsigned temporaryDrops=0;
+    xui_font temporary=fontCreate(xuiFontGetProxy(owner->font),&temporaryDrops,XUI_OK);
+    assert(xuiDocumentFontOutputSetFont(output,temporary)==XUI_OK);
+    assert(xuiFontReleaseChecked(temporary)==XUI_OK);
+    /* Inject unmatched affinity on the last reference, then retry on the
+     * real owner. The rejected clear must leave that reference in the slot. */
+    xui_owned_resource_t* resource=(void*)temporary;
+    uint64_t creator=resource->iCreatorThread;
+    uint32_t flags=resource->iFlags;
+    resource->iCreatorThread=creator==UINT64_MAX?1:UINT64_MAX;
+    resource->iFlags=flags&~XUI_PROXY_OWNED_ANYTHREAD_FINALIZE;
+    assert(xuiDocumentFontOutputClear(output)==XUI_ERROR_BUSY);
+    assert(xuiDocumentFontOutputGetFont(output)==temporary && temporaryDrops==0);
+    resource->iCreatorThread=creator;
+    resource->iFlags=flags;
+    assert(xuiDocumentFontOutputClear(output)==XUI_OK);
+    assert(xuiDocumentFontOutputGetFont(output)==NULL && temporaryDrops==1);
+    assert(xuiDocumentFontOutputSetFont(output,NULL)==XUI_OK);
     assert(xuiDocumentFontOutputSetFont(output,owner->font)==XUI_OK);return 1;
 }
 static xui_document rendererDocument(void)
@@ -70,8 +89,11 @@ static void rendererFailureAndContextClose(bool closeContext)
 #ifndef XUI_OWNED_RENDERER_HELPERS
 int main(void)
 {
+#if !defined(XGE_TEST_STATIC)
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
-    assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK && xrtMemDebugEnable(true));
+    assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
+#endif
+    assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
     rendererOwnedLifetime();rendererFailureAndContextClose(false);rendererFailureAndContextClose(true);
     xrtClearError();xrtMemDebugSnapshot(&after);assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
