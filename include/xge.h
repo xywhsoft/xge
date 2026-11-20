@@ -4455,6 +4455,16 @@ typedef struct xge3d_texture_mapping_t {
     int texcoord;
     float offset[2], scale[2], rotation;
 } xge3d_texture_mapping_t;
+typedef struct xge3d_material_settings_t {
+    xge3d_material_params_t params;
+    xge3d_texture_mapping_t maps[XGE3D_MAP_COUNT];
+} xge3d_material_settings_t;
+/* Texture inputs are borrowed during the call. Non-NULL slots are retained
+ * by the material on success. Maps use the XGE3D_MAP_* order. */
+typedef struct xge3d_material_state_t {
+    xge3d_material_settings_t settings;
+    xge3d_texture *base_color,*metallic_roughness,*normal,*occlusion,*emissive;
+} xge3d_material_state_t;
 typedef struct xge3d_mesh_desc_t {
     const xge3d_vertex_t *vertices;
     size_t vertex_count;
@@ -4772,7 +4782,14 @@ XGE_API int xge3dMaterialCreate(const xge3d_material_desc_t *desc, xge3d_materia
  * Maps and shaders retain independent native references. */
 XGE_API xge3d_material_params_t xge3dMaterialParamsDefault(void);
 XGE_API xge3d_texture_mapping_t xge3dTextureMappingDefault(void);
+XGE_API xge3d_material_settings_t xge3dMaterialSettingsDefault(void);
 XGE_API int xge3dMaterialCreateOwned(const xge3d_material_params_t *params,xge3d_material **out);
+XGE_API int xge3dMaterialCreateStateOwned(const xge3d_material_state_t *state,xge3d_material **out);
+/* Replaces all factors, mappings and texture slots as one transaction.
+ * A NULL texture clears its slot. Failure leaves the prior state in place.
+ * Returns UNSUPPORTED when dynamic material updates are disabled. */
+XGE_API int xge3dMaterialSetState(xge3d_material *material,const xge3d_material_state_t *state);
+XGE_API int xge3dMaterialGetSettings(const xge3d_material *material,xge3d_material_settings_t *out);
 XGE_API int xge3dMaterialShareOwned(xge3d_material *material,xge3d_material **out);
 XGE_API int xge3dMaterialReleaseOwnerChecked(xge3d_material *material,bool *consumed);
 XGE_API int xge3dMaterialReleaseChecked(xge3d_material *material);

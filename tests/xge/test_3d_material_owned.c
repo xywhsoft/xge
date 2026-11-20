@@ -23,6 +23,8 @@ static int wrong_thread(void *data)
     assert(xge3dShaderReleaseOwnerChecked(probe->shader,&consumed)==XGE_ERROR_INVALID_STATE && !consumed);
     xge3d_material_params_t params;
     assert(xge3dMaterialGetParams(probe->material,&params)==XGE_ERROR_INVALID_STATE);
+    xge3d_material_state_t state={.settings=xge3dMaterialSettingsDefault()};
+    assert(xge3dMaterialSetState(probe->material,&state)==XGE_ERROR_INVALID_STATE);
     return 0;
 }
 
@@ -116,10 +118,42 @@ int main(void)
     assert(xge3dTextureCreateFromImageOwned(&image,0,NULL,&texture)==XGE_OK);
     xge3d_resource_info_t image_info={.size=sizeof(image_info)};
     assert(xge3dTextureResourceInfo(texture,&image_info)==XGE_OK && image_info.cpu_payload_bytes==16);
-    xge3d_texture_mapping_t mapping=xge3dTextureMappingDefault();
-    mapping.texcoord=1;
-    assert(xge3dMaterialSetMap(material,XGE3D_MAP_BASE_COLOR,texture,&mapping)==XGE_OK);
+    xge3d_material_state_t state={.settings=xge3dMaterialSettingsDefault(),.base_color=texture,.emissive=texture};
+    state.settings.params.unlit=1;
+    state.settings.params.roughness=.5f;
+    state.settings.maps[XGE3D_MAP_BASE_COLOR].texcoord=1;
+    state.settings.maps[XGE3D_MAP_OCCLUSION].offset[0]=.25f;
+    xge3d_material *second=NULL;
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dMaterialCreateStateOwned(&state,&second)==XGE_ERROR_OUT_OF_MEMORY && !second);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtClearError();
+    assert(xgeGraphicsOwnedResourceCount()==2);
+    assert(xge3dMaterialCreateStateOwned(&state,&second)==XGE_OK);
+    assert(xge3dMaterialReleaseChecked(second)==XGE_OK);
+    xmemdebugsnapshot before,after;
+    xrtMemDebugSnapshot(&before);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dMaterialSetState(material,&state)==XGE_OK);
+    assert(xrtMemDebugFailAfter(-1));
+    xrtMemDebugSnapshot(&after);
+    assert(before.AllocCount==after.AllocCount && before.FreeCount==after.FreeCount);
+    xge3d_material_state_t invalid={.settings=state.settings};
+    invalid.settings.params.roughness=.75f;
+    invalid.settings.maps[XGE3D_MAP_EMISSIVE].texcoord=2;
+    assert(xge3dMaterialSetState(material,&invalid)==XGE_ERROR_INVALID_ARGUMENT);
+    xge3d_material_settings_t settings;
+    assert(xge3dMaterialGetSettings(material,&settings)==XGE_OK);
+    assert(settings.params.roughness==.5f && settings.maps[XGE3D_MAP_BASE_COLOR].texcoord==1);
+    assert(settings.maps[XGE3D_MAP_OCCLUSION].offset[0]==.25f);
+    xge3d_texture *emissive=NULL;
+    assert(xge3dMaterialMapTextureOwned(material,XGE3D_MAP_EMISSIVE,&emissive)==XGE_OK && emissive==texture);
+    assert(xge3dTextureReleaseChecked(emissive)==XGE_OK);
+    state.emissive=NULL;
+    assert(xge3dMaterialSetState(material,&state)==XGE_OK);
+    assert(xge3dMaterialMapTextureOwned(material,XGE3D_MAP_EMISSIVE,&emissive)==XGE_OK && !emissive);
     assert(xge3dTextureReleaseChecked(texture)==XGE_OK);
+    xge3d_texture_mapping_t mapping;
     assert(xge3dMaterialGetMapping(material,XGE3D_MAP_BASE_COLOR,&mapping)==XGE_OK);
     assert(mapping.texcoord==1 && mapping.scale[0]==1 && mapping.scale[1]==1);
 

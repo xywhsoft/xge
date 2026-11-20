@@ -345,21 +345,54 @@ xge3d_texture_mapping_t xge3dTextureMappingDefault(void)
 {
     return (xge3d_texture_mapping_t){.scale={1,1}};
 }
-int xge3dMaterialCreateOwned(const xge3d_material_params_t *params,xge3d_material **out)
+static xge3d_texture_binding_t d3_material_binding(xge3d_texture *texture,const xge3d_texture_mapping_t *mapping)
 {
-    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
-    *out=NULL;
-    xge3d_material_desc_t desc=xge3dMaterialDefault();
-    if(params)memcpy(&desc,params,sizeof(*params));
+    return (xge3d_texture_binding_t){texture,mapping->texcoord,
+        {mapping->offset[0],mapping->offset[1]},{mapping->scale[0],mapping->scale[1]},mapping->rotation};
+}
+xge3d_material_settings_t xge3dMaterialSettingsDefault(void)
+{
+    xge3d_material_settings_t settings={.params=xge3dMaterialParamsDefault()};
+    for(int i=0;i<XGE3D_MAP_COUNT;++i)settings.maps[i]=xge3dTextureMappingDefault();
+    return settings;
+}
+static void d3_material_state_desc(const xge3d_material_state_t *state,xge3d_material_desc_t *desc)
+{
+    memcpy(desc,&state->settings.params,sizeof(state->settings.params));
+    xge3d_texture *textures[XGE3D_MAP_COUNT]={
+        [XGE3D_MAP_BASE_COLOR]=state->base_color,[XGE3D_MAP_METALLIC_ROUGHNESS]=state->metallic_roughness,
+        [XGE3D_MAP_NORMAL]=state->normal,[XGE3D_MAP_OCCLUSION]=state->occlusion,[XGE3D_MAP_EMISSIVE]=state->emissive
+    };
+    for(int i=0;i<XGE3D_MAP_COUNT;++i)desc->maps[i]=d3_material_binding(textures[i],&state->settings.maps[i]);
+}
+static int d3_material_create_owned(const xge3d_material_desc_t *desc,xge3d_material **out)
+{
     int status=xgeInternalGraphicsOwnerAcquire();
     if(status!=XGE_OK)return status;
-    status=xge3dMaterialCreate(&desc,out);
+    status=xge3dMaterialCreate(desc,out);
     if(status!=XGE_OK){
         (void)xgeInternalGraphicsOwnerRelease();
         return status;
     }
     (*out)->owner_thread=xrtThreadCurrentId();
     return XGE_OK;
+}
+int xge3dMaterialCreateOwned(const xge3d_material_params_t *params,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    xge3d_material_desc_t desc=xge3dMaterialDefault();
+    if(params)memcpy(&desc,params,sizeof(*params));
+    return d3_material_create_owned(&desc,out);
+}
+int xge3dMaterialCreateStateOwned(const xge3d_material_state_t *state,xge3d_material **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    if(!state)return XGE_ERROR_INVALID_ARGUMENT;
+    xge3d_material_desc_t desc={0};
+    d3_material_state_desc(state,&desc);
+    return d3_material_create_owned(&desc,out);
 }
 int xge3dMaterialGetParams(const xge3d_material *m,xge3d_material_params_t *out)
 {
@@ -376,13 +409,24 @@ int xge3dMaterialSetParams(xge3d_material *m,const xge3d_material_params_t *para
     if(status==XGE_OK)memcpy(&m->desc,params,sizeof(*params));
     return status;
 }
+static xge3d_texture_mapping_t d3_material_mapping(const xge3d_texture_binding_t *map)
+{
+    return (xge3d_texture_mapping_t){map->texcoord,{map->offset[0],map->offset[1]},
+        {map->scale[0],map->scale[1]},map->rotation};
+}
+int xge3dMaterialGetSettings(const xge3d_material *m,xge3d_material_settings_t *out)
+{
+    if(!m||!out)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
+    out->params=d3_material_params(&m->desc);
+    for(int i=0;i<XGE3D_MAP_COUNT;++i)out->maps[i]=d3_material_mapping(&m->desc.maps[i]);
+    return XGE_OK;
+}
 int xge3dMaterialGetMapping(const xge3d_material *m,int slot,xge3d_texture_mapping_t *out)
 {
     if(!m||!out||slot<0||slot>=XGE3D_MAP_COUNT)return XGE_ERROR_INVALID_ARGUMENT;
     if(!d3_material_thread(m))return XGE_ERROR_INVALID_STATE;
-    const xge3d_texture_binding_t *map=&m->desc.maps[slot];
-    *out=(xge3d_texture_mapping_t){map->texcoord,{map->offset[0],map->offset[1]},
-        {map->scale[0],map->scale[1]},map->rotation};
+    *out=d3_material_mapping(&m->desc.maps[slot]);
     return XGE_OK;
 }
 int xge3dMaterialSetMap(xge3d_material *m,int slot,xge3d_texture *texture,
@@ -391,8 +435,7 @@ int xge3dMaterialSetMap(xge3d_material *m,int slot,xge3d_texture *texture,
     if(!m)return XGE_ERROR_INVALID_ARGUMENT;
     if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     xge3d_texture_mapping_t v=mapping?*mapping:xge3dTextureMappingDefault();
-    xge3d_texture_binding_t next={texture,v.texcoord,{v.offset[0],v.offset[1]},
-        {v.scale[0],v.scale[1]},v.rotation};
+    xge3d_texture_binding_t next=d3_material_binding(texture,&v);
     int status=d3_material_validate_map(slot,&next);
     if(status!=XGE_OK)return status;
     if(texture && !d3_texture_retain(texture))return XGE_ERROR_INVALID_STATE;
@@ -411,16 +454,56 @@ int xge3dMaterialMapTextureOwned(const xge3d_material *m,int slot,xge3d_texture 
     return texture?xge3dTextureShareOwned(texture,out):XGE_OK;
 }
 #if XGE3D_ENABLE_DYNAMIC
-int xge3dMaterialSetDesc(xge3d_material *m,const xge3d_material_desc_t *d)
+/* All incoming refs are already retained when counting which old refs are
+ * last. Equal textures may occupy several slots in either descriptor. */
+static bool d3_material_maps_releasable(const xge3d_material_desc_t *desc)
+{
+    const uint64_t current=__xge3dContext();
+    for(int i=0;i<XGE3D_MAP_COUNT;++i){
+        const xge3d_texture *t=desc->maps[i].texture;
+        if(!t)continue;
+        if(!d3_texture_thread(t))return false;
+        unsigned count=0;
+        for(int j=0;j<XGE3D_MAP_COUNT;++j)count+=desc->maps[j].texture==t;
+        if(t->refs!=count)continue;
+        if(t->owner_thread && t->id && current && t->context!=current)return false;
+        if(t->target && t->target->owner_thread &&
+            (t->target->owner_thread!=xrtThreadCurrentId() || (current && t->target->context!=current)))return false;
+    }
+    return true;
+}
+static int d3_material_replace_desc(xge3d_material *m,const xge3d_material_desc_t *d,bool checked_drop)
 {
     if(!m){return XGE_ERROR_INVALID_ARGUMENT;}
     if(!d3_material_thread(m)||m->immutable)return XGE_ERROR_INVALID_STATE;
     int result=d3_material_validate(d);if(result){return result;}
     int i=0;for(;i<XGE3D_MAP_COUNT;++i){if(d->maps[i].texture&&!d3_texture_retain(d->maps[i].texture)){break;}}
-    if(i!=XGE3D_MAP_COUNT){while(i--){xge3dTextureFree(d->maps[i].texture);}return XGE_ERROR_INVALID_STATE;}
+    if(i!=XGE3D_MAP_COUNT || (checked_drop && !d3_material_maps_releasable(&m->desc))){
+        while(i--){xge3dTextureFree(d->maps[i].texture);}
+        return XGE_ERROR_INVALID_STATE;
+    }
     xge3d_material_desc_t old=m->desc;m->desc=*d;
     for(i=0;i<XGE3D_MAP_COUNT;++i){xge3dTextureFree(old.maps[i].texture);}return XGE_OK;
 }
+int xge3dMaterialSetDesc(xge3d_material *m,const xge3d_material_desc_t *d)
+{return d3_material_replace_desc(m,d,false);}
+#endif
+
+int xge3dMaterialSetState(xge3d_material *m,const xge3d_material_state_t *state)
+{
+#if XGE3D_ENABLE_DYNAMIC
+    if(!m || !state)return XGE_ERROR_INVALID_ARGUMENT;
+    if(!m->owner_thread)return XGE_ERROR_INVALID_STATE;
+    xge3d_material_desc_t desc={0};
+    d3_material_state_desc(state,&desc);
+    return d3_material_replace_desc(m,&desc,true);
+#else
+    (void)m;(void)state;
+    return XGE_ERROR_UNSUPPORTED;
+#endif
+}
+
+#if XGE3D_ENABLE_DYNAMIC
 int xge3dTextureFromTarget(xge3d_target *target,xge3d_texture **out)
 {
     if(!out){return XGE_ERROR_INVALID_ARGUMENT;}*out=NULL;
