@@ -100,7 +100,7 @@ static void pixels(const xge_image_t* image)
 {assert(image->iWidth==1 && image->iHeight==1 && image->pPixels);const unsigned char* p=image->pPixels;assert(p[0]==1 && p[1]==2 && p[2]==3 && p[3]==255);}
 int main(int argc,char** argv)
 {
-    assert(argc==3);int mode=atoi(argv[1]);assert(mode>=1 && mode<=23);
+    assert(argc==3);int mode=atoi(argv[1]);assert(mode>=1 && mode<=24);
     static const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_OK && xrtMemDebugEnable(true));
     xge_desc_t desc={0};desc.iRunMode=XGE_RUN_MANUAL;assert(xgeInit(&desc)==XGE_OK);
@@ -114,7 +114,7 @@ int main(int argc,char** argv)
     assert(xgeAsyncImageStartOwned(owner.request,"owned://image",XGE_IMAGE_STRAIGHT_ALPHA)==XGE_OK);
     assert(xgeAsyncLoadReleaseChecked(owner.request)==XGE_OK && owner.refs==1);owner.request=NULL;owner.calls=0;
     xrtClearError();xmemdebugsnapshot before,after;xrtMemDebugSnapshot(&before);
-    bool texture=mode==11 || mode==12;
+    bool texture=mode==11 || mode==12 || mode==24;
     assert((texture ? xgeAsyncTextureCreateOwned(&owner.request,&own):xgeAsyncImageCreateOwned(&owner.request,&own))==XGE_OK);
     xge_async_owned request=owner.request;
     if(mode==10 || mode==19){
@@ -148,6 +148,15 @@ int main(int argc,char** argv)
         if(mode==16 || mode==17 || mode==21)atomic_store(&gate,0);
         const char* path=threaded ? argv[2]:"owned://image";
         char missing[1024];if(mode==13){assert(snprintf(missing,sizeof(missing),"%s.missing",argv[2])>0);path=missing;}
+        if(mode==24){
+            assert(xrtMemDebugFailAfter(0));
+            assert(xgeAsyncTextureStartOwned(request,path,XGE_IMAGE_STRAIGHT_ALPHA)==XGE_ERROR_OUT_OF_MEMORY);
+            assert(xrtMemDebugFailTriggered());
+            xrtMemDebugFailClear();xrtClearError();
+            xge_async_load_info_t value=info(request);
+            assert(value.status==XGE_ASYNC_PENDING && !value.hasResult && !value.threaded);
+            assert(!xgeGraphicsOwnedResourceCount() && owner.calls==0);
+        }
         int status=texture ? xgeAsyncTextureStartOwned(request,path,XGE_IMAGE_STRAIGHT_ALPHA):xgeAsyncImageStartOwned(request,path,XGE_IMAGE_STRAIGHT_ALPHA);
         assert(status==(mode==7 ? -71:(mode==22 || mode==23) ? XGE_ERROR_CALLBACK_FAILED:XGE_OK));
         if(mode==6){request=owner.request=NULL;assert(owner.refs==1 && owner.calls==1);}
@@ -196,9 +205,12 @@ int main(int argc,char** argv)
             else if(texture){
                 assert(value.status==XGE_ASYNC_READY && value.hasResult && xgeGraphicsOwnedResourceCount()==1);
                 assert(xgeUnitChecked()==XGE_ERROR_BUSY);xge_texture taken=NULL;
-                assert(xrtMemDebugFailAfter(0));assert(xgeAsyncTextureTakeOwned(request,&taken)==XGE_ERROR_OUT_OF_MEMORY && !taken);
-                xrtMemDebugFailClear();xrtClearError();assert(info(request).hasResult && xgeGraphicsOwnedResourceCount()==1);
+                assert(xrtMemDebugFailAfter(0));
                 assert(xgeAsyncTextureTakeOwned(request,&taken)==XGE_OK && taken && !info(request).hasResult && xgeGraphicsOwnedResourceCount()==1);
+                assert(!xrtMemDebugFailTriggered());xrtMemDebugFailClear();
+                assert(taken->iFlags&XGE_TEXTURE_UPLOAD_QUEUED);
+                xge_texture second=NULL;
+                assert(xgeAsyncTextureTakeOwned(request,&second)==XGE_ERROR_INVALID_STATE && !second);
                 assert(xgeAsyncLoadReleaseChecked(request)==XGE_OK);request=owner.request=NULL;
                 unsigned char output[4]={0};assert(xgeTextureReadPixelsSized(taken,output,sizeof(output),0)==XGE_OK);
                 assert(output[0]==1 && output[1]==2 && output[2]==3 && output[3]==255);xgeTextureFree(taken);

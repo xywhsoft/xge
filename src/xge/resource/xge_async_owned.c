@@ -12,7 +12,7 @@ struct xge_async_owned_t {
     bool destroyed,busy,taking,notified,hasResult,graphics;
     int kind;
     xge_async_request_t raw;
-    union {xge_image_t image;xge_texture_t texture;
+    union {xge_image_t image;xge_texture texture;
 #if XGE_ENABLE_TEXT
         xge_font font;
 #endif
@@ -86,7 +86,11 @@ static int __xgeLoadDiscard(xge_async_owned request)
         request->target.sound=NULL;request->raw.pTarget=NULL;
     }
 #endif
-    else xgeTextureFree(&request->target.texture);
+    else {
+        xgeTextureFree(request->target.texture);
+        xrtFree(request->target.texture);
+        request->target.texture=NULL;request->raw.pTarget=NULL;
+    }
     request->hasResult=false;
     if(!request->graphics)return XGE_OK;
     request->graphics=false;return __xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
@@ -236,7 +240,15 @@ static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint
         status=__xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);request->graphics=status==XGE_OK;
     }
     if(status==XGE_OK){
-        void* target=kind==XGE_ASYNC_IMAGE ? (void*)&request->target.image:(void*)&request->target.texture;
+        void* target=&request->target.image;
+        if(kind==XGE_ASYNC_TEXTURE){
+            /* The upload queue stores the texture's address. Allocate its
+             * final record before decode and transfer that same address. */
+            request->target.texture=xrtCalloc(1,sizeof(*request->target.texture));
+            if(!request->target.texture)return __xgeLoadOperationEnd(request,
+                __xgeLoadStartRollback(request,XGE_ERROR_OUT_OF_MEMORY),ambient);
+            target=request->target.texture;
+        }
 #if XGE_ENABLE_TEXT
         if(kind==XGE_ASYNC_FONT){
             request->target.font=xrtCalloc(1,sizeof(*request->target.font));
@@ -266,7 +278,7 @@ static int __xgeLoadStart(xge_async_owned request,int kind,const char* path,uint
                     request->raw.pTarget=request->target.sound;
                 }
 #endif
-                else status=xgeTextureLoadEx(&request->target.texture,path,flags);
+                else status=xgeTextureLoadEx(request->target.texture,path,flags);
             }else status=threadStatus; /* Resource failure never falls back to blocking decode. */
             status=__xgeLoadSettle(request,status,NULL);
         }else status=__xgeLoadStartRollback(request,status);
@@ -365,14 +377,14 @@ int xgeAsyncTextureTakeOwned(xge_async_owned request,xge_texture* output)
     *output=NULL;int status=__xgeOwnedLoadAcquire(__xgeOwnedLoadRoot(request),true,true);if(status!=XGE_OK)return status;
     xerror* ambient=xrtTakeError();
     if(request->taking || request->kind!=XGE_ASYNC_TEXTURE || !request->hasResult)status=XGE_ERROR_INVALID_STATE;
-    xge_texture texture=NULL;bool taking=status==XGE_OK;
+    bool taking=status==XGE_OK;
     if(taking)request->taking=true;
-    if(status==XGE_OK){texture=xrtMalloc(sizeof(*texture));if(!texture)status=XGE_ERROR_OUT_OF_MEMORY;}
-    if(status==XGE_OK){*texture=request->target.texture;status=xgeTextureAdoptStorage(texture);}
+    if(status==XGE_OK)status=xgeTextureAdoptStorage(request->target.texture);
     if(status==XGE_OK){
-        memset(&request->target.texture,0,sizeof(request->target.texture));request->hasResult=false;*output=texture;
+        *output=request->target.texture;request->target.texture=NULL;
+        request->raw.pTarget=NULL;request->hasResult=false;
         if(request->graphics){request->graphics=false;status=__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);}
-    }else xrtFree(texture);
+    }
     if(taking)request->taking=false;
     xge_data_outcome_t result={0};__xgeOwnedLoadOutcomeBegin(&result,status);
     __xgeOwnedLoadOutcomeAdd(&result,__xgeOwnedLoadActivityEnd(__xgeOwnedLoadRoot(request)));
