@@ -7083,6 +7083,16 @@ XUI_API int xuiIconGetSourceType(xui_icon pIcon);
 XUI_API uint32_t xuiIconGetGeneration(xui_icon pIcon);
 /* 读取图标用户指针。 */
 XUI_API void* xuiIconGetUser(xui_icon pIcon);
+XUI_API uint32_t xuiIconGetFlags(xui_icon pIcon);
+/* References retain the native carrier after unregistration. Context teardown
+ * still invalidates the reference, which remains safe to release. These
+ * references do not own the Context and are used on their creating thread. */
+typedef struct xui_icon_reference_t xui_icon_reference_t;
+XUI_API int xuiIconRetainReference(xui_icon pIcon, xui_icon_reference_t** ppReference);
+XUI_API int xuiIconCategoryRetainReference(xui_icon_category pCategory, xui_icon_reference_t** ppReference);
+XUI_API bool xuiIconReferenceIsLive(const xui_icon_reference_t* pReference);
+XUI_API int xuiIconReferenceReleaseOwnerChecked(xui_icon_reference_t* pReference, bool* pConsumed);
+XUI_API int xuiIconReferenceRelease(xui_icon_reference_t* pReference);
 /* 更新图标元数据（显示名/标签等）。 */
 XUI_API int xuiIconSetMetadata(xui_icon pIcon, const xui_icon_desc_t* pDesc);
 /* 提升图标缓存热度（LRU 保活）。 */

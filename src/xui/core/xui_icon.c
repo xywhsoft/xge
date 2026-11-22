@@ -2032,6 +2032,11 @@ XUI_API void* xuiIconGetUser(xui_icon pIcon)
 	return __xuiIconMemoryValid(pIcon) ? pIcon->pUser : NULL;
 }
 
+XUI_API uint32_t xuiIconGetFlags(xui_icon pIcon)
+{
+	return __xuiIconMemoryValid(pIcon) ? pIcon->iFlags : 0u;
+}
+
 XUI_API int xuiIconSetMetadata(xui_icon pIcon, const xui_icon_desc_t* pDesc)
 {
 	char* sDisplayName;
@@ -2209,6 +2214,87 @@ XUI_API int xuiIconLifetimeWatch(xui_icon icon,xui_lifetime_link_t* link,xui_lif
     if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
     if(icon->iMagic!=XUI_ICON_MAGIC || context->bDestroying || context->bDestroyPending || context->bCloseRequested)return XUI_ERROR_INVALID_STATE;
     return xuiInternalLifetimeWatch(&icon->pLifetimeLinks,link,invalidate,user);
+}
+
+struct xui_icon_reference_t {
+	xui_lifetime_link_t tLink;
+	void* pTarget;
+	uint64_t iCreator;
+	bool bCategory;
+	bool bClosing;
+};
+
+static void __xuiIconReferenceInvalidate(void* user)
+{
+	xui_icon_reference_t* reference = user;
+	reference->pTarget = NULL;
+}
+
+static int __xuiIconReferenceRetain(void* target, bool category, xui_icon_reference_t** out)
+{
+	if ( !out ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if ( !target ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_icon_reference_t* reference = xrtCalloc(1, sizeof(*reference));
+	if ( !reference ) return XUI_ERROR_OUT_OF_MEMORY;
+	reference->pTarget = target;
+	reference->bCategory = category;
+	reference->iCreator = xrtThreadCurrentId();
+	int status = category ?
+		xuiIconCategoryLifetimeWatch(target, &reference->tLink, __xuiIconReferenceInvalidate, reference) :
+		xuiIconLifetimeWatch(target, &reference->tLink, __xuiIconReferenceInvalidate, reference);
+	if ( status == XUI_OK ) {
+		status = category ? xuiIconCategoryAddRef(target) : xuiIconAddRef(target);
+		if ( status != XUI_OK ) xuiLifetimeUnwatch(&reference->tLink);
+	}
+	if ( status == XUI_OK ) *out = reference;
+	else xrtFree(reference);
+	return status;
+}
+
+XUI_API int xuiIconRetainReference(xui_icon icon, xui_icon_reference_t** out)
+{
+	return __xuiIconReferenceRetain(icon, false, out);
+}
+
+XUI_API int xuiIconCategoryRetainReference(xui_icon_category category, xui_icon_reference_t** out)
+{
+	return __xuiIconReferenceRetain(category, true, out);
+}
+
+XUI_API bool xuiIconReferenceIsLive(const xui_icon_reference_t* reference)
+{
+	return reference && reference->iCreator == xrtThreadCurrentId() && reference->pTarget && !reference->bClosing;
+}
+
+XUI_API int xuiIconReferenceReleaseOwnerChecked(xui_icon_reference_t* reference, bool* consumed)
+{
+	if ( !consumed ) return XUI_ERROR_INVALID_ARGUMENT;
+	*consumed = false;
+	if ( !reference ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( reference->iCreator != xrtThreadCurrentId() || reference->bClosing ) return XUI_ERROR_BUSY;
+	if ( !reference->pTarget ) {
+		*consumed = true;
+		xrtFree(reference);
+		return XUI_OK;
+	}
+	void* target = reference->pTarget;
+	xui_context context = reference->bCategory ? ((xui_icon_category)target)->pContext : ((xui_icon)target)->pContext;
+	xui_call_scope_t scope = {0};
+	int status = xuiInternalCleanupCallScopeBegin(context, &scope);
+	if ( status != XUI_OK ) return status;
+	reference->bClosing = true;
+	*consumed = true;
+	xuiLifetimeUnwatch(&reference->tLink);
+	status = reference->bCategory ? __xuiIconCategoryRelease(target) : __xuiIconRelease(target);
+	xrtFree(reference);
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
+XUI_API int xuiIconReferenceRelease(xui_icon_reference_t* reference)
+{
+	bool consumed;
+	return xuiIconReferenceReleaseOwnerChecked(reference, &consumed);
 }
 
 XUI_API int xuiIconCategoryRemoveOwnerChecked(xui_icon_category category,bool* accepted)
