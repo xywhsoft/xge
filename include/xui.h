@@ -12992,6 +12992,8 @@ XUI_API int xuiMenuClear(xui_widget pWidget);
 XUI_API int xuiMenuGetItemCount(xui_widget pWidget);
 /* 按索引输出菜单项描述（借用指针；下次修改菜单项或销毁菜单后失效）。 */
 XUI_API const xui_menu_item_t* xuiMenuGetItem(xui_widget pWidget, int iIndex);
+/* Copies the item descriptor. Pointer fields remain borrowed. Failure leaves the output unchanged. */
+XUI_API int xuiMenuGetItemDescriptor(xui_widget pWidget, int iIndex, xui_menu_item_t* pItem);
 /* 读取菜单项矩形。 */
 XUI_API xui_rect_t xuiMenuGetItemRect(xui_widget pWidget, int iIndex);
 /* 按掩码设置菜单项状态位（禁用/勾选）。 */
@@ -13054,6 +13056,8 @@ XUI_API int xuiMenuBarClear(xui_widget pWidget);
 XUI_API int xuiMenuBarGetItemCount(xui_widget pWidget);
 /* 按索引输出项描述（借用指针，设置/清空项或销毁菜单栏后失效）。 */
 XUI_API const xui_menubar_item_t* xuiMenuBarGetItem(xui_widget pWidget, int iIndex);
+/* Copies the item descriptor. Pointer fields remain borrowed. Failure leaves the output unchanged. */
+XUI_API int xuiMenuBarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_menubar_item_t* pItem);
 /* 读取项矩形。 */
 XUI_API xui_rect_t xuiMenuBarGetItemRect(xui_widget pWidget, int iIndex);
 /* 按索引绑定同一上下文中的下拉 Menu（借用句柄；Menu 销毁时自动清空并禁用该项）。 */
@@ -13128,6 +13132,8 @@ XUI_API int xuiToolbarClear(xui_widget pWidget);
 XUI_API int xuiToolbarGetItemCount(xui_widget pWidget);
 /* 按索引输出工具项描述。 */
 XUI_API const xui_toolbar_item_t* xuiToolbarGetItem(xui_widget pWidget, int iIndex);
+/* Copies the item descriptor. Pointer fields remain borrowed. Failure leaves the output unchanged. */
+XUI_API int xuiToolbarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_toolbar_item_t* pItem);
 /* 读取工具项矩形。 */
 XUI_API xui_rect_t xuiToolbarGetItemRect(xui_widget pWidget, int iIndex);
 /* 坐标命中工具项。 */
@@ -13220,6 +13226,8 @@ XUI_API int xuiStatusBarClear(xui_widget pWidget);
 XUI_API int xuiStatusBarGetItemCount(xui_widget pWidget);
 /* 按索引输出只读条目描述；返回指针由控件持有，后续修改可能使其失效。 */
 XUI_API const xui_statusbar_item_t* xuiStatusBarGetItem(xui_widget pWidget, int iIndex);
+/* Copies the item descriptor. Pointer fields remain borrowed. Failure leaves the output unchanged. */
+XUI_API int xuiStatusBarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_statusbar_item_t* pItem);
 /* 读取条目矩形。 */
 XUI_API xui_rect_t xuiStatusBarGetItemRect(xui_widget pWidget, int iIndex);
 /* 坐标命中条目索引。 */

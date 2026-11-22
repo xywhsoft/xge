@@ -2033,11 +2033,25 @@ XUI_API int xuiMenuBarGetItemCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iItemCount : 0;
 }
 
-XUI_API const xui_menubar_item_t* xuiMenuBarGetItem(xui_widget pWidget, int iIndex)
+static const xui_menubar_item_t* __xuiMenuBarGetItem(xui_widget pWidget, int iIndex)
 {
 	xui_menubar_data_t* pData = __xuiMenuBarGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return NULL;
 	return &pData->arrItems[iIndex];
+}
+
+XUI_API const xui_menubar_item_t* xuiMenuBarGetItem(xui_widget pWidget, int iIndex)
+{
+	return __xuiMenuBarGetItem(pWidget, iIndex);
+}
+
+XUI_API int xuiMenuBarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_menubar_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_menubar_item_t* pStored = __xuiMenuBarGetItem(pWidget, iIndex);
+	if ( pStored == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pStored;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiMenuBarGetItemRect(xui_widget pWidget, int iIndex)

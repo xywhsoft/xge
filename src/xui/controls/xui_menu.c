@@ -2313,13 +2313,27 @@ XUI_API int xuiMenuGetItemCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iItemCount : 0;
 }
 
-XUI_API const xui_menu_item_t* xuiMenuGetItem(xui_widget pWidget, int iIndex)
+static const xui_menu_item_t* __xuiMenuGetItem(xui_widget pWidget, int iIndex)
 {
 	xui_menu_data_t* pData = __xuiMenuGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
 		return NULL;
 	}
 	return &pData->arrItems[iIndex];
+}
+
+XUI_API const xui_menu_item_t* xuiMenuGetItem(xui_widget pWidget, int iIndex)
+{
+	return __xuiMenuGetItem(pWidget, iIndex);
+}
+
+XUI_API int xuiMenuGetItemDescriptor(xui_widget pWidget, int iIndex, xui_menu_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_menu_item_t* pStored = __xuiMenuGetItem(pWidget, iIndex);
+	if ( pStored == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pStored;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiMenuGetItemRect(xui_widget pWidget, int iIndex)

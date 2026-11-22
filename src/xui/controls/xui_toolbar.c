@@ -2131,11 +2131,25 @@ XUI_API int xuiToolbarGetItemCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iItemCount : 0;
 }
 
-XUI_API const xui_toolbar_item_t* xuiToolbarGetItem(xui_widget pWidget, int iIndex)
+static const xui_toolbar_item_t* __xuiToolbarGetItem(xui_widget pWidget, int iIndex)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return NULL;
 	return &pData->arrItems[iIndex];
+}
+
+XUI_API const xui_toolbar_item_t* xuiToolbarGetItem(xui_widget pWidget, int iIndex)
+{
+	return __xuiToolbarGetItem(pWidget, iIndex);
+}
+
+XUI_API int xuiToolbarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_toolbar_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_toolbar_item_t* pStored = __xuiToolbarGetItem(pWidget, iIndex);
+	if ( pStored == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pStored;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiToolbarGetItemRect(xui_widget pWidget, int iIndex)

@@ -1854,11 +1854,25 @@ XUI_API int xuiStatusBarSetContextMenu(xui_widget pWidget, xui_statusbar_context
 	return XUI_OK;
 }
 
-XUI_API const xui_statusbar_item_t* xuiStatusBarGetItem(xui_widget pWidget, int iIndex)
+static const xui_statusbar_item_t* __xuiStatusBarGetItem(xui_widget pWidget, int iIndex)
 {
 	xui_statusbar_data_t* pData = __xuiStatusBarGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return NULL;
 	return &pData->arrItems[iIndex];
+}
+
+XUI_API const xui_statusbar_item_t* xuiStatusBarGetItem(xui_widget pWidget, int iIndex)
+{
+	return __xuiStatusBarGetItem(pWidget, iIndex);
+}
+
+XUI_API int xuiStatusBarGetItemDescriptor(xui_widget pWidget, int iIndex, xui_statusbar_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_statusbar_item_t* pStored = __xuiStatusBarGetItem(pWidget, iIndex);
+	if ( pStored == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pStored;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiStatusBarGetItemRect(xui_widget pWidget, int iIndex)
