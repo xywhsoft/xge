@@ -9,7 +9,6 @@ int xuiInternalCodeProviderClaimOwner(xui_code_provider_set,xui_widget);
 int xuiInternalCodeProviderDestroyOwned(xui_widget,xui_code_provider_set);
 int xuiInternalCodeProviderCallEndRestored(xui_code_provider_scope_t*,int,xerror*);
 
-int xuiInternalCodeProviderSetEditorCommand(xui_code_provider_set, xui_code_editor_command_proc, void*, const xui_callback_owner_t*);
 int xuiInternalCodeProviderSetCommandGuard(xui_code_provider_set, xui_code_editor_command_proc, void*, const xui_callback_owner_t*);
 bool xuiInternalCodeProviderHasCommandGuard(xui_code_provider_set);
 bool xuiInternalCodeProviderHasHover(xui_code_provider_set);

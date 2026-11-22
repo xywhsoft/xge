@@ -291,4 +291,5 @@ XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set providers,xui
     }
     status=__xuiCodeProviderFinish(&scope,status);if(status==XUI_OK)*enabled=value?1:0;return status;
 }
+#include "xui_code_provider_snapshot.inl"
 #endif

@@ -8533,6 +8533,9 @@ XUI_API int xuiCodeProviderSetHoverOwned(xui_code_provider_set pProviders,xui_co
 XUI_API int xuiCodeProviderSetSignatureOwned(xui_code_provider_set pProviders,xui_code_signature_proc onSignature,void* pUser,const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeProviderSetCommandOwned(xui_code_provider_set pProviders,xui_code_command_proc onCommand,void* pUser,const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeProviderSetCommandEnabledOwned(xui_code_provider_set pProviders,xui_code_command_enabled_proc onEnabled,void* pUser,const xui_callback_owner_t* pOwner);
+/* Typed command handler for callers that do not pass an opaque command payload. */
+XUI_API int xuiCodeProviderSetCommandHandlerOwned(xui_code_provider_set providers,
+    xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner);
 /* Transactional native replies. The reply pointer and its input views are
  * valid only during the callback. Copying helpers preserve the preceding reply
  * on failure. Owned results live in the requesting scope until that scope
@@ -8559,6 +8562,24 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set pProviders, xu
 XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, int* pEnabled);
 /* 执行命令；*pHandled 输出是否被提供者消费。 */
 XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, const void* pCommandData, int* pHandled);
+/* Independent replies from the typed providers. Legacy borrowed callbacks
+ * return UNSUPPORTED. Result records borrow from the returned snapshot until
+ * Destroy. A successful result remains valid after a provider clear or close. */
+typedef struct xui_code_completion_snapshot_t* xui_code_completion_snapshot;
+typedef struct xui_code_signature_snapshot_t* xui_code_signature_snapshot;
+XUI_API int xuiCodeProviderCaptureCompletion(xui_code_provider_set providers, xui_widget widget,
+    int offset, const char* prefix, int capacity, xui_code_completion_snapshot* output);
+XUI_API void xuiCodeCompletionSnapshotDestroy(xui_code_completion_snapshot snapshot);
+XUI_API int xuiCodeCompletionSnapshotGetCount(const struct xui_code_completion_snapshot_t* snapshot);
+XUI_API int xuiCodeCompletionSnapshotGetItem(const struct xui_code_completion_snapshot_t* snapshot,
+    int index, xui_code_completion_item_t* output);
+XUI_API int xuiCodeProviderCaptureSignature(xui_code_provider_set providers, xui_widget widget,
+    int offset, xui_code_signature_snapshot* output);
+XUI_API void xuiCodeSignatureSnapshotDestroy(xui_code_signature_snapshot snapshot);
+XUI_API int xuiCodeSignatureSnapshotGetInfo(const struct xui_code_signature_snapshot_t* snapshot,
+    xui_code_signature_help_t* output);
+XUI_API int xuiCodeSignatureSnapshotGetParameter(const struct xui_code_signature_snapshot_t* snapshot,
+    int index, xui_code_signature_parameter_t* output);
 /* 创建边栏（行号/标记/折叠/诊断栏）模型。 */
 XUI_API int xuiCodeMarginModelCreate(xui_code_margin_model* ppModel);
 /* 释放边栏模型。 */

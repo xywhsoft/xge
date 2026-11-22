@@ -7830,7 +7830,7 @@ XUI_API int xuiCodeEditSetCommandProviderOwned(xui_widget widget,
     xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     xui_code_edit_data_t* data = __xuiCodeEditGetData(widget);
-    return data ? xuiInternalCodeProviderSetEditorCommand(data->pProviders, callback, user, owner)
+    return data ? xuiCodeProviderSetCommandHandlerOwned(data->pProviders, callback, user, owner)
                 : XUI_ERROR_INVALID_ARGUMENT;
 }
 

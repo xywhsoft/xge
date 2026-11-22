@@ -88,7 +88,7 @@ XUI_API int xuiCodeProviderSetSignatureReplyOwned(xui_code_provider_set provider
         (xui_code_provider_fn_t){.signatureReply = callback}, callback != NULL, true, user, owner);
 }
 
-int xuiInternalCodeProviderSetEditorCommand(xui_code_provider_set providers,
+XUI_API int xuiCodeProviderSetCommandHandlerOwned(xui_code_provider_set providers,
     xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_COMMAND,

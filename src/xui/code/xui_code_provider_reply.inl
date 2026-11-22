@@ -49,19 +49,40 @@ static void __xuiCodeReplyFree(xui_code_provider_reply_block_t* block)
     }
 }
 
-static void __xuiCodeProviderExpireReplies(xui_code_provider_set providers,
-    const xui_code_provider_scope_t* scope, int role)
+static void __xuiCodeProviderRemoveReplies(xui_code_provider_set providers,
+    const xui_code_provider_scope_t* scope, int role, xui_code_provider_reply_block_t** tail)
 {
     xui_code_provider_reply_block_t** link = &providers->replies;
     while (*link) {
         xui_code_provider_reply_block_t* block = *link;
         if (block->scope == scope && (role < 0 || block->role == role)) {
             *link = block->next;
-            xrtFree(block);
+            if (tail) {
+                block->scope = NULL;
+                *tail = block;
+                tail = &block->next;
+            } else {
+                xrtFree(block);
+            }
         } else {
             link = &block->next;
         }
     }
+    if (tail) *tail = NULL;
+}
+
+static void __xuiCodeProviderExpireReplies(xui_code_provider_set providers,
+    const xui_code_provider_scope_t* scope, int role)
+{
+    __xuiCodeProviderRemoveReplies(providers, scope, role, NULL);
+}
+
+static xui_code_provider_reply_block_t* __xuiCodeProviderTakeReplies(xui_code_provider_set providers,
+    const xui_code_provider_scope_t* scope, int role)
+{
+    xui_code_provider_reply_block_t* result = NULL;
+    __xuiCodeProviderRemoveReplies(providers, scope, role, &result);
+    return result;
 }
 
 static void __xuiCodeProviderSaveReply(xui_code_provider_set providers,
