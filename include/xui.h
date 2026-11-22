@@ -10570,12 +10570,27 @@ XUI_API int xuiTerminalDetachSession(xui_widget pWidget);
 XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc);
 /* 创建子进程会话（管道接通 stdin/stdout）；Windows 专用。 */
 XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc);
+/* Managed sessions are creator-thread resources. The attachment remains weak:
+ * the caller keeps its owned session alive and either side may end the link.
+ * Owned factories reject raw callback fields. Register callbacks separately. */
+XUI_API int xuiTerminalCreateFakeSessionOwned(xui_terminal_session_t** ppSession, const xui_terminal_session_desc_t* pDesc);
+XUI_API int xuiTerminalCreateProcessSessionOwned(xui_terminal_session_t** ppSession, const xui_terminal_process_desc_t* pDesc);
+XUI_API int xuiTerminalSessionShareOwned(xui_terminal_session_t* pSession, xui_terminal_session_t** ppSession);
+XUI_API int xuiTerminalSessionReleaseOwnerChecked(xui_terminal_session_t* pSession, bool* pConsumed);
+XUI_API xrtownershipref xuiTerminalSessionOwnership(xui_terminal_session_t* pSession);
+XUI_API const xrtownershipadapterv1* xuiTerminalSessionOwnershipAdapterV1(xrtownershipref tRef);
+XUI_API const xrtownershippreparationv1* xuiTerminalSessionOwnershipPreparationV1(xrtownershipref tRef);
+XUI_API const xrtownershipquiescencev1* xuiTerminalSessionOwnershipQuiescenceV1(xrtownershipref tRef);
+XUI_API const xrtownershipfinishv2* xuiTerminalSessionOwnershipCompletionV2(xrtownershipref tRef);
+XUI_API const xrtownershipfinalizationv1* xuiTerminalSessionOwnershipFinalizationV1(xrtownershipref tRef);
+XUI_API bool xuiTerminalSessionOwnershipReadReady(xrtownershipref tRef);
 #endif
 /* 按 SSH 描述拼装命令行。返回所需字节数（不含 NUL）；缓冲不足时仍返回所需长度，并保证非空缓冲以 NUL 结尾。 */
 #if XUI_ENABLE_TERMINAL
 XUI_API int xuiTerminalBuildSshCommand(const xui_terminal_ssh_desc_t* pDesc, char* sBuffer, int iCapacity);
 /* 创建 SSH 远程会话（经 ssh 命令管道）。 */
 XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_ssh_desc_t* pDesc);
+XUI_API int xuiTerminalCreateSshSessionOwned(xui_terminal_session_t** ppSession, const xui_terminal_ssh_desc_t* pDesc);
 #endif
 /* 销毁会话（终止进程/管道）。 */
 #if XUI_ENABLE_TERMINAL
@@ -10592,6 +10607,8 @@ XUI_API int xuiTerminalSessionTerminate(xui_terminal_session_t* pSession);
 XUI_API int xuiTerminalSessionResize(xui_terminal_session_t* pSession, int iColumns, int iRows);
 /* 注册会话尺寸回调。 */
 XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession, xui_terminal_session_resize_proc onResize, void* pUser);
+XUI_API int xuiTerminalSessionSetResizeCallbackOwned(xui_terminal_session_t* pSession,
+	xui_terminal_session_resize_proc onResize, void* pUser, const xui_callback_owner_t* pOwner);
 /* 读取变更计数（测试用）。 */
 XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget);
 /* 输出运行统计（解析量/绘制量，诊断用）。 */

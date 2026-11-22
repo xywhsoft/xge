@@ -10,13 +10,16 @@
 #endif
 
 #include "xui_internal.h"
+#include "xge_data_lifetime_internal.h"
 
+#include <assert.h>
 #include <limits.h>
 
 #include <ctype.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -67,6 +70,10 @@ struct xui_terminal_session_t {
 	int bRunning;
 	int iKind;
 	uint32_t iProcessFlags;
+	bool bManaged;
+	bool bResizeCallbackActive;
+	atomic_uint iReferences;
+	xui_callback_owner_t tResizeOwner;
 #if defined(_WIN32) || defined(_WIN64)
 	HANDLE hProcess;
 	HANDLE hInputWrite;
@@ -74,6 +81,72 @@ struct xui_terminal_session_t {
 	HPCON hPseudoConsole;
 #endif
 };
+
+static xge_data_lifetime_t* __xuiTerminalSessionRoot(xui_terminal_session_t* session)
+{
+	return session && session->bManaged ? (xge_data_lifetime_t*)(session + 1) : NULL;
+}
+
+static bool __xuiTerminalSessionTrace(const void* raw, xrtownershipvisitor visit, void* user)
+{
+	const xui_terminal_session_t* session = raw;
+	return !session->tResizeOwner.onDrop || visit(session->tResizeOwner.tReference, user);
+}
+
+static int __xuiTerminalSessionFinalize(void* raw, bool* complete);
+static const xge_data_lifetime_type_t __xuiTerminalSessionType = {
+	sizeof(xui_terminal_session_t), offsetof(xui_terminal_session_t, iReferences),
+	NULL, __xuiTerminalSessionTrace, __xuiTerminalSessionFinalize, NULL
+};
+#define DO_FN(name) __xuiTerminalLifetime##name
+#define DO_PUBLIC(name) xuiTerminalSession##name
+#define DO_STATUS(name) XUI_##name
+#define DO_API XUI_API
+#define DO_ROOT(session) __xuiTerminalSessionRoot(session)
+#define DO_HANDLE xui_terminal_session_t*
+#define DO_OBJECT_TYPE __xuiTerminalSessionType
+#define DO_GENERATION_TYPE __xuiTerminalSessionType
+#include "xge_data_lifetime.inl"
+#undef DO_FN
+#undef DO_PUBLIC
+#undef DO_STATUS
+#undef DO_API
+#undef DO_ROOT
+#undef DO_HANDLE
+#undef DO_OBJECT_TYPE
+#undef DO_GENERATION_TYPE
+
+static xui_terminal_session_t* __xuiTerminalSessionAllocate(bool managed)
+{
+	size_t size = sizeof(xui_terminal_session_t);
+	if ( managed ) size += sizeof(xge_data_lifetime_t);
+	xui_terminal_session_t* session = xrtCalloc(1, size);
+	if ( session && managed ) {
+		session->bManaged = true;
+		atomic_init(&session->iReferences, 1u);
+		__xuiTerminalLifetimeInit(__xuiTerminalSessionRoot(session), &__xuiTerminalSessionType, xrtThreadCurrentId());
+	}
+	return session;
+}
+
+static int __xuiTerminalSessionActivity(xge_data_lifetime_t* root, xerror** ambient)
+{
+	if ( !root ) return XUI_OK;
+	int status = __xuiTerminalLifetimeAcquire(root, true, true);
+	if ( status == XUI_OK ) *ambient = xrtTakeError();
+	return status;
+}
+
+static int __xuiTerminalSessionActivityEnd(xge_data_lifetime_t* root, xerror* ambient, int status)
+{
+	if ( !root ) return status;
+	if ( status >= 0 && xrtGetError() ) status = XUI_ERROR_CALLBACK_FAILED;
+	xge_data_outcome_t result = {0};
+	__xuiTerminalLifetimeOutcomeBegin(&result, status < 0 ? status : XUI_OK);
+	__xuiTerminalLifetimeOutcomeAdd(&result, __xuiTerminalLifetimeActivityEnd(root));
+	int finalStatus = __xuiTerminalLifetimeOutcomeEnd(&result, ambient);
+	return finalStatus == XUI_OK ? status : finalStatus;
+}
 
 typedef struct xui_terminal_parser_t {
 	int iState;
@@ -7565,7 +7638,14 @@ XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t*
 	xui_context pContext;
 	int iRet;
 	if ( pData == NULL || pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->pSession == pSession && pSession->pWidget == pWidget ) return XUI_OK;
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(pSession);
+	if ( root && atomic_load_explicit(&root->iActivity, memory_order_acquire) )
+		return XUI_ERROR_BUSY;
+	xerror* ambient = NULL;
+	iRet = __xuiTerminalSessionActivity(root, &ambient);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->pSession == pSession && pSession->pWidget == pWidget )
+		return __xuiTerminalSessionActivityEnd(root, ambient, XUI_OK);
 	pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
 	if ( (pSession->pWidget != NULL) && (pSession->pWidget != pWidget) ) {
@@ -7584,13 +7664,18 @@ XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t*
 		if ( iRet == XUI_OK && __xuiTerminalWidgetAlive(pWidget) ) iRet = xuiTerminalFlush(pWidget);
 	}
 	xuiInternalOperationLeave(pContext);
-	return iRet;
+	return __xuiTerminalSessionActivityEnd(root, ambient, iRet);
 }
 
 XUI_API int xuiTerminalDetachSession(xui_widget pWidget)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(pData->pSession);
+	if ( root ) {
+		int status = __xuiTerminalLifetimeAdmit(root);
+		if ( status != XUI_OK ) return status;
+	}
 	if ( pData->pSession != NULL && pData->pSession->pWidget == pWidget ) pData->pSession->pWidget = NULL;
 	pData->pSession = NULL;
 	return XUI_OK;
@@ -7689,13 +7774,18 @@ static int __xuiTerminalProcessTerminate(xui_terminal_session_t* pSession)
 #endif
 }
 
-XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc)
+static int __xuiTerminalCreateFakeSession(xui_terminal_session_t** out,
+	const xui_terminal_session_desc_t* pDesc, bool managed)
 {
 	xui_terminal_session_t* pSession;
 
-	if ( pDesc != NULL && pDesc->iSize != 0u && pDesc->iSize < sizeof(*pDesc) ) return NULL;
-	pSession = (xui_terminal_session_t*)xrtCalloc(1, sizeof(*pSession));
-	if ( pSession == NULL ) return NULL;
+	if ( !out ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if ( pDesc && pDesc->iSize != 0u && pDesc->iSize < sizeof(*pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( managed && pDesc && (pDesc->iSize < sizeof(*pDesc) || pDesc->onResize || pDesc->pResizeUser) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	pSession = __xuiTerminalSessionAllocate(managed);
+	if ( !pSession ) return XUI_ERROR_OUT_OF_MEMORY;
 	pSession->iKind = XUI_TERMINAL_SESSION_FAKE;
 	pSession->bRunning = 1;
 	pSession->bEcho = (pDesc == NULL) ? 1 : (pDesc->bEcho ? 1 : 0);
@@ -7706,9 +7796,23 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_
 	pSession->sPrompt = xrtStrDup((pDesc != NULL && pDesc->sPrompt != NULL) ? pDesc->sPrompt : "");
 	if ( pSession->sPrompt == NULL ) {
 		xrtFree(pSession);
-		return NULL;
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	return pSession;
+	*out = pSession;
+	return XUI_OK;
+}
+
+XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc)
+{
+	xui_terminal_session_t* session = NULL;
+	(void)__xuiTerminalCreateFakeSession(&session, pDesc, false);
+	return session;
+}
+
+XUI_API int xuiTerminalCreateFakeSessionOwned(xui_terminal_session_t** out,
+	const xui_terminal_session_desc_t* desc)
+{
+	return __xuiTerminalCreateFakeSession(out, desc, true);
 }
 
 static int __xuiTerminalProcessCreatePipeTransport(xui_terminal_session_t* pSession, const xui_terminal_process_desc_t* pDesc, char* sCommandLine)
@@ -7861,26 +7965,35 @@ failed:
 #endif
 }
 
-XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc)
+static int __xuiTerminalCreateProcessSession(xui_terminal_session_t** out,
+	const xui_terminal_process_desc_t* pDesc, bool managed)
 {
 	xui_terminal_session_t* pSession;
 	char* sCommandLine;
 	uint32_t iFlags;
 	int iRet;
 
-	if ( pDesc == NULL || pDesc->iSize < (uint32_t)offsetof(xui_terminal_process_desc_t, iFlags) || pDesc->sCommandLine == NULL || pDesc->sCommandLine[0] == '\0' ) return NULL;
+	if ( !out ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if ( pDesc == NULL || pDesc->iSize < (uint32_t)offsetof(xui_terminal_process_desc_t, iFlags) || pDesc->sCommandLine == NULL || pDesc->sCommandLine[0] == '\0' )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( managed && (pDesc->iSize < sizeof(*pDesc) || pDesc->onResize || pDesc->pResizeUser) )
+		return XUI_ERROR_INVALID_ARGUMENT;
 	iFlags = __xuiTerminalProcessDescFlags(pDesc);
-	if ( (iFlags & ~XUI_TERMINAL_PROCESS_CONPTY) != 0u ) return NULL;
+	if ( (iFlags & ~XUI_TERMINAL_PROCESS_CONPTY) != 0u ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pDesc->iSize >= (uint32_t)(offsetof(xui_terminal_process_desc_t, iColumns) + sizeof(pDesc->iColumns)) &&
-	     (pDesc->iColumns < 0 || pDesc->iColumns > 32767) ) return NULL;
+	     (pDesc->iColumns < 0 || pDesc->iColumns > 32767) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pDesc->iSize >= (uint32_t)(offsetof(xui_terminal_process_desc_t, iRows) + sizeof(pDesc->iRows)) &&
-	     (pDesc->iRows < 0 || pDesc->iRows > 32767) ) return NULL;
-	pSession = (xui_terminal_session_t*)xrtCalloc(1, sizeof(*pSession));
-	if ( pSession == NULL ) return NULL;
+	     (pDesc->iRows < 0 || pDesc->iRows > 32767) ) return XUI_ERROR_INVALID_ARGUMENT;
+#if !defined(_WIN32) && !defined(_WIN64)
+	if ( managed ) return XUI_ERROR_UNSUPPORTED;
+#endif
+	pSession = __xuiTerminalSessionAllocate(managed);
+	if ( pSession == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	sCommandLine = xrtStrDup(pDesc->sCommandLine);
 	if ( sCommandLine == NULL ) {
 		xrtFree(pSession);
-		return NULL;
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pSession->iKind = XUI_TERMINAL_SESSION_PROCESS;
 	pSession->bRunning = 1;
@@ -7894,7 +8007,7 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_termin
 	if ( pSession->sPrompt == NULL ) {
 		xrtFree(sCommandLine);
 		xrtFree(pSession);
-		return NULL;
+		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( (iFlags & XUI_TERMINAL_PROCESS_CONPTY) != 0u ) {
 		iRet = __xuiTerminalProcessCreateConptyTransport(pSession, pDesc, sCommandLine);
@@ -7906,9 +8019,23 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_termin
 		__xuiTerminalProcessCloseHandles(pSession);
 		if ( pSession->sPrompt != NULL ) xrtFree(pSession->sPrompt);
 		xrtFree(pSession);
-		return NULL;
+		return iRet;
 	}
-	return pSession;
+	*out = pSession;
+	return XUI_OK;
+}
+
+XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc)
+{
+	xui_terminal_session_t* session = NULL;
+	(void)__xuiTerminalCreateProcessSession(&session, pDesc, false);
+	return session;
+}
+
+XUI_API int xuiTerminalCreateProcessSessionOwned(xui_terminal_session_t** out,
+	const xui_terminal_process_desc_t* desc)
+{
+	return __xuiTerminalCreateProcessSession(out, desc, true);
 }
 
 XUI_API int xuiTerminalBuildSshCommand(const xui_terminal_ssh_desc_t* pDesc,
@@ -7975,21 +8102,30 @@ XUI_API int xuiTerminalBuildSshCommand(const xui_terminal_ssh_desc_t* pDesc,
 	return (iRet == XUI_OK) ? (int)tBuilder.iNeeded : iRet;
 }
 
-XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_ssh_desc_t* pDesc)
+static int __xuiTerminalCreateSshSession(xui_terminal_session_t** out,
+	const xui_terminal_ssh_desc_t* pDesc, bool managed)
 {
 	xui_terminal_process_desc_t tProcessDesc;
-	xui_terminal_session_t* pSession;
 	char* sCommandLine;
 	int iNeeded;
 
-	if ( !__xuiTerminalSshDescValid(pDesc) ) return NULL;
+	if ( !out ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if ( managed && (!pDesc || pDesc->iSize < sizeof(*pDesc)) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiTerminalSshDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( managed && (pDesc->onResize || pDesc->pResizeUser) ) return XUI_ERROR_INVALID_ARGUMENT;
+#if !defined(_WIN32) && !defined(_WIN64)
+	if ( managed ) return XUI_ERROR_UNSUPPORTED;
+#endif
 	iNeeded = xuiTerminalBuildSshCommand(pDesc, NULL, 0);
-	if ( iNeeded < 0 || iNeeded == INT_MAX ) return NULL;
+	if ( iNeeded < 0 ) return iNeeded;
+	if ( iNeeded == INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
 	sCommandLine = (char*)xrtMalloc((size_t)iNeeded + 1u);
-	if ( sCommandLine == NULL ) return NULL;
-	if ( xuiTerminalBuildSshCommand(pDesc, sCommandLine, iNeeded + 1) != iNeeded ) {
+	if ( sCommandLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	int status = xuiTerminalBuildSshCommand(pDesc, sCommandLine, iNeeded + 1);
+	if ( status != iNeeded ) {
 		xrtFree(sCommandLine);
-		return NULL;
+		return status < 0 ? status : XUI_ERROR_INVALID_STATE;
 	}
 	memset(&tProcessDesc, 0, sizeof(tProcessDesc));
 	tProcessDesc.iSize = sizeof(tProcessDesc);
@@ -8000,14 +8136,26 @@ XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_s
 	tProcessDesc.iFlags = pDesc->iProcessFlags;
 	tProcessDesc.iColumns = pDesc->iColumns;
 	tProcessDesc.iRows = pDesc->iRows;
-	pSession = xuiTerminalCreateProcessSession(&tProcessDesc);
+	status = __xuiTerminalCreateProcessSession(out, &tProcessDesc, managed);
 	xrtFree(sCommandLine);
-	return pSession;
+	return status;
 }
 
-XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession)
+XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_ssh_desc_t* pDesc)
 {
-	if ( pSession == NULL ) return;
+	xui_terminal_session_t* session = NULL;
+	(void)__xuiTerminalCreateSshSession(&session, pDesc, false);
+	return session;
+}
+
+XUI_API int xuiTerminalCreateSshSessionOwned(xui_terminal_session_t** out,
+	const xui_terminal_ssh_desc_t* desc)
+{
+	return __xuiTerminalCreateSshSession(out, desc, true);
+}
+
+static int __xuiTerminalSessionDispose(xui_terminal_session_t* pSession)
+{
 	if ( pSession->pWidget != NULL ) {
 		xui_terminal_data_t* pData = __xuiTerminalGetData(pSession->pWidget);
 		if ( (pData != NULL) && (pData->pSession == pSession) ) {
@@ -8015,14 +8163,60 @@ XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession)
 		}
 		pSession->pWidget = NULL;
 	}
+	int status = XUI_OK;
 	if ( pSession->iKind == XUI_TERMINAL_SESSION_PROCESS ) {
-		(void)__xuiTerminalProcessTerminate(pSession);
+		status = __xuiTerminalProcessTerminate(pSession);
 	}
-	if ( pSession->sPrompt != NULL ) xrtFree(pSession->sPrompt);
+	xrtFree(pSession->sPrompt);
+	pSession->sPrompt = NULL;
+	return status;
+}
+
+static int __xuiTerminalSessionFinalize(void* raw, bool* complete)
+{
+	xui_terminal_session_t* session = raw;
+	xrtownershipscope mutation = {0};
+	if ( !xrtOwnershipMutationBegin(&mutation) ) return XUI_ERROR_INVALID_STATE;
+	xui_callback_owner_t owner = session->tResizeOwner;
+	session->tResizeOwner = (xui_callback_owner_t){0};
+	session->onResize = NULL;
+	session->pResizeUser = NULL;
+	__xuiTerminalLifetimeMutationEnd(&mutation);
+	int status = __xuiTerminalSessionDispose(session);
+	*complete = true;
+	if ( owner.onDrop && !owner.onDrop(owner.tReference.Data) && status == XUI_OK )
+		status = XUI_ERROR_CALLBACK_FAILED;
+	return status;
+}
+
+XUI_API int xuiTerminalSessionShareOwned(xui_terminal_session_t* session, xui_terminal_session_t** out)
+{
+	if ( !out ) return XUI_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	int status = __xuiTerminalLifetimeAcquire(__xuiTerminalSessionRoot(session), true, false);
+	if ( status == XUI_OK ) *out = session;
+	return status;
+}
+
+XUI_API int xuiTerminalSessionReleaseOwnerChecked(xui_terminal_session_t* session, bool* consumed)
+{
+	return __xuiTerminalLifetimeRelease(__xuiTerminalSessionRoot(session), consumed);
+}
+
+XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession)
+{
+	if ( !pSession ) return;
+	if ( pSession->bManaged ) {
+		bool consumed;
+		int status = xuiTerminalSessionReleaseOwnerChecked(pSession, &consumed);
+		if ( status != XUI_OK && !xrtGetError() ) xrtSetErrorKind(XERR_STATE);
+		return;
+	}
+	(void)__xuiTerminalSessionDispose(pSession);
 	xrtFree(pSession);
 }
 
-XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void* pDataBytes, int iSize)
+static int __xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void* pDataBytes, int iSize)
 {
 	const uint8_t* pBytes;
 #if defined(_WIN32) || defined(_WIN64)
@@ -8045,9 +8239,10 @@ XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void
 	if ( !pSession->bEcho || pSession->pWidget == NULL ) return XUI_OK;
 	pBytes = (const uint8_t*)pDataBytes;
 	for ( i = 0; i < iSize; i++ ) {
+		if ( !pSession->pWidget ) return XUI_OK;
 		if ( pBytes[i] == '\r' || pBytes[i] == '\n' ) {
 			iRet = xuiTerminalWriteText(pSession->pWidget, "\r\n");
-			if ( pSession->sPrompt != NULL && pSession->sPrompt[0] != '\0' ) {
+			if ( pSession->pWidget && pSession->sPrompt != NULL && pSession->sPrompt[0] != '\0' ) {
 				if ( iRet == XUI_OK ) iRet = xuiTerminalWriteText(pSession->pWidget, pSession->sPrompt);
 			}
 		} else if ( pBytes[i] == 0x7fu || pBytes[i] == 0x08u ) {
@@ -8057,10 +8252,20 @@ XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void
 		}
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	return xuiTerminalFlush(pSession->pWidget);
+	return pSession->pWidget ? xuiTerminalFlush(pSession->pWidget) : XUI_OK;
 }
 
-XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* pSession)
+XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* session, const void* data, int size)
+{
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(session);
+	xerror* ambient = NULL;
+	int status = __xuiTerminalSessionActivity(root, &ambient);
+	if ( status != XUI_OK ) return status;
+	status = __xuiTerminalSessionWrite(session, data, size);
+	return __xuiTerminalSessionActivityEnd(root, ambient, status);
+}
+
+static int __xuiTerminalSessionPoll(xui_terminal_session_t* pSession)
 {
 #if defined(_WIN32) || defined(_WIN64)
 	xui_widget pAttachedWidget;
@@ -8113,6 +8318,7 @@ XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* pSession)
 		iRet = xuiTerminalFlush(pSession->pWidget);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pAttachedWidget != NULL ) {
+			if ( pAttachedWidget != pSession->pWidget ) return iTotal;
 			pAttachedData = __xuiTerminalGetData(pAttachedWidget);
 			if ( pAttachedData == NULL || pAttachedData->pSession != pSession ) return iTotal;
 		}
@@ -8125,9 +8331,23 @@ XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* pSession)
 #endif
 }
 
+XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* session)
+{
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(session);
+	xerror* ambient = NULL;
+	int status = __xuiTerminalSessionActivity(root, &ambient);
+	if ( status != XUI_OK ) return status;
+	status = __xuiTerminalSessionPoll(session);
+	return __xuiTerminalSessionActivityEnd(root, ambient, status);
+}
+
 XUI_API int xuiTerminalSessionIsRunning(xui_terminal_session_t* pSession)
 {
 	if ( pSession == NULL ) return 0;
+	if ( pSession->bManaged ) {
+		int status = __xuiTerminalLifetimeAdmit(__xuiTerminalSessionRoot(pSession));
+		if ( status != XUI_OK ) return status;
+	}
 	if ( pSession->iKind == XUI_TERMINAL_SESSION_PROCESS ) {
 		return __xuiTerminalProcessRefreshRunning(pSession);
 	}
@@ -8137,6 +8357,10 @@ XUI_API int xuiTerminalSessionIsRunning(xui_terminal_session_t* pSession)
 XUI_API int xuiTerminalSessionTerminate(xui_terminal_session_t* pSession)
 {
 	if ( pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pSession->bManaged ) {
+		int status = __xuiTerminalLifetimeAdmit(__xuiTerminalSessionRoot(pSession));
+		if ( status != XUI_OK ) return status;
+	}
 	if ( pSession->iKind == XUI_TERMINAL_SESSION_PROCESS ) {
 		return __xuiTerminalProcessTerminate(pSession);
 	}
@@ -8144,25 +8368,32 @@ XUI_API int xuiTerminalSessionTerminate(xui_terminal_session_t* pSession)
 	return XUI_OK;
 }
 
-XUI_API int xuiTerminalSessionResize(xui_terminal_session_t* pSession, int iColumns, int iRows)
+static int __xuiTerminalSessionResize(xui_terminal_session_t* pSession, int iColumns, int iRows)
 {
-	int iRet;
-
 	if ( pSession == NULL || iColumns <= 0 || iRows <= 0 || iColumns > 32767 || iRows > 32767 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pSession->iLastColumns == iColumns && pSession->iLastRows == iRows ) {
-		if ( pSession->onResize != NULL ) {
-			pSession->onResize(pSession, iColumns, iRows, pSession->pResizeUser);
-		}
-		return XUI_OK;
+	if ( pSession->bManaged && pSession->bResizeCallbackActive ) return XUI_ERROR_BUSY;
+	if ( pSession->iLastColumns != iColumns || pSession->iLastRows != iRows ) {
+		int status = __xuiTerminalSessionResizeTransport(pSession, iColumns, iRows);
+		if ( status != XUI_OK ) return status;
+		pSession->iLastColumns = iColumns;
+		pSession->iLastRows = iRows;
 	}
-	iRet = __xuiTerminalSessionResizeTransport(pSession, iColumns, iRows);
-	if ( iRet != XUI_OK ) return iRet;
-	pSession->iLastColumns = iColumns;
-	pSession->iLastRows = iRows;
 	if ( pSession->onResize != NULL ) {
+		if ( pSession->bManaged ) pSession->bResizeCallbackActive = true;
 		pSession->onResize(pSession, iColumns, iRows, pSession->pResizeUser);
+		if ( pSession->bManaged ) pSession->bResizeCallbackActive = false;
 	}
 	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSessionResize(xui_terminal_session_t* session, int columns, int rows)
+{
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(session);
+	xerror* ambient = NULL;
+	int status = __xuiTerminalSessionActivity(root, &ambient);
+	if ( status != XUI_OK ) return status;
+	status = __xuiTerminalSessionResize(session, columns, rows);
+	return __xuiTerminalSessionActivityEnd(root, ambient, status);
 }
 
 XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession, xui_terminal_session_resize_proc onResize, void* pUser)
@@ -8170,6 +8401,10 @@ XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession
 	xui_terminal_data_t* pData;
 
 	if ( pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pSession->bManaged ) {
+		if ( onResize || pUser ) return XUI_ERROR_INVALID_ARGUMENT;
+		return xuiTerminalSessionSetResizeCallbackOwned(pSession, NULL, NULL, NULL);
+	}
 	pSession->onResize = onResize;
 	pSession->pResizeUser = pUser;
 	if ( pSession->pWidget != NULL && pSession->onResize != NULL ) {
@@ -8179,6 +8414,54 @@ XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession
 		}
 	}
 	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSessionSetResizeCallbackOwned(xui_terminal_session_t* session,
+	xui_terminal_session_resize_proc resize, void* user, const xui_callback_owner_t* owner)
+{
+	xge_data_lifetime_t* root = __xuiTerminalSessionRoot(session);
+	if ( !root || (resize && (!owner || !owner->tReference.Data || !owner->tReference.Ops ||
+	     !owner->onHold || !owner->onDrop)) || (!resize && (user || owner)) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xerror* ambient = NULL;
+	int status = __xuiTerminalSessionActivity(root, &ambient);
+	if ( status != XUI_OK ) return status;
+	if ( session->bResizeCallbackActive )
+		return __xuiTerminalSessionActivityEnd(root, ambient, XUI_ERROR_BUSY);
+
+	session->bResizeCallbackActive = true;
+	bool held = owner && owner->onHold(owner->tReference.Data);
+	if ( owner && (!held || xrtGetError()) ) status = XUI_ERROR_CALLBACK_FAILED;
+	xui_callback_owner_t retiring = {0};
+	xrtownershipscope mutation = {0};
+	if ( status == XUI_OK ) {
+		if ( xrtOwnershipMutationBegin(&mutation) ) {
+			retiring = session->tResizeOwner;
+			session->tResizeOwner = owner ? *owner : (xui_callback_owner_t){0};
+			session->onResize = resize;
+			session->pResizeUser = user;
+			held = false;
+			__xuiTerminalLifetimeMutationEnd(&mutation);
+		} else status = XUI_ERROR_INVALID_STATE;
+	}
+	xge_data_outcome_t result = {0};
+	__xuiTerminalLifetimeOutcomeBegin(&result, status);
+	if ( held ) {
+		bool dropped = owner->onDrop(owner->tReference.Data);
+		__xuiTerminalLifetimeOutcomeAdd(&result, dropped ? XUI_OK : XUI_ERROR_CALLBACK_FAILED);
+	}
+	if ( retiring.onDrop ) {
+		bool dropped = retiring.onDrop(retiring.tReference.Data);
+		__xuiTerminalLifetimeOutcomeAdd(&result, dropped ? XUI_OK : XUI_ERROR_CALLBACK_FAILED);
+	}
+	session->bResizeCallbackActive = false;
+	if ( status == XUI_OK && resize && session->pWidget ) {
+		xui_terminal_data_t* data = __xuiTerminalGetData(session->pWidget);
+		if ( data && data->pSession == session && data->iColumns > 0 && data->iRows > 0 )
+			__xuiTerminalLifetimeOutcomeAdd(&result, __xuiTerminalSessionResize(session, data->iColumns, data->iRows));
+	}
+	status = __xuiTerminalLifetimeOutcomeEnd(&result, NULL);
+	return __xuiTerminalSessionActivityEnd(root, ambient, status);
 }
 
 XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget)
