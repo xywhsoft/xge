@@ -3252,6 +3252,7 @@ static void __xuiWidgetDestroyAccessibilityData(xui_widget pWidget)
 	xuiInternalAccessibilityDetach(pWidget);
 	if ( pWidget->sAccessibleName != NULL ) xrtFree(pWidget->sAccessibleName);
 	if ( pWidget->sAccessibleDescription != NULL ) xrtFree(pWidget->sAccessibleDescription);
+	xuiInternalAccessibilityClearOwnedProvider(pWidget);
 	pWidget->sAccessibleName = NULL;
 	pWidget->sAccessibleDescription = NULL;
 	pWidget->onAccessibleCount = NULL;

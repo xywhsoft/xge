@@ -5967,6 +5967,43 @@ typedef struct xui_accessibility_event_t {
 typedef int (*xui_accessible_count_proc)(xui_widget_t* pWidget, void* pUser);
 typedef int (*xui_accessible_get_proc)(xui_widget_t* pWidget, int iIndex, xui_accessible_node_t* pNode, void* pUser);
 typedef int (*xui_accessible_action_proc)(xui_widget_t* pWidget, uint64_t iNodeId, int iAction, const void* pData, void* pUser);
+typedef struct xui_accessible_node_output_t xui_accessible_node_output_t;
+typedef struct xui_accessible_node_values_t {
+	uint64_t iId, iParentId;
+	int iRole;
+	uint32_t iState;
+	xui_rect_t tBounds;
+	int iTextStart, iTextEnd, iLevel, iRow, iColumn, iRowCount, iColumnCount;
+	uint32_t iActions;
+	xui_accessible_range_t tRange;
+} xui_accessible_node_values_t;
+typedef struct xui_accessible_node_text_t {
+	const char* sName;
+	const char* sValue;
+	const char* sDescription;
+} xui_accessible_node_text_t;
+
+/* Callback-only snapshot of a standard action payload. */
+#define XUI_ACCESSIBLE_PAYLOAD_NONE 0
+#define XUI_ACCESSIBLE_PAYLOAD_SELECTION 1
+#define XUI_ACCESSIBLE_PAYLOAD_NUMBER 2
+#define XUI_ACCESSIBLE_PAYLOAD_TEXT 3
+typedef struct xui_accessible_action_data_t {
+	int iKind;
+	int iAnchor, iCaret;
+	double fNumber;
+	const char* sText;
+} xui_accessible_action_data_t;
+
+typedef int (*xui_accessible_node_owned_proc)(xui_widget pWidget, int iIndex, xui_accessible_node_output_t* pOutput, void* pUser);
+typedef int (*xui_accessible_action_owned_proc)(xui_widget pWidget, uint64_t iNodeId, int iAction, const xui_accessible_action_data_t* pData, void* pUser);
+typedef struct xui_accessible_provider_desc_t {
+	uint32_t iSize;
+	xui_accessible_count_proc onCount;
+	xui_accessible_node_owned_proc onNode;
+	xui_accessible_action_owned_proc onAction;
+	void* pUser;
+} xui_accessible_provider_desc_t;
 typedef void (*xui_accessibility_event_proc)(xui_context_t* pContext, xui_widget_t* pWidget,
 	const xui_accessibility_event_t* pEvent, void* pUser);
 
@@ -14103,6 +14140,13 @@ XUI_API int xuiWidgetGetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect
 /* 注册无障碍节点提供回调（count/get/action 三件套）。 */
 XUI_API int xuiWidgetSetAccessibilityProvider(xui_widget pWidget, xui_accessible_count_proc onCount,
 	xui_accessible_get_proc onGet, xui_accessible_action_proc onAction, void* pUser);
+/* Count and node callbacks are paired. A NULL or empty descriptor clears the
+ * registration. Text in a successful node reply is copied and stays readable
+ * until the next successful provider query, replacement or widget destruction. */
+XUI_API int xuiWidgetSetAccessibilityProviderOwned(xui_widget pWidget,
+	const xui_accessible_provider_desc_t* pDesc, const xui_callback_owner_t* pOwner);
+XUI_API int xuiAccessibleNodeOutputSet(xui_accessible_node_output_t* pOutput,
+	const xui_accessible_node_values_t* pValues, const xui_accessible_node_text_t* pText);
 /* 设置无障碍名称。 */
 XUI_API int xuiWidgetSetAccessibleName(xui_widget pWidget, const char* sName);
 /* 读取无障碍名称。 */
@@ -14113,6 +14157,7 @@ XUI_API int xuiWidgetSetAccessibleDescription(xui_widget pWidget, const char* sD
 XUI_API const char* xuiWidgetGetAccessibleDescription(xui_widget pWidget);
 /* 读取无障碍子节点数量。 */
 XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget);
+XUI_API int xuiWidgetGetAccessibleNodeCountChecked(xui_widget pWidget);
 /* Every ordinary widget exposes one local node (id 1). Enumerate the physical
  * tree with the Widget parent/child APIs; provider node ids remain widget-local.
  * Strings are borrowed until the next widget/provider mutation. Queries which
@@ -14124,6 +14169,9 @@ XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget);
 XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode);
 /* 对指定无障碍节点执行动作（激活/聚焦/取值等）。 */
 XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId, int iAction, const void* pData);
+XUI_API int xuiWidgetPerformAccessibleSelection(xui_widget pWidget, uint64_t iNodeId, int iAnchor, int iCaret);
+XUI_API int xuiWidgetSetAccessibleTextValue(xui_widget pWidget, uint64_t iNodeId, const char* sText);
+XUI_API int xuiWidgetSetAccessibleNumberValue(xui_widget pWidget, uint64_t iNodeId, double fNumber);
 /* 读取无障碍树修订号（变更自增）。 */
 XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget);
 /* 主动通知无障碍事件（如名称变更）。 */

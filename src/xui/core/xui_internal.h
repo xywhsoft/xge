@@ -891,6 +891,7 @@ struct xui_widget_t {
 	xui_accessible_action_proc onAccessibleAction;
 	xui_internal_accessible_focus_proc onAccessibleFocus;
 	void* pAccessibleUser;
+	struct xui_accessible_provider_state_t* pAccessibleOwned;
 	char* sAccessibleName;
 	char* sAccessibleDescription;
 	uint32_t iAccessibilityRevision;
@@ -1124,6 +1125,7 @@ int xuiInternalInputCancelFocusSubtree(xui_context pContext, xui_widget pWidget)
 void xuiInternalAccessibilityQueue(xui_widget pWidget, int iEventType);
 void xuiInternalAccessibilityFlush(xui_context pContext);
 void xuiInternalAccessibilityDetach(xui_widget pWidget);
+void xuiInternalAccessibilityClearOwnedProvider(xui_widget pWidget);
 XUI_API int xuiInternalAccessibilitySetFocusResolver(xui_widget pWidget,
 	xui_internal_accessible_focus_proc onFocus);
 XUI_API int xuiInternalAccessibilityGetFocusedNode(xui_widget pWidget,
