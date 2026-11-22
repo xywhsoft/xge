@@ -5165,8 +5165,14 @@ typedef struct xge3d_playback_info_t {
 XGE_API int xge3dAnimatorPlay(xge3d_animator *animator,int layer,xge3d_clip *clip,
     const xge3d_animation_layer_t *desc,float fade_seconds);
 typedef struct xge3d_animation_options_t { float time,speed,weight;int loop; } xge3d_animation_options_t;
+XGE_API void xge3dAnimationOptionsDefaultInto(xge3d_animation_options_t *out);
 /* Independently sized, synchronous mask and retargeting inputs. */
 XGE_API int xge3dAnimatorPlayArrays(xge3d_animator *animator,int layer,xge3d_clip *clip,
+    const xge3d_animation_options_t *options,float fade_seconds,const float *mask,size_t mask_count,
+    const xge3d_bone_binding_t *bindings,size_t binding_count);
+/* Reusable value settings. The animator copies the optional mask and bindings
+ * before returning and retains the incoming clip on success. */
+XGE_API int xge3dAnimatorPlayConfigured(xge3d_animator *animator,int layer,xge3d_clip *clip,
     const xge3d_animation_options_t *options,float fade_seconds,const float *mask,size_t mask_count,
     const xge3d_bone_binding_t *bindings,size_t binding_count);
 /* Fade gain without changing the clip. Zero weight still advances/emits events,

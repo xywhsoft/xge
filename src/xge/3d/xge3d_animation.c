@@ -276,7 +276,27 @@ int xge3dAnimatorCreateOwned(xge3d_scene *scene,xge3d_node_t root,xge3d_animator
     if(status!=XGE_OK)(void)xge3dSceneReleaseChecked(owned);
     return status;
 }
-xge3d_animation_layer_t xge3dAnimationLayerDefault(void) {return (xge3d_animation_layer_t){.speed=1,.weight=1,.loop=1};}
+static xge3d_animation_options_t d3_animation_options_default(void)
+{
+    return (xge3d_animation_options_t){.speed=1,.weight=1,.loop=1};
+}
+
+static xge3d_animation_layer_t d3_animation_layer(xge3d_animation_options_t options)
+{
+    return (xge3d_animation_layer_t){
+        .time=options.time,.speed=options.speed,.weight=options.weight,.loop=options.loop
+    };
+}
+
+void xge3dAnimationOptionsDefaultInto(xge3d_animation_options_t *out)
+{
+    if(out)*out=d3_animation_options_default();
+}
+
+xge3d_animation_layer_t xge3dAnimationLayerDefault(void)
+{
+    return d3_animation_layer(d3_animation_options_default());
+}
 static size_t d3_target_name(const cgltf_data *data,const char *name)
 {
     size_t found=SIZE_MAX;if (!name) return found;

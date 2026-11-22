@@ -108,17 +108,28 @@ done:d3_layer_free(&incoming);xrtArrayUnit(&snapshot);return result;
 }
 int xge3dAnimatorPlay(xge3d_animator *a,int index,xge3d_clip *clip,const xge3d_animation_layer_t *desc,float seconds)
 {return d3_animator_play(a,index,clip,desc,seconds);}
+static int d3_animator_play_configured(xge3d_animator *a,int index,xge3d_clip *clip,
+    xge3d_animation_options_t options,float seconds,const float *mask,size_t mask_count,
+    const xge3d_bone_binding_t *bindings,size_t binding_count)
+{
+    xge3d_animation_layer_t desc=d3_animation_layer(options);
+    desc.mask=mask;desc.mask_count=mask_count;desc.bindings=bindings;desc.binding_count=binding_count;
+    return d3_animator_play(a,index,clip,&desc,seconds);
+}
 int xge3dAnimatorPlayArrays(xge3d_animator *a,int index,xge3d_clip *clip,
     const xge3d_animation_options_t *options,float seconds,const float *mask,size_t mask_count,
     const xge3d_bone_binding_t *bindings,size_t binding_count)
 {
     if(mask_count && !mask)return XGE_ERROR_INVALID_ARGUMENT;
-    xge3d_animation_layer_t desc=xge3dAnimationLayerDefault();
-    if(options){
-        desc.time=options->time;desc.speed=options->speed;desc.weight=options->weight;desc.loop=options->loop;
-    }
-    desc.mask=mask;desc.mask_count=mask_count;desc.bindings=bindings;desc.binding_count=binding_count;
-    return d3_animator_play(a,index,clip,&desc,seconds);
+    xge3d_animation_options_t values=options?*options:d3_animation_options_default();
+    return d3_animator_play_configured(a,index,clip,values,seconds,mask,mask_count,bindings,binding_count);
+}
+int xge3dAnimatorPlayConfigured(xge3d_animator *a,int index,xge3d_clip *clip,
+    const xge3d_animation_options_t *options,float seconds,const float *mask,size_t mask_count,
+    const xge3d_bone_binding_t *bindings,size_t binding_count)
+{
+    if(!options || (mask_count && !mask))return XGE_ERROR_INVALID_ARGUMENT;
+    return d3_animator_play_configured(a,index,clip,*options,seconds,mask,mask_count,bindings,binding_count);
 }
 int xge3dAnimatorSetPaused(xge3d_animator *a,int paused)
 {
