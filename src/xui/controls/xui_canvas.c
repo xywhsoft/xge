@@ -1017,6 +1017,13 @@ XUI_API xui_scroll_model_t* xuiCanvasGetModel(xui_widget pWidget)
 	return (pData != NULL && pData->pFrame != NULL) ? xuiScrollFrameGetModel(pData->pFrame) : NULL;
 }
 
+XUI_API int xuiCanvasGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_canvas_data_t* pData = __xuiCanvasGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetScrollSnapshot(pData->pFrame, pSnapshot);
+}
+
 typedef struct xui_canvas_output_watch_t {xui_surface* output;} xui_canvas_output_watch_t;
 static void __xuiCanvasOutputInvalidated(void* raw)
 {

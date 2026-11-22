@@ -11687,6 +11687,8 @@ XUI_API xui_widget xuiCanvasGetFrameWidget(xui_widget pWidget);
 XUI_API xui_widget xuiCanvasGetViewportWidget(xui_widget pWidget);
 /* 取滚动模型（坐标变换用）。返回借用指针，修改 Canvas/Frame 后应重新获取。 */
 XUI_API xui_scroll_model_t* xuiCanvasGetModel(xui_widget pWidget);
+/* Copy the committed scroll model on the Context thread without running layout. */
+XUI_API int xuiCanvasGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 取画布缓存位图 surface（绘制目标）；首次调用可能延迟创建。
  * 返回借用句柄，生命周期由 Canvas 管理，尺寸变化后旧句柄立即失效。 */
 XUI_API xui_surface xuiCanvasGetSurface(xui_widget pWidget);
@@ -11853,6 +11855,8 @@ XUI_API xui_widget xuiListViewGetFrameWidget(xui_widget pWidget);
 XUI_API xui_widget xuiListViewGetViewportWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针，不得释放）。 */
 XUI_API xui_scroll_model_t* xuiListViewGetModel(xui_widget pWidget);
+/* Copy the committed scroll model on the Context thread without running layout. */
+XUI_API int xuiListViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 读取视口矩形。 */
 XUI_API xui_rect_t xuiListViewGetViewportRect(xui_widget pWidget);
 /* 读取条目矩形。 */
@@ -12809,6 +12813,8 @@ XUI_API xui_widget xuiPopupGetViewportWidget(xui_widget pWidget);
 XUI_API xui_widget xuiPopupGetContentWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针，Popup 销毁后失效）。 */
 XUI_API xui_scroll_model_t* xuiPopupGetModel(xui_widget pWidget);
+/* Copy the committed scroll model on the Context thread without running layout. */
+XUI_API int xuiPopupGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 读取弹层实际显示矩形。 */
 XUI_API xui_rect_t xuiPopupGetPopupRect(xui_widget pWidget);
 /* 读取视口矩形。 */

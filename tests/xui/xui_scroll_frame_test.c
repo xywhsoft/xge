@@ -578,6 +578,21 @@ int main(void)
 	XUI_TEST_CHECK(tFooterAfter.fY == tFooterBefore.fY && tFooterAfter.fH == tFooterBefore.fH,
 		"content extent does not move or shrink sibling controls");
 
+	xui_widget pCanvas = NULL;
+	XUI_TEST_CHECK(xuiCanvasCreate(pContext, &pCanvas, NULL) == XUI_OK &&
+		xuiSetRootWidget(pContext, pCanvas) == XUI_OK, "canvas for scroll snapshot");
+	XUI_TEST_CHECK(xuiSetViewportSize(pContext, 160, 100) == XUI_OK &&
+		xuiCanvasSetCanvasSize(pCanvas, 640.0f, 480.0f) == XUI_OK &&
+		xuiLayout(pContext) == XUI_OK && xuiCanvasSetOffset(pCanvas, 20.0f, 60.0f) == XUI_OK,
+		"arrange and scroll canvas");
+	xui_scroll_model_t tCanvasSnapshot;
+	XUI_TEST_CHECK(xuiCanvasGetScrollSnapshot(pCanvas, &tCanvasSnapshot) == XUI_OK &&
+		tCanvasSnapshot.fContentHeight == 480.0f && tCanvasSnapshot.fScrollX == 20.0f &&
+		tCanvasSnapshot.fScrollY == 60.0f, "canvas copies committed scroll state");
+	XUI_TEST_CHECK(xuiCanvasSetOffset(pCanvas, 0.0f, 0.0f) == XUI_OK &&
+		xuiCanvasGetScrollSnapshot(NULL, &tCanvasSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+		tCanvasSnapshot.fScrollY == 60.0f, "canvas snapshot remains independent on error");
+
 cleanup:
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);

@@ -2338,6 +2338,13 @@ XUI_API xui_scroll_model_t* xuiPopupGetModel(xui_widget pWidget)
 	return (pData != NULL && pData->pScrollView != NULL) ? xuiScrollViewGetModel(pData->pScrollView) : NULL;
 }
 
+XUI_API int xuiPopupGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollViewGetScrollSnapshot(pData->pScrollView, pSnapshot);
+}
+
 XUI_API xui_rect_t xuiPopupGetPopupRect(xui_widget pWidget)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);

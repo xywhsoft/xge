@@ -596,6 +596,12 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiScrollModelGetContentSize(xuiListViewGetModel(pList), NULL, &fContentHeight);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiListViewNear(fContentHeight, 480.0f),
 		"metrics update scroll extent immediately");
+	xui_scroll_model_t tSnapshot;
+	iRet = xuiListViewGetScrollSnapshot(pList, &tSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSnapshot.fContentHeight == fContentHeight &&
+		tSnapshot.fScrollY == xuiListViewGetScroll(pList), "list view uses the committed model");
+	XUI_TEST_CHECK(xuiListViewGetScrollSnapshot(pList, NULL) == XUI_ERROR_INVALID_ARGUMENT,
+		"list view rejects a null snapshot destination");
 	iRet = xuiListViewSetMetrics(pList, 30.0f, 0.0f, 1.0f);
 	if ( iRet == XUI_OK ) iRet = xuiListViewGetMetrics(pList, NULL, &fPadding, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiListViewNear(fPadding, 0.0f), "zero list padding");

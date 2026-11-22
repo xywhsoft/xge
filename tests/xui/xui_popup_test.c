@@ -227,6 +227,12 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollFrameIsVScrollBarVisible(pFrame), "vertical bar visible");
 	XUI_TEST_CHECK(!xuiScrollFrameIsHScrollBarVisible(pFrame), "horizontal bar not chained");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pPopup, "popup focused");
+	xui_scroll_model_t tSnapshot;
+	iRet = xuiPopupGetScrollSnapshot(pPopup, &tSnapshot);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSnapshot.fContentHeight == 260.0f &&
+		tSnapshot.tViewportRect.fW == tViewport.fW, "popup uses its scroll view model");
+	XUI_TEST_CHECK(xuiPopupGetScrollSnapshot(pPanel, &tSnapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+		tSnapshot.fContentHeight == 260.0f, "popup rejects a different widget without changing the output");
 	xuiWidgetClearDirty(pPopup, XUI_WIDGET_DIRTY_ALL);
 	xuiWidgetClearDirty(pPanel, XUI_WIDGET_DIRTY_ALL);
 	xuiWidgetClearDirty(pScrollView, XUI_WIDGET_DIRTY_ALL);
