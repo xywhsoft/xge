@@ -8566,6 +8566,7 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_
  * return UNSUPPORTED. Result records borrow from the returned snapshot until
  * Destroy. A successful result remains valid after a provider clear or close. */
 typedef struct xui_code_completion_snapshot_t* xui_code_completion_snapshot;
+typedef struct xui_code_hover_snapshot_t* xui_code_hover_snapshot;
 typedef struct xui_code_signature_snapshot_t* xui_code_signature_snapshot;
 XUI_API int xuiCodeProviderCaptureCompletion(xui_code_provider_set providers, xui_widget widget,
     int offset, const char* prefix, int capacity, xui_code_completion_snapshot* output);
@@ -8573,6 +8574,11 @@ XUI_API void xuiCodeCompletionSnapshotDestroy(xui_code_completion_snapshot snaps
 XUI_API int xuiCodeCompletionSnapshotGetCount(const struct xui_code_completion_snapshot_t* snapshot);
 XUI_API int xuiCodeCompletionSnapshotGetItem(const struct xui_code_completion_snapshot_t* snapshot,
     int index, xui_code_completion_item_t* output);
+XUI_API int xuiCodeProviderCaptureHover(xui_code_provider_set providers, xui_widget widget,
+    int offset, xui_code_hover_snapshot* output);
+XUI_API void xuiCodeHoverSnapshotDestroy(xui_code_hover_snapshot snapshot);
+XUI_API int xuiCodeHoverSnapshotGetInfo(const struct xui_code_hover_snapshot_t* snapshot,
+    xui_code_hover_t* output);
 XUI_API int xuiCodeProviderCaptureSignature(xui_code_provider_set providers, xui_widget widget,
     int offset, xui_code_signature_snapshot* output);
 XUI_API void xuiCodeSignatureSnapshotDestroy(xui_code_signature_snapshot snapshot);
