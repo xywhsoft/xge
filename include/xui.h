@@ -12126,6 +12126,8 @@ XUI_API xui_widget xuiTreeViewGetFrameWidget(xui_widget pWidget);
 XUI_API xui_widget xuiTreeViewGetViewportWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针，由 TreeView 所有，控件销毁后失效）。 */
 XUI_API xui_scroll_model_t* xuiTreeViewGetModel(xui_widget pWidget);
+/* Copy the scroll model into caller storage. The snapshot survives the widget. */
+XUI_API int xuiTreeViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 读取视口矩形。 */
 XUI_API xui_rect_t xuiTreeViewGetViewportRect(xui_widget pWidget);
 /* 可见行号转矩形。 */
@@ -12246,6 +12248,8 @@ XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_hea
 XUI_API int xuiTableViewSetHeaderRendererOwned(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册单元格自绘回调（覆盖默认文本绘制）；传入单元格仅在回调期间有效，回调可销毁控件或上下文。 */
 XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender, void* pUser);
+/* Owns the callback until replaced or destroyed. Cell and draw views are valid during dispatch. */
+XUI_API int xuiTableViewSetCellRendererOwned(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 按列注册文本格式化回调；同步调用，输出缓冲仅在本次回调内有效。 */
 XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_table_view_format_proc onFormat, void* pUser);
 /* 设置字体。 */
@@ -12306,6 +12310,8 @@ XUI_API xui_widget xuiTableViewGetViewportWidget(xui_widget pWidget);
 XUI_API xui_widget xuiTableViewGetBodyWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针，由 TableView 所有，控件销毁后失效）。 */
 XUI_API xui_scroll_model_t* xuiTableViewGetModel(xui_widget pWidget);
+/* Copy the scroll model into caller storage. The snapshot survives the widget. */
+XUI_API int xuiTableViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 读取视口矩形。 */
 XUI_API xui_rect_t xuiTableViewGetViewportRect(xui_widget pWidget);
 /* 坐标命中单元格。 */

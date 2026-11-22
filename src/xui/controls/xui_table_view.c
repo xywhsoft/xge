@@ -2807,8 +2807,22 @@ static int __xuiTableViewPaintCellBody(xui_widget pWidget,xui_table_view_data_t*
 		}
 	}
 	if ( pData->onCellRender != NULL ) {
-		iHandled = pData->onCellRender(pWidget, i, j, &tCellData, pDraw, tCell, iState, pData->pCellRenderUser);
-		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return pLease->owned ? XUI_ERROR_INVALID_STATE:XUI_OK;
+		xui_table_view_cell_renderer_proc renderer = pData->onCellRender;
+		void* user = pData->pCellRenderUser;
+		if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onCellRender) ) {
+			xui_callback_snapshot_t snapshot = {0};
+			iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onCellRender, &user, &snapshot);
+			if ( iRet != XUI_OK ) return iRet;
+			iHandled = 0;
+			if ( __xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) )
+				iHandled = renderer(pWidget, i, j, &tCellData, pDraw, tCell, iState, user);
+			iRet = xuiInternalCallbackSnapshotEnd(&snapshot, iHandled < 0 ? iHandled : XUI_OK);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return XUI_OK;
+		} else {
+			iHandled = renderer(pWidget, i, j, &tCellData, pDraw, tCell, iState, user);
+			if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return pLease->owned ? XUI_ERROR_INVALID_STATE:XUI_OK;
+		}
 		if ( iHandled < 0 ) return iHandled;
 		if ( iHandled ) {
 			return XUI_OK;
@@ -4153,6 +4167,8 @@ XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onCellRender) )
+		return xuiTableViewSetCellRendererOwned(pWidget, onRender, pUser, NULL);
 	iRet = __xuiTableViewInvalidate(pWidget, pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
@@ -4160,6 +4176,23 @@ XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_
 	pData->pCellRenderUser = pUser;
 	pData->iCallbackGeneration++;
 	return XUI_OK;
+}
+
+XUI_API int xuiTableViewSetCellRendererOwned(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int iRet = __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_callback_update_t update = {0};
+	iRet = xuiInternalCallbackUpdateBegin(pWidget, &pData->onCellRender, onRender != NULL, pUser, pOwner, &update);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->onCellRender = onRender;
+	pData->pCellRenderUser = pUser;
+	++pData->iCallbackGeneration;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
 }
 
 XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_table_view_format_proc onFormat, void* pUser)
@@ -4538,6 +4571,13 @@ XUI_API xui_scroll_model_t* xuiTableViewGetModel(xui_widget pWidget)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
 	return (pData != NULL && pData->pFrame != NULL) ? xuiScrollFrameGetModel(pData->pFrame) : NULL;
+}
+
+XUI_API int xuiTableViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL || pData->pFrame == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetScrollSnapshot(pData->pFrame, pSnapshot);
 }
 
 XUI_API xui_rect_t xuiTableViewGetViewportRect(xui_widget pWidget)

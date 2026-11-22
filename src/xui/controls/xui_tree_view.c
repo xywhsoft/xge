@@ -3676,6 +3676,13 @@ XUI_API xui_scroll_model_t* xuiTreeViewGetModel(xui_widget pWidget)
 	return (pData != NULL && pData->pFrame != NULL) ? xuiScrollFrameGetModel(pData->pFrame) : NULL;
 }
 
+XUI_API int xuiTreeViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL || pData->pFrame == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetScrollSnapshot(pData->pFrame, pSnapshot);
+}
+
 XUI_API xui_rect_t xuiTreeViewGetViewportRect(xui_widget pWidget)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
