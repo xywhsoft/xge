@@ -8908,10 +8908,14 @@ XUI_API int xuiCodeEditClearPlaceholders(xui_widget pWidget);
 XUI_API int xuiCodeEditMovePlaceholder(xui_widget pWidget, int iDirection);
 /* 读取活动占位片段索引。 */
 XUI_API int xuiCodeEditGetActivePlaceholder(xui_widget pWidget, xui_code_placeholder_t* pPlaceholder);
-/* 设置跨编辑器查找域。 */
+/* Join or leave a shared find scope. A failed join preserves the old scope.
+ * Both scopes and the editor must be usable on the calling UI thread. */
 XUI_API int xuiCodeEditSetFindScope(xui_widget pWidget, xui_code_find_scope pScope);
-/* 读取查找域。 */
+/* Borrow the current scope on the UI thread. */
 XUI_API xui_code_find_scope xuiCodeEditGetFindScope(xui_widget pWidget);
+/* Verify the editor's Context before borrowing. An unattached editor returns
+ * NULL. Invalid inputs or a retiring scope also report an XRT error. */
+XUI_API xui_code_find_scope xuiContextGetCodeFindScope(xui_context pContext, xui_widget pWidget);
 /* 打开内建查找窗口。 */
 XUI_API int xuiCodeEditOpenFind(xui_widget pWidget);
 /* 打开查找替换窗口。 */

@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef XGE_XRT_HOST
+#if defined(XGE_XRT_HOST) && !defined(XGE_STATIC_BUILD)
 #include <xge_host_xrt_contract.h>
 static xge_host_xrt_proc resolve(void* user,const char* name)
 {
@@ -108,7 +108,7 @@ static int32 checkFindThread(ptr raw)
 int main(void)
 {
     int failed=0,checks=0,destroyed=0;
-    xui_context context=NULL,other=NULL;xui_code_find_scope scope=NULL;
+    xui_context context=NULL,other=NULL;xui_code_find_scope scope=NULL,next=NULL;
     xui_widget root=NULL,a=NULL,b=NULL,c=NULL; xui_font font=NULL;xui_test_proxy_state_t state;
     xui_widget borrowed=NULL;
     activate_owner active={.refs=1},denied={.refs=1,.deny=true};
@@ -116,7 +116,7 @@ int main(void)
     xui_callback_owner_t rejected={{&denied,&activateOps},holdActivate,dropActivate};
     xui_lifetime_link_t watch={0};
     xuiTestProxyInit(&state);
-#ifdef XGE_XRT_HOST
+#if defined(XGE_XRT_HOST) && !defined(XGE_STATIC_BUILD)
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     CHECK(xgeHostXrtBind(&contract,resolve,NULL,NULL)==XGE_HOST_XRT_OK);
 #endif
@@ -128,6 +128,30 @@ int main(void)
     CHECK(state.tProxy.fontLoadFile(&state.tProxy,&font,"find.ttf",14,0)==XUI_OK && xuiSetDefaultFont(context,font)==XUI_OK);
     CHECK(xuiInputViewport(context,800,600)==XUI_OK && xuiWidgetCreate(context,&root)==XUI_OK && xuiSetRootWidget(context,root)==XUI_OK);
     CHECK(xuiWidgetSetRect(root,(xui_rect_t){0,0,800,600})==XUI_OK && editor(context,root,"alpha\n",&a)==XUI_OK && editor(context,root,"alpha alpha\n",&b)==XUI_OK);
+    CHECK(xuiContextGetCodeFindScope(context,a)==NULL && xrtGetError()==NULL);
+    CHECK(xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeCreate(&next)==XUI_OK);
+    CHECK(xuiCodeEditSetFindScope(a,scope)==XUI_OK && xuiCodeFindScopeGetEditorCount(scope)==1);
+    CHECK(xuiCodeFindScopeGetEditor(scope,0)==a && xuiContextGetCodeFindScope(context,a)==scope);
+    CHECK(xuiContextGetCodeFindScope(other,a)==NULL && xrtErrorKind(xrtGetError())==XERR_ARGUMENT);
+    xrtClearError();
+    CHECK(xrtMemDebugFailAfter(0));
+    int move=xuiCodeEditSetFindScope(a,next);
+    bool allocationFailed=xrtMemDebugFailTriggered();
+    xrtMemDebugFailClear();
+    CHECK(move==XUI_ERROR_OUT_OF_MEMORY && allocationFailed && xrtErrorKind(xrtGetError())==XERR_MEMORY);
+    xrtClearError();
+    CHECK(xuiContextGetCodeFindScope(context,a)==scope && xuiCodeFindScopeGetEditorCount(next)==0);
+    CHECK(xuiCodeFindScopeSetEditorName(scope,a,"one.c")==XUI_OK && xuiCodeEditSetFindScope(a,scope)==XUI_OK &&
+          !strcmp(xuiCodeFindScopeGetEditorName(scope,0),"one.c"));
+    CHECK(xuiCodeEditSetFindScope(a,next)==XUI_OK && xuiCodeFindScopeGetEditorCount(scope)==0 &&
+          xuiCodeFindScopeGetEditor(next,0)==a && xuiCodeEditGetFindScope(a)==next);
+    CHECK(xuiCodeEditSetFindScope(a,NULL)==XUI_OK && xuiCodeFindScopeGetEditorCount(next)==0 &&
+          xuiContextGetCodeFindScope(context,a)==NULL && xrtGetError()==NULL);
+    CHECK(xuiCodeEditSetFindScope(a,next)==XUI_OK && xuiCodeFindScopeDestroyChecked(next)==XUI_OK);
+    next=NULL;
+    CHECK(xuiCodeEditGetFindScope(a)==NULL && xuiCodeEditOpenFind(a)==XUI_OK);
+    CHECK(xuiCodeFindScopeDestroyChecked(scope)==XUI_OK);
+    scope=NULL;
     CHECK(xuiCodeFindScopeCreate(&scope)==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,a,"one.c")==XUI_OK && xuiCodeFindScopeAddEditorNamed(scope,b,"two.c")==XUI_OK);
     CHECK(xuiCodeFindScopeGetEditorChecked(scope,context,0,&borrowed)==XUI_OK && borrowed==a);
     CHECK(xuiCodeFindScopeGetEditorChecked(scope,other,0,&borrowed)==XUI_ERROR_INVALID_ARGUMENT && !borrowed);
@@ -222,6 +246,7 @@ int main(void)
     xuiCodeFindScopeDestroy(scope);scope=NULL;
     xuiDestroy(other);other=NULL;
 cleanup:
+    if(next)xuiCodeFindScopeDestroy(next);
     if(scope)xuiCodeFindScopeDestroy(scope);
     if(context)xuiDestroy(context);
     if(other)xuiDestroy(other);
