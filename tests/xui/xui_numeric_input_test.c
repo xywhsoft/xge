@@ -1,5 +1,8 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
+#ifdef XRT_FEATURE_MEMORY_DEBUG
+#include <xrt/memory_debug.h>
+#endif
 
 #include <float.h>
 #include <locale.h>
@@ -123,6 +126,122 @@ static int __xuiNumericInputDestroyOnFormat(float fValue, char* sBuffer, int iCa
 		xuiWidgetDestroy(pDestroy->pWidget);
 	}
 	return 1;
+}
+
+typedef struct xui_numeric_input_format_probe_t {
+	xui_widget pWidget;
+	const char* sText;
+	size_t iBytes;
+	size_t iRefs;
+	int iCalls;
+	int iCallRefs;
+	int iReentry;
+} xui_numeric_input_format_probe_t;
+
+static bool __xuiNumericInputFormatRefCount(const void* pUser, size_t* pCount)
+{
+	*pCount = ((const xui_numeric_input_format_probe_t*)pUser)->iRefs;
+	return true;
+}
+
+static bool __xuiNumericInputFormatTrace(const void* pUser, xrtownershipvisitor onVisit, void* pVisitUser)
+{
+	(void)pUser;
+	(void)onVisit;
+	(void)pVisitUser;
+	return true;
+}
+
+static bool __xuiNumericInputFormatHold(const void* pUser)
+{
+	((xui_numeric_input_format_probe_t*)pUser)->iRefs++;
+	return true;
+}
+
+static bool __xuiNumericInputFormatDrop(const void* pUser)
+{
+	((xui_numeric_input_format_probe_t*)pUser)->iRefs--;
+	return true;
+}
+
+static xstrview __xuiNumericInputOwnedFormat(float fValue, void* pUser)
+{
+	xui_numeric_input_format_probe_t* pProbe = pUser;
+	pProbe->iCalls++;
+	pProbe->iCallRefs = pProbe->iRefs;
+	pProbe->iReentry = xuiNumericInputSetValue(pProbe->pWidget, fValue);
+	if ( pProbe->iBytes == 0 ) return (xstrview){0};
+	char* sOutput = xrtMalloc(pProbe->iBytes);
+	if ( sOutput == NULL ) {
+		xrtSetErrorKind(XERR_MEMORY);
+		return (xstrview){0};
+	}
+	memcpy(sOutput, pProbe->sText, pProbe->iBytes);
+	return (xstrview){sOutput, pProbe->iBytes};
+}
+
+static bool __xuiNumericInputCheckOwnedFormatter(xui_context pContext, const xui_numeric_input_desc_t* pDesc)
+{
+	xui_widget pWidget = NULL;
+	int iFailed = 0;
+	static const xrtownershipops tOps = {__xuiNumericInputFormatRefCount, __xuiNumericInputFormatTrace};
+	xui_numeric_input_format_probe_t tProbe = {0};
+	const xui_callback_owner_t tOwner = {{&tProbe, &tOps}, __xuiNumericInputFormatHold, __xuiNumericInputFormatDrop};
+	int iRet = xuiNumericInputCreate(pContext, &pWidget, pDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK, "owned formatter widget create");
+	tProbe.pWidget = pWidget;
+	tProbe.sText = "7.00";
+	tProbe.iBytes = 4;
+	tProbe.iRefs = 1;
+#ifdef XRT_FEATURE_MEMORY_DEBUG
+	XUI_TEST_CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true), "enable allocation checks");
+	XUI_TEST_CHECK(xrtMemDebugFailAfter(0), "arm ownership allocation failure");
+	iRet = xuiNumericInputSetFormatterOwned(pWidget, __xuiNumericInputOwnedFormat, &tProbe, &tOwner);
+	xrtMemDebugFailClear();
+	xrtClearError();
+	XUI_TEST_CHECK(iRet == XUI_ERROR_OUT_OF_MEMORY && tProbe.iRefs == 1 && tProbe.iCalls == 0,
+		"ownership OOM leaves the editor untouched and avoids the callback");
+#endif
+	iRet = xuiNumericInputSetFormatterOwned(pWidget, __xuiNumericInputOwnedFormat, &tProbe, &tOwner);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiNumericInputGetText(pWidget), "7.00") == 0 &&
+		tProbe.iRefs == 2 && tProbe.iCalls == 1 && tProbe.iCallRefs == 2 && tProbe.iReentry == XUI_ERROR_BUSY,
+		"initial formatting is synchronous and the candidate is held");
+	iRet = xuiNumericInputSetValue(pWidget, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tProbe.iRefs == 2 && tProbe.iCalls == 2 && tProbe.iCallRefs == 3,
+		"subsequent formatting pins the registered callback");
+	float fBefore = xuiNumericInputGetValue(pWidget);
+	char sLong[96];
+	memset(sLong, '1', sizeof(sLong));
+	xui_numeric_input_format_probe_t tCandidate = {
+		.pWidget = pWidget, .sText = sLong, .iBytes = sizeof(sLong), .iRefs = 1
+	};
+	const xui_callback_owner_t tCandidateOwner = {
+		{&tCandidate, &tOps}, __xuiNumericInputFormatHold, __xuiNumericInputFormatDrop
+	};
+	iRet = xuiNumericInputSetFormatterOwned(pWidget, __xuiNumericInputOwnedFormat, &tCandidate, &tCandidateOwner);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_BUFFER_TOO_SMALL && tCandidate.iRefs == 1 && tProbe.iRefs == 2 &&
+		strcmp(xuiNumericInputGetText(pWidget), "7.00") == 0, "oversized replacement retains former formatter and text");
+	iRet = xuiNumericInputSetValue(pWidget, fBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK && tProbe.iCalls == 3 && tCandidate.iCalls == 1,
+		"subsequent value edits still use the former callback");
+	tProbe.sText = "1\0x";
+	tProbe.iBytes = 3;
+	iRet = xuiNumericInputSetValue(pWidget, fBefore + 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && xuiNumericInputGetValue(pWidget) == fBefore &&
+		strcmp(xuiNumericInputGetText(pWidget), "7.00") == 0, "embedded NUL rolls back a value change");
+	tProbe.iBytes = 0;
+	iRet = xuiNumericInputSetValue(pWidget, fBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiNumericInputGetText(pWidget)[0] == 0, "empty text remains meaningful");
+	iRet = xuiNumericInputSetFormatter(pWidget, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && tProbe.iRefs == 1 && xuiNumericInputGetText(pWidget)[0] != 0,
+		"legacy clear restores numeric text and drops the registration");
+
+cleanup:
+#ifdef XRT_FEATURE_MEMORY_DEBUG
+	xrtMemDebugFailClear();
+#endif
+	if ( pWidget != NULL ) xuiWidgetDestroy(pWidget);
+	return !iFailed && tProbe.iRefs == 1;
 }
 
 static int __xuiNumericInputEditEvent(xui_widget pWidget, const xui_edit_event_t* pEvent, void* pUser)
@@ -907,6 +1026,7 @@ int main(void)
 	iRet = xuiNumericInputSetFormatter(pDestroyFormat, __xuiNumericInputDestroyOnFormat, &tDestroy);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDestroy.iCount == 1 &&
 		xuiNumericInputGetInputWidget(pDestroyFormat) == NULL, "formatter callback may destroy numeric input");
+	XUI_TEST_CHECK(__xuiNumericInputCheckOwnedFormatter(pContext, &tDefaultDesc), "owned formatter contract");
 
 cleanup:
 	if ( pTarget != NULL ) {

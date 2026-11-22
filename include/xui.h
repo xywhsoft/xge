@@ -3292,6 +3292,7 @@ typedef void (*xui_text_edit_change_proc)(xui_widget_t* pWidget, const char* sTe
 typedef void (*xui_numeric_input_change_proc)(xui_widget_t* pWidget, float fValue, void* pUser);
 typedef void (*xui_numeric_input_error_proc)(xui_widget_t* pWidget, int bError, void* pUser);
 typedef int (*xui_numeric_input_format_proc)(float fValue, char* sBuffer, int iCapacity, void* pUser);
+typedef xstrview (*xui_numeric_input_text_owned_proc)(float fValue, void* pUser);
 
 /* 输入框装饰描述（图标/按钮/间距）。 */
 typedef struct xui_input_decoration_desc_t {
@@ -9365,6 +9366,10 @@ XUI_API int xuiNumericInputSetErrorChange(xui_widget pWidget, xui_numeric_input_
 XUI_API int xuiNumericInputSetErrorChangeOwned(xui_widget pWidget, xui_numeric_input_error_proc onError, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册显示格式化回调（单位/千分位）；同步调用，回调可销毁控件或上下文。 */
 XUI_API int xuiNumericInputSetFormatter(xui_widget pWidget, xui_numeric_input_format_proc onFormat, void* pUser);
+/* Transfers an XRT-allocated UTF-8 result to the control. At most 95 bytes,
+ * without embedded NUL. NULL callback restores the default formatter. A
+ * formatter cannot reenter formatting or edit the text of the same control. */
+XUI_API int xuiNumericInputSetFormatterOwned(xui_widget pWidget, xui_numeric_input_text_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置值范围（钳制当前值）。 */
 XUI_API int xuiNumericInputSetRange(xui_widget pWidget, float fMin, float fMax);
 /* 输出值范围。 */

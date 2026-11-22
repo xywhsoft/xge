@@ -952,6 +952,10 @@ typedef int (*xui_callback_preflight_proc)(xui_widget pWidget,void* pData);
 int xuiInternalCallbackUpdateBeginValidated(xui_widget pWidget,const void* pSlot,bool bHasCallback,void* pUser,
     const xui_callback_owner_t* pOwner,xui_callback_preflight_proc onPreflight,void* pPreflightData,xui_callback_update_t* pUpdate);
 int xuiInternalCallbackUpdateBegin(xui_widget,const void*,bool,void*,const xui_callback_owner_t*,xui_callback_update_t*);
+/* Runs prepare after Hold and directory allocations. The caller must prevent
+ * reentrant changes to the target slot while prepare runs. */
+int xuiInternalCallbackUpdateBeginPrepared(xui_widget,const void*,bool,void*,const xui_callback_owner_t*,
+    xui_callback_preflight_proc,void*,xui_callback_update_t*);
 void xuiInternalCallbackUpdatePublish(xui_callback_update_t*);
 int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);
 int xuiInternalCallbackGroupUpdateBegin(xui_widget,xui_callback_group_entry_t*,size_t,xui_callback_group_update_t*);

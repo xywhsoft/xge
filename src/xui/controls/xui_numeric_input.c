@@ -12,6 +12,12 @@
 #define XUI_NUMERIC_INPUT_REPEAT_DELAY	0.40f
 #define XUI_NUMERIC_INPUT_REPEAT_INTERVAL	0.08f
 
+typedef struct xui_numeric_input_formatter_t {
+	xui_numeric_input_format_proc onRaw;
+	xui_numeric_input_text_owned_proc onOwned;
+	void* pUser;
+} xui_numeric_input_formatter_t;
+
 typedef struct xui_numeric_input_data_t {
 	xui_widget pInput;
 	xui_font pFont;
@@ -19,8 +25,8 @@ typedef struct xui_numeric_input_data_t {
 	void* pChangeUser;
 	xui_numeric_input_error_proc onError;
 	void* pErrorUser;
-	xui_numeric_input_format_proc onFormat;
-	void* pFormatUser;
+	xui_numeric_input_formatter_t tFormat;
+	bool bFormatting;
 	float fMin;
 	float fMax;
 	float fValue;
@@ -374,34 +380,42 @@ static int __xuiNumericInputDrawArrow(xui_proxy pProxy, xui_draw_context pDraw, 
 	return pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
 }
 
-static int __xuiNumericInputFormatValue(xui_widget pWidget, xui_numeric_input_data_t* pData, char* sBuffer, int iCapacity)
+static int __xuiNumericInputFormatText(xui_widget pWidget, xui_numeric_input_data_t* pData,
+	const xui_numeric_input_formatter_t* pFormat, char* sBuffer, bool* pFormatted)
 {
 	char sFormat[4];
-	xui_numeric_input_format_proc onFormat;
-	xui_context pContext;
+	xui_context pContext = pWidget->pContext;
 	size_t iOutputSize;
-	void* pFormatUser;
-	float fValue;
-	int bInteger;
-	int iPrecision;
-	int iRet;
+	float fValue = pData->fValue;
+	int bInteger = pData->bInteger;
+	int iPrecision = pData->iPrecision;
 
-	if ( (pWidget == NULL) || (pData == NULL) || (sBuffer == NULL) || (iCapacity <= 0) ) {
-		return 0;
-	}
+	*pFormatted = false;
 	sBuffer[0] = '\0';
-	pContext = xuiWidgetGetContext(pWidget);
-	onFormat = pData->onFormat;
-	pFormatUser = pData->pFormatUser;
-	fValue = pData->fValue;
-	bInteger = pData->bInteger;
-	iPrecision = pData->iPrecision;
-	if ( onFormat != NULL ) {
-		iRet = onFormat(fValue, sBuffer, iCapacity, pFormatUser);
-		if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return 0;
-		if ( iRet > 0 ) {
-			sBuffer[iCapacity - 1] = '\0';
-			return 1;
+	if ( pFormat->onOwned != NULL ) {
+		xstrview tText = pFormat->onOwned(fValue, pFormat->pUser);
+		int iResult = XUI_OK;
+		if ( xrtGetError() != NULL ) iResult = XUI_ERROR_CALLBACK_FAILED;
+		else if ( tText.Size >= XUI_NUMERIC_INPUT_MAX_TEXT ) iResult = XUI_ERROR_BUFFER_TOO_SMALL;
+		else if ( tText.Size != 0 ) {
+			if ( tText.Data == NULL || memchr(tText.Data, 0, tText.Size) != NULL || !xrtUtf8Valid(tText, NULL) )
+				iResult = XUI_ERROR_INVALID_ARGUMENT;
+			else memcpy(sBuffer, tText.Data, tText.Size);
+		}
+		if ( iResult == XUI_OK ) {
+			sBuffer[tText.Size] = '\0';
+			*pFormatted = __xuiNumericInputAlive(pContext, pWidget, pData);
+		}
+		xrtFree((void*)tText.Data);
+		return iResult;
+	}
+	if ( pFormat->onRaw != NULL ) {
+		int iResult = pFormat->onRaw(fValue, sBuffer, XUI_NUMERIC_INPUT_MAX_TEXT, pFormat->pUser);
+		if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( iResult > 0 ) {
+			sBuffer[XUI_NUMERIC_INPUT_MAX_TEXT - 1] = '\0';
+			*pFormatted = true;
+			return XUI_OK;
 		}
 	}
 	sFormat[0] = '.';
@@ -409,22 +423,40 @@ static int __xuiNumericInputFormatValue(xui_widget pWidget, xui_numeric_input_da
 	sFormat[2] = 'f';
 	sFormat[3] = '\0';
 	iOutputSize = 0u;
-	if ( !xrtNumFormatTo((double)(bInteger ? __xuiNumericInputRoundFloat(fValue) : fValue),
-	     xuiXrtText(sFormat, 3u), sBuffer, (size_t)iCapacity, &iOutputSize) ) {
-		sBuffer[0] = '\0';
-		return 0;
+	*pFormatted = xrtNumFormatTo((double)(bInteger ? __xuiNumericInputRoundFloat(fValue) : fValue),
+		xuiXrtText(sFormat, 3u), sBuffer, XUI_NUMERIC_INPUT_MAX_TEXT, &iOutputSize);
+	return XUI_OK;
+}
+
+static int __xuiNumericInputFormatValue(xui_widget pWidget, xui_numeric_input_data_t* pData,
+	char* sBuffer, bool* pFormatted)
+{
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
+	xui_numeric_input_formatter_t tFormat = pData->tFormat;
+	if ( tFormat.onOwned == NULL ) return __xuiNumericInputFormatText(pWidget, pData, &tFormat, sBuffer, pFormatted);
+
+	xui_callback_snapshot_t tSnapshot = {0};
+	pData->bFormatting = true;
+	int iResult = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->tFormat, &tFormat.pUser, &tSnapshot);
+	if ( iResult == XUI_OK ) {
+		iResult = __xuiNumericInputFormatText(pWidget, pData, &tFormat, sBuffer, pFormatted);
+		iResult = xuiInternalCallbackSnapshotEnd(&tSnapshot, iResult);
 	}
-	return 1;
+	pData->bFormatting = false;
+	return iResult;
 }
 
 static int __xuiNumericInputSetInputTextFromValue(xui_widget pWidget, xui_numeric_input_data_t* pData)
 {
 	char sBuffer[XUI_NUMERIC_INPUT_MAX_TEXT];
+	bool bFormatted;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( !__xuiNumericInputFormatValue(pWidget, pData, sBuffer, (int)sizeof(sBuffer)) ) return XUI_OK;
+	xui_context pContext = pWidget->pContext;
+	int iResult = __xuiNumericInputFormatValue(pWidget, pData, sBuffer, &bFormatted);
+	if ( iResult != XUI_OK || !bFormatted || !__xuiNumericInputAlive(pContext, pWidget, pData) ) return iResult;
 	return xuiInputSetText(pData->pInput, sBuffer);
 }
 
@@ -494,6 +526,7 @@ static int __xuiNumericInputSetValueInternal(xui_widget pWidget, xui_numeric_inp
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiNumericInputFloatValid(fValue) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( pData->bInteger ) {
 		fValue = __xuiNumericInputRoundFloat(fValue);
@@ -510,7 +543,7 @@ static int __xuiNumericInputSetValueInternal(xui_widget pWidget, xui_numeric_inp
 	if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
 	iRet = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
 	if ( iRet != XUI_OK ) {
-		pData->fValue = fOldValue;
+		if ( __xuiNumericInputAlive(pContext, pWidget, pData) ) pData->fValue = fOldValue;
 		return iRet;
 	}
 	if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
@@ -591,6 +624,7 @@ static int __xuiNumericInputCommitInternal(xui_widget pWidget, xui_numeric_input
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	sText = xuiInputGetText(pData->pInput);
 	if ( !__xuiNumericInputParseText(sText, &fValue) ) {
 		return __xuiNumericInputSetErrorInternal(pWidget, pData, 1);
@@ -941,6 +975,7 @@ static int __xuiNumericInputPrepareEdit(xui_widget pWidget, xui_widget pSource,
 	int iType, int* pSkipDefault, void* pUser)
 {
 	char sBuffer[XUI_NUMERIC_INPUT_MAX_TEXT];
+	bool bFormatted;
 	xui_numeric_input_data_t* pData;
 	const xui_edit_behavior_t* pBehavior;
 	xui_context pContext;
@@ -950,6 +985,7 @@ static int __xuiNumericInputPrepareEdit(xui_widget pWidget, xui_widget pSource,
 	if ( pData == NULL || pSource != pData->pInput || __xuiNumericInputGetData(pWidget) != pData ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	pContext = xuiWidgetGetContext(pWidget);
 	if ( iType == XUI_EDIT_EVENT_COMMIT ) {
 		return __xuiNumericInputCommitInternal(pWidget, pData, 1);
@@ -963,7 +999,8 @@ static int __xuiNumericInputPrepareEdit(xui_widget pWidget, xui_widget pSource,
 	iRet = __xuiNumericInputSetErrorInternal(pWidget, pData, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
-	if ( !__xuiNumericInputFormatValue(pWidget, pData, sBuffer, (int)sizeof(sBuffer)) ) return XUI_OK;
+	iRet = __xuiNumericInputFormatValue(pWidget, pData, sBuffer, &bFormatted);
+	if ( iRet != XUI_OK || !bFormatted ) return iRet;
 	if ( !__xuiNumericInputAlive(pContext, pWidget, pData) ) return XUI_OK;
 	iRet = xuiEditSetText(pSource, sBuffer);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1694,27 +1731,64 @@ XUI_API int xuiNumericInputSetErrorChange(xui_widget pWidget, xui_numeric_input_
 	return XUI_OK;
 }
 
-XUI_API int xuiNumericInputSetFormatter(xui_widget pWidget, xui_numeric_input_format_proc onFormat, void* pUser)
+static int __xuiNumericInputPrepareFormatter(xui_widget pWidget, void* pUser)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
-	xui_numeric_input_format_proc onOldFormat;
-	void* pOldUser;
-	int iRet;
+	char sBuffer[XUI_NUMERIC_INPUT_MAX_TEXT];
+	bool bFormatted;
+	if ( pData == NULL || pData->pInput == NULL ) return XUI_ERROR_INVALID_STATE;
+	int iResult = __xuiNumericInputFormatText(pWidget, pData, pUser, sBuffer, &bFormatted);
+	if ( iResult != XUI_OK || !bFormatted ) return iResult;
+	return xuiInputSetText(pData->pInput, sBuffer);
+}
+
+static int __xuiNumericInputSetFormatter(xui_widget pWidget, xui_numeric_input_formatter_t tFormat,
+	const xui_callback_owner_t* pOwner)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->onFormat == onFormat && pData->pFormatUser == pUser ) return XUI_OK;
-	onOldFormat = pData->onFormat;
-	pOldUser = pData->pFormatUser;
-	pData->onFormat = onFormat;
-	pData->pFormatUser = pUser;
-	iRet = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
-	if ( iRet != XUI_OK && __xuiNumericInputGetData(pWidget) == pData ) {
-		pData->onFormat = onOldFormat;
-		pData->pFormatUser = pOldUser;
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
+	if ( pOwner == NULL && !xuiInternalCallbackSlotOwned(pWidget, &pData->tFormat) &&
+	     pData->tFormat.onRaw == tFormat.onRaw && pData->tFormat.onOwned == tFormat.onOwned &&
+	     pData->tFormat.pUser == tFormat.pUser ) return XUI_OK;
+
+	xui_context pContext = pWidget->pContext;
+	xui_call_scope_t tScope = {0};
+	int iResult = xuiCallScopeBegin(pContext, &tScope);
+	if ( iResult != XUI_OK ) return iResult;
+	if ( tFormat.onOwned == NULL && pData->tFormat.onOwned == NULL && pOwner == NULL ) {
+		xui_numeric_input_formatter_t tOld = pData->tFormat;
+		pData->tFormat = tFormat;
+		iResult = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
+		if ( __xuiNumericInputAlive(pContext, pWidget, pData) ) {
+			if ( iResult == XUI_OK ) xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+			else pData->tFormat = tOld;
+		}
+		return xuiInternalCallScopeEndRestored(&tScope, iResult, xrtTakeError());
 	}
-	if ( iRet == XUI_OK && __xuiNumericInputGetData(pWidget) == pData ) {
+	pData->bFormatting = true;
+	xui_callback_update_t tUpdate = {0};
+	iResult = xuiInternalCallbackUpdateBeginPrepared(pWidget, &pData->tFormat, tFormat.onOwned != NULL,
+		tFormat.pUser, pOwner, __xuiNumericInputPrepareFormatter, &tFormat, &tUpdate);
+	pData->bFormatting = false;
+	if ( iResult == XUI_OK ) {
+		pData->tFormat = tFormat;
+		xuiInternalCallbackUpdatePublish(&tUpdate);
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
+		iResult = xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
 	}
-	return iRet;
+	return xuiInternalCallScopeEndRestored(&tScope, iResult, xrtTakeError());
+}
+
+XUI_API int xuiNumericInputSetFormatter(xui_widget pWidget, xui_numeric_input_format_proc onFormat, void* pUser)
+{
+	return __xuiNumericInputSetFormatter(pWidget, (xui_numeric_input_formatter_t){.onRaw = onFormat, .pUser = pUser}, NULL);
+}
+
+XUI_API int xuiNumericInputSetFormatterOwned(xui_widget pWidget, xui_numeric_input_text_owned_proc onFormat,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	return __xuiNumericInputSetFormatter(pWidget, (xui_numeric_input_formatter_t){.onOwned = onFormat, .pUser = pUser}, pOwner);
 }
 
 XUI_API int xuiNumericInputSetRange(xui_widget pWidget, float fMin, float fMax)
@@ -1726,9 +1800,13 @@ XUI_API int xuiNumericInputSetRange(xui_widget pWidget, float fMin, float fMax)
 	if ( pData == NULL || !__xuiNumericInputFloatValid(fMin) || !__xuiNumericInputFloatValid(fMax) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	__xuiNumericInputNormalizeRange(&fMin, &fMax);
 	if ( pData->bInteger && ceilf(fMin) > floorf(fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->fMin == fMin && pData->fMax == fMax ) return XUI_OK;
+	xui_call_scope_t tScope = {0};
+	iRet = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
 	fOldMin = pData->fMin;
 	fOldMax = pData->fMax;
 	pData->fMin = fMin;
@@ -1741,7 +1819,7 @@ XUI_API int xuiNumericInputSetRange(xui_widget pWidget, float fMin, float fMax)
 	if ( iRet == XUI_OK && __xuiNumericInputGetData(pWidget) == pData ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	}
-	return iRet;
+	return xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
 }
 
 XUI_API int xuiNumericInputGetRange(xui_widget pWidget, float* pMin, float* pMax)
@@ -1776,9 +1854,13 @@ XUI_API int xuiNumericInputSetInteger(xui_widget pWidget, int bInteger)
 	int bOldInteger;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	bInteger = bInteger ? 1 : 0;
 	if ( pData->bInteger == bInteger ) return XUI_OK;
 	if ( bInteger && ceilf(pData->fMin) > floorf(pData->fMax) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t tScope = {0};
+	iRet = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
 	bOldInteger = pData->bInteger;
 	pData->bInteger = bInteger;
 	iRet = __xuiNumericInputSetValueInternal(pWidget, pData, pData->fValue, 0);
@@ -1786,7 +1868,7 @@ XUI_API int xuiNumericInputSetInteger(xui_widget pWidget, int bInteger)
 	if ( iRet == XUI_OK && __xuiNumericInputGetData(pWidget) == pData ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
 	}
-	return iRet;
+	return xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
 }
 
 XUI_API int xuiNumericInputIsInteger(xui_widget pWidget)
@@ -1801,8 +1883,12 @@ XUI_API int xuiNumericInputSetPrecision(xui_widget pWidget, int iPrecision)
 	int iOldPrecision;
 	int iRet;
 	if ( pData == NULL || iPrecision < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	iPrecision = __xuiNumericInputPrecision(iPrecision);
 	if ( pData->iPrecision == iPrecision ) return XUI_OK;
+	xui_call_scope_t tScope = {0};
+	iRet = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
 	iOldPrecision = pData->iPrecision;
 	pData->iPrecision = iPrecision;
 	iRet = __xuiNumericInputSetInputTextFromValue(pWidget, pData);
@@ -1810,7 +1896,7 @@ XUI_API int xuiNumericInputSetPrecision(xui_widget pWidget, int iPrecision)
 	if ( iRet == XUI_OK && __xuiNumericInputGetData(pWidget) == pData ) {
 		xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_VALUE_CHANGED);
 	}
-	return iRet;
+	return xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
 }
 
 XUI_API int xuiNumericInputGetPrecision(xui_widget pWidget)
@@ -2080,7 +2166,12 @@ XUI_API int xuiNumericInputSetValue(xui_widget pWidget, float fValue)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL || !__xuiNumericInputFloatValid(fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiNumericInputSetValueInternal(pWidget, pData, fValue, 0);
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
+	xui_call_scope_t tScope = {0};
+	int iResult = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iResult != XUI_OK ) return iResult;
+	iResult = __xuiNumericInputSetValueInternal(pWidget, pData, fValue, 0);
+	return xuiInternalCallScopeEndRestored(&tScope, iResult, xrtTakeError());
 }
 
 XUI_API float xuiNumericInputGetValue(xui_widget pWidget)
@@ -2093,20 +2184,31 @@ XUI_API int xuiNumericInputCommit(xui_widget pWidget)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiNumericInputCommitInternal(pWidget, pData, 1);
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
+	xui_call_scope_t tScope = {0};
+	int iResult = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iResult != XUI_OK ) return iResult;
+	iResult = __xuiNumericInputCommitInternal(pWidget, pData, 1);
+	return xuiInternalCallScopeEndRestored(&tScope, iResult, xrtTakeError());
 }
 
 XUI_API int xuiNumericInputStep(xui_widget pWidget, int iDirection)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return __xuiNumericInputStepInternal(pWidget, pData, iDirection, 1);
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
+	xui_call_scope_t tScope = {0};
+	int iResult = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iResult != XUI_OK ) return iResult;
+	iResult = __xuiNumericInputStepInternal(pWidget, pData, iDirection, 1);
+	return xuiInternalCallScopeEndRestored(&tScope, iResult, xrtTakeError());
 }
 
 XUI_API int xuiNumericInputSetText(xui_widget pWidget, const char* sText)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
 	if ( (pData == NULL) || (pData->pInput == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bFormatting ) return XUI_ERROR_BUSY;
 	return xuiInputSetText(pData->pInput, sText);
 }
 

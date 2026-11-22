@@ -37,8 +37,9 @@ static xerror* __xuiCallbackFirstOutcome(xui_context context,int* result)
     (void)context;
     return first;
 }
-int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,bool hasCallback,void* user,
-    const xui_callback_owner_t* incoming,xui_callback_preflight_proc preflight,void* preflightData,xui_callback_update_t* update)
+static int __xuiCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCallback,void* user,
+    const xui_callback_owner_t* incoming,xui_callback_preflight_proc preflight,void* preflightData,
+    bool latePrepare,xui_callback_update_t* update)
 {
     if(!update || update->pContext || !slot || !xuiInternalWidgetIsValid(widget) ||
         !xuiInternalCallbackOwnerValid(incoming) || (!hasCallback && incoming && incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
@@ -55,7 +56,7 @@ int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,b
         xrtSetErrorTake(first);return result;
     }
     if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
-    if(preflight){result=preflight(widget,preflightData);if(result!=XUI_OK)goto fail;}
+    if(preflight && !latePrepare){result=preflight(widget,preflightData);if(result!=XUI_OK)goto fail;}
     /* Hold may reenter and replace or remove this exact slot. Allocate against
      * the resulting live directory, outside the ownership mutation gate. */
     xui_callback_binding_t** current=__xuiCallbackFind(widget,slot);
@@ -63,6 +64,12 @@ int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,b
         if(!widget->pEventOwners){header=xrtCalloc(1,sizeof(*header));if(!header){result=XUI_ERROR_OUT_OF_MEMORY;goto fail;}}
         binding=xrtCalloc(1,sizeof(*binding));if(!binding){result=XUI_ERROR_OUT_OF_MEMORY;goto fail;}
         binding->pSlot=slot;binding->pUser=user;binding->tOwner=candidate;
+    }
+    if(preflight && latePrepare){
+        result=preflight(widget,preflightData);
+        if(result!=XUI_OK)goto fail;
+        if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
+        if(header && widget->pEventOwners){xrtFree(header);header=NULL;}
     }
     if(!xrtOwnershipMutationBegin(&update->tMutation)){result=XUI_ERROR_INVALID_STATE;goto fail;}
     update->pWidget=widget;update->pContext=context;
@@ -86,6 +93,12 @@ fail: {
     xrtSetErrorTake(first);return result;
 }
 }
+int xuiInternalCallbackUpdateBeginValidated(xui_widget widget,const void* slot,bool hasCallback,void* user,
+    const xui_callback_owner_t* incoming,xui_callback_preflight_proc preflight,void* preflightData,xui_callback_update_t* update)
+{return __xuiCallbackUpdateBegin(widget,slot,hasCallback,user,incoming,preflight,preflightData,false,update);}
+int xuiInternalCallbackUpdateBeginPrepared(xui_widget widget,const void* slot,bool hasCallback,void* user,
+    const xui_callback_owner_t* incoming,xui_callback_preflight_proc prepare,void* prepareData,xui_callback_update_t* update)
+{return __xuiCallbackUpdateBegin(widget,slot,hasCallback,user,incoming,prepare,prepareData,true,update);}
 int xuiInternalCallbackUpdateBegin(xui_widget widget,const void* slot,bool hasCallback,void* user,
     const xui_callback_owner_t* incoming,xui_callback_update_t* update)
 {return xuiInternalCallbackUpdateBeginValidated(widget,slot,hasCallback,user,incoming,NULL,NULL,update);}
