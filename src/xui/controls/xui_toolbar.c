@@ -1829,7 +1829,9 @@ XUI_API xui_widget_type xuiToolbarGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "toolbar";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
+	/* Shared item icons can change without a widget mutation. */
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY |
+		XUI_WIDGET_TYPE_PREPARE_FRAME_DEPENDENT;
 	tDesc.iTypeDataSize = sizeof(xui_toolbar_data_t);
 	tDesc.onInit = __xuiToolbarInit;
 	tDesc.onDestroy = __xuiToolbarDestroy;
