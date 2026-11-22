@@ -70,6 +70,21 @@ typedef struct xui_table_column_storage_t {
     xui_table_view_column_t columns[];
 } xui_table_column_storage_t;
 
+struct xui_table_view_format_output_t {
+    char* pText;
+    size_t capacity;
+};
+
+typedef struct xui_table_column_formatter_t {
+    xui_table_view_format_owned_proc format;
+    void* user;
+} xui_table_column_formatter_t;
+
+typedef struct xui_table_column_formatters_t {
+    int count;
+    xui_table_column_formatter_t slots[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+} xui_table_column_formatters_t;
+
 static int __xuiTableColumnStorageRetain(xui_table_column_storage_t* storage)
 {
     if (!storage) return XUI_OK;
@@ -100,6 +115,7 @@ typedef struct xui_table_view_data_t {
 	xui_widget pViewport;
 	xui_table_view_column_t arrColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
     xui_table_column_storage_t* pColumnStorage;
+    xui_table_column_formatters_t* pColumnFormatters;
 	xui_table_view_row_t* arrRows;
 	xui_table_view_row_prefix_t* arrRowPrefix;
 	xui_table_view_merge_column_t arrMergeColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
@@ -1414,6 +1430,43 @@ static int __xuiTableViewOwnedRender(xui_widget widget,xui_table_view_data_t* da
     xrtSetErrorTake(first);
     return result!=XUI_OK ? result:handled;
 }
+
+XUI_API int xuiTableViewFormatOutputSetText(xui_table_view_format_output_t* pOutput, xstrview tText)
+{
+    if (!pOutput || !pOutput->pText || !pOutput->capacity || (!tText.Data && tText.Size))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    size_t count = tText.Size;
+    if (count >= pOutput->capacity) count = pOutput->capacity - 1;
+    if (count) memmove(pOutput->pText, tText.Data, count);
+    pOutput->pText[count] = '\0';
+    if (count < tText.Size) xuiInternalUtf8TrimIncomplete(pOutput->pText);
+    return XUI_OK;
+}
+
+static int __xuiTableViewInvokeColumnFormatter(xui_widget widget, xui_table_view_data_t* data,
+    xui_table_column_formatter_t* slot, int row, int column, const xui_table_view_cell_t* cell,
+    char* text, size_t capacity)
+{
+    uint64_t generation = data->iCallbackGeneration;
+    xui_table_view_format_owned_proc format = slot->format;
+    void* user = slot->user;
+    xui_callback_snapshot_t snapshot = {0};
+    int status = xuiInternalCallbackSnapshotBeginReturned(widget, slot, &user, &snapshot);
+    if (status != XUI_OK) return status;
+    if (!__xuiTableViewCallbackCurrent(widget, data, generation)) {
+        status = XUI_ERROR_INVALID_STATE;
+    } else {
+        xui_table_view_format_output_t output = {text, capacity};
+        int formatted = format(widget, row, column, cell, &output, user);
+        if (formatted < 0) status = formatted;
+    }
+    status = xuiInternalCallbackSnapshotEnd(&snapshot, status);
+    if (status == XUI_OK && !__xuiTableViewCallbackCurrent(widget, data, generation))
+        status = XUI_ERROR_INVALID_STATE;
+    if (status != XUI_OK) text[0] = '\0';
+    return status;
+}
+
 static const char* __xuiTableViewCellText(xui_widget pWidget, xui_table_view_data_t* pData, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_table_view_cell_lease_t* pLease, char* sBuffer, int iCapacity)
 {
 	xui_table_view_format_proc onFormat;
@@ -1439,6 +1492,16 @@ static const char* __xuiTableViewCellText(xui_widget pWidget, xui_table_view_dat
 	onFormat = pCell->onFormat;
 	pUser = pCell->pFormatUser;
 	if ( (onFormat == NULL) && (pData != NULL) && (iColumn >= 0) && (iColumn < pData->iColumnCount) ) {
+		xui_table_column_formatters_t* pFormatters = pData->pColumnFormatters;
+		if ( pFormatters != NULL && pFormatters->slots[iColumn].format != NULL ) {
+			xui_context context = xuiWidgetGetContext(pWidget);
+			int status = __xuiTableViewInvokeColumnFormatter(pWidget, pData, &pFormatters->slots[iColumn],
+				iRow, iColumn, pCell, sBuffer, (size_t)iCapacity);
+			if ( status == XUI_OK ) return sBuffer;
+			if ( pLease != NULL ) pLease->failure = status;
+			__xuiTableViewRecordFailure(context, status);
+			return NULL;
+		}
 		onFormat = pData->arrColumns[iColumn].onFormat;
 		pUser = pData->arrColumns[iColumn].pFormatUser;
 	}
@@ -2829,6 +2892,7 @@ static int __xuiTableViewPaintCellBody(xui_widget pWidget,xui_table_view_data_t*
 		}
 	}
 	iRet = __xuiTableViewDrawCellContent(pWidget, pData, pResolved, pProxy, pDraw, i, j, &tCellData, pLease, tCell, iState);
+	if ( pLease->failure != XUI_OK ) return pLease->failure;
 	if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iCallbackGeneration) ) return pLease->owned ? XUI_ERROR_INVALID_STATE:XUI_OK;
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawMeshTriangles != NULL || pProxy->drawRectFill != NULL) ) {
@@ -3443,6 +3507,7 @@ static void __xuiTableViewDestroy(xui_widget pWidget, void* pTypeData, void* pUs
 	if ( pData != NULL ) {
         xrtFree(pData->sResolvedTooltip);pData->sResolvedTooltip=NULL;
         __xuiTableColumnStorageRelease(pData->pColumnStorage);pData->pColumnStorage=NULL;
+		xrtFree(pData->pColumnFormatters);
 		if ( pData->arrRows != NULL ) {
 			xrtFree(pData->arrRows);
 		}
@@ -3607,6 +3672,35 @@ int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const 
 }
 
 
+static int __xuiTableViewColumnsChanged(xui_widget widget, xui_table_view_data_t* data)
+{
+    ++data->iChangeCount;
+    xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+    xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+    return __xuiTableViewInvalidate(widget, data, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiTableViewPublishColumnFormatters(xui_widget widget, xui_table_view_data_t* data, bool* published)
+{
+    xui_table_column_formatters_t* old = data->pColumnFormatters;
+    xui_callback_group_entry_t entries[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    size_t count = 0;
+    for (int i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; ++i) {
+        if (old->slots[i].format) entries[count++] = (xui_callback_group_entry_t){.pSlot = &old->slots[i]};
+    }
+    xui_callback_group_update_t update = {0};
+    int status = xuiInternalCallbackGroupUpdateBegin(widget, entries, count, &update);
+    if (status != XUI_OK) return status;
+
+    data->pColumnFormatters = NULL;
+    xuiInternalCallbackGroupUpdatePublish(&update);
+    *published = true;
+    status = __xuiTableViewColumnsChanged(widget, data);
+    status = xuiInternalCallbackGroupUpdateEnd(&update, status);
+    xrtFree(old);
+    return status;
+}
+
 static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount, xui_table_column_storage_t* storage)
 {
 	xui_table_view_data_t* pData;
@@ -3650,7 +3744,7 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	for ( i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; i++ ) {
 		memset(&arrOldColumns[i].tRect, 0, sizeof(arrOldColumns[i].tRect));
 	}
-	if ( pData->iColumnCount == iCount &&
+	if ( pData->pColumnFormatters == NULL && pData->iColumnCount == iCount &&
 	     memcmp(arrOldColumns, arrNewColumns, sizeof(arrNewColumns)) == 0 ) return XUI_OK;
 	memcpy(arrOldColumns, pData->arrColumns, sizeof(arrOldColumns));
 	iOldColumnCount = pData->iColumnCount;
@@ -3667,8 +3761,11 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
         __xuiTableColumnStorageRelease(oldStorage);
         return XUI_ERROR_LIMIT_EXCEEDED;
     }
+	uint64_t generation = pData->iCallbackGeneration;
+	bool hadFormatters = pData->pColumnFormatters != NULL;
 	__xuiTableViewCancelPointer(pWidget, pData, 1);
-    if (!__xuiTableViewWidgetAlive(pWidget,pData)) {
+    if (!__xuiTableViewWidgetAlive(pWidget,pData) ||
+        ((hadFormatters || pData->pColumnFormatters) && generation != pData->iCallbackGeneration)) {
         __xuiTableColumnStorageRelease(oldStorage);
         __xuiTableColumnStorageRelease(storage);
         return XUI_ERROR_INVALID_STATE;
@@ -3688,7 +3785,16 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
         __xuiTableColumnStorageRelease(oldStorage);
         return iRet == XUI_OK ? XUI_ERROR_INVALID_STATE : iRet;
     }
-	if ( iRet != XUI_OK ) {
+	bool published = false;
+	if ( iRet == XUI_OK ) {
+		if ( pData->pColumnFormatters != NULL ) {
+			iRet = __xuiTableViewPublishColumnFormatters(pWidget, pData, &published);
+		} else {
+			published = true;
+			iRet = __xuiTableViewColumnsChanged(pWidget, pData);
+		}
+	}
+	if ( !published ) {
         previousStorage = pData->pColumnStorage;
         pData->pColumnStorage = oldStorage; /* transfer the rollback snapshot */
         __xuiTableColumnStorageRelease(previousStorage);
@@ -3705,10 +3811,7 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 		return iRet;
 	}
     __xuiTableColumnStorageRelease(oldStorage);
-	pData->iChangeCount++;
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return iRet;
 }
 
 static int __xuiTableViewSetRowsOperation(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)
@@ -4195,19 +4298,68 @@ XUI_API int xuiTableViewSetCellRendererOwned(xui_widget pWidget, xui_table_view_
 	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
 }
 
+static int __xuiTableViewColumnFormatterPreflight(xui_widget widget, void* pGeneration)
+{
+    xui_table_view_data_t* data = __xuiTableViewGetData(widget);
+    return data && data->iCallbackGeneration == *(const uint64_t*)pGeneration
+        ? XUI_OK : XUI_ERROR_INVALID_STATE;
+}
+
+static int __xuiTableViewSetColumnFormatter(xui_widget widget, int column,
+    xui_table_view_format_proc raw, xui_table_view_format_owned_proc managed,
+    void* user, const xui_callback_owner_t* owner)
+{
+    xui_table_view_data_t* data = __xuiTableViewGetData(widget);
+    if (!data || column < 0 || column >= data->iColumnCount ||
+        !xuiInternalCallbackOwnerValid(owner) || (!managed && owner && owner->onHold))
+        return XUI_ERROR_INVALID_ARGUMENT;
+
+    int status = __xuiTableViewInvalidate(widget, data, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    if (status != XUI_OK) return status;
+
+    xui_table_column_formatters_t* formatters = data->pColumnFormatters;
+    xui_table_column_formatters_t* created = NULL;
+    if (managed && !formatters) {
+        created = xrtCalloc(1, sizeof(*created));
+        if (!created) return XUI_ERROR_OUT_OF_MEMORY;
+        formatters = created;
+    }
+    xui_table_column_formatter_t* slot = formatters ? &formatters->slots[column] : NULL;
+    bool hadFormatter = slot && slot->format;
+    xui_callback_update_t update = {0};
+    xui_table_column_formatters_t* retired = NULL;
+    if (hadFormatter || managed) {
+        uint64_t generation = data->iCallbackGeneration;
+        status = xuiInternalCallbackUpdateBeginValidated(widget, slot, managed != NULL, user, owner,
+            __xuiTableViewColumnFormatterPreflight, &generation, &update);
+        if (status != XUI_OK) {
+            xrtFree(created);
+            return status;
+        }
+        *slot = (xui_table_column_formatter_t){managed, managed ? user : NULL};
+        formatters->count += (managed != NULL) - hadFormatter;
+        if (!formatters->count) retired = formatters;
+        data->pColumnFormatters = retired ? NULL : formatters;
+    }
+    data->arrColumns[column].onFormat = raw;
+    data->arrColumns[column].pFormatUser = managed ? NULL : user;
+    ++data->iCallbackGeneration;
+    if (update.pContext) xuiInternalCallbackUpdatePublish(&update);
+    xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
+    if (update.pContext) status = xuiInternalCallbackUpdateEnd(&update, status);
+    xrtFree(retired);
+    return status;
+}
+
 XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_table_view_format_proc onFormat, void* pUser)
 {
-	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
-	int iRet;
-	if ( (pData == NULL) || (iColumn < 0) || (iColumn >= pData->iColumnCount) ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiTableViewInvalidate(pWidget, pData,
-		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->arrColumns[iColumn].onFormat = onFormat;
-	pData->arrColumns[iColumn].pFormatUser = pUser;
-	pData->iCallbackGeneration++;
-	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return XUI_OK;
+    return __xuiTableViewSetColumnFormatter(pWidget, iColumn, onFormat, NULL, pUser, NULL);
+}
+
+XUI_API int xuiTableViewSetColumnFormatterOwned(xui_widget pWidget, int iColumn,
+    xui_table_view_format_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    return __xuiTableViewSetColumnFormatter(pWidget, iColumn, NULL, onFormat, pUser, pOwner);
 }
 
 XUI_API int xuiTableViewSetFont(xui_widget pWidget, xui_font pFont)

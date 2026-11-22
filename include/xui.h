@@ -3155,6 +3155,8 @@ typedef xstrview (*xui_table_view_cell_text_owned_proc)(xui_widget_t* pWidget, i
 typedef int (*xui_table_view_cell_render_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_output_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef int (*xui_table_view_cell_proc)(xui_widget_t* pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser);
 typedef int (*xui_table_view_format_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, char* sBuffer, int iCapacity, void* pUser);
+typedef struct xui_table_view_format_output_t xui_table_view_format_output_t;
+typedef int (*xui_table_view_format_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_table_view_format_output_t* pOutput, void* pUser);
 typedef int (*xui_table_view_cell_renderer_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef int (*xui_table_view_header_renderer_proc)(xui_widget_t* pWidget, int iColumn, const xui_table_view_column_t* pColumn, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef void (*xui_table_view_sort_proc)(xui_widget_t* pWidget, int iColumn, int bDescending, void* pUser);
@@ -12252,6 +12254,11 @@ XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_
 XUI_API int xuiTableViewSetCellRendererOwned(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 按列注册文本格式化回调；同步调用，输出缓冲仅在本次回调内有效。 */
 XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_table_view_format_proc onFormat, void* pUser);
+/* The callback and its owner live until replaced, columns change, or the widget closes.
+ * A negative result fails the current read or render. Cell and output views expire on return. */
+XUI_API int xuiTableViewSetColumnFormatterOwned(xui_widget pWidget, int iColumn, xui_table_view_format_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner);
+/* Copies into the current bounded native text buffer and keeps truncated UTF-8 complete. */
+XUI_API int xuiTableViewFormatOutputSetText(xui_table_view_format_output_t* pOutput, xstrview tText);
 /* 设置字体。 */
 XUI_API int xuiTableViewSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */

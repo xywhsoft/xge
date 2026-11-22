@@ -109,7 +109,7 @@ int xuiInternalCallbackUpdateEnd(xui_callback_update_t* update,int result)
 int xuiInternalCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_entry_t* entries,
     size_t count,xui_callback_group_update_t* update)
 {
-    if(!update || update->pContext || !entries || !count || count>16 ||
+    if(!update || update->pContext || !entries || !count ||
        !xuiInternalWidgetIsValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
     for(size_t i=0;i<count;++i){
         xui_callback_group_entry_t* entry=&entries[i];
