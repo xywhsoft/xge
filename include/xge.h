@@ -5588,6 +5588,12 @@ XGE_API void *xge3dNodeUserData(xge3d_scene *scene,xge3d_node_t node);
  * node. NULL clears the attachment. Pointer values, handles, nominal objects
  * and cycles are rejected. The borrowed UserData slot is separate. */
 XGE_API int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t node,const xvalue *value);
+/* Retain an already independent plain-data snapshot. The caller must supply
+ * the same data accepted by SetUserValue and treat its entire graph as
+ * immutable once published. The scene retains its own reference, so the
+ * caller can release theirs on either success or failure. NULL clears the
+ * attachment. Failure leaves the previous attachment unchanged. */
+XGE_API int xge3dNodeSetUserValueSnapshot(xge3d_scene *scene,xge3d_node_t node,const xvalue *snapshot);
 /* Returns an owned independent snapshot, or NULL for an empty attachment.
  * XGE3D_CLONE_USER_DATA preserves both attachment slots when cloning. */
 XGE_API int xge3dNodeCopyUserValue(xge3d_scene *scene,xge3d_node_t node,xvalue **out);

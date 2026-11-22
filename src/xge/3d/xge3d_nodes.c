@@ -70,7 +70,7 @@ int d3_node_share_user_value(xge3d_scene *scene,const xge3d_node_data *from,xge3
     return status;
 }
 
-int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t handle,const xvalue *value)
+static int d3_node_set_user_value(xge3d_scene *scene,xge3d_node_t handle,const xvalue *value,bool snapshot)
 {
     int status=d3_scene_user_value_ready(scene);
     if(status!=XGE_OK)return status;
@@ -78,12 +78,27 @@ int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t handle,const xvalue *v
     if(!node||d3_node_staged(node))return XGE_ERROR_INVALID_ARGUMENT;
     xvalue *prepared=NULL;
     if(value&&!xrtValueIs(value,XVALUE_NULL)){
-        status=d3_user_value_snapshot(value,&prepared);
-        if(status!=XGE_OK)return status;
+        if(snapshot){
+            prepared=xrtValueRetain(value);
+            if(!prepared)return XGE_ERROR_INVALID_STATE;
+        }else{
+            status=d3_user_value_snapshot(value,&prepared);
+            if(status!=XGE_OK)return status;
+        }
     }
     status=d3_node_assign_user_value(scene,node,prepared);
     if(status!=XGE_OK)xrtValueRelease(prepared);
     return status;
+}
+
+int xge3dNodeSetUserValue(xge3d_scene *scene,xge3d_node_t handle,const xvalue *value)
+{
+    return d3_node_set_user_value(scene,handle,value,false);
+}
+
+int xge3dNodeSetUserValueSnapshot(xge3d_scene *scene,xge3d_node_t handle,const xvalue *snapshot)
+{
+    return d3_node_set_user_value(scene,handle,snapshot,true);
 }
 
 int xge3dNodeCopyUserValue(xge3d_scene *scene,xge3d_node_t handle,xvalue **out)

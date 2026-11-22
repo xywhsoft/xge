@@ -54,12 +54,51 @@ static int wrong_thread(void *arg)
     xvalue *out=NULL;
     assert(xge3dNodeCopyUserValue(probe->scene,probe->node,&out)==XGE_ERROR_BUSY && !out);
     assert(xge3dNodeSetUserValue(probe->scene,probe->node,NULL)==XGE_ERROR_BUSY);
+    assert(xge3dNodeSetUserValueSnapshot(probe->scene,probe->node,NULL)==XGE_ERROR_BUSY);
     return 0;
+}
+
+static void check_prepared_store(void)
+{
+    xge3d_scene *scene=NULL;
+    xge3d_node_t node={0};
+    xvalue *first=object_with(3),*second=object_with(5),*copy=NULL;
+    assert(xge3dSceneCreateOwned(&scene)==XGE_OK);
+    assert(xge3dNodeCreate(scene,node,&node)==XGE_OK);
+
+    assert(xrtMemDebugFailAfter(0));
+    assert(xge3dNodeSetUserValueSnapshot(scene,node,first)==XGE_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();
+    xrtClearError();
+    check_edges(scene,0);
+    assert(xge3dNodeCopyUserValue(scene,node,&copy)==XGE_OK && !copy);
+
+    assert(xge3dNodeSetUserValueSnapshot(scene,node,first)==XGE_OK);
+    xrtValueRelease(first);
+    assert(read_count(scene,node)==3);
+    check_edges(scene,1);
+    assert(xge3dNodeSetUserValueSnapshot(scene,node,second)==XGE_OK);
+    xmemdebugsnapshot before,after;
+    xrtMemDebugSnapshot(&before);
+    assert(xrtMemDebugFailAfter(0));
+    for(int i=0;i<1000;++i){
+        assert(xge3dNodeSetUserValueSnapshot(scene,node,second)==XGE_OK);
+    }
+    xrtMemDebugFailClear();
+    xrtMemDebugSnapshot(&after);
+    assert(after.AllocCount==before.AllocCount && after.FreeCount==before.FreeCount);
+    assert(after.ReallocCount==before.ReallocCount);
+    xrtValueRelease(second);
+    assert(read_count(scene,node)==5);
+    assert(xge3dNodeSetUserValueSnapshot(scene,node,NULL)==XGE_OK);
+    check_edges(scene,0);
+    assert(xge3dSceneReleaseChecked(scene)==XGE_OK);
 }
 
 int main(void)
 {
     assert(xrtMemDebugEnabled() || xrtMemDebugEnable(true));
+    check_prepared_store();
     xge3d_scene *scene=NULL;
     xge3d_node_t node={0},child={0},clone={0};
     assert(xge3dSceneCreateOwned(&scene)==XGE_OK);
