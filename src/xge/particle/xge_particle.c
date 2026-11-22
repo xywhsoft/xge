@@ -312,6 +312,18 @@ void xgeParticleDefinitionAddRef(xge_particle_definition d)
 	if (d)
 		(void)xrtRefRetain(&d->iRefs);
 }
+int xgeParticleDefinitionShareOwned(xge_particle_definition d, xge_particle_definition *out)
+{
+	if (!out)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	*out = NULL;
+	if (!d)
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if (xrtRefRetain(&d->iRefs) < 0)
+		return XGE_ERROR_INVALID_STATE;
+	*out = d;
+	return XGE_OK;
+}
 void xgeParticleDefinitionFree(xge_particle_definition d)
 {
 	if (d && xrtRefRelease(&d->iRefs) == 0)

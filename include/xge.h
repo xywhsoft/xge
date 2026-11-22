@@ -4226,6 +4226,10 @@ XGE_API int xgeParticleDefinitionCreate(xge_particle_definition* ppDefinition,
 	const xge_particle_emitter_t* pEmitters, int iCount);
 /* 定义引用计数加一。 */
 XGE_API void xgeParticleDefinitionAddRef(xge_particle_definition pDefinition);
+/* Share immutable emitter data by acquiring one independent reference.
+ * On failure, a non-NULL output is set to NULL. */
+XGE_API int xgeParticleDefinitionShareOwned(xge_particle_definition pDefinition,
+	xge_particle_definition* ppDefinition);
 /* 定义引用计数减一，归零时释放。 */
 XGE_API void xgeParticleDefinitionFree(xge_particle_definition pDefinition);
 /* 读取定义内发射器数量。 */
