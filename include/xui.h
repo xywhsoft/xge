@@ -12534,6 +12534,8 @@ XUI_API xui_widget xuiTimeLineViewGetFrameWidget(xui_widget pWidget);
 XUI_API xui_widget xuiTimeLineViewGetViewportWidget(xui_widget pWidget);
 /* 取滚动模型（借用指针，控件销毁后失效）。 */
 XUI_API xui_scroll_model_t* xuiTimeLineViewGetModel(xui_widget pWidget);
+/* Copy the complete scroll state. The snapshot is independent of the view. */
+XUI_API int xuiTimeLineViewGetScrollSnapshot(xui_widget pWidget, xui_scroll_model_t* pSnapshot);
 /* 清空全部图层与帧。 */
 XUI_API int xuiTimeLineViewClear(xui_widget pWidget);
 /* 设置字体；NULL 恢复上下文默认字体，字体对象由调用方持有。 */
@@ -12681,6 +12683,15 @@ XUI_API int xuiTimeLineViewSetSelectionChange(xui_widget pWidget, xui_timeline_s
 XUI_API int xuiTimeLineViewSetSelectionChangeOwned(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册图层/标尺/帧/区间自绘回调（返回非 0 全量覆盖默认绘制）。回调参数均为只读借用快照。 */
 XUI_API int xuiTimeLineViewSetRenderers(xui_widget pWidget, xui_timeline_layer_renderer_proc onLayer, xui_timeline_ruler_renderer_proc onRuler, xui_timeline_frame_renderer_proc onFrame, xui_timeline_span_renderer_proc onSpan, void* pUser);
+/* Registers all four renderers as one update. Each installed renderer owns
+ * its callback environment when supplied. Records are read-only snapshots
+ * valid during the callback. A nonzero return handles default drawing;
+ * failures from callback or owner cleanup reach the active render scope. */
+XUI_API int xuiTimeLineViewSetRenderersOwned(xui_widget pWidget,
+    xui_timeline_layer_renderer_proc onLayer, void* pLayerUser, const xui_callback_owner_t* pLayerOwner,
+    xui_timeline_ruler_renderer_proc onRuler, void* pRulerUser, const xui_callback_owner_t* pRulerOwner,
+    xui_timeline_frame_renderer_proc onFrame, void* pFrameUser, const xui_callback_owner_t* pFrameOwner,
+    xui_timeline_span_renderer_proc onSpan, void* pSpanUser, const xui_callback_owner_t* pSpanOwner);
 /* 以结构体批量设置颜色组。 */
 XUI_API int xuiTimeLineViewSetColors(xui_widget pWidget, const xui_timeline_view_colors_t* pColors);
 /* 输出颜色组。 */
