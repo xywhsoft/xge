@@ -125,7 +125,7 @@ def main():
         if sha(library) != library_hash or sha(config) != config_hash:
             raise RuntimeError('Runtime or configuration changed during validation')
         report.update(status='passed', finished_at=time.time(), native_x11_text_clipboard_verified=True,
-                      runtime_unchanged=True, completed_cases=8 if args.owned_text_only else 34, executable_sha256=sha(exe))
+                      runtime_unchanged=True, completed_cases=10 if args.owned_text_only else 34, executable_sha256=sha(exe))
     except BaseException as error:
         report.update(status='failed', finished_at=time.time(), error=str(error))
         raise

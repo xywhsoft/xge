@@ -15,7 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { PUBLISH=1, READ, REFUSE, CLEAR, QUIT, PUBLISH_MIME };
+enum { PUBLISH=1, READ, REFUSE, CLEAR, QUIT, PUBLISH_MIME, READ_HTML, READ_FRAGMENT, PUBLISH_BINARY };
+static const char binary_format[]="application/x-xui-test-binary";
 static int transfer(int fd, void* data, size_t bytes, int writing)
 {
     unsigned char* p=data;
@@ -29,12 +30,16 @@ static int transfer(int fd, void* data, size_t bytes, int writing)
 }
 static int peer(int fd)
 {
-    Display* display=XOpenDisplay(NULL); Window window; Atom clipboard,utf8,targets,property,text_target,mime;
+    Display* display=XOpenDisplay(NULL); Window window;
+    Atom clipboard,utf8,targets,property,text_target,mime,html,fragment,binary,expected_target=None;
     char* payload=NULL; char* expected=NULL; unsigned payload_bytes=0,expected_bytes=0; int refuse=0,running=1;
     if(!display)return 2;
     window=XCreateSimpleWindow(display,DefaultRootWindow(display),0,0,1,1,0,0,0);
     clipboard=XInternAtom(display,"CLIPBOARD",False);utf8=XInternAtom(display,"UTF8_STRING",False);
     mime=XInternAtom(display,XGE_CLIPBOARD_FORMAT_TEXT_UTF8,False);text_target=utf8;
+    html=XInternAtom(display,XGE_CLIPBOARD_FORMAT_HTML,False);
+    fragment=XInternAtom(display,XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT,False);
+    binary=XInternAtom(display,binary_format,False);
     targets=XInternAtom(display,"TARGETS",False);property=XInternAtom(display,"XUI_CLIPBOARD_PROBE",False);
     while(running) {
         fd_set set;int xfd=ConnectionNumber(display);FD_ZERO(&set);FD_SET(fd,&set);FD_SET(xfd,&set);
@@ -46,14 +51,15 @@ static int peer(int fd)
             char* text=malloc((size_t)header[1]+1u);if(!text)break;
             if(header[1] && !transfer(fd,text,header[1],0)){free(text);break;}text[header[1]]=0;
             switch(header[0]) {
-            case PUBLISH: case REFUSE: case PUBLISH_MIME:
+            case PUBLISH: case REFUSE: case PUBLISH_MIME: case PUBLISH_BINARY:
                 free(payload);payload=text;payload_bytes=header[1];text=NULL;refuse=header[0]==REFUSE;
-                text_target=header[0]==PUBLISH_MIME?mime:utf8;
+                text_target=header[0]==PUBLISH_MIME?mime:header[0]==PUBLISH_BINARY?binary:utf8;
                 XSetSelectionOwner(display,clipboard,window,CurrentTime);XSync(display,False);
                 ack=XGetSelectionOwner(display,clipboard)==window?0u:1u;transfer(fd,&ack,sizeof(ack),1);break;
-            case READ:
+            case READ: case READ_HTML: case READ_FRAGMENT:
                 free(expected);expected=text;expected_bytes=header[1];text=NULL;
-                XConvertSelection(display,clipboard,utf8,property,window,CurrentTime);XFlush(display);break;
+                expected_target=header[0]==READ_HTML?html:header[0]==READ_FRAGMENT?fragment:utf8;
+                XConvertSelection(display,clipboard,expected_target,property,window,CurrentTime);XFlush(display);break;
             case CLEAR:
                 XSetSelectionOwner(display,clipboard,None,CurrentTime);XSync(display,False);transfer(fd,&ack,sizeof(ack),1);break;
             case QUIT: running=0;transfer(fd,&ack,sizeof(ack),1);break;
@@ -78,7 +84,7 @@ static int peer(int fd)
                 unsigned reply[2]={1,0};unsigned char* data=NULL;Atom type;int format;unsigned long bytes,after;
                 if(event.xselection.property!=None && XGetWindowProperty(display,window,property,0,LONG_MAX,True,AnyPropertyType,&type,&format,&bytes,&after,&data)==Success) {
                     reply[1]=(unsigned)bytes;
-                    if(type==utf8 && format==8 && after==0 && bytes==expected_bytes && (!bytes || (data && !memcmp(data,expected,bytes))))reply[0]=0;
+                    if(type==expected_target && format==8 && after==0 && bytes==expected_bytes && (!bytes || (data && !memcmp(data,expected,bytes))))reply[0]=0;
                 }
                 if(data)XFree(data);
                 transfer(fd,reply,sizeof(reply),1);free(expected);expected=NULL;
@@ -170,7 +176,7 @@ static int owned_frame(void* user)
         CHECK(native.clipboardGetData(&native,XUI_CLIPBOARD_FORMAT_HTML,NULL,0)==XUI_ERROR_NOT_FOUND);
         send_command(CLEAR,"",0,1);
         CHECK(snapshot && !memcmp(snapshot,paste,(size_t)length+1));
-    } else {
+    } else if(test_case==7) {
         length=2u*1024u*1024u+17u;
         char* text=malloc(length);
         CHECK(text!=NULL);
@@ -181,10 +187,66 @@ static int owned_frame(void* user)
                 bytes==length && snapshot[length]==0 && !memcmp(snapshot,text,length));
             free(text);
         }
+    } else {
+        static const char binary[]={'a',0,'z',(char)0xff};
+        void* data=NULL;
+        length=test_case==8?sizeof(binary):0;
+        send_command(PUBLISH_BINARY,binary,length,1);
+        CHECK(xgeClipboardGetDataOwned(binary_format,&data,&bytes)==XGE_OK && bytes==length);
+        send_command(CLEAR,"",0,1);
+        CHECK(length?(data && !memcmp(data,binary,length)):!data);
+        xrtFree(data);data=(void*)1;bytes=9;
+        CHECK(xgeClipboardGetDataOwned(binary_format,&data,&bytes)==XGE_ERROR_NOT_FOUND && !data && !bytes);
     }
     xrtFree(snapshot);
-    if(++test_case==8)xgeQuit();
+    if(++test_case==10)xgeQuit();
     return XGE_OK;
+}
+
+static void check_rich_copy(const char* source, bool cut)
+{
+    xui_doc_range_t before,after;
+    xui_document_snapshot snapshot=NULL;
+    xui_document_fragment fragment=NULL;
+    char* expected_html=NULL;
+    char* expected_fragment=NULL;
+    uint64_t html_bytes=0,fragment_bytes=0;
+    CHECK(setup(1,source,(unsigned)strlen(source),1)==XUI_OK);
+    uint64_t revision=xuiDocumentGetRevision(document);
+    CHECK(xuiDocumentViewGetSelection(editor,&before)==XUI_OK);
+    CHECK(xuiDocumentAcquireSnapshot(document,&snapshot)==XUI_OK);
+    CHECK(xuiDocumentFragmentCreateRange(snapshot,&before,&fragment)==XUI_OK);
+    CHECK(xuiDocumentFragmentExportHtml(fragment,&expected_html,&html_bytes)==XUI_OK && html_bytes>0);
+    CHECK(xuiDocumentFragmentSerialize(fragment,&expected_fragment,&fragment_bytes)==XUI_OK && fragment_bytes>0);
+    xuiDocumentFragmentRelease(fragment);
+    xuiDocumentSnapshotRelease(snapshot);
+
+    int result=xuiDocumentEditorExecute(editor,cut?XUI_DOC_EDIT_CUT:XUI_DOC_EDIT_COPY);
+    CHECK(result==XUI_OK && xuiDocumentGetRevision(document)==revision+(cut?1:0));
+    if(cut) {
+        CHECK(source_is("") && xuiDocumentIsDirty(document));
+        CHECK(xuiDocumentUndo(document,NULL)==XUI_OK && source_is(source) && !xuiDocumentIsDirty(document));
+        CHECK(xuiDocumentRedo(document,NULL)==XUI_OK && source_is("") && xuiDocumentIsDirty(document));
+    } else {
+        CHECK(source_is(source) && !xuiDocumentCanUndo(document) && !xuiDocumentIsDirty(document));
+        CHECK(xuiDocumentViewGetSelection(editor,&after)==XUI_OK);
+        CHECK(before.tAnchor.iNodeId==after.tAnchor.iNodeId && before.tAnchor.iOffset==after.tAnchor.iOffset &&
+              before.tCaret.iNodeId==after.tCaret.iNodeId && before.tCaret.iOffset==after.tCaret.iOffset);
+    }
+
+    void* actual=NULL;
+    size_t bytes=0;
+    CHECK(xgeClipboardGetDataOwned(XGE_CLIPBOARD_FORMAT_HTML,&actual,&bytes)==XGE_OK &&
+          bytes==html_bytes && actual && expected_html && !memcmp(actual,expected_html,bytes));
+    xrtFree(actual);
+    CHECK(xgeClipboardGetDataOwned(XUI_CLIPBOARD_FORMAT_DOCUMENT_FRAGMENT,&actual,&bytes)==XGE_OK &&
+          bytes==fragment_bytes && actual && expected_fragment && !memcmp(actual,expected_fragment,bytes));
+    xrtFree(actual);
+    expected_peer_bytes=(unsigned)(cut?fragment_bytes:html_bytes);
+    send_command(cut?READ_FRAGMENT:READ_HTML,cut?expected_fragment:expected_html,expected_peer_bytes,0);
+    xuiDocumentFreeBuffer(expected_html);
+    xuiDocumentFreeBuffer(expected_fragment);
+    waiting=1;
 }
 
 static int frame(void* user)
@@ -242,16 +304,9 @@ static int frame(void* user)
         CHECK(!strcmp(xgeClipboardGetText(),""));
         printf("X11 clipboard unavailable/empty case %u result=%d\n",test_case,result);dispose_document();test_case++;return XGE_OK;
     } else if(test_case==27 || test_case==28 || test_case>=30) {
-        const char* image=test_case>=32?"---\n":test_case>=30?"caption ![](missing.png)\n":"![](missing.png)\n";CHECK(setup(1,image,strlen(image),1)==XUI_OK);
-        uint64_t revision=xuiDocumentGetRevision(document);xui_doc_range_t before,after;
-        CHECK(xuiDocumentViewGetSelection(editor,&before)==XUI_OK);
-        result=xuiDocumentEditorExecute(editor,(test_case==27 || test_case==30 || test_case==32)?XUI_DOC_EDIT_COPY:XUI_DOC_EDIT_CUT);CHECK(result==XGE_ERROR_UNSUPPORTED);
-        CHECK(xuiDocumentGetRevision(document)==revision);CHECK(source_is(image));CHECK(!xuiDocumentCanUndo(document));CHECK(!xuiDocumentIsDirty(document));
-        CHECK(xuiDocumentViewGetSelection(editor,&after)==XUI_OK);
-        CHECK(before.tAnchor.iNodeId==after.tAnchor.iNodeId && before.tAnchor.iOffset==after.tAnchor.iOffset && before.tCaret.iNodeId==after.tCaret.iNodeId && before.tCaret.iOffset==after.tCaret.iOffset);
-        printf("X11 text-only object clipboard case %u result=%d\n",test_case,result);
-        if(result!=XGE_ERROR_UNSUPPORTED){dispose_document();test_case++;return XGE_OK;}
-        expected="external seed";length=13;
+        const char* source=test_case>=32?"---\n":test_case>=30?"caption ![](missing.png)\n":"![](missing.png)\n";
+        check_rich_copy(source,test_case==28 || test_case==31 || test_case==33);
+        return XGE_OK;
     } else if(test_case==29) {
         xge_clipboard_item_t item={XGE_CLIPBOARD_FORMAT_TEXT_UTF8,"",0};result=xgeClipboardSetItems(&item,1);CHECK(result==XGE_OK);
         expected="";length=0;printf("X11 valid single empty text write result=%d\n",result);
@@ -281,7 +336,13 @@ static int frame(void* user)
         xge_clipboard_item_t items[2]={{XGE_CLIPBOARD_FORMAT_HTML,"<b>selected</b>",15},{XGE_CLIPBOARD_FORMAT_TEXT_UTF8,selected,strlen(selected)}};
         if(test_case==24){items[1].pData=embedded;items[1].iDataSize=sizeof(embedded);}
         result=xgeClipboardSetItems(items,test_case==23?1:2);
-        CHECK(result==(test_case==22?XGE_OK:test_case==23?XGE_ERROR_UNSUPPORTED:XGE_ERROR_INVALID_ARGUMENT));
+        CHECK(result==(test_case==24?XGE_ERROR_INVALID_ARGUMENT:XGE_OK));
+        if(test_case==23) {
+            CHECK(xgeClipboardGetData(XGE_CLIPBOARD_FORMAT_TEXT_UTF8,NULL,0)==0);
+            expected_peer_bytes=(unsigned)items[0].iDataSize;
+            send_command(READ_HTML,items[0].pData,expected_peer_bytes,0);
+            waiting=1;return XGE_OK;
+        }
         if(test_case!=22){expected="external seed";length=13;}
         printf("X11 first-text/rejected write case %u result=%d\n",test_case,result);
     }
@@ -297,5 +358,5 @@ int main(int argc,char** argv)
     int result=xgeInit(&desc);if(result==XGE_OK)result=xgeRun(owned_only?owned_frame:frame,NULL);dispose_document();xgeUnit();send_command(QUIT,"",0,1);close(socket_fd);
     int status;waitpid(child,&status,0);CHECK(WIFEXITED(status) && WEXITSTATUS(status)==0);
     printf("Native X11 %s clipboard: %u completed cases, %u failures, %u checks.\n",owned_only?"owned text":"Document",test_case,failures,checks);
-    return result==XGE_OK && !failures && test_case==(owned_only?8u:34u)?0:1;
+    return result==XGE_OK && !failures && test_case==(owned_only?10u:34u)?0:1;
 }

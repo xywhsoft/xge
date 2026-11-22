@@ -698,6 +698,22 @@ void xgeClipClear(void)
     memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));__xgeClipApplyCurrent();
 }
 
+static int __xgeClipboardDeliverBytes(const void* source, size_t size,
+	void* output, size_t capacity, void** owned)
+{
+	if ( size > (size_t)INT_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
+	if ( size == 0 ) return 0;
+	if ( owned != NULL ) {
+		void* copy = xrtMalloc(size);
+		if ( copy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+		memcpy(copy, source, size);
+		*owned = copy;
+	} else if ( output != NULL && capacity != 0 ) {
+		memcpy(output, source, capacity < size ? capacity : size);
+	}
+	return (int)size;
+}
+
 static int __xgeClipboardCopyText(const char* text, size_t size, char** owned)
 {
 	if ( size == 0 ) return XGE_OK;
@@ -745,7 +761,7 @@ static void __xgeWin32ClipboardDibPngCacheClear(void)
 		sizeof(g_xgeWin32ClipboardDibPngCache));
 }
 
-static int __xgeWin32ClipboardDibPngCacheRead(void* data, size_t capacity, int* result)
+static int __xgeWin32ClipboardDibPngCacheRead(void* data, size_t capacity, void** owned, int* result)
 {
 	DWORD sequence;
 	if ( g_xgeWin32ClipboardDibPngCache.png == NULL ) return 0;
@@ -755,7 +771,11 @@ static int __xgeWin32ClipboardDibPngCacheRead(void* data, size_t capacity, int* 
 		return 0;
 	}
 	*result = (int)g_xgeWin32ClipboardDibPngCache.size;
-	if ( data != NULL && capacity > 0u ) {
+	if ( owned != NULL ) {
+		*owned = g_xgeWin32ClipboardDibPngCache.png;
+		g_xgeWin32ClipboardDibPngCache.png = NULL;
+		__xgeWin32ClipboardDibPngCacheClear();
+	} else if ( data != NULL && capacity > 0u ) {
 		memcpy(data, g_xgeWin32ClipboardDibPngCache.png,
 			capacity < g_xgeWin32ClipboardDibPngCache.size ?
 			capacity : g_xgeWin32ClipboardDibPngCache.size);
@@ -1317,7 +1337,7 @@ static int __xgeWin32DibToPng(const unsigned char* dib, size_t dib_size,
 	return result;
 }
 
-static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity)
+static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity, void** owned)
 {
 	UINT format;
 	HANDLE native;
@@ -1328,7 +1348,7 @@ static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity)
 	size_t png_size = 0u;
 	DWORD sequence = GetClipboardSequenceNumber();
 	int result;
-	if ( __xgeWin32ClipboardDibPngCacheRead(data, capacity, &result) ) return result;
+	if ( __xgeWin32ClipboardDibPngCacheRead(data, capacity, owned, &result) ) return result;
 	format = IsClipboardFormatAvailable(CF_DIBV5) ? CF_DIBV5 :
 		(IsClipboardFormatAvailable(CF_DIB) ? CF_DIB : 0u);
 	if ( format == 0u ) return XGE_ERROR_FILE_NOT_FOUND;
@@ -1352,7 +1372,11 @@ static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity)
 	xrtFree(copy);
 	if ( result != XGE_OK ) return result;
 	if ( png_size > (size_t)INT_MAX ) result = XGE_ERROR_BUFFER_TOO_SMALL;
-	else {
+	else if ( owned != NULL ) {
+		result = (int)png_size;
+		*owned = png;
+		png = NULL;
+	} else {
 		result = (int)png_size;
 		if ( data != NULL && capacity > 0u ) memcpy(data, png,
 			capacity < png_size ? capacity : png_size);
@@ -1369,7 +1393,7 @@ static int __xgeWin32ClipboardGetPngFromDib(void* data, size_t capacity)
 	return result;
 }
 
-static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
+static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t iCapacity, void** owned)
 {
 	UINT iFormat;
 	HANDLE hData;
@@ -1385,17 +1409,15 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 		 * pointer API still exposes an empty string for its callers. */
 		if ( sText == NULL ) return XGE_ERROR_BACKEND_FAILED;
 		iTextSize = strlen(sText);
-		if ( iTextSize > (size_t)INT_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
-		if ( pData != NULL && iCapacity > 0u ) memcpy(pData, sText, iCapacity < iTextSize ? iCapacity : iTextSize);
-		return (int)iTextSize;
+		return __xgeClipboardDeliverBytes(sText, iTextSize, pData, iCapacity, owned);
 	}
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 &&
-	     __xgeWin32ClipboardDibPngCacheRead(pData, iCapacity, &iResult) ) return iResult;
+	     __xgeWin32ClipboardDibPngCacheRead(pData, iCapacity, owned, &iResult) ) return iResult;
 	iFormat = __xgeWin32ClipboardFormat(sFormat);
 	if ( iFormat == 0u ) return XGE_ERROR_FILE_NOT_FOUND;
 	if ( !IsClipboardFormatAvailable(iFormat) ) {
 		if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 )
-			return __xgeWin32ClipboardGetPngFromDib(pData, iCapacity);
+			return __xgeWin32ClipboardGetPngFromDib(pData, iCapacity, owned);
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
 	if ( !__xgeWin32ClipboardOpen() ) return XGE_ERROR_BACKEND_FAILED;
@@ -1403,7 +1425,7 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 	if ( hData == NULL ) {
 		CloseClipboard();
 		return strcmp(sFormat, XGE_CLIPBOARD_FORMAT_IMAGE_PNG) == 0 ?
-			__xgeWin32ClipboardGetPngFromDib(pData, iCapacity) : XGE_ERROR_FILE_NOT_FOUND;
+			__xgeWin32ClipboardGetPngFromDib(pData, iCapacity, owned) : XGE_ERROR_FILE_NOT_FOUND;
 	}
 	iSize = GlobalSize(hData);
 	if(iSize==0u){CloseClipboard();return 0;}
@@ -1426,12 +1448,7 @@ static int __xgeWin32ClipboardGetData(const char* sFormat, void* pData, size_t i
 		iOffset = iParsedStart;
 		iEnd = iParsedEnd;
 	}
-	if ( iEnd - iOffset > (size_t)INT_MAX ) iResult = XGE_ERROR_BUFFER_TOO_SMALL;
-	else {
-		iResult = (int)(iEnd - iOffset);
-		if ( pData != NULL && iCapacity > 0u ) memcpy(pData, pSource + iOffset,
-			iCapacity < (size_t)iResult ? iCapacity : (size_t)iResult);
-	}
+	iResult = __xgeClipboardDeliverBytes(pSource+iOffset, iEnd-iOffset, pData, iCapacity, owned);
 	GlobalUnlock(hData);
 	CloseClipboard();
 	return iResult;
@@ -1529,7 +1546,7 @@ static int __xgeX11ClipboardRequest(Atom property, Atom target)
 	return event.xselection.property == property ? XGE_OK : XGE_ERROR_BACKEND_FAILED;
 }
 
-static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capacity)
+static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capacity,void** owned)
 {
     if(!_sapp.clipboard.enabled || !_sapp.x11.display)return XGE_ERROR_UNSUPPORTED;
     Atom target=XInternAtom(_sapp.x11.display,format,False);
@@ -1538,8 +1555,7 @@ static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capac
     if(owner==_sapp.x11.window && g_xgeX11Clipboard){
         for(int i=0;i<g_xgeX11Clipboard->count;++i)if(g_xgeX11Clipboard->items[i].target==target){
             const xge_x11_clipboard_item_t* item=&g_xgeX11Clipboard->items[i];
-            if(output && capacity)memcpy(output,item->data,capacity<item->bytes ? capacity:item->bytes);
-            return (int)item->bytes;
+            return __xgeClipboardDeliverBytes(item->data,item->bytes,output,capacity,owned);
         }
         return XGE_ERROR_NOT_FOUND;
     }
@@ -1549,10 +1565,8 @@ static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capac
     int bits;unsigned long count,remaining;unsigned char* data=NULL;
     if(XGetWindowProperty(_sapp.x11.display,_sapp.x11.window,property,0,LONG_MAX,True,AnyPropertyType,&actual,&bits,&count,&remaining,&data)!=Success){if(data)XFree(data);return XGE_ERROR_BACKEND_FAILED;}
     int result=XGE_ERROR_BACKEND_FAILED;
-    if(actual==target && bits==8 && !remaining && count<=INT_MAX && (!count || data)){
-        if(output && capacity)memcpy(output,data,capacity<(size_t)count ? capacity:(size_t)count);
-        result=(int)count;
-    }
+    if(actual==target && bits==8 && !remaining && (!count || data))
+        result=__xgeClipboardDeliverBytes(data,(size_t)count,output,capacity,owned);
     if(data)XFree(data);
     return result;
 }
@@ -1675,11 +1689,11 @@ int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
 {
 	if ( sFormat == NULL || sFormat[0] == 0 || (pData == NULL && iCapacity != 0u) ) return XGE_ERROR_INVALID_ARGUMENT;
 	#if defined(_WIN32) || defined(_WIN64)
-		if ( g_xge.bInitialized ) return __xgeWin32ClipboardGetData(sFormat, pData, iCapacity);
+		if ( g_xge.bInitialized ) return __xgeWin32ClipboardGetData(sFormat, pData, iCapacity, NULL);
 	#endif
 #if defined(_SAPP_LINUX)
     if(g_xge.bSokolRunning && strcmp(sFormat,XGE_CLIPBOARD_FORMAT_TEXT_UTF8)!=0)
-        return __xgeX11ClipboardGetData(sFormat,pData,iCapacity);
+        return __xgeX11ClipboardGetData(sFormat,pData,iCapacity,NULL);
 #endif
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 && g_xge.bSokolRunning ) {
 		const char* sText;
@@ -1741,20 +1755,33 @@ const char* xgeClipboardGetText(void)
 	#endif
 }
 
-int xgeClipboardGetTextOwned(char** psText, size_t* piLength)
+static bool g_xgeClipboardOwnedRead;
+
+static int __xgeClipboardOwnedReadBegin(void)
 {
-	static bool reading;
-	if ( psText != NULL ) *psText = NULL;
-	if ( piLength != NULL ) *piLength = 0;
-	if ( psText == NULL || piLength == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	int status = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
 	if ( status != XGE_OK ) return status;
-	if ( reading ) return XGE_ERROR_BUSY;
+	if ( g_xgeClipboardOwnedRead ) return XGE_ERROR_BUSY;
 	/* A delayed OS transfer can run native callbacks. Keep the engine live
 	 * until the clipboard read has closed and its snapshot is independent. */
 	status = __xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+	if ( status == XGE_OK ) g_xgeClipboardOwnedRead = true;
+	return status;
+}
+
+static void __xgeClipboardOwnedReadEnd(void)
+{
+	g_xgeClipboardOwnedRead = false;
+	(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
+}
+
+int xgeClipboardGetTextOwned(char** psText, size_t* piLength)
+{
+	if ( psText != NULL ) *psText = NULL;
+	if ( piLength != NULL ) *piLength = 0;
+	if ( psText == NULL || piLength == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status = __xgeClipboardOwnedReadBegin();
 	if ( status != XGE_OK ) return status;
-	reading = true;
 #if defined(_WIN32) || defined(_WIN64)
 	status = __xgeWin32ClipboardReadText(NULL, psText, piLength);
 	if ( status == XGE_ERROR_NOT_FOUND ) status = XGE_OK;
@@ -1777,7 +1804,34 @@ int xgeClipboardGetTextOwned(char** psText, size_t* piLength)
 #else
 	status = XGE_ERROR_UNSUPPORTED;
 #endif
-	reading = false;
-	(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
+	__xgeClipboardOwnedReadEnd();
 	return status;
+}
+
+int xgeClipboardGetDataOwned(const char* sFormat, void** ppData, size_t* piLength)
+{
+	if ( ppData != NULL ) *ppData = NULL;
+	if ( piLength != NULL ) *piLength = 0;
+	if ( sFormat == NULL || !sFormat[0] || ppData == NULL || piLength == NULL )
+		return XGE_ERROR_INVALID_ARGUMENT;
+	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
+		char* text = NULL;
+		int status = xgeClipboardGetTextOwned(&text, piLength);
+		*ppData = text;
+		return status;
+	}
+	int result = __xgeClipboardOwnedReadBegin();
+	if ( result != XGE_OK ) return result;
+#if defined(_WIN32) || defined(_WIN64)
+	result = __xgeWin32ClipboardGetData(sFormat, NULL, 0, ppData);
+	if ( result == XGE_ERROR_FILE_NOT_FOUND ) result = XGE_ERROR_NOT_FOUND;
+#elif defined(_SAPP_LINUX)
+	result = g_xge.bSokolRunning ? __xgeX11ClipboardGetData(sFormat, NULL, 0, ppData) : XGE_ERROR_UNSUPPORTED;
+#else
+	result = XGE_ERROR_UNSUPPORTED;
+#endif
+	__xgeClipboardOwnedReadEnd();
+	if ( result < 0 ) return result;
+	*piLength = (size_t)result;
+	return XGE_OK;
 }

@@ -3960,9 +3960,14 @@ XGE_API int xgeClipboardSetItemsWithTransfer(const xge_clipboard_item_t* items,
  * before publication; immediate bytes stay pinned through the backend call. */
 XGE_API int xgeDataObjectCopyToClipboardWithTransfer(xge_data_object data,
     const xn_transfer_services_v1* services);
-/* 按格式读剪贴板数据（多格式仅 Windows）；Windows image/png 可从
- * 常见未压缩 CF_DIB(V5) 转换。 */
+/* Read a format into caller storage and return its full byte count.
+ * Windows image/png can be converted from uncompressed CF_DIB(V5). */
 XGE_API int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity);
+/* Read one independent format snapshot on the engine creator thread. Release
+ * a non-null result with xrtFree. A present empty payload returns NULL and zero;
+ * an absent binary format returns XGE_ERROR_NOT_FOUND. The UTF-8 text format
+ * follows xgeClipboardGetTextOwned. Outputs are cleared on failure. */
+XGE_API int xgeClipboardGetDataOwned(const char* sFormat, void** ppData, size_t* piLength);
 /* 写纯文本到剪贴板。 */
 XGE_API void xgeClipboardSetText(const char* sText);
 /* 读剪贴板纯文本；空剪贴板返回 NULL。 */

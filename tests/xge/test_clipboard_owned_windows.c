@@ -1,6 +1,7 @@
 /* Link the direct-XRT XGE archive with
  * --wrap=__imp_IsClipboardFormatAvailable,--wrap=__imp_OpenClipboard,
- * --wrap=__imp_GetClipboardData,--wrap=__imp_CloseClipboard.
+ * --wrap=__imp_GetClipboardData,--wrap=__imp_CloseClipboard,
+ * --wrap=__imp_GetClipboardSequenceNumber.
  * The shim never opens or changes the user's clipboard. */
 #define WIN32_LEAN_AND_MEAN
 #ifndef XRT_MODULE_ALL
@@ -15,13 +16,14 @@
 #include <string.h>
 
 static HGLOBAL payload;
+static UINT payload_format=CF_UNICODETEXT;
+static DWORD sequence=1;
 static bool opened, blocked, reenter;
 static unsigned requests;
 
 static BOOL WINAPI hasFormat(UINT format)
 {
-    assert(format == CF_UNICODETEXT);
-    return payload != NULL;
+    return payload != NULL && format == payload_format;
 }
 
 static BOOL WINAPI openClipboard(HWND owner)
@@ -41,12 +43,14 @@ static BOOL WINAPI closeClipboard(void)
 
 static HANDLE WINAPI getClipboard(UINT format)
 {
-    assert(opened && format == CF_UNICODETEXT);
+    assert(opened && format == payload_format);
     ++requests;
     if (reenter) {
         char* result = (char*)1;
         size_t bytes = 7;
         assert(xgeClipboardGetTextOwned(&result, &bytes) == XGE_ERROR_BUSY && !result && !bytes);
+        void* data = (void*)1;
+        assert(xgeClipboardGetDataOwned("application/x-owned-test",&data,&bytes) == XGE_ERROR_BUSY && !data && !bytes);
         assert(xgeUnitChecked() == XGE_ERROR_BUSY);
     }
     return payload;
@@ -56,9 +60,12 @@ BOOL (WINAPI* __wrap___imp_IsClipboardFormatAvailable)(UINT) = hasFormat;
 BOOL (WINAPI* __wrap___imp_OpenClipboard)(HWND) = openClipboard;
 HANDLE (WINAPI* __wrap___imp_GetClipboardData)(UINT) = getClipboard;
 BOOL (WINAPI* __wrap___imp_CloseClipboard)(void) = closeClipboard;
+static DWORD WINAPI clipboardSequence(void) { return sequence; }
+DWORD (WINAPI* __wrap___imp_GetClipboardSequenceNumber)(void) = clipboardSequence;
 
-static void setPayload(const WCHAR* source, size_t bytes)
+static void setPayload(const void* source, size_t bytes)
 {
+    ++sequence;
     if (payload) GlobalFree(payload);
     payload = GlobalAlloc(GMEM_MOVEABLE, bytes);
     assert(payload);
@@ -67,6 +74,53 @@ static void setPayload(const WCHAR* source, size_t bytes)
     memset(target, 1, GlobalSize(payload));
     memcpy(target, source, bytes);
     GlobalUnlock(payload);
+}
+
+static void* checkFormattedReads(void)
+{
+    static const char type[]="application/x-owned-test";
+    static const unsigned char custom[]={1,0,3,0,4,0,0,9};
+    void* data=(void*)1;
+    size_t bytes=23;
+    assert(xgeClipboardGetDataOwned(type,&data,&bytes)==XGE_ERROR_NOT_FOUND && !data && !bytes);
+    payload_format=RegisterClipboardFormatA(type);
+    assert(payload_format);
+    setPayload(custom,sizeof(custom));
+    assert(xgeClipboardGetDataOwned(type,&data,&bytes)==XGE_OK && data);
+    assert(bytes==GlobalSize(payload) && bytes>=sizeof(custom) && !memcmp(data,custom,sizeof(custom)));
+    xrtFree(data);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xgeClipboardGetDataOwned(type,&data,&bytes)==XGE_ERROR_OUT_OF_MEMORY && !data && !bytes && !opened);
+    xrtMemDebugFailClear();xrtClearError();
+
+    struct {
+        BITMAPV5HEADER header;
+        unsigned char pixel[4];
+    } dib={0};
+    dib.header.bV5Size=sizeof(dib.header);
+    dib.header.bV5Width=1;
+    dib.header.bV5Height=-1;
+    dib.header.bV5Planes=1;
+    dib.header.bV5BitCount=32;
+    dib.header.bV5Compression=BI_BITFIELDS;
+    dib.header.bV5SizeImage=4;
+    dib.header.bV5RedMask=0x00ff0000;
+    dib.header.bV5GreenMask=0x0000ff00;
+    dib.header.bV5BlueMask=0x000000ff;
+    dib.header.bV5AlphaMask=0xff000000;
+    dib.pixel[2]=0xff;dib.pixel[3]=0xff;
+    payload_format=CF_DIBV5;
+    setPayload(&dib,sizeof(dib));
+    int required=xgeClipboardGetData(XGE_CLIPBOARD_FORMAT_IMAGE_PNG,NULL,0);
+    assert(required>8);
+    assert(xrtMemDebugFailAfter(0));
+    assert(xgeClipboardGetDataOwned(XGE_CLIPBOARD_FORMAT_IMAGE_PNG,&data,&bytes)==XGE_OK && bytes==(size_t)required);
+    assert(!xrtMemDebugFailTriggered());
+    xrtMemDebugFailClear();
+    assert(!memcmp(data,"\x89PNG\r\n\x1a\n",8));
+    int width=0,height=0;
+    assert(xgeImageInfoMemory(data,(int)bytes,&width,&height)==XGE_OK && width==1 && height==1);
+    return data;
 }
 
 static int32 foreignThread(ptr unused)
@@ -122,7 +176,10 @@ int main(void)
     blocked = false;
     assert(xgeClipboardGetTextOwned(&text, &bytes) == XGE_OK && !memcmp(text,expected,sizeof(expected)));
     xrtFree(text);
+    void* png=checkFormattedReads();
     assert(xgeUnitChecked() == XGE_OK && !memcmp(retained,expected,sizeof(expected)));
+    assert(!memcmp(png,"\x89PNG\r\n\x1a\n",8));
+    xrtFree(png);
     xrtFree(retained);
     GlobalFree(payload);
     puts("XGE_CLIPBOARD_WINDOWS_OWNED_OK");
