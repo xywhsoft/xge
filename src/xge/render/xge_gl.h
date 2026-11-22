@@ -216,6 +216,7 @@ typedef void (APIENTRYP PFNGLVIEWPORTPROC)(GLint x, GLint y, GLsizei width, GLsi
 typedef void (APIENTRYP PFNGLCLEARPROC)(GLbitfield mask);
 typedef void (APIENTRYP PFNGLCLEARCOLORPROC)(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
 typedef void (APIENTRYP PFNGLFLUSHPROC)(void);
+typedef void (APIENTRYP PFNGLFINISHPROC)(void);
 typedef void (APIENTRYP PFNGLENABLEPROC)(GLenum cap);
 typedef void (APIENTRYP PFNGLDISABLEPROC)(GLenum cap);
 typedef void (APIENTRYP PFNGLSCISSORPROC)(GLint x, GLint y, GLsizei width, GLsizei height);

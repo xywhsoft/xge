@@ -214,7 +214,7 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 		}
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	if ( !xge_glReadPixels || !xge_glGetIntegerv || !xge_glBindFramebuffer ||
+	if ( !xge_glFinish || !xge_glReadPixels || !xge_glGetIntegerv || !xge_glBindFramebuffer ||
 	     !xge_glGetError || !xge_glPixelStorei || !xge_glBindBuffer ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
@@ -237,6 +237,9 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 		xge_glPixelStorei(arrPackNames[iRow], iRow == 0 ? 1 : 0);
 	}
 	xge_glBindFramebuffer(iReadFramebuffer, __xgeRenderTargetFramebuffer(pTarget));
+	/* Complete the queued draws before this synchronous CPU snapshot. Single-
+	 * worker llvmpipe can otherwise return stale tiles from a reused target. */
+	xge_glFinish();
 	xge_glReadPixels(0, 0, pTarget->iWidth, pTarget->iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
 	iRet = xge_glGetError() == GL_NO_ERROR ? XGE_OK : XGE_ERROR_GPU_FAILED;
 	xge_glBindFramebuffer(iReadFramebuffer, (GLuint)iPreviousReadFramebuffer);
