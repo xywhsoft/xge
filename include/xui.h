@@ -12172,6 +12172,8 @@ XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* 
 XUI_API void xuiTableViewCellOutputInit(xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputCreate(xui_table_view_cell_output_t** ppCell);
 XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* pCell);
+/* Shares the heap cell on its creator thread. The new owner closes independently. */
+XUI_API int xuiTableViewCellOutputShareOwned(xui_table_view_cell_output_t* pCell, xui_table_view_cell_output_t** ppCell);
 XUI_API int xuiTableViewCellOutputReleaseChecked(xui_table_view_cell_output_t* pCell);
 /* pConsumed is independent caller storage; true means one owner was consumed,
  * including final cleanup failure without a diagnostic. False is retryable. */
@@ -12240,6 +12242,8 @@ XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merg
 XUI_API int xuiTableViewSetMergeProviderOwned(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册表头自绘回调；传入列描述仅在回调期间有效，回调可销毁控件或上下文。 */
 XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser);
+/* Owns the callback through paint. The column and its strings are valid until the callback returns. */
+XUI_API int xuiTableViewSetHeaderRendererOwned(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册单元格自绘回调（覆盖默认文本绘制）；传入单元格仅在回调期间有效，回调可销毁控件或上下文。 */
 XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender, void* pUser);
 /* 按列注册文本格式化回调；同步调用，输出缓冲仅在本次回调内有效。 */

@@ -144,6 +144,14 @@ XUI_API int xuiTableViewCellOutputAddRef(xui_table_view_cell_output_t* cell)
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     return XUI_OK;
 }
+XUI_API int xuiTableViewCellOutputShareOwned(xui_table_view_cell_output_t* cell,xui_table_view_cell_output_t** output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    int status=xuiTableViewCellOutputAddRef(cell);
+    if(status==XUI_OK)*output=cell;
+    return status;
+}
 XUI_API int xuiTableViewCellOutputReleaseOwnerChecked(xui_table_view_cell_output_t* cell,bool* consumed)
 {
     if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;

@@ -262,6 +262,30 @@ static int __xuiTableViewCallbackCurrent(xui_widget pWidget, const xui_table_vie
 		pData->iCallbackGeneration == iGeneration;
 }
 
+static int __xuiTableViewInvokeHeaderRenderer(xui_widget widget,xui_table_view_data_t* data,
+    int index,xui_draw_context draw,xui_rect_t visible,int state,uint64_t generation,bool owned)
+{
+    xui_table_view_header_renderer_proc callback=data->onHeaderRender;
+    void* user=data->pHeaderRenderUser;
+    xui_table_view_column_t column=data->arrColumns[index];
+    xui_table_column_storage_t* storage=data->pColumnStorage;
+    int status=__xuiTableColumnStorageRetain(storage);
+    if(status!=XUI_OK)return status;
+
+    xui_callback_snapshot_t snapshot={0};
+    if(owned)status=xuiInternalCallbackSnapshotBeginReturned(widget,&data->onHeaderRender,&user,&snapshot);
+    int handled=0;
+    if(status==XUI_OK && __xuiTableViewCallbackCurrent(widget,data,generation))
+        handled=callback(widget,index,&column,draw,visible,state,user);
+    if(owned && snapshot.pContext){
+        if(handled<0)status=handled;
+        xerror* first=status!=XUI_OK ? xrtTakeError():NULL;
+        status=xuiInternalCallbackSnapshotEndOutcome(&snapshot,status,first);
+    }
+    __xuiTableColumnStorageRelease(storage);
+    return status==XUI_OK ? handled:status;
+}
+
 static int __xuiTableViewFloatValid(float fValue)
 {
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_LAYOUT_UNBOUNDED);
@@ -2614,7 +2638,6 @@ static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_conte
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_data_t tResolved;
-	xui_table_view_column_t tColumn;
 	uint64_t iGeneration;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
@@ -2676,9 +2699,10 @@ static int __xuiTableViewCacheRenderOperation(xui_widget pWidget, xui_draw_conte
 			if ( i == pData->iSortColumn ) iState |= XUI_TABLE_CELL_FOCUS;
 			if ( pData->onHeaderRender != NULL ) {
 				iGeneration = pData->iCallbackGeneration;
-				tColumn = pData->arrColumns[i];
-				iHandled = pData->onHeaderRender(pWidget, i, &tColumn, pDraw, tVisible, iState, pData->pHeaderRenderUser);
-				if ( !__xuiTableViewCallbackCurrent(pWidget, pData, iGeneration) ) return XUI_OK;
+				bool owned=xuiInternalCallbackSlotOwned(pWidget,&pData->onHeaderRender);
+				iHandled=__xuiTableViewInvokeHeaderRenderer(pWidget,pData,i,pDraw,tVisible,iState,iGeneration,owned);
+				if ( !__xuiTableViewCallbackCurrent(pWidget,pData,iGeneration) )
+					return owned && iHandled<0 ? iHandled:XUI_OK;
 				if ( iHandled < 0 ) return iHandled;
 				if ( iHandled ) continue;
 			}
@@ -4091,6 +4115,23 @@ XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merg
 	return XUI_OK;
 }
 
+XUI_API int xuiTableViewSetHeaderRendererOwned(xui_widget widget,
+    xui_table_view_header_renderer_proc callback,void* user,const xui_callback_owner_t* owner)
+{
+    xui_table_view_data_t* data=__xuiTableViewGetData(widget);
+    if(!data)return XUI_ERROR_INVALID_ARGUMENT;
+    int status=__xuiTableViewInvalidate(widget,data,XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    if(status!=XUI_OK)return status;
+    xui_callback_update_t update={0};
+    status=xuiInternalCallbackUpdateBegin(widget,&data->onHeaderRender,callback!=NULL,user,owner,&update);
+    if(status!=XUI_OK)return status;
+    data->onHeaderRender=callback;
+    data->pHeaderRenderUser=user;
+    ++data->iCallbackGeneration;
+    xuiInternalCallbackUpdatePublish(&update);
+    return xuiInternalCallbackUpdateEnd(&update,XUI_OK);
+}
+
 XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser)
 {
 	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
@@ -4099,6 +4140,8 @@ XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_hea
 	iRet = __xuiTableViewInvalidate(pWidget, pData,
 		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( xuiInternalCallbackSlotOwned(pWidget,&pData->onHeaderRender) )
+		return xuiTableViewSetHeaderRendererOwned(pWidget,onRender,pUser,NULL);
 	pData->onHeaderRender = onRender;
 	pData->pHeaderRenderUser = pUser;
 	pData->iCallbackGeneration++;
