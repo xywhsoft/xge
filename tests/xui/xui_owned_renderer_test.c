@@ -12,6 +12,23 @@ typedef struct RendererOwner {
     bool selfClear,failNull,closeContext;
     xui_context context;
 } RendererOwner;
+typedef struct FontOutputFinalize {
+    xui_doc_font_output_t* output;
+    xui_font replacement;
+    unsigned* calls;
+} FontOutputFinalize;
+static int finalizeFontOutput(xui_proxy proxy,void* raw)
+{
+    (void)proxy;
+    FontOutputFinalize* state=raw;
+    ++*state->calls;
+    assert(xuiDocumentFontOutputGetFont(state->output)==NULL);
+    assert(xuiDocumentFontOutputClear(state->output)==XUI_ERROR_BUSY);
+    assert(xuiDocumentFontOutputDisposeChecked(state->output)==XUI_ERROR_BUSY);
+    assert(xuiDocumentFontOutputSetFont(state->output,state->replacement)==XUI_ERROR_BUSY);
+    return XUI_ERROR_BACKEND_FAILED;
+}
+
 static int rendererFont(xui_document_renderer renderer,const char* family,uint32 marks,float size,
     xui_doc_font_output_t* output,void* raw)
 {
@@ -35,12 +52,28 @@ static int rendererFont(xui_document_renderer renderer,const char* family,uint32
     resource->iFlags=flags&~XUI_PROXY_OWNED_ANYTHREAD_FINALIZE;
     assert(xuiDocumentFontOutputClear(output)==XUI_ERROR_BUSY);
     assert(xuiDocumentFontOutputGetFont(output)==temporary && temporaryDrops==0);
+    size_t candidateRefs=refs(xuiFontOwnership(owner->font));
+    assert(xuiDocumentFontOutputSetFont(output,owner->font)==XUI_ERROR_BUSY);
+    assert(xuiDocumentFontOutputGetFont(output)==temporary && temporaryDrops==0);
+    assert(refs(xuiFontOwnership(owner->font))==candidateRefs);
     resource->iCreatorThread=creator;
     resource->iFlags=flags;
     assert(xuiDocumentFontOutputClear(output)==XUI_OK);
     assert(xuiDocumentFontOutputGetFont(output)==NULL && temporaryDrops==1);
     assert(xuiDocumentFontOutputSetFont(output,NULL)==XUI_OK);
-    assert(xuiDocumentFontOutputSetFont(output,owner->font)==XUI_OK);return 1;
+
+    unsigned reentrantDrops=0;
+    void* payload=NULL;
+    xui_font retiring=NULL;
+    assert(xuiFontCreateOwned(xuiFontGetProxy(owner->font),sizeof(FontOutputFinalize),
+        finalizeFontOutput,&retiring,&payload)==XUI_OK);
+    *(FontOutputFinalize*)payload=(FontOutputFinalize){output,owner->font,&reentrantDrops};
+    assert(xuiDocumentFontOutputSetFont(output,retiring)==XUI_OK);
+    assert(xuiFontReleaseChecked(retiring)==XUI_OK);
+    assert(xuiDocumentFontOutputSetFont(output,owner->font)==XUI_ERROR_BACKEND_FAILED);
+    assert(reentrantDrops==1 && xuiDocumentFontOutputGetFont(output)==owner->font);
+    assert(refs(xuiFontOwnership(owner->font))==candidateRefs+1);
+    return 1;
 }
 static xui_document rendererDocument(void)
 {
