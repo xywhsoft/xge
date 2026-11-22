@@ -859,8 +859,13 @@ static int __xuiProxyXgeClipboardSetItemsWithTransfer(xui_proxy proxy,const xui_
 static int __xuiProxyXgeClipboardGetData(xui_proxy pProxy, const char* sFormat,
 	void* pData, size_t iCapacity)
 {
-	if ( pProxy == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	return xgeClipboardGetData(sFormat, pData, iCapacity);
+	if ( pProxy == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int result = xgeClipboardGetData(sFormat, pData, iCapacity);
+	/* XGE's missing-format and short-buffer codes have different numeric
+	 * meanings in XUI. Preserve positive byte counts and shared codes. */
+	if ( result == XGE_ERROR_NOT_FOUND || result == XGE_ERROR_BUFFER_TOO_SMALL )
+		return __xuiProxyXgeResult(result);
+	return result;
 }
 
 static int __xuiProxyXgeImeGetEnabled(xui_proxy pProxy)

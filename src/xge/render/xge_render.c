@@ -698,6 +698,19 @@ void xgeClipClear(void)
     memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));__xgeClipApplyCurrent();
 }
 
+static int __xgeClipboardCopyText(const char* text, size_t size, char** owned)
+{
+	if ( size == 0 ) return XGE_OK;
+	if ( size == SIZE_MAX ) return XGE_ERROR_BUFFER_TOO_SMALL;
+	if ( !xrtUtf8Valid((xstrview){text,size}, NULL) ) return XGE_ERROR_RESOURCE_FAILED;
+	char* copy = (char*)xrtMalloc(size + 1u);
+	if ( copy == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	memcpy(copy, text, size);
+	copy[size] = '\0';
+	*owned = copy;
+	return XGE_OK;
+}
+
 #if defined(_WIN32) || defined(_WIN64)
 #define XGE_WIN32_CLIPBOARD_RETRY_COUNT 30
 #define XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS 2
@@ -869,27 +882,19 @@ static int __xgeWin32ClipboardSetText(const char* sText)
 	return 1;
 }
 
-static const char* __xgeWin32ClipboardGetText(void)
+static int __xgeWin32ClipboardReadText(DWORD* piSequence, char** psOwned, size_t* piLength)
 {
 	HANDLE hData;
 	const WCHAR* sWide;
 	SIZE_T iWideCapacity;
 	SIZE_T iWideLength;
-	DWORD iSequence;
-	DWORD iReadSequence;
+	DWORD iReadSequence = 0u;
 	int iUtf8Size;
 	int iConverted;
 	int iAttempt;
 
-	iSequence = GetClipboardSequenceNumber();
-	if ( g_xge.iClipboardCacheValid && iSequence != 0u && g_xge.sClipboardText != NULL && g_xge.iClipboardSequence == (uint32_t)iSequence ) {
-		return g_xge.sClipboardText;
-	}
-	if ( !IsClipboardFormatAvailable(CF_UNICODETEXT) ) {
-		return __xgeWin32ClipboardCacheEmpty(iSequence);
-	}
+	if ( !IsClipboardFormatAvailable(CF_UNICODETEXT) ) return XGE_ERROR_NOT_FOUND;
 	hData = NULL;
-	iReadSequence = 0u;
 	for ( iAttempt = 0; iAttempt < XGE_WIN32_CLIPBOARD_RETRY_COUNT; iAttempt++ ) {
 		if ( OpenClipboard(__xgeWin32ClipboardOwner()) ) {
 			iReadSequence = GetClipboardSequenceNumber();
@@ -903,13 +908,11 @@ static const char* __xgeWin32ClipboardGetText(void)
 			Sleep(XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS);
 		}
 	}
-	if ( hData == NULL ) {
-		return __xgeWin32ClipboardCacheInvalidate();
-	}
+	if ( hData == NULL ) return XGE_ERROR_BACKEND_FAILED;
 	sWide = (const WCHAR*)GlobalLock(hData);
 	if ( sWide == NULL ) {
 		CloseClipboard();
-		return __xgeWin32ClipboardCacheInvalidate();
+		return XGE_ERROR_BACKEND_FAILED;
 	}
 	iWideCapacity = GlobalSize(hData) / sizeof(WCHAR);
 	iWideLength = 0u;
@@ -917,23 +920,47 @@ static const char* __xgeWin32ClipboardGetText(void)
 	if ( (iWideLength == iWideCapacity) || (iWideLength >= (SIZE_T)INT_MAX) ) {
 		GlobalUnlock(hData);
 		CloseClipboard();
-		return __xgeWin32ClipboardCacheInvalidate();
+		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	/* Include the validated terminator; never ask Win32 to scan clipboard memory. */
 	iWideLength++;
-	iUtf8Size = WideCharToMultiByte(CP_UTF8, 0, sWide, (int)iWideLength, NULL, 0, NULL, NULL);
-	if ( iUtf8Size <= 0 || !__xgeWin32ClipboardCacheReserve((size_t)iUtf8Size) ) {
-		GlobalUnlock(hData);
-		CloseClipboard();
-		return __xgeWin32ClipboardCacheInvalidate();
+	DWORD flags = psOwned != NULL ? WC_ERR_INVALID_CHARS : 0;
+	int status = XGE_OK;
+	char* output = NULL;
+	iUtf8Size = WideCharToMultiByte(CP_UTF8, flags, sWide, (int)iWideLength, NULL, 0, NULL, NULL);
+	if ( iUtf8Size <= 0 ) {
+		status = XGE_ERROR_RESOURCE_FAILED;
+	} else if ( psOwned == NULL || iUtf8Size > 1 ) {
+		if ( psOwned != NULL ) output = (char*)xrtMalloc((size_t)iUtf8Size);
+		else if ( __xgeWin32ClipboardCacheReserve((size_t)iUtf8Size) ) output = g_xge.sClipboardText;
+		if ( output == NULL ) status = XGE_ERROR_OUT_OF_MEMORY;
+		else {
+			iConverted = WideCharToMultiByte(CP_UTF8, flags, sWide, (int)iWideLength,
+				output, iUtf8Size, NULL, NULL);
+			if ( iConverted != iUtf8Size ) status = XGE_ERROR_RESOURCE_FAILED;
+		}
 	}
-	iConverted = WideCharToMultiByte(CP_UTF8, 0, sWide, (int)iWideLength,
-		g_xge.sClipboardText, iUtf8Size, NULL, NULL);
 	GlobalUnlock(hData);
 	CloseClipboard();
-	if ( iConverted <= 0 ) {
-		return __xgeWin32ClipboardCacheInvalidate();
+	if ( psOwned != NULL ) {
+		if ( status == XGE_OK ) {
+			*psOwned = output;
+			*piLength = (size_t)iUtf8Size - 1u;
+		} else xrtFree(output);
 	}
+	if ( piSequence != NULL ) *piSequence = iReadSequence;
+	return status;
+}
+
+static const char* __xgeWin32ClipboardGetText(void)
+{
+	DWORD iSequence = GetClipboardSequenceNumber();
+	if ( g_xge.iClipboardCacheValid && iSequence != 0u && g_xge.sClipboardText != NULL && g_xge.iClipboardSequence == (uint32_t)iSequence )
+		return g_xge.sClipboardText;
+	DWORD iReadSequence;
+	int status = __xgeWin32ClipboardReadText(&iReadSequence, NULL, NULL);
+	if ( status == XGE_ERROR_NOT_FOUND ) return __xgeWin32ClipboardCacheEmpty(iSequence);
+	if ( status != XGE_OK ) return __xgeWin32ClipboardCacheInvalidate();
 	g_xge.iClipboardSequence = (uint32_t)iReadSequence;
 	g_xge.iClipboardCacheValid = 1;
 	return g_xge.sClipboardText;
@@ -1488,6 +1515,20 @@ static int __xgeX11ClipboardSetItems(const xge_clipboard_item_t* items,int count
     if(text>=0 && items[text].iDataSize)memcpy(_sapp.clipboard.buffer,items[text].pData,items[text].iDataSize);
     _sapp.clipboard.buffer[text>=0 ? items[text].iDataSize:0u]=0;xrtFree(old);return XGE_OK;
 }
+static int __xgeX11ClipboardRequest(Atom property, Atom target)
+{
+	XEvent event;
+	XConvertSelection(_sapp.x11.display, _sapp.x11.CLIPBOARD, target,
+		property, _sapp.x11.window, CurrentTime);
+	if ( !_sapp_x11_wait_for_event(SelectionNotify, 0.1, &event) ||
+		event.xselection.requestor != _sapp.x11.window ||
+		event.xselection.selection != _sapp.x11.CLIPBOARD ||
+		event.xselection.target != target )
+		return XGE_ERROR_BACKEND_FAILED;
+	if ( event.xselection.property == None ) return XGE_ERROR_NOT_FOUND;
+	return event.xselection.property == property ? XGE_OK : XGE_ERROR_BACKEND_FAILED;
+}
+
 static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capacity)
 {
     if(!_sapp.clipboard.enabled || !_sapp.x11.display)return XGE_ERROR_UNSUPPORTED;
@@ -1502,9 +1543,9 @@ static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capac
         }
         return XGE_ERROR_NOT_FOUND;
     }
-    Atom property=XInternAtom(_sapp.x11.display,"XGE_SELECTION",False),actual;XEvent event;
-    XConvertSelection(_sapp.x11.display,_sapp.x11.CLIPBOARD,target,property,_sapp.x11.window,CurrentTime);
-    if(!_sapp_x11_wait_for_event(SelectionNotify,0.1,&event) || event.xselection.requestor!=_sapp.x11.window || event.xselection.selection!=_sapp.x11.CLIPBOARD || event.xselection.target!=target || event.xselection.property!=property)return XGE_ERROR_BACKEND_FAILED;
+    Atom property=XInternAtom(_sapp.x11.display,"XGE_SELECTION",False),actual;
+    int status=__xgeX11ClipboardRequest(property,target);
+    if(status!=XGE_OK)return status;
     int bits;unsigned long count,remaining;unsigned char* data=NULL;
     if(XGetWindowProperty(_sapp.x11.display,_sapp.x11.window,property,0,LONG_MAX,True,AnyPropertyType,&actual,&bits,&count,&remaining,&data)!=Success){if(data)XFree(data);return XGE_ERROR_BACKEND_FAILED;}
     int result=XGE_ERROR_BACKEND_FAILED;
@@ -1516,29 +1557,32 @@ static int __xgeX11ClipboardGetData(const char* format,void* output,size_t capac
     return result;
 }
 
-static int __xgeX11ClipboardGetText(const char** text)
+static int __xgeX11ClipboardGetText(const char** text, char** owned)
 {
 	Window owner;
-	Atom property, actual_type;
-	XEvent event;
+	Atom property, target, actual_type;
 	int actual_format, result;
 	unsigned long bytes, remaining;
 	unsigned char* data = NULL;
-	if ( !_sapp.clipboard.enabled || _sapp.clipboard.buffer == NULL ) return XGE_ERROR_UNSUPPORTED;
+	if ( !_sapp.clipboard.enabled || _sapp.clipboard.buffer == NULL || !_sapp.x11.display ) return XGE_ERROR_UNSUPPORTED;
 	owner = XGetSelectionOwner(_sapp.x11.display, _sapp.x11.CLIPBOARD);
-	if ( owner == None ) { *text = ""; return 0; }
+	if ( owner == None ) { if ( text ) *text = ""; return 0; }
 	if ( owner == _sapp.x11.window ) {
-		*text = _sapp.clipboard.buffer;
-		return (int)strlen(*text);
+		size_t size = strlen(_sapp.clipboard.buffer);
+		if ( owned != NULL ) {
+			result = __xgeClipboardCopyText(_sapp.clipboard.buffer, size, owned);
+			if ( result != XGE_OK ) return result;
+		} else *text = _sapp.clipboard.buffer;
+		return (int)size;
 	}
 	property = XInternAtom(_sapp.x11.display, "SAPP_SELECTION", False);
-	XConvertSelection(_sapp.x11.display, _sapp.x11.CLIPBOARD, _sapp.x11.UTF8_STRING,
-		property, _sapp.x11.window, CurrentTime);
-	if ( !_sapp_x11_wait_for_event(SelectionNotify, 0.1, &event) ||
-		event.xselection.requestor != _sapp.x11.window ||
-		event.xselection.selection != _sapp.x11.CLIPBOARD ||
-		event.xselection.target != _sapp.x11.UTF8_STRING || event.xselection.property != property )
-		return XGE_ERROR_BACKEND_FAILED;
+	target = _sapp.x11.UTF8_STRING;
+	result = __xgeX11ClipboardRequest(property, target);
+	if ( result == XGE_ERROR_NOT_FOUND ) {
+		target = XInternAtom(_sapp.x11.display, XGE_CLIPBOARD_FORMAT_TEXT_UTF8, False);
+		result = __xgeX11ClipboardRequest(property, target);
+	}
+	if ( result != XGE_OK ) return XGE_ERROR_BACKEND_FAILED;
 	if ( XGetWindowProperty(_sapp.x11.display, _sapp.x11.window, property, 0, LONG_MAX,
 		True, AnyPropertyType, &actual_type, &actual_format, &bytes, &remaining, &data) != Success ) {
 		if ( data != NULL ) XFree(data);
@@ -1546,20 +1590,25 @@ static int __xgeX11ClipboardGetText(const char** text)
 	}
 	/* Incremental transfers and unsupported types must fail before a caller
  * changes its document; they must not be mistaken for cached/empty text. */
-	if ( actual_type != _sapp.x11.UTF8_STRING || actual_format != 8 || remaining ||
+	if ( actual_type != target || actual_format != 8 || remaining ||
 		(bytes && (data == NULL || memchr(data, 0, (size_t)bytes))) ) {
 		if ( data != NULL ) XFree(data);
 		return XGE_ERROR_BACKEND_FAILED;
 	}
-	result = __xgeX11ClipboardReserve((size_t)bytes);
-	if ( result == XGE_OK ) {
-		if ( bytes ) memcpy(_sapp.clipboard.buffer, data, (size_t)bytes);
-		_sapp.clipboard.buffer[bytes] = 0;
-		*text = _sapp.clipboard.buffer;
-		result = (int)bytes;
+	if ( bytes >= (unsigned long)INT_MAX ) {
+		result = XGE_ERROR_BUFFER_TOO_SMALL;
+	} else if ( owned != NULL ) {
+		result = __xgeClipboardCopyText((const char*)data, (size_t)bytes, owned);
+	} else {
+		result = __xgeX11ClipboardReserve((size_t)bytes);
+		if ( result == XGE_OK ) {
+			if ( bytes ) memcpy(_sapp.clipboard.buffer, data, (size_t)bytes);
+			_sapp.clipboard.buffer[bytes] = 0;
+			*text = _sapp.clipboard.buffer;
+		}
 	}
 	if ( data != NULL ) XFree(data);
-	return result;
+	return result == XGE_OK ? (int)bytes : result;
 }
 #endif
 
@@ -1629,13 +1678,14 @@ int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity)
 		if ( g_xge.bInitialized ) return __xgeWin32ClipboardGetData(sFormat, pData, iCapacity);
 	#endif
 #if defined(_SAPP_LINUX)
-    if(g_xge.bSokolRunning)return __xgeX11ClipboardGetData(sFormat,pData,iCapacity);
+    if(g_xge.bSokolRunning && strcmp(sFormat,XGE_CLIPBOARD_FORMAT_TEXT_UTF8)!=0)
+        return __xgeX11ClipboardGetData(sFormat,pData,iCapacity);
 #endif
 	if ( strcmp(sFormat, XGE_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 && g_xge.bSokolRunning ) {
 		const char* sText;
 		size_t iSize;
 		#if defined(_SAPP_LINUX)
-			int result = __xgeX11ClipboardGetText(&sText);
+			int result = __xgeX11ClipboardGetText(&sText, NULL);
 			if ( result < 0 ) return result;
 			iSize = (size_t)result;
 		#else
@@ -1684,9 +1734,50 @@ const char* xgeClipboardGetText(void)
 	}
 	#if defined(_SAPP_LINUX)
 		const char* text;
-		return __xgeX11ClipboardGetText(&text) >= 0 ? text : "";
+		return __xgeX11ClipboardGetText(&text, NULL) >= 0 ? text : "";
 	#else
 		const char* text = sapp_get_clipboard_string();
 		return text != NULL ? text : "";
 	#endif
+}
+
+int xgeClipboardGetTextOwned(char** psText, size_t* piLength)
+{
+	static bool reading;
+	if ( psText != NULL ) *psText = NULL;
+	if ( piLength != NULL ) *piLength = 0;
+	if ( psText == NULL || piLength == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( status != XGE_OK ) return status;
+	if ( reading ) return XGE_ERROR_BUSY;
+	/* A delayed OS transfer can run native callbacks. Keep the engine live
+	 * until the clipboard read has closed and its snapshot is independent. */
+	status = __xgeGraphicsOwnerAcquire(&g_xgeGraphicsLifetime);
+	if ( status != XGE_OK ) return status;
+	reading = true;
+#if defined(_WIN32) || defined(_WIN64)
+	status = __xgeWin32ClipboardReadText(NULL, psText, piLength);
+	if ( status == XGE_ERROR_NOT_FOUND ) status = XGE_OK;
+#elif defined(_SAPP_LINUX)
+	status = g_xge.bSokolRunning ? __xgeX11ClipboardGetText(NULL, psText) : XGE_ERROR_UNSUPPORTED;
+	if ( status >= 0 ) {
+		*piLength = (size_t)status;
+		status = XGE_OK;
+	}
+#elif defined(_SAPP_MACOS) || defined(_SAPP_EMSCRIPTEN)
+	status = XGE_ERROR_UNSUPPORTED;
+	if ( g_xge.bSokolRunning && _sapp.clipboard.enabled ) {
+		const char* text = sapp_get_clipboard_string();
+		if ( text != NULL ) {
+			size_t size = strlen(text);
+			status = __xgeClipboardCopyText(text, size, psText);
+			if ( status == XGE_OK ) *piLength = size;
+		} else status = XGE_ERROR_BACKEND_FAILED;
+	}
+#else
+	status = XGE_ERROR_UNSUPPORTED;
+#endif
+	reading = false;
+	(void)__xgeGraphicsOwnerRelease(&g_xgeGraphicsLifetime);
+	return status;
 }

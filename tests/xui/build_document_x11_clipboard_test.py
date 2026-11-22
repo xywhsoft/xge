@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out-dir', type=Path, help='New directory for executables, logs and report')
     parser.add_argument('--runtime-dir', type=Path, help='Existing normal/default Linux runtime; otherwise build one')
+    parser.add_argument('--owned-text-only', action='store_true', help='Run the XGE owned UTF-8 text cases')
     args = parser.parse_args()
     if not sys.platform.startswith('linux'):
         parser.error('Run on Linux/X11 (including WSL); Windows uses the native clipboard regression entry.')
@@ -120,11 +121,11 @@ def main():
         subprocess.run(['xauth', '-f', str(auth), 'add', env['DISPLAY'], '.', cookie], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         report['private_display'] = env['DISPLAY']
-        check('native-run', [exe, '--isolated-display'])
+        check('native-run', [exe, '--isolated-display'] + (['--owned-text-only'] if args.owned_text_only else []))
         if sha(library) != library_hash or sha(config) != config_hash:
             raise RuntimeError('Runtime or configuration changed during validation')
         report.update(status='passed', finished_at=time.time(), native_x11_text_clipboard_verified=True,
-                      runtime_unchanged=True, completed_cases=34, executable_sha256=sha(exe))
+                      runtime_unchanged=True, completed_cases=8 if args.owned_text_only else 34, executable_sha256=sha(exe))
     except BaseException as error:
         report.update(status='failed', finished_at=time.time(), error=str(error))
         raise

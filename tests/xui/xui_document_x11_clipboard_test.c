@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "xui_document_ui.h"
 #include "xge.h"
+#include "xrt.h"
 #include "tests/xui/xui_test_proxy.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -14,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { PUBLISH=1, READ, REFUSE, CLEAR, QUIT };
+enum { PUBLISH=1, READ, REFUSE, CLEAR, QUIT, PUBLISH_MIME };
 static int transfer(int fd, void* data, size_t bytes, int writing)
 {
     unsigned char* p=data;
@@ -28,11 +29,12 @@ static int transfer(int fd, void* data, size_t bytes, int writing)
 }
 static int peer(int fd)
 {
-    Display* display=XOpenDisplay(NULL); Window window; Atom clipboard,utf8,targets,property;
+    Display* display=XOpenDisplay(NULL); Window window; Atom clipboard,utf8,targets,property,text_target,mime;
     char* payload=NULL; char* expected=NULL; unsigned payload_bytes=0,expected_bytes=0; int refuse=0,running=1;
     if(!display)return 2;
     window=XCreateSimpleWindow(display,DefaultRootWindow(display),0,0,1,1,0,0,0);
     clipboard=XInternAtom(display,"CLIPBOARD",False);utf8=XInternAtom(display,"UTF8_STRING",False);
+    mime=XInternAtom(display,XGE_CLIPBOARD_FORMAT_TEXT_UTF8,False);text_target=utf8;
     targets=XInternAtom(display,"TARGETS",False);property=XInternAtom(display,"XUI_CLIPBOARD_PROBE",False);
     while(running) {
         fd_set set;int xfd=ConnectionNumber(display);FD_ZERO(&set);FD_SET(fd,&set);FD_SET(xfd,&set);
@@ -44,8 +46,9 @@ static int peer(int fd)
             char* text=malloc((size_t)header[1]+1u);if(!text)break;
             if(header[1] && !transfer(fd,text,header[1],0)){free(text);break;}text[header[1]]=0;
             switch(header[0]) {
-            case PUBLISH: case REFUSE:
+            case PUBLISH: case REFUSE: case PUBLISH_MIME:
                 free(payload);payload=text;payload_bytes=header[1];text=NULL;refuse=header[0]==REFUSE;
+                text_target=header[0]==PUBLISH_MIME?mime:utf8;
                 XSetSelectionOwner(display,clipboard,window,CurrentTime);XSync(display,False);
                 ack=XGetSelectionOwner(display,clipboard)==window?0u:1u;transfer(fd,&ack,sizeof(ack),1);break;
             case READ:
@@ -65,10 +68,10 @@ static int peer(int fd)
                 reply.xselection.type=SelectionNotify;reply.xselection.display=display;reply.xselection.requestor=req->requestor;
                 reply.xselection.selection=req->selection;reply.xselection.target=req->target;reply.xselection.time=req->time;reply.xselection.property=None;
                 Atom destination=req->property==None?req->target:req->property;
-                if(!refuse && req->target==utf8) {
-                    XChangeProperty(display,req->requestor,destination,utf8,8,PropModeReplace,(unsigned char*)payload,(int)payload_bytes);reply.xselection.property=destination;
+                if(!refuse && req->target==text_target) {
+                    XChangeProperty(display,req->requestor,destination,text_target,8,PropModeReplace,(unsigned char*)payload,(int)payload_bytes);reply.xselection.property=destination;
                 } else if(!refuse && req->target==targets) {
-                    XChangeProperty(display,req->requestor,destination,XA_ATOM,32,PropModeReplace,(unsigned char*)&utf8,1);reply.xselection.property=destination;
+                    XChangeProperty(display,req->requestor,destination,XA_ATOM,32,PropModeReplace,(unsigned char*)&text_target,1);reply.xselection.property=destination;
                 }
                 XSendEvent(display,req->requestor,False,0,&reply);XFlush(display);
             } else if(event.type==SelectionNotify && expected) {
@@ -141,6 +144,49 @@ static int setup(unsigned mode,const char* text,unsigned length,int whole_source
     if(result==XUI_OK)result=xuiDocumentViewSetSelection(editor,&range);
     return result;
 }
+
+static int owned_frame(void* user)
+{
+    (void)user;
+    char* snapshot=NULL;
+    size_t bytes=0;
+    unsigned length=(unsigned)strlen(paste);
+    if(test_case==0 || test_case==1 || test_case==2) {
+        send_command(test_case==0?CLEAR:test_case==1?PUBLISH:REFUSE,"",0,1);
+        CHECK(xgeClipboardGetTextOwned(&snapshot,&bytes)==(test_case==2?XGE_ERROR_BACKEND_FAILED:XGE_OK));
+        CHECK(!snapshot && !bytes);
+    } else if(test_case==3 || test_case==4) {
+        send_command(PUBLISH,test_case==3?"\xff":"a\0b",test_case==3?1:3,1);
+        CHECK(xgeClipboardGetTextOwned(&snapshot,&bytes)==(test_case==3?XGE_ERROR_RESOURCE_FAILED:XGE_ERROR_BACKEND_FAILED));
+        CHECK(!snapshot && !bytes);
+    } else if(test_case==5 || test_case==6) {
+        send_command(test_case==5?PUBLISH:PUBLISH_MIME,paste,length,1);
+        CHECK(xgeClipboardGetTextOwned(&snapshot,&bytes)==XGE_OK && snapshot && bytes==length);
+        char copy[sizeof(paste)];
+        CHECK(xgeClipboardGetData(XGE_CLIPBOARD_FORMAT_TEXT_UTF8,copy,sizeof(copy))==(int)length &&
+            !memcmp(copy,paste,length));
+        CHECK(xgeClipboardGetData(XGE_CLIPBOARD_FORMAT_HTML,NULL,0)==XGE_ERROR_NOT_FOUND);
+        xui_proxy_t native=xuiProxyXge();
+        CHECK(native.clipboardGetData(&native,XUI_CLIPBOARD_FORMAT_HTML,NULL,0)==XUI_ERROR_NOT_FOUND);
+        send_command(CLEAR,"",0,1);
+        CHECK(snapshot && !memcmp(snapshot,paste,(size_t)length+1));
+    } else {
+        length=2u*1024u*1024u+17u;
+        char* text=malloc(length);
+        CHECK(text!=NULL);
+        if(text) {
+            memset(text,'p',length);
+            send_command(PUBLISH,text,length,1);
+            CHECK(xgeClipboardGetTextOwned(&snapshot,&bytes)==XGE_OK && snapshot &&
+                bytes==length && snapshot[length]==0 && !memcmp(snapshot,text,length));
+            free(text);
+        }
+    }
+    xrtFree(snapshot);
+    if(++test_case==8)xgeQuit();
+    return XGE_OK;
+}
+
 static int frame(void* user)
 {
     (void)user;
@@ -243,12 +289,13 @@ static int frame(void* user)
 }
 int main(int argc,char** argv)
 {
-    if(argc!=2 || strcmp(argv[1],"--isolated-display") || !getenv("XUI_TEST_PRIVATE_DISPLAY")) {fprintf(stderr,"Run with the private-display test driver.\n");return 2;}
+    bool owned_only=argc==3 && !strcmp(argv[2],"--owned-text-only");
+    if((argc!=2 && !owned_only) || strcmp(argv[1],"--isolated-display") || !getenv("XUI_TEST_PRIVATE_DISPLAY")) {fprintf(stderr,"Run with the private-display test driver.\n");return 2;}
     setvbuf(stdout,NULL,_IOLBF,0);int sockets[2];if(socketpair(AF_UNIX,SOCK_STREAM,0,sockets))return 2;
     pid_t child=fork();if(child<0)return 2;if(!child){close(sockets[0]);_exit(peer(sockets[1]));}
     close(sockets[1]);socket_fd=sockets[0];xge_desc_t desc={.iRunMode=XGE_RUN_GAME_LOOP,.iWidth=32,.iHeight=32,.sTitle="Private X11 clipboard test",.iFlags=XGE_INIT_OFFSCREEN};
-    int result=xgeInit(&desc);if(result==XGE_OK)result=xgeRun(frame,NULL);dispose_document();xgeUnit();send_command(QUIT,"",0,1);close(socket_fd);
+    int result=xgeInit(&desc);if(result==XGE_OK)result=xgeRun(owned_only?owned_frame:frame,NULL);dispose_document();xgeUnit();send_command(QUIT,"",0,1);close(socket_fd);
     int status;waitpid(child,&status,0);CHECK(WIFEXITED(status) && WEXITSTATUS(status)==0);
-    printf("Native X11 Document clipboard: %u completed cases, %u failures, %u checks.\n",test_case,failures,checks);
-    return result==XGE_OK && !failures && test_case==34?0:1;
+    printf("Native X11 %s clipboard: %u completed cases, %u failures, %u checks.\n",owned_only?"owned text":"Document",test_case,failures,checks);
+    return result==XGE_OK && !failures && test_case==(owned_only?8u:34u)?0:1;
 }

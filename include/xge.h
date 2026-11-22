@@ -3967,6 +3967,11 @@ XGE_API int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapaci
 XGE_API void xgeClipboardSetText(const char* sText);
 /* 读剪贴板纯文本；空剪贴板返回 NULL。 */
 XGE_API const char* xgeClipboardGetText(void);
+/* Read one independent UTF-8 snapshot on the engine creator thread.
+ * The caller releases a non-null result with xrtFree. The length excludes
+ * the terminator. Missing or empty text returns XGE_OK with NULL and zero.
+ * On failure the result is cleared. X11 reads require an active clipboard. */
+XGE_API int xgeClipboardGetTextOwned(char** psText, size_t* piLength);
 
 /* 按键当前是否按住。 */
 XGE_API int xgeKeyDown(int iKey);
