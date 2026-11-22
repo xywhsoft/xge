@@ -2153,6 +2153,7 @@ typedef struct xui_code_regex_rule_t xui_code_regex_rule_t;
 typedef struct xui_code_fold_range_t xui_code_fold_range_t;
 typedef struct xui_code_layout_desc_t xui_code_layout_desc_t;
 typedef struct xui_code_layout_line_t xui_code_layout_line_t;
+typedef struct xui_code_layout_snapshot_t* xui_code_layout_snapshot;
 typedef struct xui_code_hit_t xui_code_hit_t;
 typedef struct xui_code_edit_text_hit_t xui_code_edit_text_hit_t;
 typedef struct xui_code_search_result_t xui_code_search_result_t;
@@ -8214,6 +8215,15 @@ XUI_API int xuiCodeFoldCBuildDocumentRanges(xui_code_document pDocument, xui_cod
 XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
 /* 布局视口相交行（含换行/制表投影），*pLineCount 返回总数，可能大于容量。 */
 XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount, xui_vec2_t* pContentSize, xui_rect_t* pTextRect);
+/* 一次布局收集完整可见行。结果不再引用文档或折叠区间；失败时返回空快照。 */
+XUI_API int xuiCodeLayoutCapture(const xui_code_layout_desc_t* pDesc, xui_code_layout_snapshot* ppSnapshot);
+XUI_API int xuiCodeLayoutSnapshotAddRef(xui_code_layout_snapshot pSnapshot);
+XUI_API void xuiCodeLayoutSnapshotRelease(xui_code_layout_snapshot pSnapshot);
+XUI_API int xuiCodeLayoutSnapshotGetGeometry(const struct xui_code_layout_snapshot_t* pSnapshot,
+	xui_vec2_t* pContentSize, xui_rect_t* pTextRect);
+/* 行数组只读，借用到最后一份快照引用释放为止。 */
+XUI_API int xuiCodeLayoutSnapshotGetLines(const struct xui_code_layout_snapshot_t* pSnapshot,
+	const xui_code_layout_line_t** ppLines, size_t* piCount);
 /* 布局空间命中测试（坐标转行/列/偏移）。 */
 XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, float fY, xui_code_hit_t* pHit);
 /* 计算指定行/列的光标矩形。 */

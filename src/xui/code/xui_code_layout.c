@@ -9,6 +9,14 @@
 #include <stdint.h>
 #include <string.h>
 
+struct xui_code_layout_snapshot_t {
+	xatomic32 iReferences;
+	xui_code_layout_line_t* pLines;
+	int iLineCount;
+	xui_vec2_t tContentSize;
+	xui_rect_t tTextRect;
+};
+
 static int __xuiCodeLayoutTabColumns(const xui_code_layout_desc_t* pDesc)
 {
 	return (pDesc != NULL && pDesc->iTabColumns > 0) ? pDesc->iTabColumns : 4;
@@ -460,7 +468,24 @@ static int __xuiCodeLayoutVisualRow(const xui_code_layout_desc_t* pDesc,
 	return (iWantedRow < 0 || bFound) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
 
-XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount, xui_vec2_t* pContentSize, xui_rect_t* pTextRect)
+static int __xuiCodeLayoutGrowLines(xui_code_layout_snapshot pSnapshot, int* pCapacity)
+{
+	const size_t iMaximum = SIZE_MAX / sizeof(*pSnapshot->pLines);
+	const int iLimit = iMaximum > INT_MAX ? INT_MAX : (int)iMaximum;
+	if ( *pCapacity >= iLimit ) return XUI_ERROR_LIMIT_EXCEEDED;
+	int iNewCapacity = *pCapacity > iLimit / 2 ? iLimit : *pCapacity * 2;
+	if ( iNewCapacity == 0 ) iNewCapacity = iLimit < 8 ? iLimit : 8;
+	xui_code_layout_line_t* pNew = xrtRealloc(pSnapshot->pLines,
+		(size_t)iNewCapacity * sizeof(*pNew));
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pSnapshot->pLines = pNew;
+	*pCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
+static int __xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc,
+	xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount,
+	xui_vec2_t* pContentSize, xui_rect_t* pTextRect, xui_code_layout_snapshot pSnapshot)
 {
 	int* pVisible;
 	int iVisibleCount;
@@ -535,6 +560,18 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 				(double)iVisualRow * fLineHeight - pDesc->fScrollY;
 			if ( fY + fLineHeight > pDesc->tViewportRect.fY &&
 			     fY < pDesc->tViewportRect.fY + pDesc->tViewportRect.fH ) {
+				if ( iOut == INT_MAX ) {
+					xrtFree(pVisible);
+					return XUI_ERROR_LIMIT_EXCEEDED;
+				}
+				if ( iOut >= iLineCapacity && pSnapshot != NULL ) {
+					iRet = __xuiCodeLayoutGrowLines(pSnapshot, &iLineCapacity);
+					if ( iRet != XUI_OK ) {
+						xrtFree(pVisible);
+						return iRet;
+					}
+					pLines = pSnapshot->pLines;
+				}
 				if ( pLines != NULL && iOut < iLineCapacity ) {
 					memset(&pLines[iOut], 0, sizeof(pLines[iOut]));
 					pLines[iOut].iSize = sizeof(pLines[iOut]);
@@ -550,10 +587,6 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 						xrtFree(pVisible);
 						return iRet;
 					}
-				}
-				if ( iOut == INT_MAX ) {
-					xrtFree(pVisible);
-					return XUI_ERROR_LIMIT_EXCEEDED;
 				}
 				iOut++;
 			}
@@ -585,6 +618,74 @@ XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, 
 	*pLineCount = iOut;
 	if ( pTextRect != NULL ) *pTextRect = tTextRect;
 	xrtFree(pVisible);
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc,
+	xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount,
+	xui_vec2_t* pContentSize, xui_rect_t* pTextRect)
+{
+	return __xuiCodeLayoutBuildVisibleLines(pDesc, pLines, iLineCapacity, pLineCount,
+		pContentSize, pTextRect, NULL);
+}
+
+XUI_API int xuiCodeLayoutCapture(const xui_code_layout_desc_t* pDesc, xui_code_layout_snapshot* ppSnapshot)
+{
+	if ( ppSnapshot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppSnapshot = NULL;
+	if ( !__xuiCodeLayoutGeometryValid(pDesc) || pDesc->pDocument == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_code_layout_snapshot pSnapshot = xrtMalloc(sizeof(*pSnapshot));
+	if ( pSnapshot == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pSnapshot->pLines = NULL;
+	int iRet = __xuiCodeLayoutBuildVisibleLines(pDesc, NULL, 0, &pSnapshot->iLineCount,
+		&pSnapshot->tContentSize, &pSnapshot->tTextRect, pSnapshot);
+	if ( iRet != XUI_OK ) {
+		xrtFree(pSnapshot->pLines);
+		xrtFree(pSnapshot);
+		return iRet;
+	}
+	xrtAtomic32Init(&pSnapshot->iReferences, 1);
+	*ppSnapshot = pSnapshot;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeLayoutSnapshotAddRef(xui_code_layout_snapshot pSnapshot)
+{
+	if ( pSnapshot == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	uint32_t iRefs = xrtAtomic32Load(&pSnapshot->iReferences, XMEMORY_RELAXED);
+	do {
+		if ( iRefs == 0 || iRefs == UINT32_MAX ) return XUI_ERROR_LIMIT_EXCEEDED;
+	} while ( !xrtAtomic32CompareExchange(&pSnapshot->iReferences, &iRefs, iRefs + 1,
+		XMEMORY_RELAXED, XMEMORY_RELAXED) );
+	return XUI_OK;
+}
+
+XUI_API void xuiCodeLayoutSnapshotRelease(xui_code_layout_snapshot pSnapshot)
+{
+	if ( pSnapshot != NULL && xrtAtomic32FetchSub(&pSnapshot->iReferences, 1, XMEMORY_ACQ_REL) == 1 ) {
+		xrtFree(pSnapshot->pLines);
+		xrtFree(pSnapshot);
+	}
+}
+
+XUI_API int xuiCodeLayoutSnapshotGetGeometry(const struct xui_code_layout_snapshot_t* pSnapshot,
+	xui_vec2_t* pContentSize, xui_rect_t* pTextRect)
+{
+	if ( pSnapshot == NULL || pContentSize == NULL || pTextRect == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	*pContentSize = pSnapshot->tContentSize;
+	*pTextRect = pSnapshot->tTextRect;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeLayoutSnapshotGetLines(const struct xui_code_layout_snapshot_t* pSnapshot,
+	const xui_code_layout_line_t** ppLines, size_t* piCount)
+{
+	if ( pSnapshot == NULL || ppLines == NULL || piCount == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	*ppLines = pSnapshot->pLines;
+	*piCount = (size_t)pSnapshot->iLineCount;
 	return XUI_OK;
 }
 
