@@ -72,6 +72,71 @@ static void __xuiToolbarOverflow(xui_widget pWidget, int iFirst, int iCount, voi
 	}
 }
 
+typedef struct xui_toolbar_overflow_probe_t {
+	size_t iRefs;
+	int iCalls;
+	int iFirst;
+	int iCount;
+	int iClearResult;
+} xui_toolbar_overflow_probe_t;
+
+static bool __xuiToolbarOverflowRefCount(const void* pRef, size_t* pCount)
+{
+	*pCount = ((const xui_toolbar_overflow_probe_t*)pRef)->iRefs;
+	return true;
+}
+
+static bool __xuiToolbarOverflowTrace(const void* pRef, xrtownershipvisitor onVisit, void* pUser)
+{
+	(void)pRef;
+	(void)onVisit;
+	(void)pUser;
+	return true;
+}
+
+static bool __xuiToolbarOverflowHold(const void* pRef)
+{
+	++((xui_toolbar_overflow_probe_t*)pRef)->iRefs;
+	return true;
+}
+
+static bool __xuiToolbarOverflowDrop(const void* pRef)
+{
+	--((xui_toolbar_overflow_probe_t*)pRef)->iRefs;
+	return true;
+}
+
+static void __xuiToolbarOverflowClearSelf(xui_widget pWidget, int iFirst, int iCount, void* pUser)
+{
+	xui_toolbar_overflow_probe_t* pProbe = pUser;
+	if ( pProbe->iRefs != 3u ) return;
+	pProbe->iClearResult = xuiToolbarSetOverflow(pWidget, 1, 24.0f, NULL, NULL);
+	if ( pProbe->iRefs != 2u ) return;
+	pProbe->iFirst = iFirst;
+	pProbe->iCount = iCount;
+	++pProbe->iCalls;
+}
+
+static bool __xuiToolbarCheckOwnedOverflow(xui_widget pWidget)
+{
+	static const xrtownershipops tOps = {__xuiToolbarOverflowRefCount, __xuiToolbarOverflowTrace};
+	xui_toolbar_overflow_probe_t tProbe = {.iRefs = 1u, .iClearResult = XUI_ERROR_INVALID_STATE};
+	const xui_callback_owner_t tOwner = {{&tProbe, &tOps}, __xuiToolbarOverflowHold, __xuiToolbarOverflowDrop};
+	const uint64_t iOverflow = (uint64_t)XUI_TOOLBAR_ITEM_CAPACITY + 2u;
+	int iFirst = xuiToolbarGetOverflowFirst(pWidget);
+	int iCount = xuiToolbarGetOverflowCount(pWidget);
+	bool bPassed = false;
+	if ( xuiToolbarSetOverflowOwned(pWidget, 1, 24.0f, __xuiToolbarOverflowClearSelf, &tProbe, &tOwner) == XUI_OK &&
+	     tProbe.iRefs == 2u ) {
+		int iResult = xuiWidgetPerformAccessibleAction(pWidget, iOverflow, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL);
+		bPassed = iResult == XUI_OK && tProbe.iCalls == 1 && tProbe.iClearResult == XUI_OK &&
+			tProbe.iRefs == 1u && tProbe.iFirst == iFirst && tProbe.iCount == iCount &&
+			xuiWidgetPerformAccessibleAction(pWidget, iOverflow, XUI_ACCESSIBLE_ACTION_ACTIVATE, NULL) == XUI_ERROR_UNSUPPORTED;
+	}
+	(void)xuiToolbarSetOverflow(pWidget, 1, 24.0f, NULL, NULL);
+	return bPassed;
+}
+
 static void __xuiToolbarDestroySelect(xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	xui_toolbar_test_destroy_t* pDestroy = (xui_toolbar_test_destroy_t*)pUser;
@@ -766,6 +831,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiToolbarGetSelectCount(pToolbar) == tEvents.iSelectCount, "select count");
 	XUI_TEST_CHECK(xuiToolbarGetOverflowSelectCount(pToolbar) == tEvents.iOverflowCount, "overflow count");
 	XUI_TEST_CHECK(xuiToolbarGetChangeCount(pToolbar) > 0, "change count");
+	XUI_TEST_CHECK(__xuiToolbarCheckOwnedOverflow(pToolbar), "owned overflow can clear itself while pinned");
 
 cleanup:
 	if ( pContext != NULL ) {

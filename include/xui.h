@@ -13118,6 +13118,9 @@ XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_pro
 XUI_API int xuiToolbarSetContextMenuOwned(xui_widget pWidget, xui_toolbar_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
 /* 启用溢出收纳（窄空间折叠进菜单）；回调可销毁 Toolbar 或其 Context。 */
 XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser);
+/* Hold the callback and its owner until replacement or toolbar destruction.
+ * Dispatch pins the selected owner until the callback returns. */
+XUI_API int xuiToolbarSetOverflowOwned(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser, const xui_callback_owner_t* pOwner);
 /* 读取溢出开关。 */
 XUI_API int xuiToolbarIsOverflowEnabled(xui_widget pWidget);
 /* 批量设置工具项；Toolbar 复制 sText/sTooltip，pIcon/pUser 仍由调用方管理，输入 tRect 被忽略。 */

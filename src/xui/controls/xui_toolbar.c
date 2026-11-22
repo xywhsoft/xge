@@ -856,6 +856,7 @@ static int __xuiToolbarSetHover(xui_widget pWidget, xui_toolbar_data_t* pData, i
 static int __xuiToolbarActivateOverflow(xui_widget pWidget, xui_toolbar_data_t* pData)
 {
 	xui_toolbar_overflow_proc onOverflow;
+	xui_callback_snapshot_t tSnapshot = {0};
 	void* pOverflowUser;
 	int iOverflowFirst;
 	int iOverflowCount;
@@ -866,10 +867,15 @@ static int __xuiToolbarActivateOverflow(xui_widget pWidget, xui_toolbar_data_t* 
 	pOverflowUser = pData->pOverflowUser;
 	iOverflowFirst = pData->iOverflowFirst;
 	iOverflowCount = pData->iOverflowCount;
+	if ( pWidget->pEventOwners && pWidget->pEventOwners->pBindings ) {
+		int iRet = xuiInternalCallbackSnapshotBeginReported(
+			pWidget, &pData->onOverflow, &pOverflowUser, &tSnapshot);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	__xuiToolbarIncrementCount(&pData->iOverflowSelectCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	onOverflow(pWidget, iOverflowFirst, iOverflowCount, pOverflowUser);
-	return XUI_OK;
+	return xuiInternalCallbackSnapshotEnd(&tSnapshot, XUI_OK);
 }
 
 static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)
@@ -1907,6 +1913,56 @@ XUI_API int xuiToolbarSetContextMenu(xui_widget pWidget, xui_toolbar_context_pro
 	return XUI_OK;
 }
 
+static void __xuiToolbarApplyOverflow(xui_toolbar_data_t* pData, int bEnabled,
+	float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser)
+{
+	pData->bOverflowEnabled = bEnabled;
+	pData->tMetrics.fOverflowSize = fButtonSize;
+	pData->onOverflow = onOverflow;
+	pData->pOverflowUser = pUser;
+	if ( !bEnabled ) {
+		pData->bOverflowFocused = 0;
+		pData->bOverflowActive = 0;
+		pData->iOverflowFirst = -1;
+		pData->iOverflowCount = 0;
+		memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
+	}
+	__xuiToolbarMarkChanged(pData);
+}
+
+static int __xuiToolbarPreflightOverflow(xui_widget pWidget, void* pEnabled)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_STATE;
+	if ( !*(const int*)pEnabled && pData->bOverflowActive ) {
+		xui_context pContext = xuiWidgetGetContext(pWidget);
+		int iRet = __xuiToolbarCancelPress(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( __xuiToolbarGetData(pWidget) != pData || pContext->bCloseRequested ||
+		     pContext->bDestroyPending || pContext->bDestroying ) return XUI_ERROR_INVALID_STATE;
+	}
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiToolbarSetOverflowOwned(xui_widget pWidget, int bEnabled, float fButtonSize,
+	xui_toolbar_overflow_proc onOverflow, void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	if ( pData == NULL || !__xuiToolbarMetricValid(fButtonSize) || fButtonSize <= 0.0f ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	int bNewEnabled = bEnabled ? 1 : 0;
+	xui_callback_update_t tUpdate = {0};
+	int iRet = xuiInternalCallbackUpdateBeginValidated(pWidget, &pData->onOverflow,
+		onOverflow != NULL, pUser, pOwner, __xuiToolbarPreflightOverflow, &bNewEnabled, &tUpdate);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiToolbarApplyOverflow(pData, bNewEnabled, fButtonSize, onOverflow, pUser);
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
+	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
@@ -1923,6 +1979,9 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 	int bNewEnabled;
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onOverflow) ) {
+		return xuiToolbarSetOverflowOwned(pWidget, bEnabled, fButtonSize, onOverflow, pUser, NULL);
+	}
 	if ( !__xuiToolbarMetricValid(fButtonSize) || fButtonSize <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	bNewEnabled = bEnabled ? 1 : 0;
 	if ( pData->bOverflowEnabled == bNewEnabled && pData->tMetrics.fOverflowSize == fButtonSize &&
@@ -1942,18 +2001,7 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 	onOldOverflow = pData->onOverflow;
 	pOldOverflowUser = pData->pOverflowUser;
 	iOldChangeCount = pData->iChangeCount;
-	pData->bOverflowEnabled = bNewEnabled;
-	pData->tMetrics.fOverflowSize = fButtonSize;
-	pData->onOverflow = onOverflow;
-	pData->pOverflowUser = pUser;
-	if ( !pData->bOverflowEnabled ) {
-		pData->bOverflowFocused = 0;
-		pData->bOverflowActive = 0;
-		pData->iOverflowFirst = -1;
-		pData->iOverflowCount = 0;
-		memset(&pData->tOverflowRect, 0, sizeof(pData->tOverflowRect));
-	}
-	__xuiToolbarMarkChanged(pData);
+	__xuiToolbarApplyOverflow(pData, bNewEnabled, fButtonSize, onOverflow, pUser);
 	iRet = xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) {
 		pData->bOverflowEnabled = bOldEnabled;
