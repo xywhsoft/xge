@@ -12259,6 +12259,9 @@ XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_
 XUI_API int xuiTableViewSetColumnFormatterOwned(xui_widget pWidget, int iColumn, xui_table_view_format_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner);
 /* Copies into the current bounded native text buffer and keeps truncated UTF-8 complete. */
 XUI_API int xuiTableViewFormatOutputSetText(xui_table_view_format_output_t* pOutput, xstrview tText);
+/* Column painting runs after the cell renderer and before the table renderer. Return
+ * zero to continue or a positive value if handled. Column replacement retires it. */
+XUI_API int xuiTableViewSetColumnRendererOwned(xui_widget pWidget, int iColumn, xui_table_view_cell_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 设置字体。 */
 XUI_API int xuiTableViewSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
