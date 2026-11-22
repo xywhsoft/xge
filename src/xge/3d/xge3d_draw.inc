@@ -239,6 +239,15 @@ int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch)
     return XGE_OK;
 }
 
+int xge3dBillboardBatchShareOwned(xge3d_billboard_batch *batch,xge3d_billboard_batch **out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=NULL;
+    int status=xge3dBillboardBatchAddRef(batch);
+    if(status==XGE_OK)*out=batch;
+    return status;
+}
+
 void xge3dBillboardBatchFree(xge3d_billboard_batch *batch)
 {
     if(batch&&atomic_fetch_sub_explicit(&batch->refs,1,memory_order_acq_rel)==1)xrtFree(batch);

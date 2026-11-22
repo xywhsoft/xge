@@ -5748,6 +5748,8 @@ typedef struct xge3d_billboard_batch xge3d_billboard_batch;
 XGE_API int xge3dBillboardBatchCreate(const xge3d_billboard_geometry_t *items,
     size_t count,xge3d_billboard_batch **out);
 XGE_API int xge3dBillboardBatchAddRef(xge3d_billboard_batch *batch);
+/* Returns an independent reference to the same immutable geometry. */
+XGE_API int xge3dBillboardBatchShareOwned(xge3d_billboard_batch *batch,xge3d_billboard_batch **out);
 XGE_API void xge3dBillboardBatchFree(xge3d_billboard_batch *batch);
 XGE_API int xge3dBillboardBatchGetGeometry(const xge3d_billboard_batch *batch,
     const xge3d_billboard_geometry_t **items,size_t *count);
