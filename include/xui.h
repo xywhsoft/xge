@@ -5521,6 +5521,12 @@ typedef struct xui_cascader_item_t {
 	void* pUser;
 } xui_cascader_item_t;
 
+/* 选中路径的值快照。只有 arrValues[0..iDepth) 属于当前选择。 */
+typedef struct xui_cascader_path_t {
+	int iDepth;
+	int arrValues[XUI_CASCADER_PATH_CAPACITY];
+} xui_cascader_path_t;
+
 /* 级联选择器创建描述。 */
 typedef struct xui_cascader_desc_t {
 	uint32_t iSize;
@@ -13404,12 +13410,16 @@ XUI_API int xuiCascaderSetItems(xui_widget pWidget, const xui_cascader_item_t* p
 XUI_API int xuiCascaderGetItemCount(xui_widget pWidget);
 /* 按索引输出选项描述；返回借用指针，在下次 SetItems 或控件销毁后失效。 */
 XUI_API const xui_cascader_item_t* xuiCascaderGetItem(xui_widget pWidget, int iIndex);
+/* 输出描述的值副本。文本和 pUser 仍由原条目拥有或借用，失败时保留输出。 */
+XUI_API int xuiCascaderGetItemDescriptor(xui_widget pWidget, int iIndex, xui_cascader_item_t* pItem);
 /* 按各级值数组设置选中路径。路径上的各项必须启用；未开启“任意层级可选”时
  * 末项必须为叶子。校验失败时保留原选择和交互状态。 */
 XUI_API int xuiCascaderSetSelectedPath(xui_widget pWidget, const int* arrValues, int iDepth);
 /* 输出选中路径值数组；返回实际深度。arrValues 可为 NULL 以查询深度；容量不足时
  * 写入可容纳的前缀，返回值仍为完整深度。 */
 XUI_API int xuiCascaderGetSelectedPath(xui_widget pWidget, int* arrValues, int iCapacity);
+/* 输出独立路径，未使用的值为零；失败时保留输出。 */
+XUI_API int xuiCascaderGetSelectedPathSnapshot(xui_widget pWidget, xui_cascader_path_t* pPath);
 /* 读取选中深度。 */
 XUI_API int xuiCascaderGetSelectedDepth(xui_widget pWidget);
 /* 读取选中末级项索引（未选返回 -1）。 */

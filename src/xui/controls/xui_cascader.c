@@ -2464,11 +2464,25 @@ XUI_API int xuiCascaderGetItemCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iItemCount : 0;
 }
 
-XUI_API const xui_cascader_item_t* xuiCascaderGetItem(xui_widget pWidget, int iIndex)
+static const xui_cascader_item_t* __xuiCascaderGetItem(xui_widget pWidget, int iIndex)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	if ( (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) return NULL;
 	return &pData->arrItems[iIndex];
+}
+
+XUI_API const xui_cascader_item_t* xuiCascaderGetItem(xui_widget pWidget, int iIndex)
+{
+	return __xuiCascaderGetItem(pWidget, iIndex);
+}
+
+XUI_API int xuiCascaderGetItemDescriptor(xui_widget pWidget, int iIndex, xui_cascader_item_t* pItem)
+{
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_cascader_item_t* pStored = __xuiCascaderGetItem(pWidget, iIndex);
+	if ( pStored == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pItem = *pStored;
+	return XUI_OK;
 }
 
 XUI_API int xuiCascaderSetSelectedPath(xui_widget pWidget, const int* arrValues, int iDepth)
@@ -2478,15 +2492,31 @@ XUI_API int xuiCascaderSetSelectedPath(xui_widget pWidget, const int* arrValues,
 	return __xuiCascaderSetSelectedPathInternal(pWidget, pData, arrValues, iDepth, 0);
 }
 
+static int __xuiCascaderCopySelectedPath(const xui_cascader_data_t* pData, int* arrValues, int iCapacity)
+{
+	if ( arrValues != NULL ) {
+		for ( int i = 0; i < pData->iSelectedDepth && i < iCapacity; i++ ) {
+			arrValues[i] = pData->arrItems[pData->arrSelected[i]].iValue;
+		}
+	}
+	return pData->iSelectedDepth;
+}
+
 XUI_API int xuiCascaderGetSelectedPath(xui_widget pWidget, int* arrValues, int iCapacity)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
-	int i;
 	if ( (pData == NULL) || (iCapacity < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( arrValues != NULL ) {
-		for ( i = 0; i < pData->iSelectedDepth && i < iCapacity; i++ ) arrValues[i] = pData->arrItems[pData->arrSelected[i]].iValue;
-	}
-	return pData->iSelectedDepth;
+	return __xuiCascaderCopySelectedPath(pData, arrValues, iCapacity);
+}
+
+XUI_API int xuiCascaderGetSelectedPathSnapshot(xui_widget pWidget, xui_cascader_path_t* pPath)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL || pPath == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_cascader_path_t tPath = {0};
+	tPath.iDepth = __xuiCascaderCopySelectedPath(pData, tPath.arrValues, XUI_CASCADER_PATH_CAPACITY);
+	*pPath = tPath;
+	return XUI_OK;
 }
 
 XUI_API int xuiCascaderGetSelectedDepth(xui_widget pWidget)
