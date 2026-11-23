@@ -74,6 +74,95 @@ static void equalHeap(const xmemdebugsnapshot* before)
     assert(before->LiveCount==after.LiveCount && before->LiveBytes==after.LiveBytes &&
         before->InvalidFreeCount==after.InvalidFreeCount && before->DoubleFreeCount==after.DoubleFreeCount);
 }
+typedef struct {
+    xge_font_face face;
+    xge_font font;
+} FontShareProbe;
+
+static int32_t shareFromWorker(void* context)
+{
+    const FontShareProbe* probe = context;
+    xge_font_face face = NULL;
+    assert(xgeFontFaceShareOwned(probe->face, &face) == XGE_OK && face == probe->face);
+    xgeFontFaceFree(face);
+
+    xge_font font = probe->font;
+    assert(xgeFontShareOwned(probe->font, &font) == XGE_ERROR_INVALID_STATE && !font);
+    return 0;
+}
+
+static void shareOwnedFonts(void)
+{
+    xge_font_face face = NULL;
+    assert(xgeFontFaceLoadMemory(&face, fontData, fontBytes, NULL) == XGE_OK);
+    xge_font_face sharedFace = face;
+    assert(xgeFontFaceShareOwned(NULL, &sharedFace) == XGE_ERROR_INVALID_ARGUMENT && !sharedFace);
+    assert(xgeFontFaceShareOwned(face, NULL) == XGE_ERROR_INVALID_ARGUMENT);
+
+    xge_font_instance_desc_t desc = {0};
+    desc.iSize = sizeof(desc);
+    desc.fPixelSize = 12;
+    assert(xgeInit(NULL) == XGE_OK);
+    xge_font_t callerFont = {0};
+    assert(xgeFontCreate(&callerFont, face, &desc) == XGE_OK);
+    xge_font font = NULL;
+    assert(xgeFontCreateOwned(&font, face, &desc) == XGE_OK);
+    assert(xgeGraphicsOwnedResourceCount() == 1);
+    xge_font sharedFont = font;
+    assert(xgeFontShareOwned(NULL, &sharedFont) == XGE_ERROR_INVALID_ARGUMENT && !sharedFont);
+    assert(xgeFontShareOwned(font, NULL) == XGE_ERROR_INVALID_ARGUMENT);
+    sharedFont = font;
+    assert(xgeFontShareOwned(&callerFont, &sharedFont) == XGE_ERROR_INVALID_STATE && !sharedFont);
+    xgeFontFree(&callerFont);
+
+    FontShareProbe probe = { face, font };
+    xthread* worker = xrtThreadCreate(shareFromWorker, &probe, 0);
+    assert(worker && xrtThreadWaitFor(worker, 30000) == XWAIT_OK && !xrtThreadExitCode(worker));
+    xrtThreadDestroy(worker);
+
+    uint32_t originalFaceRefs = xrtAtomic32Load(&face->refs, XMEMORY_RELAXED);
+    xrtAtomic32Store(&face->refs, INT32_MAX, XMEMORY_RELAXED);
+    sharedFace = face;
+    assert(xgeFontFaceShareOwned(face, &sharedFace) == XGE_ERROR_INVALID_STATE && !sharedFace);
+    assert(xrtAtomic32Load(&face->refs, XMEMORY_RELAXED) == INT32_MAX);
+    xrtAtomic32Store(&face->refs, originalFaceRefs, XMEMORY_RELAXED);
+    font->iRefCount = INT32_MAX;
+    sharedFont = font;
+    assert(xgeFontShareOwned(font, &sharedFont) == XGE_ERROR_INVALID_STATE && !sharedFont);
+    assert(font->iRefCount == INT32_MAX);
+    font->iRefCount = 1;
+
+    xmemdebugsnapshot before, after;
+    xrtMemDebugSnapshot(&before);
+    assert(xrtMemDebugFailAfter(0));
+    for (int i = 0; i < 1000; ++i) {
+        assert(xgeFontFaceShareOwned(face, &sharedFace) == XGE_OK && sharedFace == face);
+        xgeFontFaceFree(sharedFace);
+        assert(xgeFontShareOwned(font, &sharedFont) == XGE_OK && sharedFont == font);
+        xgeFontFree(sharedFont);
+    }
+    assert(!xrtMemDebugFailTriggered());
+    xrtMemDebugFailClear();
+    xrtMemDebugSnapshot(&after);
+    assert(before.AllocCount == after.AllocCount && before.FreeCount == after.FreeCount &&
+        before.ReallocCount == after.ReallocCount);
+
+    assert(xgeFontFaceShareOwned(face, &sharedFace) == XGE_OK && sharedFace == face);
+    xgeFontFaceFree(face);
+    xge_font_face_info_t info = {0};
+    info.iSize = sizeof(info);
+    assert(xgeFontFaceGetInfo(sharedFace, &info) == XGE_OK);
+    xgeFontFaceFree(sharedFace);
+    assert(xgeFontShareOwned(font, &sharedFont) == XGE_OK && sharedFont == font);
+    xgeFontFree(font);
+    assert(xgeUnitChecked() == XGE_ERROR_BUSY);
+    xge_font_metrics_t metrics = {0};
+    assert(xgeFontGetMetrics(sharedFont, &metrics) == XGE_OK && metrics.fPixelSize == 12);
+    xgeFontFree(sharedFont);
+    assert(xgeGraphicsOwnedResourceCount() == 0 && xgeUnitChecked() == XGE_OK);
+    puts("Owned Font/Face sharing passed with zero native heap operations");
+}
+
 static void allocationPrefixes(void)
 {
     unsigned failures=0,successes=0;
@@ -141,7 +230,7 @@ int main(int argc,char** argv)
     assert(!fclose(input));fontBytes=(int)bytes;assert(xrtMemDebugEnable(true));
     parallel(false);parallel(true); /* Warm platform/thread bookkeeping. */
     xmemdebugsnapshot before;xrtMemDebugSnapshot(&before);
-    sameSource();parallel(false);parallel(true);allocationPrefixes();fallbackPrefixes();reset();xrtClearError();equalHeap(&before);
+    sameSource();parallel(false);parallel(true);allocationPrefixes();fallbackPrefixes();reset();shareOwnedFonts();xrtClearError();equalHeap(&before);
     assert(!xrtAtomic64Load(&g_xgeFontCount,XMEMORY_RELAXED) && !xgeGraphicsOwnedResourceCount());
     printf("Shared Face and fallback passed; Face %zu bytes, 1000 hot outline hits without XRT heap operations\n",sizeof(struct xge_font_face_t));
     return 0;

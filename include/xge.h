@@ -2777,6 +2777,10 @@ XGE_API int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_
 XGE_API int xgeFontFaceLoadMemory(xge_font_face* ppFace, const void* pData, int iSize, const xge_font_face_desc_t* pDesc);
 /* face 引用计数加一。 */
 XGE_API int xgeFontFaceAddRef(xge_font_face pFace);
+/* Return a new owning reference to the same face, without allocating.
+ * *ppShared is cleared on failure; release a successful result with xgeFontFaceFree.
+ * The caller must hold a live face reference while sharing. */
+XGE_API int xgeFontFaceShareOwned(xge_font_face pFace, xge_font_face* ppShared);
 /* face 引用计数减一，归零时释放。 */
 XGE_API void xgeFontFaceFree(xge_font_face pFace);
 /* 输出 face 静态信息（字重/宽度/斜体/家族名等）。 */
@@ -2815,6 +2819,11 @@ XGE_API int xgeFontSaveXRF(xge_font pFont, const char* sPath, uint32_t iFirstCod
 XGE_API int xgeFontLoadCached(xge_font pFont, const char* sTTFPath, const char* sXRFPath, float fSize, uint32_t iFirstCodepoint, uint32_t iCount);
 /* 字体实例引用计数加一。 */
 XGE_API int xgeFontAddRef(xge_font pFont);
+/* On the graphics owner thread, return an independent reference to the same
+ * graphics-owned Font. This does not allocate or duplicate the engine obligation.
+ * *ppShared is cleared on failure; release a successful result with xgeFontFree.
+ * The caller must hold the input alive while sharing. */
+XGE_API int xgeFontShareOwned(xge_font pFont, xge_font* ppShared);
 /* 字体实例引用计数减一，归零时释放。 */
 XGE_API void xgeFontFree(xge_font pFont);
 /* Transfer the RECORD storage to its native reference count. pFont must be an

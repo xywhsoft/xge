@@ -985,6 +985,16 @@ int xgeFontFaceAddRef(xge_font_face pFace)
     return (int)(refs+1);
 }
 
+int xgeFontFaceShareOwned(xge_font_face pFace, xge_font_face* ppShared)
+{
+    if (!ppShared) return XGE_ERROR_INVALID_ARGUMENT;
+    *ppShared = NULL;
+    if (!pFace) return XGE_ERROR_INVALID_ARGUMENT;
+    if (xgeFontFaceAddRef(pFace) <= 0) return XGE_ERROR_INVALID_STATE;
+    *ppShared = pFace;
+    return XGE_OK;
+}
+
 void xgeFontFaceFree(xge_font_face pFace)
 {
 	xge_glyph_outline_cache_t* pOutline;
@@ -1639,6 +1649,21 @@ int xgeFontAddRef(xge_font pFont)
 	/* An overflow must not report a retained reference that was not acquired. */
 	if ( pFont->iRefCount <= 0 || pFont->iRefCount == INT32_MAX ) return 0;
 	return ++pFont->iRefCount;
+}
+
+int xgeFontShareOwned(xge_font pFont, xge_font* ppShared)
+{
+    if (!ppShared) return XGE_ERROR_INVALID_ARGUMENT;
+    *ppShared = NULL;
+    if (!pFont) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeGraphicsOwnerAccess(&g_xgeGraphicsLifetime);
+    if (status != XGE_OK) return status;
+    const xge_font_instance_backend_t* backend = pFont->pBackend;
+    if (!backend || backend->storage != XGE_FONT_STORAGE_GRAPHICS_OWNED)
+        return XGE_ERROR_INVALID_STATE;
+    if (xgeFontAddRef(pFont) <= 0) return XGE_ERROR_INVALID_STATE;
+    *ppShared = pFont;
+    return XGE_OK;
 }
 
 int xgeFontAdoptStorage(xge_font pFont)
@@ -2522,6 +2547,7 @@ int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint) { (void)psText; (
 int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_face_desc_t* pDesc) { (void)ppFace; (void)sPath; (void)pDesc; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFaceLoadMemory(xge_font_face* ppFace, const void* pData, int iSize, const xge_font_face_desc_t* pDesc) { (void)ppFace; (void)pData; (void)iSize; (void)pDesc; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFaceAddRef(xge_font_face pFace) { (void)pFace; return 0; }
+int xgeFontFaceShareOwned(xge_font_face pFace, xge_font_face* ppShared) { (void)pFace; if (ppShared) *ppShared = NULL; return XGE_ERROR_UNSUPPORTED; }
 void xgeFontFaceFree(xge_font_face pFace) { (void)pFace; }
 int xgeFontFaceGetInfo(xge_font_face pFace, xge_font_face_info_t* pInfo) { (void)pFace; (void)pInfo; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFamilyCreate(xge_font_family* ppFamily) { (void)ppFamily; return XGE_ERROR_UNSUPPORTED; }
@@ -2536,6 +2562,7 @@ int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
 int xgeFontLoadXRF(xge_font pFont, const char* sPath) { (void)pFont; (void)sPath; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontLoadXRFMemory(xge_font pFont, const void* pData, int iSize) { (void)pFont; (void)pData; (void)iSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontAddRef(xge_font pFont) { (void)pFont; return 0; }
+int xgeFontShareOwned(xge_font pFont, xge_font* ppShared) { (void)pFont; if (ppShared) *ppShared = NULL; return XGE_ERROR_UNSUPPORTED; }
 void xgeFontFree(xge_font pFont) { (void)pFont; }
 int xgeFontAdoptStorage(xge_font pFont) { (void)pFont; return XGE_ERROR_UNSUPPORTED; }
 void xgeFontSetFallback(xge_font pFont, xge_font pFallback) { (void)pFont; (void)pFallback; }
