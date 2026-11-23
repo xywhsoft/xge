@@ -3005,6 +3005,12 @@ typedef struct xui_code_margin_state_t {
 	uint32_t iFlags;
 } xui_code_margin_state_t;
 
+typedef struct xui_code_margin_geometry_t {
+	xui_code_margin_state_t tState;
+	xui_rect_t tRect;
+} xui_code_margin_geometry_t;
+typedef struct xui_code_margin_layout_t xui_code_margin_layout_t;
+
 struct xui_code_style_t {
 	uint32_t iSize;
 	uint32_t iForeground;
@@ -8690,6 +8696,15 @@ XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
  * FindHit clears the output and returns OK with iId == 0 outside a margin. */
 XUI_API int xuiCodeMarginModelMeasureLayout(xui_code_margin_model pModel, xui_rect_t tViewport, int* pCount, xui_rect_t* pTextRect);
 XUI_API int xuiCodeMarginModelFindHit(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit);
+/* Capture a pointer-free layout. -1 keeps all visible margins. A nonnegative
+ * limit keeps a prefix. State always reports the total visible count and full
+ * text rectangle. Entries stay valid while the caller owns a layout reference.
+ * Serialize reference operations if the layout is used by multiple threads. */
+XUI_API int xuiCodeMarginModelCaptureLayout(xui_code_margin_model model, xui_rect_t viewport, int limit, xui_code_margin_layout_t** out);
+XUI_API int xuiCodeMarginLayoutAddRef(xui_code_margin_layout_t* layout);
+XUI_API void xuiCodeMarginLayoutRelease(xui_code_margin_layout_t* layout);
+XUI_API int xuiCodeMarginLayoutGetState(const xui_code_margin_layout_t* layout, int* total, xui_rect_t* text);
+XUI_API int xuiCodeMarginLayoutGetEntries(const xui_code_margin_layout_t* layout, const xui_code_margin_geometry_t** entries, size_t* count);
 
 /* 按开关组合装入默认边栏（行号/标记/折叠/诊断）。 */
 XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic);

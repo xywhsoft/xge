@@ -573,6 +573,84 @@ XUI_API int xuiCodeMarginModelMeasureLayout(xui_code_margin_model model, xui_rec
     return __xuiCodeMarginLayout(model, viewport, NULL, NULL, 0, count, text);
 }
 
+struct xui_code_margin_layout_t {
+    size_t refs, count;
+    int total;
+    xui_rect_t text;
+    xui_code_margin_geometry_t entries[];
+};
+
+XUI_API int xuiCodeMarginModelCaptureLayout(xui_code_margin_model model, xui_rect_t viewport,
+    int limit, xui_code_margin_layout_t** out)
+{
+    if (!out) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    if (limit < -1) return XUI_ERROR_INVALID_ARGUMENT;
+
+    int total;
+    xui_rect_t text;
+    int status = xuiCodeMarginModelMeasureLayout(model, viewport, &total, &text);
+    if (status != XUI_OK) return status;
+    size_t count = (size_t)(limit >= 0 && limit < total ? limit : total);
+    if (count > (SIZE_MAX - sizeof(xui_code_margin_layout_t)) / sizeof(xui_code_margin_geometry_t))
+        return XUI_ERROR_LIMIT_EXCEEDED;
+    xui_code_margin_layout_t* layout = xrtMalloc(sizeof(*layout) + count * sizeof(*layout->entries));
+    if (!layout) return XUI_ERROR_OUT_OF_MEMORY;
+    layout->refs = 1;
+    layout->count = count;
+    layout->total = total;
+    layout->text = text;
+
+    double left = viewport.fX;
+    size_t written = 0;
+    for (int i = 0; written < count; ++i) {
+        const xui_code_margin_desc_t* desc = &model->pMargins[i];
+        if (!__xuiCodeMarginVisible(desc)) continue;
+        double right = left + (double)desc->fWidth;
+        xui_rect_t rect;
+        status = __xuiCodeMarginRectFromEdges(left, right, viewport, &rect);
+        if (status != XUI_OK) {
+            xrtFree(layout);
+            return status;
+        }
+        layout->entries[written++] = (xui_code_margin_geometry_t){
+            {sizeof(xui_code_margin_state_t), desc->iId, desc->iKind, desc->fWidth, desc->iFlags}, rect};
+        left = right;
+    }
+    *out = layout;
+    return XUI_OK;
+}
+
+XUI_API int xuiCodeMarginLayoutAddRef(xui_code_margin_layout_t* layout)
+{
+    if (!layout) return XUI_ERROR_INVALID_ARGUMENT;
+    if (layout->refs == SIZE_MAX) return XUI_ERROR_LIMIT_EXCEEDED;
+    ++layout->refs;
+    return XUI_OK;
+}
+
+XUI_API void xuiCodeMarginLayoutRelease(xui_code_margin_layout_t* layout)
+{
+    if (layout && --layout->refs == 0) xrtFree(layout);
+}
+
+XUI_API int xuiCodeMarginLayoutGetState(const xui_code_margin_layout_t* layout, int* total, xui_rect_t* text)
+{
+    if (!layout || !total || !text) return XUI_ERROR_INVALID_ARGUMENT;
+    *total = layout->total;
+    *text = layout->text;
+    return XUI_OK;
+}
+
+XUI_API int xuiCodeMarginLayoutGetEntries(const xui_code_margin_layout_t* layout,
+    const xui_code_margin_geometry_t** entries, size_t* count)
+{
+    if (!layout || !entries || !count) return XUI_ERROR_INVALID_ARGUMENT;
+    *entries = layout->count ? layout->entries : NULL;
+    *count = layout->count;
+    return XUI_OK;
+}
+
 XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit)
 {
 	xui_rect_t tRect;
