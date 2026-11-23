@@ -195,8 +195,16 @@ int xge3dNodeClone(xge3d_scene *s,xge3d_node_t source,xge3d_node_t parent,uint32
 done:
     if(clone.slot){xge3dNodeDestroy(s,clone);}xrtMapUnit(&map);xrtArrayUnit(&originals);return result;
 }
+#define D3_SCENE_NODE_DEFAULT_FIELDS .parent=SIZE_MAX,.transform=XGE3D_TRANSFORM_IDENTITY,.flags=0
+xge3d_scene_node_defaults_t xge3dSceneNodeDefaultsGet(void)
+{
+    return (xge3d_scene_node_defaults_t){D3_SCENE_NODE_DEFAULT_FIELDS};
+}
 xge3d_scene_node_desc_t xge3dSceneNodeDefault(void)
-{xge3d_scene_node_desc_t d={0};d.parent=SIZE_MAX;d.transform=(xge3d_transform_t)XGE3D_TRANSFORM_IDENTITY;return d;}
+{
+    return (xge3d_scene_node_desc_t){D3_SCENE_NODE_DEFAULT_FIELDS};
+}
+#undef D3_SCENE_NODE_DEFAULT_FIELDS
 size_t xge3dSceneRootParent(void)
 {return SIZE_MAX;}
 void xge3dSceneNodeTransformDefault(xge3d_transform_t *out)

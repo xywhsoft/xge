@@ -5621,7 +5621,14 @@ typedef struct xge3d_scene_desc_t {
     int (*load_model)(const char *uri,xge3d_model **out,void *user); void *user;
 #endif
 } xge3d_scene_desc_t;
+/* Pointer-free defaults for hosts that provide name and assets separately. */
+typedef struct xge3d_scene_node_defaults_t {
+    size_t parent;
+    xge3d_transform_t transform;
+    uint32_t flags;
+} xge3d_scene_node_defaults_t;
 XGE_API xge3d_scene_node_desc_t xge3dSceneNodeDefault(void);
+XGE_API xge3d_scene_node_defaults_t xge3dSceneNodeDefaultsGet(void);
 XGE_API size_t xge3dSceneRootParent(void);
 XGE_API void xge3dSceneNodeTransformDefault(xge3d_transform_t *out);
 /* Declarative C data, not a new file format. Parent indices must precede child;
