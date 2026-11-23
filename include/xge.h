@@ -3018,6 +3018,9 @@ XGE_API void xgeRenderTargetFree(xge_render_target pTarget);
 XGE_API int xgeRenderTargetAddRef(xge_render_target target);
 XGE_API int xgeRenderTargetReleaseOwnerChecked(xge_render_target target,bool* consumed);
 XGE_API int xgeRenderTargetReadPixelsSized(xge_render_target target,void* pixels,size_t capacity,int stride);
+/* Top-first, tightly packed straight RGBA. Release the returned data with
+ * xrtFree. Both outputs are cleared on failure when provided. */
+XGE_API int xgeRenderTargetReadPixelsOwned(xge_render_target target,void** pixels,size_t* size);
 /* 创建 GPU 缓冲（顶点/索引）；XGE_BUFFER_UNIFORM 当前不支持。 */
 XGE_API int xgeBufferCreate(xge_buffer pBuffer, int iType, int iUsage, const void* pData, int iSize);
 /* 更新缓冲区间数据。 */

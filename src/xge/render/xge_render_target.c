@@ -177,62 +177,39 @@ int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrc
 	return XGE_OK;
 }
 
-int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStride)
+static int __xgeRenderTargetPixelSize(xge_render_target target, int* row, size_t* size)
 {
-	unsigned char* pTemp;
-	unsigned char* pDst;
-	unsigned char* pSrc;
+	if ( !target || target->iWidth <= 0 || target->iHeight <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( target->iWidth > INT32_MAX / 4 || target->iHeight > INT32_MAX / (target->iWidth * 4) )
+		return XGE_ERROR_OUT_OF_MEMORY;
+	*row = target->iWidth * 4;
+	*size = (size_t)*row * (size_t)target->iHeight;
+	return XGE_OK;
+}
+
+static int __xgeRenderTargetReadGpu(xge_render_target pTarget, size_t size, unsigned char** pixels)
+{
 	GLint iPreviousReadFramebuffer, iPackBuffer, arrPack[4];
 	const GLenum arrPackNames[] = {0x0D05,0x0D02,0x0D03,0x0D04}; /* ALIGNMENT, ROW_LENGTH, SKIP_ROWS, SKIP_PIXELS */
 	const GLenum iReadFramebuffer = 0x8CA8, iPixelPackBuffer = 0x88EB;
-	int iRow;
-	int iCopyStride;
-	int iSize;
-	int iRet;
-
-	if ( (pTarget == NULL) || (pPixels == NULL) || (pTarget->iWidth <= 0) || (pTarget->iHeight <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pTarget->iWidth > INT32_MAX / 4 || pTarget->iHeight > INT32_MAX / (pTarget->iWidth * 4) ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iCopyStride = pTarget->iWidth * 4;
-	if ( iStride <= 0 ) {
-		iStride = iCopyStride;
-	}
-	if ( iStride < iCopyStride ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (size_t)(pTarget->iHeight - 1) > (SIZE_MAX - (size_t)iCopyStride) / (size_t)iStride ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	if ( g_xge.bGraphicsRunning == 0 ) {
-		if ( (pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) != 0 ) {
-			iRet = xgeTextureReadPixels(&pTarget->tTexture, pPixels, iStride);
-			if ( iRet == XGE_OK ) __xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
-			return iRet;
-		}
-		return XGE_ERROR_NOT_INITIALIZED;
-	}
 	if ( !xge_glFinish || !xge_glReadPixels || !xge_glGetIntegerv || !xge_glBindFramebuffer ||
 	     !xge_glGetError || !xge_glPixelStorei || !xge_glBindBuffer ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
-	iRet = xgeFlush();
+	int iRet = xgeFlush();
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
 	iRet = __xgeRenderTargetEnsureFramebuffer(pTarget);
 	if ( iRet != XGE_OK ) return iRet;
-	iSize = pTarget->iWidth * pTarget->iHeight * 4;
-	pTemp = (unsigned char*)xrtMalloc((size_t)iSize);
+	unsigned char* pTemp = xrtMalloc(size);
 	if ( pTemp == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xge_glGetIntegerv(0x8CAA, &iPreviousReadFramebuffer); /* READ_FRAMEBUFFER_BINDING */
 	xge_glGetIntegerv(0x88ED, &iPackBuffer); /* PIXEL_PACK_BUFFER_BINDING */
 	xge_glBindBuffer(iPixelPackBuffer, 0);
-	for ( iRow = 0; iRow < 4; iRow++ ) {
+	for ( int iRow = 0; iRow < 4; iRow++ ) {
 		xge_glGetIntegerv(arrPackNames[iRow], &arrPack[iRow]);
 		xge_glPixelStorei(arrPackNames[iRow], iRow == 0 ? 1 : 0);
 	}
@@ -243,19 +220,84 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	xge_glReadPixels(0, 0, pTarget->iWidth, pTarget->iHeight, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
 	iRet = xge_glGetError() == GL_NO_ERROR ? XGE_OK : XGE_ERROR_GPU_FAILED;
 	xge_glBindFramebuffer(iReadFramebuffer, (GLuint)iPreviousReadFramebuffer);
-	for ( iRow = 0; iRow < 4; iRow++ ) xge_glPixelStorei(arrPackNames[iRow], arrPack[iRow]);
+	for ( int iRow = 0; iRow < 4; iRow++ ) xge_glPixelStorei(arrPackNames[iRow], arrPack[iRow]);
 	xge_glBindBuffer(iPixelPackBuffer, (GLuint)iPackBuffer);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pTemp);
 		return iRet;
 	}
-	pDst = (unsigned char*)pPixels;
-	for ( iRow = 0; iRow < pTarget->iHeight; iRow++ ) {
-		pSrc = pTemp + ((size_t)(pTarget->iHeight - 1 - iRow) * (size_t)iCopyStride);
-		memcpy(pDst + ((size_t)iRow * (size_t)iStride), pSrc, (size_t)iCopyStride);
+	*pixels = pTemp;
+	return XGE_OK;
+}
+
+int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStride)
+{
+	if ( !pPixels ) return XGE_ERROR_INVALID_ARGUMENT;
+	int row;
+	size_t size;
+	int status = __xgeRenderTargetPixelSize(pTarget, &row, &size);
+	if ( status != XGE_OK ) return status;
+	if ( iStride <= 0 ) iStride = row;
+	if ( iStride < row ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (size_t)(pTarget->iHeight - 1) > (SIZE_MAX - (size_t)row) / (size_t)iStride )
+		return XGE_ERROR_OUT_OF_MEMORY;
+	if ( !g_xge.bGraphicsRunning ) {
+		if ( !(pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) ) return XGE_ERROR_NOT_INITIALIZED;
+		status = xgeTextureReadPixels(&pTarget->tTexture, pPixels, iStride);
+		if ( status == XGE_OK ) __xgeRenderTargetUnpremultiply(pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
+		return status;
 	}
-	xrtFree(pTemp);
-	__xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
+	unsigned char* gpu = NULL;
+	status = __xgeRenderTargetReadGpu(pTarget, size, &gpu);
+	if ( status != XGE_OK ) return status;
+	for ( int y = 0; y < pTarget->iHeight; ++y ) {
+		const unsigned char* src = gpu + (size_t)(pTarget->iHeight - 1 - y) * (size_t)row;
+		memcpy((unsigned char*)pPixels + (size_t)y * (size_t)iStride, src, (size_t)row);
+	}
+	xrtFree(gpu);
+	__xgeRenderTargetUnpremultiply(pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
+	return XGE_OK;
+}
+
+int xgeRenderTargetReadPixelsOwned(xge_render_target target, void** output, size_t* length)
+{
+	if ( output ) *output = NULL;
+	if ( length ) *length = 0;
+	if ( !output || !length ) return XGE_ERROR_INVALID_ARGUMENT;
+	int row;
+	size_t size;
+	int status = __xgeRenderTargetPixelSize(target, &row, &size);
+	if ( status != XGE_OK ) return status;
+	unsigned char* data = NULL;
+	if ( g_xge.bGraphicsRunning ) {
+		status = __xgeRenderTargetReadGpu(target, size, &data);
+		if ( status != XGE_OK ) return status;
+		unsigned char scratch[256];
+		for ( int y = 0; y < target->iHeight / 2; ++y ) {
+			unsigned char* top = data + (size_t)y * (size_t)row;
+			unsigned char* bottom = data + (size_t)(target->iHeight - 1 - y) * (size_t)row;
+			for ( size_t offset = 0; offset < (size_t)row; ) {
+				size_t chunk = (size_t)row - offset;
+				if ( chunk > sizeof(scratch) ) chunk = sizeof(scratch);
+				memcpy(scratch, top + offset, chunk);
+				memcpy(top + offset, bottom + offset, chunk);
+				memcpy(bottom + offset, scratch, chunk);
+				offset += chunk;
+			}
+		}
+	} else {
+		if ( !(target->iFlags & XGE_RENDER_TARGET_TEXTURE) ) return XGE_ERROR_NOT_INITIALIZED;
+		data = xrtMalloc(size);
+		if ( !data ) return XGE_ERROR_OUT_OF_MEMORY;
+		status = xgeTextureReadPixels(&target->tTexture, data, row);
+		if ( status != XGE_OK ) {
+			xrtFree(data);
+			return status;
+		}
+	}
+	__xgeRenderTargetUnpremultiply(data, target->iWidth, target->iHeight, row);
+	*output = data;
+	*length = size;
 	return XGE_OK;
 }
 
