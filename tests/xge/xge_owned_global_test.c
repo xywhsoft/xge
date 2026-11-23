@@ -88,6 +88,44 @@ static xge_error_info_t error={sizeof(error),37,1,"test","owned","event"};
 static xge_drag_event_t event;
 static int32 report_thread(void* unused)
 {(void)unused;for(unsigned i=0;i<2000;++i)assert(xgeReportError(&error)==XGE_OK);return 0;}
+
+enum { DRAG_EVENTS_PER_THREAD = 4000 };
+static xatomic32 dragSequences[2 * DRAG_EVENTS_PER_THREAD];
+
+static uint32_t record_drag_sequence(const xge_drag_event_t* drag,void* unused)
+{
+    (void)unused;
+    uint64_t sequence=drag->iSequence;
+    assert(sequence>0 && sequence<=2*DRAG_EVENTS_PER_THREAD);
+    assert(xrtAtomic32FetchAdd(&dragSequences[sequence-1],1,XMEMORY_RELAXED)==0);
+    return XGE_DRAG_EFFECT_COPY;
+}
+
+static int32 dispatch_drag_events(void* unused)
+{
+    (void)unused;
+    xge_drag_event_t drag={.iSize=sizeof(drag),.iType=XGE_DRAG_EVENT_ENTER,
+        .fTime=1,.iAllowedEffects=XGE_DRAG_EFFECT_COPY};
+    for(unsigned i=0;i<DRAG_EVENTS_PER_THREAD;++i){
+        uint32_t effect=0;
+        assert(xgeDragEventDispatchChecked(&drag,&effect)==XGE_OK);
+        assert(effect==XGE_DRAG_EFFECT_COPY);
+    }
+    return 0;
+}
+
+static void check_concurrent_drag_sequences(void)
+{
+    for(unsigned i=0;i<2*DRAG_EVENTS_PER_THREAD;++i)xrtAtomic32Init(&dragSequences[i],0);
+    assert(xgeDragEventCallbackSet(record_drag_sequence,NULL)==XGE_OK);
+    xthread* worker=xrtThreadCreate(dispatch_drag_events,NULL,0);assert(worker);
+    dispatch_drag_events(NULL);
+    assert(xrtThreadWait(worker)==XWAIT_OK);xrtThreadDestroy(worker);
+    assert(xgeDragEventCallbackSet(NULL,NULL)==XGE_OK);
+    for(unsigned i=0;i<2*DRAG_EVENTS_PER_THREAD;++i)
+        assert(xrtAtomic32Load(&dragSequences[i],XMEMORY_RELAXED)==1);
+}
+
 typedef struct Symbol {const char* name;xge_host_xrt_proc address;} Symbol;
 static const Symbol symbols[]={
 #define XGE_HOST_XRT_SLOT(Name) {#Name,(xge_host_xrt_proc)(Name)},
@@ -105,6 +143,7 @@ int main(void)
 {
     const xge_host_xrt_contract_t contract=XGE_HOST_XRT_LOCAL_CONTRACT_INIT;const char* missing=NULL;
     assert(xgeHostXrtBind(&contract,resolve,NULL,&missing)==XGE_HOST_XRT_OK);
+    check_concurrent_drag_sequences();
     memset(&event,0,sizeof(event));event.iSize=sizeof(event);event.iType=XGE_DRAG_EVENT_ENTER;
     event.iAllowedEffects=XGE_DRAG_EFFECT_COPY;
     Owner a,b,c;initialize(&a);initialize(&b);initialize(&c);
@@ -170,6 +209,6 @@ int main(void)
     assert(xgeSetErrorCallbackOwned(NULL,NULL,NULL)==XGE_OK);
     assert(xrtAtomic32Load(&a.refs,XMEMORY_RELAXED)==1 && xrtAtomic32Load(&b.refs,XMEMORY_RELAXED)==1 && xrtAtomic32Load(&c.refs,XMEMORY_RELAXED)==1);
     assert(xgeUnitChecked()==XGE_OK && !xrtGetError());
-    puts("XGE global Owned: admission/OOM, self-clear snapshots, checked outputs, NULL-first shutdown, reentry and concurrent replacement passed");
+    puts("XGE global Owned: admission/OOM, self-clear snapshots, checked outputs, NULL-first shutdown, reentry, concurrent replacement and drag sequences passed");
     return 0;
 }

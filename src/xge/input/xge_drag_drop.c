@@ -9,7 +9,7 @@ static int g_xgeDragActive;
 static xge_data_object g_xgeDragData;
 static uint32_t g_xgeDragAllowedEffects;
 static uint32_t g_xgeDragSuggestedEffect;
-static uint64_t g_xgeDragSequence;
+static xatomic64 g_xgeDragSequence=XRT_ATOMIC64_INIT(0);
 static uint64_t g_xgeDragSessionId;
 static uint64_t g_xgeDragSessionThread;
 static uint64_t g_xgeDragCancellingSession;
@@ -42,7 +42,7 @@ static int __xgeDragDropUnit(void)
 {
 	__xgeDragDropPlatformUnit();
 	int result=__xgeDragSessionClear();
-	g_xgeDragSequence = 0u;
+	xrtAtomic64Store(&g_xgeDragSequence,0,XMEMORY_RELAXED);
 	(void)xgeDragEventCallbackSetOwned(NULL,NULL,NULL);
 	return result;
 }
@@ -110,8 +110,8 @@ int xgeDragEventDispatchChecked(const xge_drag_event_t* pEvent,uint32_t* output)
 	xge_data_operation_t dataCall={0};
 	if(tEvent.pData){int pin=__xgeDataOperationBegin(tEvent.pData,&dataCall);if(pin!=XGE_OK)return pin;}
 	tEvent.iSize = sizeof(tEvent);
-	tEvent.iSequence = tEvent.iSequence != 0u ? tEvent.iSequence :
-		++g_xgeDragSequence;
+	if(tEvent.iSequence==0)
+		tEvent.iSequence=xrtAtomic64FetchAdd(&g_xgeDragSequence,1,XMEMORY_RELAXED)+1u;
 	tEvent.fTime = tEvent.fTime > 0.0 ? tEvent.fTime : xrtTimer();
 	iAllowed = tEvent.iAllowedEffects & iMask;
 	tEvent.iAllowedEffects = iAllowed;
@@ -237,7 +237,7 @@ static uint32_t __xgeDragDispatchNative(int iType, float fX, float fY,
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = iType;
-	tEvent.iSequence = ++g_xgeDragSequence;
+	tEvent.iSequence = xrtAtomic64FetchAdd(&g_xgeDragSequence,1,XMEMORY_RELAXED)+1u;
 	tEvent.fTime = xrtTimer();
 	tEvent.fX = fX;
 	tEvent.fY = fY;
