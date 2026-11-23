@@ -94,6 +94,7 @@ typedef float GLclampf;
 /* 缓冲对象 */
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#define GL_COPY_WRITE_BUFFER 0x8F37
 #define GL_STATIC_DRAW 0x88E4
 #define GL_DYNAMIC_DRAW 0x88E8
 

@@ -4,7 +4,8 @@ static GLenum __xgeBufferTarget(int iType)
 		return GL_ARRAY_BUFFER;
 	}
 	if ( iType == XGE_BUFFER_INDEX ) {
-		return GL_ELEMENT_ARRAY_BUFFER;
+		/* The element binding belongs to the active VAO. Use a transfer target. */
+		return GL_COPY_WRITE_BUFFER;
 	}
 	return 0;
 }
