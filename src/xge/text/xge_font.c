@@ -740,48 +740,41 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 	return XGE_OK;
 }
 
-int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint)
+static inline int __xgeTextReadUtf8Prefix(const unsigned char* pText, size_t iAvailable,
+	uint32_t* pCodepoint, size_t* pWidth)
 {
-	const unsigned char* pText;
 	uint32_t iCodepoint;
-	int iCount;
+	size_t iWidth;
 
-	if ( (psText == NULL) || (*psText == NULL) || (pCodepoint == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pText = (const unsigned char*)*psText;
-	if ( pText[0] == 0 ) {
-		return XGE_ERROR;
-	}
 	if ( pText[0] < 0x80 ) {
 		iCodepoint = pText[0];
-		iCount = 1;
+		iWidth = 1;
 	} else if ( (pText[0] & 0xE0) == 0xC0 ) {
-		if ( (pText[1] & 0xC0) != 0x80 ) {
+		if ( iAvailable < 2 || (pText[1] & 0xC0) != 0x80 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
 		iCodepoint = ((uint32_t)(pText[0] & 0x1F) << 6) | (uint32_t)(pText[1] & 0x3F);
-		iCount = 2;
+		iWidth = 2;
 		if ( iCodepoint < 0x80 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
 	} else if ( (pText[0] & 0xF0) == 0xE0 ) {
-		if ( (pText[1] == 0) || (pText[2] == 0) || ((pText[1] & 0xC0) != 0x80) || ((pText[2] & 0xC0) != 0x80) ) {
+		if ( iAvailable < 3 || (pText[1] & 0xC0) != 0x80 || (pText[2] & 0xC0) != 0x80 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
 		iCodepoint = ((uint32_t)(pText[0] & 0x0F) << 12) | ((uint32_t)(pText[1] & 0x3F) << 6) | (uint32_t)(pText[2] & 0x3F);
-		iCount = 3;
+		iWidth = 3;
 		if ( iCodepoint < 0x800 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
 	} else if ( (pText[0] & 0xF8) == 0xF0 ) {
-		if ( (pText[1] == 0) || (pText[2] == 0) || (pText[3] == 0) ||
-		     ((pText[1] & 0xC0) != 0x80) || ((pText[2] & 0xC0) != 0x80) || ((pText[3] & 0xC0) != 0x80) ) {
+		if ( iAvailable < 4 || (pText[1] & 0xC0) != 0x80 ||
+		     (pText[2] & 0xC0) != 0x80 || (pText[3] & 0xC0) != 0x80 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
 		iCodepoint = ((uint32_t)(pText[0] & 0x07) << 18) | ((uint32_t)(pText[1] & 0x3F) << 12) |
 		             ((uint32_t)(pText[2] & 0x3F) << 6) | (uint32_t)(pText[3] & 0x3F);
-		iCount = 4;
+		iWidth = 4;
 		if ( iCodepoint < 0x10000 ) {
 			return XGE_ERROR_UNSUPPORTED;
 		}
@@ -792,8 +785,33 @@ int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint)
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	*pCodepoint = iCodepoint;
-	*psText += iCount;
+	*pWidth = iWidth;
 	return XGE_OK;
+}
+
+int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint)
+{
+	if ( !psText || !*psText || !pCodepoint ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( **psText == '\0' ) return XGE_ERROR;
+	/* Continuation bytes are checked in order, so a NUL ends a truncated prefix. */
+	size_t iWidth;
+	int iStatus = __xgeTextReadUtf8Prefix((const unsigned char*)*psText, SIZE_MAX, pCodepoint, &iWidth);
+	if ( iStatus == XGE_OK ) *psText += iWidth;
+	return iStatus;
+}
+
+int xgeTextUTF8Read(const char* pText, size_t iSize, size_t iOffset, uint32_t* pCodepoint, size_t* pNext)
+{
+	if ( !pCodepoint || !pNext || (!pText && iSize != 0) || iOffset > iSize ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( iOffset == iSize ) {
+		*pCodepoint = 0;
+		*pNext = iOffset;
+		return XGE_OK;
+	}
+	size_t iWidth;
+	int iStatus = __xgeTextReadUtf8Prefix((const unsigned char*)pText + iOffset, iSize - iOffset, pCodepoint, &iWidth);
+	if ( iStatus == XGE_OK ) *pNext = iOffset + iWidth;
+	return iStatus;
 }
 
 static uint16_t __xgeFontReadU16BE(const unsigned char* pData)

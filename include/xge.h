@@ -2771,6 +2771,10 @@ XGE_API int xgeStreamIsPlaying(xge_stream pStream);
 /* 迭代解码下一个 UTF-8 码点并推进 *psText；非法序列返回错误。 */
 #if XGE_ENABLE_TEXT
 XGE_API int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint);
+/* Decode at a byte offset in a counted UTF-8 span. At the end, returns
+ * XGE_OK with codepoint zero and the same offset. An embedded U+0000 advances
+ * one byte. Invalid arguments or malformed UTF-8 leave both outputs intact. */
+XGE_API int xgeTextUTF8Read(const char* pText, size_t iSize, size_t iOffset, uint32_t* pCodepoint, size_t* pNext);
 /* 从文件解析字体 face（读取度量与命名表）；pDesc 可为 NULL。 */
 XGE_API int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_face_desc_t* pDesc);
 /* 从内存解析字体 face。 */
