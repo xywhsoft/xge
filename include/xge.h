@@ -754,6 +754,19 @@ typedef struct xge_graphics_backend_t {
 	void* pUser;
 } xge_graphics_backend_t;
 
+typedef struct xge_backend_info_t {
+	int iType;
+	const char* sName;
+	uint32_t iCallbackMask;
+} xge_backend_info_t;
+
+#define XGE_BACKEND_CALLBACK_INIT     (1u << 0)
+#define XGE_BACKEND_CALLBACK_UNIT     (1u << 1)
+#define XGE_BACKEND_CALLBACK_POLL     (1u << 2)
+#define XGE_BACKEND_CALLBACK_PRESENT  (1u << 3)
+#define XGE_BACKEND_CALLBACK_BEGIN    (1u << 4)
+#define XGE_BACKEND_CALLBACK_END      (1u << 5)
+
 /* Immutable creator-thread snapshots. A snapshot copies the descriptor/name
  * and retains one independent owner for its callback payload/code. It does
  * not initialize/install a backend or dispatch its callbacks. The owner has
@@ -777,6 +790,9 @@ XGE_API bool xgePlatformBackendOwnershipReadReady(xrtownershipref ref);
 XGE_API int xgeGraphicsBackendCreateOwned(xge_graphics_backend_ref* output,const xge_graphics_backend_t* descriptor,const xge_callback_owner_t* owner);
 XGE_API int xgeGraphicsBackendShareOwned(xge_graphics_backend_ref backend,xge_graphics_backend_ref* output);
 XGE_API int xgeGraphicsBackendDescribe(xge_graphics_backend_ref backend,const xge_graphics_backend_t** output);
+/* The name borrows the corresponding immutable reference. */
+XGE_API int xgePlatformBackendInfoGet(xge_platform_backend_ref backend,xge_backend_info_t* output);
+XGE_API int xgeGraphicsBackendInfoGet(xge_graphics_backend_ref backend,xge_backend_info_t* output);
 XGE_API int xgeGraphicsBackendReleaseOwnerChecked(xge_graphics_backend_ref backend,bool* consumed);
 XGE_API int xgeGraphicsBackendReleaseChecked(xge_graphics_backend_ref backend);
 XGE_API xrtownershipref xgeGraphicsBackendOwnership(xge_graphics_backend_ref backend);
@@ -2136,6 +2152,12 @@ XGE_API xge_graphics_backend_t xgeGraphicsBackendDefault(void);
 XGE_API int xgeGraphicsBackendSet(const xge_graphics_backend_t* pBackend);
 /* 取当前图形后端描述。 */
 XGE_API xge_graphics_backend_t xgeGraphicsBackendGet(void);
+/* Default names are static. Current names borrow the current descriptor on
+ * the engine creator thread. With no initialized engine, return defaults. */
+XGE_API int xgePlatformBackendDefaultInfo(xge_backend_info_t* output);
+XGE_API int xgeGraphicsBackendDefaultInfo(xge_backend_info_t* output);
+XGE_API int xgePlatformBackendCurrentInfo(xge_backend_info_t* output);
+XGE_API int xgeGraphicsBackendCurrentInfo(xge_backend_info_t* output);
 /* 输出 GPU 能力（后端/版本/上限）。 */
 XGE_API int xgeGpuCapsGet(xge_gpu_caps_t* pCaps);
 /* 输出平台能力（窗口/剪贴板/IME/手柄等位）。 */
@@ -2145,6 +2167,11 @@ XGE_API int xgePlatformRuntimeGet(xge_platform_runtime_t* pRuntime);
 /* Borrowed backend-native handle for the primary XGE window. The concrete
  * type is platform-specific; callers own all casts and native operations. */
 XGE_API void* xgePlatformNativeHandle(void);
+typedef int (*xge_native_window_proc)(void* window,void* user);
+/* Creator-thread synchronous visit. The borrowed window handle is valid for
+ * the callback only. A missing window returns OK and visited=false. A
+ * failure leaves visited untouched. */
+XGE_API int xgePlatformVisitNativeHandle(xge_native_window_proc visit,void* user,bool* visited);
 /* 输出拖放能力位（拖出/多格式等，多能力仅 Windows）。 */
 XGE_API int xgeDragDropCapsGet(xge_drag_drop_caps_t* pCaps);
 /* 创建多格式数据对象（拖放/剪贴板载荷）。 */

@@ -840,6 +840,37 @@ void* xgePlatformNativeHandle(void)
 #endif
 }
 
+int xgePlatformVisitNativeHandle(xge_native_window_proc visit,void* user,bool* visited)
+{
+	if ( !visit || !visited ) return XGE_ERROR_INVALID_ARGUMENT;
+	int admission = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( admission == XGE_ERROR_NOT_INITIALIZED ) {
+		*visited = false;
+		return XGE_OK;
+	}
+	if ( admission != XGE_OK ) return admission;
+	void* window = xgePlatformNativeHandle();
+	if ( !window ) {
+		*visited = false;
+		return XGE_OK;
+	}
+	if ( !__xgeCallbackActivityEnter(false) ) return XGE_ERROR_BUSY;
+	xerror* previous = xrtTakeError();
+	xerror* first = NULL;
+	int status = visit(window,user);
+	int result = XGE_OK;
+	__xgeCallbackOutcome(status > 0 ? XGE_ERROR_CALLBACK_FAILED : status, &result, &first);
+	__xgeCallbackActivityLeave();
+	if ( result == XGE_OK ) {
+		*visited = true;
+		xrtSetErrorTake(previous);
+	} else {
+		xrtErrorFree(previous);
+		xrtSetErrorTake(first);
+	}
+	return result;
+}
+
 xge_graphics_backend_t xgeGraphicsBackendDefault(void)
 {
 	xge_graphics_backend_t tBackend;
@@ -869,6 +900,80 @@ xge_graphics_backend_t xgeGraphicsBackendGet(void)
 		return xgeGraphicsBackendDefault();
 	}
 	return g_xge.tGraphicsBackend;
+}
+
+static xge_backend_info_t __xgePlatformBackendInfo(const xge_platform_backend_t* backend)
+{
+	uint32_t mask = (backend->init ? XGE_BACKEND_CALLBACK_INIT : 0u) |
+		(backend->unit ? XGE_BACKEND_CALLBACK_UNIT : 0u) |
+		(backend->poll ? XGE_BACKEND_CALLBACK_POLL : 0u) |
+		(backend->present ? XGE_BACKEND_CALLBACK_PRESENT : 0u);
+	return (xge_backend_info_t){backend->iType, backend->sName, mask};
+}
+
+static xge_backend_info_t __xgeGraphicsBackendInfo(const xge_graphics_backend_t* backend)
+{
+	uint32_t mask = (backend->init ? XGE_BACKEND_CALLBACK_INIT : 0u) |
+		(backend->unit ? XGE_BACKEND_CALLBACK_UNIT : 0u) |
+		(backend->begin ? XGE_BACKEND_CALLBACK_BEGIN : 0u) |
+		(backend->end ? XGE_BACKEND_CALLBACK_END : 0u);
+	return (xge_backend_info_t){backend->iType, backend->sName, mask};
+}
+
+int xgePlatformBackendInfoGet(xge_platform_backend_ref backend,xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	const xge_platform_backend_t* descriptor = NULL;
+	int status = xgePlatformBackendDescribe(backend, &descriptor);
+	if ( status == XGE_OK ) *output = __xgePlatformBackendInfo(descriptor);
+	return status;
+}
+
+int xgeGraphicsBackendInfoGet(xge_graphics_backend_ref backend,xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	const xge_graphics_backend_t* descriptor = NULL;
+	int status = xgeGraphicsBackendDescribe(backend, &descriptor);
+	if ( status == XGE_OK ) *output = __xgeGraphicsBackendInfo(descriptor);
+	return status;
+}
+
+int xgePlatformBackendDefaultInfo(xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_platform_backend_t descriptor = xgePlatformBackendDefault();
+	*output = __xgePlatformBackendInfo(&descriptor);
+	return XGE_OK;
+}
+
+int xgeGraphicsBackendDefaultInfo(xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_graphics_backend_t descriptor = xgeGraphicsBackendDefault();
+	*output = __xgeGraphicsBackendInfo(&descriptor);
+	return XGE_OK;
+}
+
+int xgePlatformBackendCurrentInfo(xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( status == XGE_ERROR_NOT_INITIALIZED ) return xgePlatformBackendDefaultInfo(output);
+	if ( status != XGE_OK ) return status;
+	xge_platform_backend_t descriptor = xgePlatformBackendGet();
+	*output = __xgePlatformBackendInfo(&descriptor);
+	return XGE_OK;
+}
+
+int xgeGraphicsBackendCurrentInfo(xge_backend_info_t* output)
+{
+	if ( !output ) return XGE_ERROR_INVALID_ARGUMENT;
+	int status = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( status == XGE_ERROR_NOT_INITIALIZED ) return xgeGraphicsBackendDefaultInfo(output);
+	if ( status != XGE_OK ) return status;
+	xge_graphics_backend_t descriptor = xgeGraphicsBackendGet();
+	*output = __xgeGraphicsBackendInfo(&descriptor);
+	return XGE_OK;
 }
 
 static void __xgeGpuCapsCopy(char* sDst, int iDstSize, const char* sSrc)
