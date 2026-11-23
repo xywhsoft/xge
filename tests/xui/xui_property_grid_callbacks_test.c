@@ -27,6 +27,7 @@ typedef struct CallbackState {
     size_t references;
     unsigned calls;
     bool reject;
+    bool statusOnly;
 } CallbackState;
 
 static bool retain(const void* source)
@@ -72,7 +73,7 @@ static int validate(xui_widget widget, int property, const char* id, const char*
            (property == 2 && type == XUI_TABLE_CELL_TYPE_TEXT && !strcmp(id, "label")));
     ++state->calls;
     if ( state->reject ) {
-        xrtSetErrorKind(XERR_STATE);
+        if ( !state->statusOnly ) xrtSetErrorKind(XERR_STATE);
         return XUI_ERROR_CALLBACK_FAILED;
     }
     return 1;
@@ -156,8 +157,14 @@ int main(void)
     assert(xrtGetError() != NULL);
     xrtClearError();
     assert(!strcmp(xuiPropertyGridGetValue(grid, 0), "true"));
+    validator.statusOnly = true;
+    assert(xuiPropertyGridBeginEdit(grid, 0) == 0 && validator.calls == 4);
+    assert(xrtGetError() == NULL);
+    assert(xuiPropertyGridBeginEditChecked(grid, 0) == XUI_ERROR_CALLBACK_FAILED && validator.calls == 5);
+    assert(xrtGetError() == NULL);
+    validator.statusOnly = false;
     assert(xuiPropertyGridBeginEditChecked(grid, 2) == 1);
-    assert(xuiPropertyGridEndEditChecked(grid, 1) == XUI_ERROR_CALLBACK_FAILED && validator.calls == 4);
+    assert(xuiPropertyGridEndEditChecked(grid, 1) == XUI_ERROR_CALLBACK_FAILED && validator.calls == 6);
     assert(xrtGetError() != NULL);
     xrtClearError();
     assert(xuiPropertyGridEndEditChecked(grid, 0) == 1);
