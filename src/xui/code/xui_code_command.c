@@ -592,9 +592,11 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 		iRet = xuiCodeEditingToggleLineComment(pContext->pDocument, pContext->pSelection, sLineComment, pContext->bReadonly);
 		break;
 	case XUI_CODE_COMMAND_UNDO:
+		if ( pContext->bReadonly ) return XUI_ERROR_UNSUPPORTED;
 		iRet = xuiCodeDocumentUndo(pContext->pDocument);
 		break;
 	case XUI_CODE_COMMAND_REDO:
+		if ( pContext->bReadonly ) return XUI_ERROR_UNSUPPORTED;
 		iRet = xuiCodeDocumentRedo(pContext->pDocument);
 		break;
 	case XUI_CODE_COMMAND_FOLD_TOGGLE:

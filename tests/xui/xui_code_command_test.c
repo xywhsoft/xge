@@ -69,6 +69,7 @@ static int xuiTestClipboardGetText(xui_proxy pProxy, char* sText, int iCapacity)
 	return iLength;
 }
 
+#ifndef XUI_CODE_COMMAND_TEST_PACKAGE
 int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize)
 {
 	char sSmall[512];
@@ -100,6 +101,7 @@ int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSiz
 	*pTextSize = iRead;
 	return XUI_OK;
 }
+#endif
 
 static int xuiTestCommandDefaultRollback(xui_code_command_map pMap, int iExpectedCount)
 {
@@ -120,6 +122,7 @@ static int xuiTestCommandDefaultRollback(xui_code_command_map pMap, int iExpecte
 	iRet = xuiCodeCommandMapLoadDefaults(pMap);
 	xrtAllocationBudgetLeave(&tScope);
 	xrtAllocationBudgetFree(pBudget);
+	if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) xrtClearError();
 	iCommand = 0;
 	iFindRet = xuiCodeCommandMapFind(pMap, 'K', XUI_MOD_CTRL, &iCommand);
 	bResult = iRet == XUI_ERROR_OUT_OF_MEMORY &&
@@ -377,9 +380,19 @@ int main(void)
 		"undo document edit");
 	tTestContext = tContext;
 	tTestContext.pSelection = NULL;
+	tTestContext.bReadonly = 1;
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_UNDO, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && iHandled == 0 &&
+		strcmp(xuiCodeDocumentGetText(pDocument), "undoable") == 0, "read-only undo leaves text unchanged");
+	tTestContext.bReadonly = 0;
 	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_UNDO, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "undo") == 0,
 		"undo does not require selection");
+	tTestContext.bReadonly = 1;
+	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_REDO, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && iHandled == 0 &&
+		strcmp(xuiCodeDocumentGetText(pDocument), "undo") == 0, "read-only redo leaves text unchanged");
+	tTestContext.bReadonly = 0;
 	iRet = xuiCodeCommandExecute(&tTestContext, XUI_CODE_COMMAND_REDO, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "undoable") == 0,
 		"redo does not require selection");
