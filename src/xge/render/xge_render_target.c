@@ -338,6 +338,19 @@ int xgeRenderTargetAddRef(xge_render_target target)
     if(!target || target->_iOwnerReferences<=0 || target->_iOwnerReferences==INT32_MAX)return 0;
     return ++target->_iOwnerReferences;
 }
+
+int xgeRenderTargetShareOwned(xge_render_target pTarget, xge_render_target* ppShared)
+{
+    if (ppShared == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    *ppShared = NULL;
+    if (pTarget == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeGraphicsOwnerAccess(&g_xgeGraphicsLifetime);
+    if (status != XGE_OK) return status;
+    if (xgeRenderTargetAddRef(pTarget) <= 0) return XGE_ERROR_INVALID_STATE;
+    *ppShared = pTarget;
+    return XGE_OK;
+}
+
 void xgeRenderTargetFree(xge_render_target target)
 {
     if(!target)return;

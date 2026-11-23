@@ -2956,6 +2956,9 @@ XGE_API int xgeTextureLoadMemory(xge_texture pTexture, const void* pData, int iS
 XGE_API int xgeTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, uint32_t iFlags);
 /* 纹理引用计数加一。 */
 XGE_API int xgeTextureAddRef(xge_texture pTexture);
+/* Obtain an independent reference to an owned texture or an owned target's
+ * attachment. Creator thread only. Release with xgeTextureFree. */
+XGE_API int xgeTextureShareOwned(xge_texture pTexture, xge_texture* ppShared);
 /* 更新纹理子区域（脏区上传，行距 iStride 字节）。 */
 XGE_API int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride);
 /* Capacity-checked variants validate every row before reading/writing pixels.
@@ -3016,6 +3019,9 @@ XGE_API xge_texture xgeRenderTargetTexture(xge_render_target pTarget);
 /* 释放渲染目标。 */
 XGE_API void xgeRenderTargetFree(xge_render_target pTarget);
 XGE_API int xgeRenderTargetAddRef(xge_render_target target);
+/* Share a native owned target on its creator thread. Release the reference
+ * with xgeRenderTargetReleaseOwnerChecked. */
+XGE_API int xgeRenderTargetShareOwned(xge_render_target pTarget, xge_render_target* ppShared);
 XGE_API int xgeRenderTargetReleaseOwnerChecked(xge_render_target target,bool* consumed);
 XGE_API int xgeRenderTargetReadPixelsSized(xge_render_target target,void* pixels,size_t capacity,int stride);
 /* Top-first, tightly packed straight RGBA. Release the returned data with
@@ -3082,6 +3088,9 @@ XGE_API bool xgeFontIsOwned(const xge_font_t* font);
 XGE_API int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* sFragmentSource);
 /* 着色器引用计数加一。 */
 XGE_API int xgeShaderAddRef(xge_shader pShader);
+/* Share a native owned shader or variant on its creator thread. Release
+ * with xgeShaderFree. */
+XGE_API int xgeShaderShareOwned(xge_shader pShader, xge_shader* ppShared);
 /* 着色器引用计数减一，归零时释放。 */
 XGE_API void xgeShaderFree(xge_shader pShader);
 /* 按名称设置 int uniform。 */

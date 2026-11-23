@@ -1309,6 +1309,24 @@ static int __xgeTextureAdoptInternalStorage(xge_texture texture)
     if(!owner || *owner)return XGE_ERROR_INVALID_STATE;
     *owner=XGE_TEXTURE_RECORD_INTERNAL;return XGE_OK;
 }
+
+int xgeTextureShareOwned(xge_texture pTexture, xge_texture* ppShared)
+{
+    if (ppShared == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    *ppShared = NULL;
+    if (pTexture == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeGraphicsOwnerAccess(&g_xgeGraphicsLifetime);
+    if (status != XGE_OK) return status;
+    const int* owner = __xgeTextureRecordOwner(pTexture);
+    /* Private atlas textures have no independent engine obligation. */
+    if (owner == NULL || *owner == XGE_TEXTURE_RECORD_INTERNAL || !xgeTextureIsOwned(pTexture))
+        return XGE_ERROR_INVALID_STATE;
+    int refs = xgeTextureAddRef(pTexture);
+    if (refs <= 0) return refs < 0 ? refs : XGE_ERROR_INVALID_STATE;
+    *ppShared = pTexture;
+    return XGE_OK;
+}
+
 void xgeTextureFree(xge_texture pTexture)
 {
 	GLuint iTexture;

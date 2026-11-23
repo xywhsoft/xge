@@ -59,6 +59,18 @@ int xgeShaderAddRef(xge_shader pShader)
     return ++pShader->iRefCount;
 }
 
+int xgeShaderShareOwned(xge_shader pShader, xge_shader* ppShared)
+{
+    if (ppShared == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    *ppShared = NULL;
+    if (pShader == NULL) return XGE_ERROR_INVALID_ARGUMENT;
+    int status = __xgeGraphicsOwnerAccess(&g_xgeGraphicsLifetime);
+    if (status != XGE_OK) return status;
+    if (pShader->_pStorageOwner == NULL || xgeShaderAddRef(pShader) <= 0) return XGE_ERROR_INVALID_STATE;
+    *ppShared = pShader;
+    return XGE_OK;
+}
+
 void xgeShaderFree(xge_shader pShader)
 {
 	if ( pShader == NULL ) {

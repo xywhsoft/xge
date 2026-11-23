@@ -61,6 +61,15 @@ static int __xgeGraphicsOwnerRelease(xge_graphics_lifetime* state)
     if(!state->owners && !state->audioOwners && state->phase==XGE_GRAPHICS_COLD && !state->initializing)state->creatorThread=0;
     (void)xrtSpinUnlock(&state->lock);return result;
 }
+static int __xgeGraphicsOwnerAccess(xge_graphics_lifetime* state)
+{
+    (void)xrtSpinLock(&state->lock);
+    int result = XGE_OK;
+    if (!state->owners || state->creatorThread != xrtThreadCurrentId()) result = XGE_ERROR_INVALID_STATE;
+    else if (state->closing) result = XGE_ERROR_BUSY;
+    (void)xrtSpinUnlock(&state->lock);
+    return result;
+}
 static uint64_t __xgeGraphicsOwnerCount(xge_graphics_lifetime* state)
 {
     (void)xrtSpinLock(&state->lock);uint64_t result=state->owners;
