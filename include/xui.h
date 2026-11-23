@@ -231,6 +231,11 @@ typedef struct xui_language_text_t {
 	int bOwned;
 } xui_language_text_t;
 
+typedef struct xui_language_text_view_t {
+    int iTextId;
+    const char* sText;
+} xui_language_text_view_t;
+
 #define XUI_COLOR_RGBA(r, g, b, a)	((((uint32_t)(r) & 0xFFu) << 24) | (((uint32_t)(g) & 0xFFu) << 16) | (((uint32_t)(b) & 0xFFu) << 8) | ((uint32_t)(a) & 0xFFu))
 #define XUI_COLOR_WHITE			XUI_COLOR_RGBA(255, 255, 255, 255)
 
@@ -6742,6 +6747,11 @@ XUI_API int xuiLanguageRollbackCreate(xui_language pLanguage, bool* pRemoved);
  * unset/invalid slot; a present empty string is distinct. IDs are one-based. */
 XUI_API uint64_t xuiLanguageGetTextCount(xui_language pLanguage);
 XUI_API const char* xuiLanguageGetText(xui_language pLanguage, int iTextId);
+/* Zero-based position within the pack's own slots. An unset slot succeeds
+ * with NULL text. The string is borrowed until slot mutation or Context close.
+ * Failure leaves the output unchanged. */
+XUI_API int xuiLanguageGetTextAt(xui_language pLanguage, uint64_t iIndex,
+    xui_language_text_view_t* pOutput);
 XUI_API xui_context xuiLanguageGetContext(xui_language pLanguage);
 /* Status/output creation for managed callers. A non-NULL output transfers a
  * new Context registry entry even on checked tail failure; failed publication

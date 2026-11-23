@@ -666,6 +666,21 @@ XUI_API uint64_t xuiLanguageGetTextCount(xui_language language)
 {return __xuiLanguageValid(language) ? (uint64_t)language->arrTexts.Count:0;}
 XUI_API const char* xuiLanguageGetText(xui_language language,int id)
 {xui_language_text_t* slot=__xuiLanguageGetTextSlot(language,id);return slot ? slot->sText:NULL;}
+XUI_API int xuiLanguageGetTextAt(xui_language language, uint64_t index,
+    xui_language_text_view_t* output)
+{
+    if ( !__xuiLanguageValid(language) || !output ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context = language->pContext;
+    if ( !__xuiContextValid(context) ) return XUI_ERROR_INVALID_STATE;
+    if ( context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy) ) return XUI_ERROR_BUSY;
+    if ( context->bDestroying || context->bDestroyPending || context->bCloseRequested ) return XUI_ERROR_INVALID_STATE;
+    if ( index >= language->arrTexts.Count ) return XUI_ERROR_INVALID_ARGUMENT;
+
+    const xui_language_text_t* slot = xrtArrayConstGet(&language->arrTexts, (size_t)index);
+    if ( !slot ) return XUI_ERROR_INVALID_STATE;
+    *output = (xui_language_text_view_t){.iTextId = slot->iTextId, .sText = slot->sText};
+    return XUI_OK;
+}
 XUI_API xui_context xuiLanguageGetContext(xui_language language)
 {return __xuiLanguageValid(language) ? language->pContext:NULL;}
 static void __xuiLanguageCreationGone(void* user){*(bool*)user=true;}
