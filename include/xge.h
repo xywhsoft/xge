@@ -5634,6 +5634,17 @@ struct xge3d_cache;
 XGE_API int xge3dSceneLoadOwned(xge3d_scene *scene,xge3d_node_t parent,
     const xge3d_scene_node_desc_t *nodes,size_t count,xge3d_model *const *models,
     size_t model_count,struct xge3d_cache *cache,xge3d_node_t *out_root);
+/* Synchronous model resolver. The URI and output are valid during this call.
+ * Set retains one model reference; it may be called once. Returning XGE_OK
+ * requires a model. A failed callback or Set discards its retained output. */
+typedef struct xge3d_scene_model_output_t xge3d_scene_model_output_t;
+typedef int (*xge3d_scene_model_resolver_proc)(const xstrview *uri,xge3d_scene_model_output_t *output,void *user);
+XGE_API int xge3dSceneModelOutputSet(xge3d_scene_model_output_t *output,xge3d_model *model);
+/* Same staging and model ownership as SceneLoadOwned, with caller resolution
+ * for URI rows. A nested managed load on this scene returns XGE_ERROR_BUSY. */
+XGE_API int xge3dSceneLoadWithResolver(xge3d_scene *scene,xge3d_node_t parent,
+    xge3d_scene_model_resolver_proc resolve,void *user,const xge3d_scene_node_desc_t *nodes,size_t count,
+    xge3d_model *const *models,size_t model_count,xge3d_node_t *out_root);
 #endif
 #endif
 #if XGE3D_ENABLE_DYNAMIC

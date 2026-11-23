@@ -104,6 +104,7 @@ struct xge3d_scene {
 #if XGE3D_ENABLE_MODEL
     /* Non-NULL only while a builder is executing on this scene. */
     xarray *active_instance_nodes;
+    bool loading_description;
 #endif
     xarray spatial_tree, spatial_items, spatial_pending, query_stack;
     uint64_t spatial_geometry_version;

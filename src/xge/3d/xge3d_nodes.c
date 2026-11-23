@@ -233,6 +233,7 @@ static int d3_scene_load(xge3d_scene *s,xge3d_node_t parent,const xge3d_scene_de
         else continue;
         if(result||!*m){if(!result){result=XGE_ERROR_RESOURCE_FAILED;}goto models_done;}
     }
+    if(s->active_instance_nodes){result=XGE_ERROR_BUSY;goto models_done;}
 #endif
     result=xge3dNodeCreate(s,parent,&root);if(result){goto staged_done;}d3_node(s,root)->visible=0;
     for(size_t i=0;i<desc->count;++i){const xge3d_scene_node_desc_t *n=desc->nodes+i;xge3d_node_t *h=xrtArrayGet(&nodes,i);
@@ -250,10 +251,18 @@ static int d3_scene_load(xge3d_scene *s,xge3d_node_t parent,const xge3d_scene_de
     }
     if(!result){d3_node(s,root)->visible=1;*out=root;root=(xge3d_node_t){0};}
 staged_done:
-    if(root.slot){xge3dNodeDestroy(s,root);}
+    if(root.slot){
+        xerror *first=xrtTakeError();
+        xge3dNodeDestroy(s,root);
+        xrtSetErrorTake(first);
+    }
 #if XGE3D_ENABLE_MODEL
-models_done:
-    for(size_t i=0;i<models.Count;++i){xge3dModelFree(*(xge3d_model**)xrtArrayGet(&models,i));}xrtArrayUnit(&models);
+models_done: {
+    xerror *first=result!=XGE_OK ? xrtTakeError():NULL;
+    for(size_t i=0;i<models.Count;++i){xge3dModelFree(*(xge3d_model**)xrtArrayGet(&models,i));}
+    xrtArrayUnit(&models);
+    if(result!=XGE_OK)xrtSetErrorTake(first);
+}
 #endif
 done:
     xrtArrayUnit(&nodes);return result;
@@ -267,6 +276,24 @@ int xge3dSceneLoad(xge3d_scene *s,xge3d_node_t parent,const xge3d_scene_desc_t *
         out);
 }
 #if XGE3D_ENABLE_MODEL
+static int d3_scene_load_managed(xge3d_scene *s,xge3d_node_t parent,const xge3d_scene_desc_t *desc,
+    xge3d_model *const *models,size_t model_count,xge3d_node_t *out)
+{
+    xge3d_scene *owner=NULL;
+    int result=xge3dSceneShareOwned(s,&owner);
+    if(result!=XGE_OK)return result;
+    if(owner->loading_description)result=XGE_ERROR_BUSY;
+    else{
+        owner->loading_description=true;
+        result=d3_scene_load(owner,parent,desc,models,model_count,out);
+        owner->loading_description=false;
+    }
+    xerror *first=result!=XGE_OK ? xrtTakeError():NULL;
+    xge3dSceneReleaseChecked(owner);
+    if(result!=XGE_OK)xrtSetErrorTake(first);
+    return result;
+}
+
 static int d3_load_scene_model(const char *uri,xge3d_model **out,void *cache)
 {
 #if XGE3D_ENABLE_CACHE
@@ -284,13 +311,58 @@ int xge3dSceneLoadOwned(xge3d_scene *s,xge3d_node_t parent,const xge3d_scene_nod
 #if !XGE3D_ENABLE_CACHE
     if(cache)return XGE_ERROR_UNSUPPORTED;
 #endif
-    xge3d_scene *owner=NULL;
-    int result=xge3dSceneShareOwned(s,&owner);
-    if(result!=XGE_OK)return result;
     const xge3d_scene_desc_t desc={nodes,count,d3_load_scene_model,cache};
-    result=d3_scene_load(owner,parent,&desc,models,model_count,out);
-    xge3dSceneReleaseChecked(owner);
-    return result;
+    return d3_scene_load_managed(s,parent,&desc,models,model_count,out);
+}
+
+struct xge3d_scene_model_output_t {
+    xge3d_model *model;
+    int status;
+};
+
+int xge3dSceneModelOutputSet(xge3d_scene_model_output_t *output,xge3d_model *model)
+{
+    if(!output)return XGE_ERROR_INVALID_ARGUMENT;
+    if(output->status!=XGE_OK)return output->status;
+    output->status=output->model ? XGE_ERROR_INVALID_STATE : xge3dModelShareOwned(model,&output->model);
+    return output->status;
+}
+
+typedef struct d3_scene_resolver {
+    xge3d_scene_model_resolver_proc resolve;
+    void *user;
+} d3_scene_resolver;
+
+static int d3_resolve_scene_model(const char *uri,xge3d_model **out,void *raw)
+{
+    d3_scene_resolver *resolver=raw;
+    xge3d_scene_model_output_t output={0};
+    const xstrview path={uri,strlen(uri)};
+    int status=resolver->resolve(&path,&output,resolver->user);
+    xerror *error=xrtTakeError();
+    if(status>0 || (status==XGE_OK && error))status=XGE_ERROR_CALLBACK_FAILED;
+    if(status==XGE_OK)status=output.status;
+    if(status==XGE_OK && !output.model)status=XGE_ERROR_RESOURCE_FAILED;
+    if(status==XGE_OK)*out=output.model;
+    else if(output.model)xge3dModelReleaseChecked(output.model);
+    xrtSetErrorTake(error);
+    return status;
+}
+
+int xge3dSceneLoadWithResolver(xge3d_scene *s,xge3d_node_t parent,xge3d_scene_model_resolver_proc resolve,
+    void *user,const xge3d_scene_node_desc_t *nodes,size_t count,xge3d_model *const *models,size_t model_count,
+    xge3d_node_t *out)
+{
+    if(!out)return XGE_ERROR_INVALID_ARGUMENT;
+    *out=(xge3d_node_t){0};
+    if(!resolve)return XGE_ERROR_INVALID_ARGUMENT;
+    d3_scene_resolver resolver={resolve,user};
+    const xge3d_scene_desc_t desc={nodes,count,d3_resolve_scene_model,&resolver};
+    xerror *ambient=xrtTakeError();
+    int status=d3_scene_load_managed(s,parent,&desc,models,model_count,out);
+    if(xrtGetError())xrtErrorFree(ambient);
+    else xrtSetErrorTake(ambient);
+    return status;
 }
 #endif
 #endif
