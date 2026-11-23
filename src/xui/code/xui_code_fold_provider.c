@@ -1,14 +1,9 @@
 #include "xui_config.h"
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_code_document_internal.h"
+#include "xui_code_language_internal.h"
 
 #include <limits.h>
-
-struct xui_code_fold_output_t {
-	xui_code_fold_range_t* pRanges;
-	int iCapacity;
-	int iCount;
-};
 
 XUI_API int xuiCodeFoldOutputGetCapacity(const xui_code_fold_output_t* output)
 {

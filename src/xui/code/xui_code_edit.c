@@ -2514,7 +2514,9 @@ static void __xuiCodeEditDestroyOwned(xui_widget pWidget,xui_code_edit_data_t* p
 	if(pData->pMargins)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeMarginDestroyOwned(pWidget,pData->pMargins));
 	if(pData->pProviders)xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeProviderDestroyOwned(pWidget,pData->pProviders));
 	xuiInternalCodeTokenBufferDestroyOwned(pData->pTokenBuffer, pWidget);
-	xuiInternalCodeLanguageRegistryDestroyOwned(pData->pLanguages, pWidget);
+	xui_code_language_registry languages = pData->pLanguages;
+	pData->pLanguages = NULL;
+	xuiInternalContextRecordFailure(pWidget->pContext,xuiInternalCodeLanguageRegistryDestroyOwned(languages, pWidget));
 	xuiInternalCodeAnnotationDestroyOwned(pData->pAnnotations, pWidget);
 	xuiInternalCodeFoldStateDestroyOwned(pData->pFoldState, pWidget);
 	xuiInternalCodeThemeDestroyOwned(pData->pTheme, pWidget);
@@ -7415,6 +7417,7 @@ static bool __xuiCodeEditTraceOwnership(xui_widget widget,const void* raw,xrtown
     if(data->pDocument && !xuiCodeDocumentTraceOwnership(data->pDocument,visit,user))return false;
     if(data->pMargins && !xuiCodeMarginModelTraceOwnership(data->pMargins,visit,user))return false;
     if(data->pProviders && !xuiCodeProviderSetTraceOwnership(data->pProviders,visit,user))return false;
+    if(data->pLanguages && !xuiCodeLanguageRegistryTraceOwnership(data->pLanguages,visit,user))return false;
     for(int i=0;i<data->iLineLayoutCount;++i){
         const xui_code_edit_line_layout_t* line=&data->pLineLayouts[i];
         if(widget->pContext->pOwnedProxy && line->pFont && !visit(xuiFontOwnership(line->pFont),user))return false;

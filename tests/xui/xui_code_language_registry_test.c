@@ -1,4 +1,4 @@
-#ifdef XGE_XRT_HOST
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
 #define XRT_MODULE_ALL
 #ifdef _WIN32
 #define XRT_USE_SHARED
@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef XGE_XRT_HOST
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
 #include <xge_host_xrt_contract.h>
 static xge_host_xrt_proc resolve(void* user, const char* name)
 {
@@ -78,6 +78,126 @@ static void require_first_token(xui_context context, xui_widget editor, xui_surf
     assert(count > 0 && token.iStartOffset == 0 && token.iEndOffset == 3 && token.iStyle == style);
 }
 
+typedef struct owned_language_probe_t {
+    xui_code_language_registry registry;
+    size_t references;
+    int visits;
+    int calls;
+    bool failDrop;
+} owned_language_probe_t;
+
+static bool owned_language_count(const void* raw, size_t* count)
+{ *count = ((const owned_language_probe_t*)raw)->references; return true; }
+
+static bool owned_language_trace(const void* raw, xrtownershipvisitor visit, void* user)
+{ (void)raw; (void)visit; (void)user; return true; }
+
+static bool owned_language_hold(const void* raw)
+{ ++((owned_language_probe_t*)raw)->references; return true; }
+
+static bool owned_language_drop(const void* raw)
+{
+    owned_language_probe_t* probe = (owned_language_probe_t*)raw;
+    assert(probe->references != 0);
+    assert(xuiCodeLanguageRegistryClearChecked(probe->registry) == XUI_ERROR_BUSY);
+    --probe->references;
+    return !probe->failDrop;
+}
+
+static bool visit_owned_language(xrtownershipref reference, void* user)
+{
+    owned_language_probe_t* probe = user;
+    if ( reference.Data == probe ) ++probe->visits;
+    return true;
+}
+
+static int owned_language_lex(xui_code_document document, int first, int last,
+    xui_code_token_output_t* output, void* raw)
+{
+    (void)first;
+    (void)last;
+    owned_language_probe_t* probe = raw;
+    ++probe->calls;
+    assert(xuiCodeLanguageRegistryOwnershipBusy(probe->registry));
+    assert(xuiCodeLanguageRegistryClearChecked(probe->registry) == XUI_ERROR_BUSY);
+    assert(xuiCodeDocumentGetLength(document) >= 3 && xuiCodeTokenOutputGetCapacity(output) >= 0);
+    xui_code_token_t token = {.iStartOffset=0, .iEndOffset=3,
+        .iKind=XUI_CODE_TOKEN_KEYWORD, .iStyle=XUI_CODE_STYLE_KEYWORD};
+    return xuiCodeTokenOutputAppend(output, token);
+}
+
+static int owned_language_fold(xui_code_document document, xui_code_fold_output_t* output, void* raw)
+{
+    (void)document;
+    owned_language_probe_t* probe = raw;
+    assert(xuiCodeLanguageRegistryClearChecked(probe->registry) == XUI_ERROR_BUSY);
+    xui_code_fold_range_t range = {.iStartLine=0, .iEndLine=2};
+    return xuiCodeFoldOutputAppend(output, range);
+}
+
+static void install_owned_language(owned_language_probe_t* probe)
+{
+    static const xrtownershipops ops = {owned_language_count, owned_language_trace};
+    const xui_callback_owner_t owner = {{probe, &ops}, owned_language_hold, owned_language_drop};
+    const xui_code_language_extension_t extensions[] = {{"owned"}};
+    const xui_code_callback_language_t language = {.iSize=sizeof(language), .sId="owned-test",
+        .pExtensions=extensions, .iExtensionCount=1, .onLex=owned_language_lex,
+        .onFold=owned_language_fold, .pUser=probe};
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe->registry, &language, &owner) == XUI_OK);
+}
+
+typedef struct nested_language_probe_t {
+    xui_code_document other;
+    xui_code_language_t managed;
+} nested_language_probe_t;
+
+static int nested_legacy_lex(xui_code_document document, int first, int last,
+    xui_code_token_t* tokens, int capacity, int* count, void* raw)
+{
+    nested_language_probe_t* probe = raw;
+    int rejected = 99;
+    assert(xuiCodeLanguageLex(&probe->managed,probe->other,first,last,NULL,0,&rejected,NULL,0) == XUI_ERROR_BUSY);
+    assert(rejected == 0);
+    return xuiCodeLanguageLex(&probe->managed,document,first,last,tokens,capacity,count,NULL,0);
+}
+
+static void check_owned_registry(void)
+{
+    xui_code_document document = NULL;
+    owned_language_probe_t probe = {0};
+    assert(xuiCodeLanguageRegistryCreate(&probe.registry) == XUI_OK);
+    assert(xuiCodeDocumentCreate(&document) == XUI_OK);
+    assert(xuiCodeDocumentSetText(document,"abc\nnext\nend") == XUI_OK);
+    install_owned_language(&probe);
+    assert(probe.references == 1);
+    assert(xuiCodeLanguageRegistryTraceOwnership(probe.registry,visit_owned_language,&probe) && probe.visits == 1);
+    xui_code_token_t token = {0};
+    int count = 0;
+    assert(xuiCodeLanguageRegistryLex(probe.registry,"owned-test",document,0,-1,&token,1,&count,NULL,0) == XUI_OK);
+    assert(count == 1 && token.iEndOffset == 3);
+    assert(xuiCodeLanguageRegistryFold(probe.registry,"owned-test",document,NULL,0,&count) == XUI_OK && count == 1);
+    xui_code_language_t borrowed = {0};
+    assert(xuiCodeLanguageRegistryFind(probe.registry,"owned-test",&borrowed) == XUI_OK);
+    assert(xuiCodeLanguageLex(&borrowed,document,0,-1,NULL,0,&count,NULL,0) == XUI_OK && count == 1);
+    nested_language_probe_t nested = {.managed=borrowed};
+    assert(xuiCodeDocumentCreate(&nested.other) == XUI_OK);
+    assert(xuiCodeDocumentSetText(nested.other,"abc") == XUI_OK);
+    const xui_code_language_t legacy = {.iSize=sizeof(legacy), .sId="nested",
+        .onLex=nested_legacy_lex, .pUser=&nested};
+    assert(xuiCodeLanguageRegistryRegister(probe.registry,&legacy) == XUI_OK);
+    assert(xuiCodeLanguageRegistryLex(probe.registry,"nested",document,0,-1,NULL,0,&count,NULL,0) == XUI_OK);
+    assert(count == 1);
+    xuiCodeDocumentDestroy(nested.other);
+    install_owned_language(&probe);
+    assert(probe.references == 1 && probe.calls == 3);
+    probe.failDrop = true;
+    bool consumed = false;
+    assert(xuiCodeLanguageRegistryDestroyOwnerChecked(probe.registry,&consumed) == XUI_ERROR_CALLBACK_FAILED);
+    assert(consumed && probe.references == 0);
+    xrtClearError();
+    xuiCodeDocumentDestroy(document);
+}
+
 static void check_rollback(xui_code_language_registry registry, xui_code_regex_language_t* language)
 {
     int failures = 0;
@@ -104,10 +224,11 @@ static void check_rollback(xui_code_language_registry registry, xui_code_regex_l
 
 int main(void)
 {
-#ifdef XGE_XRT_HOST
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
     const xge_host_xrt_contract_t binding = XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
     assert(xgeHostXrtBind(&binding, resolve, NULL, NULL) == XGE_HOST_XRT_OK);
 #endif
+    check_owned_registry();
     xui_test_proxy_state_t proxy;
     xuiTestProxyInit(&proxy);
     xui_context_desc_t settings;
@@ -170,8 +291,14 @@ int main(void)
     };
     assert(xuiCodeLanguageRegistryRegister(registry, &guard) == XUI_OK);
     assert(xuiLayout(context) == XUI_OK && xuiRender(context, target, NULL, 0) == XUI_OK);
+
+    owned_language_probe_t owned = {.registry=registry};
+    install_owned_language(&owned);
+    assert(xuiCodeEditSetLanguage(editor,"owned-test") == XUI_OK);
+    require_first_token(context, editor, target, XUI_CODE_STYLE_KEYWORD);
+    assert(owned.references == 1 && owned.calls > 0);
     assert(xuiCodeLanguageRegistryClearChecked(registry) == XUI_OK);
-    assert(xuiCodeLanguageRegistryGetCount(registry) == 0);
+    assert(xuiCodeLanguageRegistryGetCount(registry) == 0 && owned.references == 0);
 
     xthread* worker = xrtThreadCreate(wrong_thread, registry, 0);
     assert(worker && xrtThreadWait(worker) == XWAIT_OK);

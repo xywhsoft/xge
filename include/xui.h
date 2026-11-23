@@ -2847,6 +2847,27 @@ typedef struct xui_code_regex_language_t {
 	int iRegexRuleCount;
 } xui_code_regex_language_t;
 
+typedef struct xui_code_token_output_t xui_code_token_output_t;
+typedef struct xui_code_fold_output_t xui_code_fold_output_t;
+typedef int (*xui_code_lex_output_proc)(xui_code_document_t* pDocument, int iStartLine, int iEndLine,
+	xui_code_token_output_t* pOutput, void* pUser);
+typedef int (*xui_code_fold_output_proc)(xui_code_document_t* pDocument, xui_code_fold_output_t* pOutput, void* pUser);
+
+/* Bounded writer callbacks receive a document and output for the invocation. */
+typedef struct xui_code_callback_language_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sName;
+	const char* sLineComment;
+	const char* sBlockCommentStart;
+	const char* sBlockCommentEnd;
+	const xui_code_language_extension_t* pExtensions;
+	int iExtensionCount;
+	xui_code_lex_output_proc onLex;
+	xui_code_fold_output_proc onFold;
+	void* pUser;
+} xui_code_callback_language_t;
+
 struct xui_code_completion_item_t {
 	uint32_t iSize;
 	const char* sLabel;
@@ -8478,6 +8499,9 @@ XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry
 XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry);
 /* An editor-owned registry cannot be destroyed independently. */
 XUI_API int xuiCodeLanguageRegistryDestroyChecked(xui_code_language_registry pRegistry);
+XUI_API int xuiCodeLanguageRegistryDestroyOwnerChecked(xui_code_language_registry pRegistry, bool* pConsumed);
+XUI_API bool xuiCodeLanguageRegistryOwnershipBusy(xui_code_language_registry pRegistry);
+XUI_API bool xuiCodeLanguageRegistryTraceOwnership(xui_code_language_registry pRegistry, xrtownershipvisitor onVisit, void* pUser);
 /* 清空已注册语言。 */
 XUI_API void xuiCodeLanguageRegistryClear(xui_code_language_registry pRegistry);
 XUI_API int xuiCodeLanguageRegistryClearChecked(xui_code_language_registry pRegistry);
@@ -8487,6 +8511,15 @@ XUI_API int xuiCodeLanguageRegistryEditorLifetimeWatch(xui_code_language_registr
 XUI_API int xuiCodeLanguageRegistryLoadDefaults(xui_code_language_registry pRegistry);
 /* 注册一门语言（深拷贝字符串、扩展名及正则规则；回调与 pUser 由调用方持有）。 */
 XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry, const xui_code_language_t* pLanguage);
+/* Holds the callback owner through replacement, clear or destruction.
+   Once a registry holds callback owners, it is confined to their thread.
+   Returned language definitions remain borrowed until registry mutation. */
+XUI_API int xuiCodeLanguageRegistryRegisterOwned(xui_code_language_registry pRegistry,
+	const xui_code_language_t* pLanguage, const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry pRegistry,
+	const xui_code_callback_language_t* pLanguage, const xui_callback_owner_t* pOwner);
+XUI_API int xuiCodeTokenOutputGetCapacity(const xui_code_token_output_t* pOutput);
+XUI_API int xuiCodeTokenOutputAppend(xui_code_token_output_t* pOutput, xui_code_token_t tToken);
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry pRegistry,
     const xui_code_regex_language_t* pLanguage);
 /* 读取已注册语言数。 */
@@ -8575,9 +8608,6 @@ XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_co
    range and writes only the prefix that fits. The callback can be repeated
    to fill storage. Rebuilding or mutating the same fold state returns BUSY.
    The Document is pinned; changing it during the callback rejects the result. */
-typedef struct xui_code_fold_output_t xui_code_fold_output_t;
-typedef int (*xui_code_fold_output_proc)(xui_code_document pDocument,
-	xui_code_fold_output_t* pOutput, void* pUser);
 XUI_API int xuiCodeFoldOutputGetCapacity(const xui_code_fold_output_t* pOutput);
 XUI_API int xuiCodeFoldOutputAppend(xui_code_fold_output_t* pOutput, xui_code_fold_range_t tRange);
 XUI_API int xuiCodeFoldStateBuildFromCallback(xui_code_fold_state pState, xui_code_document pDocument,
