@@ -8180,6 +8180,27 @@ XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch pBatch,
     xui_code_document_batch_payload pPayload,bool* pTaken);
 XUI_API void xuiCodeDocumentBatchPayloadDestroy(xui_code_document_batch_payload pPayload);
 
+/* Detached description for managed callers. It holds no document references.
+ * Read and stage on any thread while the caller keeps the snapshot alive. A
+ * zero stage budget inherits the captured limit. */
+typedef struct xui_code_document_batch_snapshot_t* xui_code_document_batch_snapshot;
+XUI_API int xuiCodeDocumentBatchDescribeSnapshot(xui_code_document_batch pBatch,
+    xui_code_document_batch_snapshot* ppSnapshot);
+XUI_API void xuiCodeDocumentBatchSnapshotDestroy(xui_code_document_batch_snapshot pSnapshot);
+XUI_API int xuiCodeDocumentBatchSnapshotGetLayout(xui_code_document_batch_snapshot pSnapshot,
+    xui_code_document_batch_layout_t* pLayout);
+XUI_API int xuiCodeDocumentBatchSnapshotGetSource(xui_code_document_batch_snapshot pSnapshot,
+    size_t iIndex, xui_code_document_batch_source_t* pSource);
+XUI_API int xuiCodeDocumentBatchSnapshotStage(xui_code_document_batch_snapshot pSnapshot,
+    const xui_code_document_batch_text_t* pTexts, size_t iCount, size_t iBudget,
+    int (*cancelled)(void*), void* pUser, xui_code_document_batch_payload* ppPayload);
+/* Move the rows and keep the payload shell alive. Query WasTaken even after
+ * an error. An accepted shell cannot be accepted again and must be destroyed
+ * once. The caller must keep the shell alive throughout every call. */
+XUI_API int xuiCodeDocumentBatchAcceptPayload(xui_code_document_batch pBatch,
+    xui_code_document_batch_payload pPayload);
+XUI_API bool xuiCodeDocumentBatchPayloadWasTaken(xui_code_document_batch_payload pPayload);
+
 /* Optional synchronous host gates; callbacks/user are borrowed for Commit only.
  * beforePublish runs after toolkit preflight, may refuse without publication,
  * and is followed by another whole-group toolkit fence. published runs after

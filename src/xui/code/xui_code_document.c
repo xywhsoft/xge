@@ -1913,8 +1913,15 @@ static bool __xuiDocumentBatchCurrent(const xui_document_batch_row_t* row)
  * A payload moves exactly once into Accept. No worker dereferences the ticket. */
 struct xui_code_document_batch_payload_t {
     uint64_t serial;
-    size_t count,used,limit;
+    size_t count,used;
     xui_document_batch_row_t* rows;
+    xatomic32 state;
+};
+enum { BATCH_PAYLOAD_READY, BATCH_PAYLOAD_ACCEPTING, BATCH_PAYLOAD_TAKEN };
+struct xui_code_document_batch_snapshot_t {
+    xui_code_document_batch_layout_t layout;
+    size_t limit;
+    xui_code_document_batch_source_t sources[];
 };
 static xatomic64 __xuiDocumentBatchSerial={0};
 static uint64_t __xuiDocumentBatchNextSerial(void)
@@ -1963,15 +1970,58 @@ XUI_API int xuiCodeDocumentBatchCapture(const xui_code_document_batch_item_t* it
     if(status!=XUI_OK){__xuiDocumentBatchFree(batch);return status;}
     *output=batch;return XUI_OK;
 }
+static int __xuiDocumentBatchCanDescribe(xui_code_document_batch batch)
+{
+    if(!batch)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiCodeDocumentBatchOwnershipBusy(batch))return XUI_ERROR_BUSY;
+    return batch->attempted || batch->ready ? XUI_ERROR_INVALID_STATE : XUI_OK;
+}
+static void __xuiDocumentBatchDescribe(xui_code_document_batch batch,
+    xui_code_document_batch_layout_t* layout,xui_code_document_batch_source_t* sources)
+{
+    *layout=(xui_code_document_batch_layout_t){sizeof(*layout),batch->serial,batch->count,__xuiDocumentBatchCaptureBytes(batch->count)};
+    for(size_t i=0;i<batch->count;++i)sources[i]=(xui_code_document_batch_source_t){sizeof(*sources),batch->rows[i].beforeLength,batch->rows[i].undoCount};
+}
 XUI_API int xuiCodeDocumentBatchDescribe(xui_code_document_batch batch,
     xui_code_document_batch_layout_t* layout,xui_code_document_batch_source_t* sources,size_t capacity)
 {
-    if(!batch || !layout || (batch->count && !sources))return XUI_ERROR_INVALID_ARGUMENT;
-    if(batch->thread!=xrtThreadCurrentId() || batch->busy)return XUI_ERROR_BUSY;
-    if(batch->attempted || batch->ready)return XUI_ERROR_INVALID_STATE;
+    if(!layout || (batch && batch->count && !sources))return XUI_ERROR_INVALID_ARGUMENT;
+    int status=__xuiDocumentBatchCanDescribe(batch);
+    if(status!=XUI_OK)return status;
     if(capacity<batch->count)return XUI_ERROR_BUFFER_TOO_SMALL;
-    *layout=(xui_code_document_batch_layout_t){sizeof(*layout),batch->serial,batch->count,__xuiDocumentBatchCaptureBytes(batch->count)};
-    for(size_t i=0;i<batch->count;++i)sources[i]=(xui_code_document_batch_source_t){sizeof(*sources),batch->rows[i].beforeLength,batch->rows[i].undoCount};
+    __xuiDocumentBatchDescribe(batch,layout,sources);
+    return XUI_OK;
+}
+XUI_API int xuiCodeDocumentBatchDescribeSnapshot(xui_code_document_batch batch,
+    xui_code_document_batch_snapshot* output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    int status=__xuiDocumentBatchCanDescribe(batch);
+    if(status!=XUI_OK)return status;
+    /* Capture caps count at 512. Describing copies only scalar metadata. */
+    xui_code_document_batch_snapshot snapshot=xrtMalloc(sizeof(*snapshot)+
+        batch->count*sizeof(snapshot->sources[0]));
+    if(!snapshot)return XUI_ERROR_OUT_OF_MEMORY;
+    snapshot->limit=batch->limit;
+    __xuiDocumentBatchDescribe(batch,&snapshot->layout,snapshot->sources);
+    *output=snapshot;
+    return XUI_OK;
+}
+XUI_API void xuiCodeDocumentBatchSnapshotDestroy(xui_code_document_batch_snapshot snapshot)
+{xrtFree(snapshot);}
+XUI_API int xuiCodeDocumentBatchSnapshotGetLayout(xui_code_document_batch_snapshot snapshot,
+    xui_code_document_batch_layout_t* layout)
+{
+    if(!snapshot || !layout)return XUI_ERROR_INVALID_ARGUMENT;
+    *layout=snapshot->layout;
+    return XUI_OK;
+}
+XUI_API int xuiCodeDocumentBatchSnapshotGetSource(xui_code_document_batch_snapshot snapshot,
+    size_t index,xui_code_document_batch_source_t* source)
+{
+    if(!snapshot || !source || index>=snapshot->layout.iDocuments)return XUI_ERROR_INVALID_ARGUMENT;
+    *source=snapshot->sources[index];
     return XUI_OK;
 }
 static int __xuiDocumentBatchStopped(int (*cancelled)(void*),void* user)
@@ -1986,7 +2036,7 @@ static int __xuiDocumentBatchCopy(char* destination,const char* source,size_t si
     return XUI_OK;
 }
 static int __xuiDocumentBatchBuildRow(xui_code_document_batch_payload payload,
-    xui_document_batch_row_t* row,const xui_code_document_batch_source_t* source,
+    size_t limit,xui_document_batch_row_t* row,const xui_code_document_batch_source_t* source,
     const xui_code_document_batch_text_t* text,int (*cancelled)(void*),void* user)
 {
     if(source->iSize!=sizeof(*source) || text->iSize!=sizeof(*text) || source->iLength<0 ||
@@ -2004,21 +2054,21 @@ static int __xuiDocumentBatchBuildRow(xui_code_document_batch_payload payload,
     int status=XUI_OK;
     if(!row->changed){
         if(text->Before.Size){
-            status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,text->Before.Size+1,(void**)&row->proof,false);
+            status=__xuiDocumentBatchAllocate(&payload->used,limit,text->Before.Size+1,(void**)&row->proof,false);
             if(status==XUI_OK){status=__xuiDocumentBatchCopy(row->proof,before,text->Before.Size,cancelled,user);row->proof[text->Before.Size]=0;}
         }
         return status;
     }
     row->afterLines=__xuiCodeDocumentTextLineBreaks(after,row->afterLength)+1;
     if(__xuiDocumentBatchStopped(cancelled,user))return XUI_ERROR_INVALID_STATE;
-    status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,text->After.Size+4096,(void**)&row->buffer,false);
-    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,text->After.Size+1,(void**)&row->snapshot,false);
-    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,(size_t)row->afterLines*sizeof(*row->lines),(void**)&row->lines,false);
+    status=__xuiDocumentBatchAllocate(&payload->used,limit,text->After.Size+4096,(void**)&row->buffer,false);
+    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,limit,text->After.Size+1,(void**)&row->snapshot,false);
+    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,limit,(size_t)row->afterLines*sizeof(*row->lines),(void**)&row->lines,false);
     if(status==XUI_OK && (size_t)row->undoCount+1>SIZE_MAX/sizeof(*row->undo))status=XUI_ERROR_OUT_OF_MEMORY;
-    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,((size_t)row->undoCount+1)*sizeof(*row->undo),(void**)&row->undo,false);
-    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,payload->limit,sizeof(*row->group.pActions),(void**)&row->group.pActions,true);
+    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,limit,((size_t)row->undoCount+1)*sizeof(*row->undo),(void**)&row->undo,false);
+    if(status==XUI_OK)status=__xuiDocumentBatchAllocate(&payload->used,limit,sizeof(*row->group.pActions),(void**)&row->group.pActions,true);
     size_t strings=(text->Before.Size?text->Before.Size+1:0)+(text->After.Size?text->After.Size+1:0);
-    if(status==XUI_OK && strings>payload->limit-payload->used)status=XUI_ERROR_OUT_OF_MEMORY;
+    if(status==XUI_OK && strings>limit-payload->used)status=XUI_ERROR_OUT_OF_MEMORY;
     if(status!=XUI_OK)return status;
     payload->used+=strings;row->group.iActionCount=row->group.iActionCapacity=1;
     status=__xuiCodeDocumentActionInit(NULL,row->group.pActions,0,before,row->beforeLength,after,row->afterLength);
@@ -2033,11 +2083,16 @@ static int __xuiDocumentBatchBuildRow(xui_code_document_batch_payload payload,
     }
     row->lines[line]=(xui_code_line_t){start,row->afterLength,row->afterLength};return XUI_OK;
 }
+static void __xuiDocumentBatchReleaseRows(xui_code_document_batch_payload payload)
+{
+    if(!payload->rows)return;
+    for(size_t i=0;i<payload->count;++i)__xuiDocumentBatchFreePayloadRow(payload->rows+i);
+    xrtFree(payload->rows);payload->rows=NULL;
+}
 XUI_API void xuiCodeDocumentBatchPayloadDestroy(xui_code_document_batch_payload payload)
 {
     if(!payload)return;
-    for(size_t i=0;i<payload->count;++i)__xuiDocumentBatchFreePayloadRow(payload->rows+i);
-    xrtFree(payload->rows);xrtFree(payload);
+    __xuiDocumentBatchReleaseRows(payload);xrtFree(payload);
 }
 XUI_API int xuiCodeDocumentBatchStage(const xui_code_document_batch_layout_t* layout,
     const xui_code_document_batch_source_t* sources,const xui_code_document_batch_text_t* texts,
@@ -2053,7 +2108,8 @@ XUI_API int xuiCodeDocumentBatchStage(const xui_code_document_batch_layout_t* la
     if(__xuiDocumentBatchStopped(cancelled,user))return XUI_ERROR_INVALID_STATE;
     xui_code_document_batch_payload payload=xrtMalloc(sizeof(*payload));
     if(!payload)return XUI_ERROR_OUT_OF_MEMORY;
-    memset(payload,0,sizeof(*payload));payload->serial=layout->iCapture;payload->limit=limit;
+    memset(payload,0,sizeof(*payload));payload->serial=layout->iCapture;
+    xrtAtomic32Init(&payload->state,BATCH_PAYLOAD_READY);
     payload->used=layout->iCaptureBytes+sizeof(*payload);
     int status=__xuiDocumentBatchAllocate(&payload->used,limit,(layout->iDocuments?layout->iDocuments:1)*sizeof(*payload->rows),(void**)&payload->rows,true);
     if(status==XUI_OK)payload->count=layout->iDocuments;
@@ -2062,11 +2118,22 @@ XUI_API int xuiCodeDocumentBatchStage(const xui_code_document_batch_layout_t* la
         if(__xuiDocumentBatchStopped(cancelled,user)){status=XUI_ERROR_INVALID_STATE;break;}
         if(texts[i].Before.Size>64u*1024u*1024u-beforeBytes || texts[i].After.Size>64u*1024u*1024u-afterBytes){status=XUI_ERROR_INVALID_ARGUMENT;break;}
         beforeBytes+=texts[i].Before.Size;afterBytes+=texts[i].After.Size;
-        status=__xuiDocumentBatchBuildRow(payload,payload->rows+i,sources+i,texts+i,cancelled,user);
+        status=__xuiDocumentBatchBuildRow(payload,limit,payload->rows+i,sources+i,texts+i,cancelled,user);
     }
     if(status==XUI_OK && __xuiDocumentBatchStopped(cancelled,user))status=XUI_ERROR_INVALID_STATE;
     if(status!=XUI_OK){xuiCodeDocumentBatchPayloadDestroy(payload);return status;}
     *output=payload;return XUI_OK;
+}
+XUI_API int xuiCodeDocumentBatchSnapshotStage(xui_code_document_batch_snapshot snapshot,
+    const xui_code_document_batch_text_t* texts,size_t count,size_t budget,
+    int (*cancelled)(void*),void* user,xui_code_document_batch_payload* output)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!snapshot || count!=snapshot->layout.iDocuments || budget>snapshot->limit)
+        return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiCodeDocumentBatchStage(&snapshot->layout,snapshot->sources,texts,
+        budget ? budget : snapshot->limit,cancelled,user,output);
 }
 static const char* __xuiDocumentBatchBefore(const xui_document_batch_row_t* row)
 {return row->changed?(row->group.pActions->sDeleted?row->group.pActions->sDeleted:""):(row->proof?row->proof:"");}
@@ -2077,14 +2144,21 @@ static bool __xuiDocumentBatchBeforeMatches(xui_code_document d,const xui_docume
     return (!prefix || !memcmp(d->sBuffer,before,(size_t)prefix)) &&
         (prefix==d->iLength || !memcmp(d->sBuffer+d->iGapEnd,before+prefix,(size_t)(d->iLength-prefix)));
 }
-XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch batch,
-    xui_code_document_batch_payload payload,bool* taken)
+static int __xuiDocumentBatchAccept(xui_code_document_batch batch,
+    xui_code_document_batch_payload payload,bool* taken,bool retainShell)
 {
     if(!taken)return XUI_ERROR_INVALID_ARGUMENT;
     *taken=false;
     if(!batch || !payload)return XUI_ERROR_INVALID_ARGUMENT;
     if(batch->thread!=xrtThreadCurrentId() || batch->busy)return XUI_ERROR_BUSY;
-    if(batch->ready || batch->attempted || batch->serial!=payload->serial || batch->count!=payload->count || payload->used>batch->limit)return XUI_ERROR_INVALID_STATE;
+    if(batch->ready || batch->attempted)return XUI_ERROR_INVALID_STATE;
+    uint32 expected=BATCH_PAYLOAD_READY;
+    if(!xrtAtomic32CompareExchange(&payload->state,&expected,BATCH_PAYLOAD_ACCEPTING,XMEMORY_ACQ_REL,XMEMORY_ACQUIRE))
+        return expected==BATCH_PAYLOAD_TAKEN ? XUI_ERROR_INVALID_STATE : XUI_ERROR_BUSY;
+    if(batch->serial!=payload->serial || batch->count!=payload->count || payload->used>batch->limit){
+        xrtAtomic32Store(&payload->state,BATCH_PAYLOAD_READY,XMEMORY_RELEASE);
+        return XUI_ERROR_INVALID_STATE;
+    }
     batch->busy=true;int status=XUI_OK;
     for(size_t i=0;status==XUI_OK && i<batch->count;++i){
         xui_document_batch_row_t* row=batch->rows+i;const xui_document_batch_row_t* staged=payload->rows+i;
@@ -2092,7 +2166,8 @@ XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch batch,
         if(status==XUI_OK && (!__xuiDocumentBatchCurrent(row) || row->beforeLength!=staged->beforeLength ||
             row->undoCount!=staged->undoCount || !__xuiDocumentBatchBeforeMatches(row->document,staged)))status=XUI_ERROR_INVALID_STATE;
     }
-    if(status==XUI_OK){
+    bool moved=status==XUI_OK;
+    if(moved){
         for(size_t i=0;i<batch->count;++i){
             xui_document_batch_row_t *row=batch->rows+i,*staged=payload->rows+i;
             row->changed=staged->changed;row->afterLength=staged->afterLength;row->afterLines=staged->afterLines;
@@ -2102,10 +2177,25 @@ XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch batch,
             memset(&staged->group,0,sizeof(staged->group));
         }
         batch->used=payload->used;batch->ready=true;*taken=true;
-        xuiCodeDocumentBatchPayloadDestroy(payload);
+        __xuiDocumentBatchReleaseRows(payload);
+        if(retainShell)xrtAtomic32Store(&payload->state,BATCH_PAYLOAD_TAKEN,XMEMORY_RELEASE);
+        else xrtFree(payload);
     }
-    status=__xuiDocumentBatchFinishCalls(batch,status);batch->busy=false;return status;
+    status=__xuiDocumentBatchFinishCalls(batch,status);
+    if(!moved)xrtAtomic32Store(&payload->state,BATCH_PAYLOAD_READY,XMEMORY_RELEASE);
+    batch->busy=false;return status;
 }
+XUI_API int xuiCodeDocumentBatchAccept(xui_code_document_batch batch,
+    xui_code_document_batch_payload payload,bool* taken)
+{return __xuiDocumentBatchAccept(batch,payload,taken,false);}
+XUI_API int xuiCodeDocumentBatchAcceptPayload(xui_code_document_batch batch,
+    xui_code_document_batch_payload payload)
+{
+    bool taken=false;
+    return __xuiDocumentBatchAccept(batch,payload,&taken,true);
+}
+XUI_API bool xuiCodeDocumentBatchPayloadWasTaken(xui_code_document_batch_payload payload)
+{return payload && xrtAtomic32Load(&payload->state,XMEMORY_ACQUIRE)==BATCH_PAYLOAD_TAKEN;}
 
 XUI_API int xuiCodeDocumentBatchPrepare(const xui_code_document_batch_item_t* items,
     size_t count,size_t budget,xui_code_document_batch* output)
