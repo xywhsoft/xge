@@ -508,7 +508,8 @@ static int __xuiWidgetTypeValid(xui_widget_type pType)
 	return (pType != NULL) && (pType->iMagic == XUI_WIDGET_TYPE_MAGIC);
 }
 
-static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData, const void* pNativeOwner);
+static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget,
+    const void* pCreateData, const void* pNativeOwner,xui_widget_type_init_proc onLeafInit);
 
 static int __xuiFloatValid(float fValue)
 {
@@ -3100,19 +3101,21 @@ static void __xuiTypeDestroyFrames(xui_widget widget,xui_widget_type leaf,xui_wi
     __xuiTypeDestroyFrames(widget,leaf,type->pParent,&frame);
 }
 static void __xuiWidgetTypeDestroyChain(xui_widget pWidget,xui_widget_type pType);
-static int __xuiWidgetTypeInitChain(xui_widget pWidget, xui_widget_type pType, const void* pCreateData)
+static int __xuiWidgetTypeInitChain(xui_widget pWidget, xui_widget_type pType, const void* pCreateData,
+    xui_widget_type_init_proc onLeafInit)
 {
 	int iRet;
 
 	if ( !__xuiWidgetTypeValid(pType) ) {
 		return XUI_OK;
 	}
-	iRet = __xuiWidgetTypeInitChain(pWidget, pType->pParent, pCreateData);
+	iRet = __xuiWidgetTypeInitChain(pWidget, pType->pParent, pCreateData, NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( pType->onInit != NULL ) {
-		iRet = pType->onInit(pWidget, pWidget->pTypeData, pCreateData, pType->pUser);
+	xui_widget_type_init_proc init=onLeafInit ? onLeafInit:pType->onInit;
+	if ( init != NULL ) {
+		iRet = init(pWidget, pWidget->pTypeData, pCreateData, pType->pUser);
 		if ( iRet != XUI_OK ) return iRet;
 		/* A successful native return completed this stage even if its semantic
 		 * diagnostic refuses construction; rollback must destroy that stage. */
@@ -4202,7 +4205,8 @@ int xuiInternalWidgetBindPartSlot(xui_widget owner,xui_widget part,xui_widget* s
     part->ppInternalOwnerSlot=slot;return XUI_OK;
 }
 
-static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData, const void* pNativeOwner)
+static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget,
+    const void* pCreateData, const void* pNativeOwner,xui_widget_type_init_proc onLeafInit)
 {
 	xui_widget pWidget;
 	xui_widget_type pOwner;
@@ -4325,7 +4329,7 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	if ( pContext->pAllWidgets != NULL ) pContext->pAllWidgets->pContextPrev = pWidget;
 	pContext->pAllWidgets = pWidget;
     if(pNativeOwner)__xuiWidgetLinkPart((xui_widget)pNativeOwner,pWidget);
-	iRet = __xuiWidgetTypeInitChain(pWidget, pType, pCreateData);
+	iRet = __xuiWidgetTypeInitChain(pWidget, pType, pCreateData, onLeafInit);
 	if ( iRet != XUI_OK ) {
         /* Completed parent stages remain on this real Context-owned carrier.
          * A busy cache cannot be discarded by immediate constructor rollback. */
@@ -4358,7 +4362,7 @@ static void __xuiCreatedOwnerGone(void* value)
 /* Constructor callbacks see only this operation's diagnostics. Keep a weak
  * output through End, which may run deferred cleanup and destroy that output. */
 static int __xuiWidgetCreateScoped(xui_context context,xui_widget_type type,
-    xui_widget* output,const void* data,const void* owner)
+    xui_widget* output,const void* data,const void* owner,xui_widget_type_init_proc onLeafInit)
 {
     if(!output)return XUI_ERROR_INVALID_ARGUMENT;
     *output=NULL;
@@ -4367,7 +4371,7 @@ static int __xuiWidgetCreateScoped(xui_context context,xui_widget_type type,
     xui_lifetime_link_t ownerLife={0};
     xui_created_owner_output_t ownerOutput={(xui_widget)owner,output};
     if(owner)status=xuiWidgetLifetimeWatch((xui_widget)owner,&ownerLife,__xuiCreatedOwnerGone,&ownerOutput);
-    if(status==XUI_OK)status=__xuiWidgetCreateInternal(context,type,output,data,owner);
+    if(status==XUI_OK)status=__xuiWidgetCreateInternal(context,type,output,data,owner,onLeafInit);
     xui_widget candidate=status==XUI_OK ? *output:NULL;
     xui_lifetime_link_t life={0};
     if(status==XUI_OK && (!__xuiWidgetValid(candidate) ||
@@ -4402,17 +4406,21 @@ static int __xuiWidgetCreateScoped(xui_context context,xui_widget_type type,
 }
 
 XUI_API int xuiWidgetCreate(xui_context pContext, xui_widget* ppWidget)
-{return __xuiWidgetCreateScoped(pContext,&g_xuiWidgetBaseType,ppWidget,NULL,NULL);}
+{return __xuiWidgetCreateScoped(pContext,&g_xuiWidgetBaseType,ppWidget,NULL,NULL,NULL);}
 
 XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xui_widget* ppWidget, const void* pCreateData)
-{return __xuiWidgetCreateScoped(pContext,pType,ppWidget,pCreateData,NULL);}
+{return __xuiWidgetCreateScoped(pContext,pType,ppWidget,pCreateData,NULL,NULL);}
+
+int xuiInternalWidgetCreateTypedWithInit(xui_context context,xui_widget_type type,xui_widget* output,
+    const void* data,xui_widget_type_init_proc init)
+{return __xuiWidgetCreateScoped(context,type,output,data,NULL,init);}
 
 /* Construction identity is installed before any native/type init callback. */
 int xuiInternalWidgetCreatePart(xui_widget owner,xui_widget_type type,xui_widget* output,const void* data)
 {
     if(output)*output=NULL;
     if(!__xuiWidgetValid(owner) || !output)return XUI_ERROR_INVALID_ARGUMENT;
-    return __xuiWidgetCreateScoped(owner->pContext,type,output,data,owner);
+    return __xuiWidgetCreateScoped(owner->pContext,type,output,data,owner,NULL);
 }
 
 static int __xuiDragAdornerRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -7083,7 +7091,7 @@ XUI_API xui_widget xuiOverlayRoot(xui_context pContext)
 	if ( pContext->pOverlayRoot != NULL ) {
 		return pContext->pOverlayRoot;
 	}
-	if ( __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, &pRoot, NULL, NULL) != XUI_OK ) {
+	if ( __xuiWidgetCreateInternal(pContext, &g_xuiWidgetBaseType, &pRoot, NULL, NULL, NULL) != XUI_OK ) {
 		return NULL;
 	}
 	tLayout = pRoot->tLayout;

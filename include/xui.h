@@ -14800,6 +14800,8 @@ XUI_API int xuiFlowGraphGetEdgeDiagnosticCount(xui_flow_graph pGraph, const char
 XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext);
 /* 创建流程图画布控件（渲染 + 交互）。 */
 XUI_API int xuiFlowGraphWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_flow_graph_desc_t* pDesc);
+/* The canvas retains pGraph; NULL creates an owned model. bOwnGraph must be 0. */
+XUI_API int xuiFlowGraphWidgetCreateShared(xui_context pContext, xui_widget* ppWidget, const xui_flow_graph_desc_t* pDesc);
 /* 取绑定的流程图模型。 */
 XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget);
 /* 绑定非 NULL 模型；bOwnGraph 为真时模型由控件接管销毁。切换前会取消并回滚活动拖拽。 */
@@ -14826,6 +14828,8 @@ XUI_API int xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, x
 XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext);
 /* 创建工作流编辑器画布（包装流程图画布）。 */
 XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_workflow_desc_t* pDesc);
+/* The canvas retains pWorkflow; NULL creates an owned model. bOwnWorkflow must be 0. */
+XUI_API int xuiWorkflowWidgetCreateShared(xui_context pContext, xui_widget* ppWidget, const xui_workflow_desc_t* pDesc);
 /* 取绑定的工作流模型。 */
 XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget);
 /* Acquires an independent reference, promoting an owned unique slot once.

@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_flow_graph_widget_internal.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct xui_workflow_widget_data_t {
@@ -149,7 +150,7 @@ static void __xuiWorkflowWidgetDefaultLayout(xui_layout_t* pLayout)
 	pLayout->fShrink = 1.0f;
 }
 
-static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
+static int __xuiWorkflowWidgetInitModel(xui_widget pWidget, void* pTypeData, const void* pCreateData, bool share)
 {
 	xui_workflow_widget_data_t* pData;
 	const xui_workflow_desc_t* pDesc;
@@ -157,7 +158,6 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	int bCreatedWorkflow;
 	int iRet;
 
-	(void)pUser;
 	if ( (pWidget == NULL) || (pTypeData == NULL) || !__xuiWorkflowWidgetDescValid((const xui_workflow_desc_t*)pCreateData) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -166,11 +166,24 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	if(pDesc && pDesc->pWorkflow && xuiWorkflowGetNodeCount(pDesc->pWorkflow)==XUI_ERROR_BUSY)return XUI_ERROR_BUSY;
 	memset(pData, 0, sizeof(*pData));
 	bCreatedWorkflow = 0;
-	if ( pDesc != NULL ) {
+	if ( pDesc != NULL && !share ) {
 		pData->pWorkflow = pDesc->pWorkflow;
 		pData->bOwnWorkflow = pDesc->bOwnWorkflow ? 1 : 0;
 	}
-	if ( pData->pWorkflow == NULL ) {
+	if(share){
+		xrtownershipscope mutation={0};
+		if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+		iRet=pDesc && pDesc->pWorkflow ? xuiWorkflowShareOwned(pDesc->pWorkflow,&pData->pWorkflow):
+			xuiWorkflowCreateOwned(&pData->pWorkflow);
+		if(iRet==XUI_OK){
+			pData->bOwnWorkflow=1;
+			/* Checked retirement detaches the borrowed child graph before
+			 * releasing this slot, including on partial construction. */
+			pWidget->pInitializedType=pWidget->pType;
+		}
+		if(!xrtOwnershipScopeEnd(&mutation))abort();
+		if(iRet!=XUI_OK)return iRet;
+	}else if ( pData->pWorkflow == NULL ) {
 		iRet = xuiWorkflowCreate(&pData->pWorkflow);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -188,6 +201,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	tGraphDesc.bOwnGraph = 0;
 	iRet = xuiInternalWidgetCreatePart(pWidget,xuiFlowGraphGetType(xuiWidgetGetContext(pWidget)),&pData->pCanvas,&tGraphDesc);
 	if ( iRet != XUI_OK ) {
+		if(share)return iRet;
 		if ( bCreatedWorkflow && pData->pWorkflow != NULL ) {
 			xuiWorkflowDestroy(pData->pWorkflow);
 		}
@@ -200,6 +214,7 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetAlign(pData->pCanvas, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	if ( iRet == XUI_OK ) iRet = xuiInternalWidgetInsertPart(pWidget,pWidget,pData->pCanvas,NULL);
 	if ( iRet != XUI_OK ) {
+		if(share)return iRet;
 		(void)xuiInternalWidgetDestroyPart(pWidget,pData->pCanvas);
 		pData->pCanvas = NULL;
 		if ( bCreatedWorkflow && pData->pWorkflow != NULL ) {
@@ -210,6 +225,12 @@ static int __xuiWorkflowWidgetInit(xui_widget pWidget, void* pTypeData, const vo
 	}
 	return XUI_OK;
 }
+
+static int __xuiWorkflowWidgetInit(xui_widget widget,void* data,const void* desc,void* user)
+{(void)user;return __xuiWorkflowWidgetInitModel(widget,data,desc,false);}
+
+static int __xuiWorkflowWidgetInitShared(xui_widget widget,void* data,const void* desc,void* user)
+{(void)user;return __xuiWorkflowWidgetInitModel(widget,data,desc,true);}
 
 static void __xuiWorkflowWidgetDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
@@ -292,6 +313,19 @@ XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, 
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+}
+
+XUI_API int xuiWorkflowWidgetCreateShared(xui_context context,xui_widget* output,const xui_workflow_desc_t* desc)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!xuiInternalContextIsValid(context) || !__xuiWorkflowWidgetDescValid(desc) || (desc && desc->bOwnWorkflow))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xui_widget_type type=xuiWorkflowGetType(context);
+    if(!type)return XUI_ERROR_NOT_INITIALIZED;
+    if(type->onInit!=__xuiWorkflowWidgetInit)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalWidgetCreateTypedWithInit(context,type,output,desc,__xuiWorkflowWidgetInitShared);
 }
 
 XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget)

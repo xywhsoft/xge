@@ -33,6 +33,8 @@ int xuiInternalContextPrepareDestroy(xui_context,bool* complete);
 int xuiInternalTreeViewCreatePart(xui_widget,xui_widget*,const xui_tree_view_desc_t*);
 int xuiInternalBreadcrumbCreatePart(xui_widget,xui_widget*,const xui_breadcrumb_desc_t*);
 int xuiInternalWidgetCreatePart(xui_widget pOwner,xui_widget_type pType,xui_widget* ppPart,const void* pCreateData);
+int xuiInternalWidgetCreateTypedWithInit(xui_context context,xui_widget_type type,xui_widget* output,
+    const void* data,xui_widget_type_init_proc init);
 int xuiInternalWidgetOverlayAttachPart(xui_widget pOwner,xui_widget pOverlayOwner,xui_widget pPart,int iLayer,int iZIndex);
 int xuiInternalWidgetBindPartSlot(xui_widget pOwner,xui_widget pPart,xui_widget* ppStableDataSlot);
 int xuiInternalWidgetClaimPart(xui_widget pOwner,xui_widget pPart);

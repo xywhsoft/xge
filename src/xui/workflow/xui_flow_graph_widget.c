@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_FLOW_NODE_BUCKET_SIZE 256.0f
@@ -1904,7 +1905,7 @@ int xuiInternalFlowGraphWidgetPrepareModelRelease(xui_widget widget,xui_widget a
     data->bGraphMutationActive=0;return status;
 }
 
-static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
+static int __xuiFlowGraphWidgetInitModel(xui_widget pWidget, void* pTypeData, const void* pCreateData, bool share)
 {
 	static const int arrEvents[] = {
 		XUI_EVENT_POINTER_DOWN, XUI_EVENT_POINTER_MOVE, XUI_EVENT_POINTER_UP,
@@ -1918,7 +1919,6 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 	int i;
 	int iRet;
 
-	(void)pUser;
 	if ( (pWidget == NULL) || (pTypeData == NULL) || !__xuiFlowGraphWidgetDescValid((const xui_flow_graph_desc_t*)pCreateData) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -1951,10 +1951,25 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 		pData->iPortColor = __xuiFlowGraphWidgetColor(pDesc->iPortColor, pData->iPortColor);
 		pData->iEdgeColor = __xuiFlowGraphWidgetColor(pDesc->iEdgeColor, pData->iEdgeColor);
 		pData->iSelectedEdgeColor = __xuiFlowGraphWidgetColor(pDesc->iSelectedEdgeColor, pData->iSelectedEdgeColor);
-		pData->pGraph = pDesc->pGraph;
-		pData->bOwnGraph = pDesc->bOwnGraph;
+		if(!share){
+			pData->pGraph = pDesc->pGraph;
+			pData->bOwnGraph = pDesc->bOwnGraph;
+		}
 	}
-	if ( pData->pGraph == NULL ) {
+	if(share){
+		xrtownershipscope mutation={0};
+		if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
+		iRet=pDesc && pDesc->pGraph ? xuiFlowGraphShareOwned(pDesc->pGraph,&pData->pGraph):
+			xuiFlowGraphCreateOwned(&pData->pGraph);
+		if(iRet==XUI_OK){
+			pData->bOwnGraph=1;
+			/* Once the slot owns a model, checked widget retirement also
+			 * handles a failure later in this constructor. */
+			pWidget->pInitializedType=pWidget->pType;
+		}
+		if(!xrtOwnershipScopeEnd(&mutation))abort();
+		if(iRet!=XUI_OK)return iRet;
+	}else if ( pData->pGraph == NULL ) {
 		iRet = xuiFlowGraphCreate(&pData->pGraph);
 		if ( iRet != XUI_OK ) {
 			return iRet;
@@ -1977,11 +1992,17 @@ static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const v
 		iRet = xuiWidgetSetAccessibilityProvider(pWidget, __xuiFlowGraphWidgetAccessibleCount,
 			__xuiFlowGraphWidgetAccessibleGet, __xuiFlowGraphWidgetAccessibleAction, pData);
 	}
-	if ( iRet != XUI_OK ) {
+	if ( iRet != XUI_OK && !share ) {
 		__xuiFlowGraphWidgetReleaseData(pData, bCreatedGraph);
 	}
 	return iRet;
 }
+
+static int __xuiFlowGraphWidgetInit(xui_widget widget,void* data,const void* desc,void* user)
+{(void)user;return __xuiFlowGraphWidgetInitModel(widget,data,desc,false);}
+
+static int __xuiFlowGraphWidgetInitShared(xui_widget widget,void* data,const void* desc,void* user)
+{(void)user;return __xuiFlowGraphWidgetInitModel(widget,data,desc,true);}
 
 static int __xuiFlowGraphWidgetUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
@@ -2144,6 +2165,19 @@ XUI_API int xuiFlowGraphWidgetCreate(xui_context pContext, xui_widget* ppWidget,
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+}
+
+XUI_API int xuiFlowGraphWidgetCreateShared(xui_context context,xui_widget* output,const xui_flow_graph_desc_t* desc)
+{
+    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
+    *output=NULL;
+    if(!xuiInternalContextIsValid(context) || !__xuiFlowGraphWidgetDescValid(desc) || (desc && desc->bOwnGraph))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    xui_widget_type type=xuiFlowGraphGetType(context);
+    if(!type)return XUI_ERROR_NOT_INITIALIZED;
+    if(type->onInit!=__xuiFlowGraphWidgetInit)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalWidgetCreateTypedWithInit(context,type,output,desc,__xuiFlowGraphWidgetInitShared);
 }
 
 XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget)
