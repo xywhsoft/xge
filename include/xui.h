@@ -11287,6 +11287,11 @@ XUI_API xui_widget xuiDockPanelGetWindowPinButtonWidget(xui_widget pWidget, int 
 XUI_API int xuiDockPanelSetWindowUserData(xui_widget pWidget, int iWindow, void* pUser);
 /* 读取窗口用户指针。 */
 XUI_API void* xuiDockPanelGetWindowUserData(xui_widget pWidget, int iWindow);
+/* The retained XRT value follows the window through layout changes. It is
+ * separate from the C user pointer and the serialized layout. NULL clears a
+ * value; the getter returns one owned reference or NULL. */
+XUI_API int xuiDockPanelSetWindowValue(xui_widget pWidget, int iWindow, xvalue* pValue);
+XUI_API int xuiDockPanelGetWindowValue(xui_widget pWidget, int iWindow, xvalue** ppValue);
 /* 设置借用字体；DockPanel 使用期间调用方须保持字体有效。 */
 XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */

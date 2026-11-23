@@ -6,6 +6,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_DOCK_NODE_EMPTY 0
@@ -69,6 +70,7 @@ typedef struct xui_dock_window_slot_t {
     int bAutoHideLabelUpdating;
 	void* pUser;
 	xui_dock_panel_data_t* pOwner;
+	bool bValueReady;
 } xui_dock_window_slot_t;
 
 typedef struct xui_dock_pane_slot_t {
@@ -124,6 +126,9 @@ typedef struct xui_dock_region_slot_t {
 } xui_dock_region_slot_t;
 
 struct xui_dock_panel_data_t {
+	/* The table is installed on the first non-null assignment. */
+	xvalue** ppWindowValues;
+	bool bClearingWindowValues;
 	xlayout_context_t* pLayoutContext;
 	xlayout_node_t iRegionLayoutRoot;
 	xlayout_node_t arrRegionLayoutAreas[XUI_DOCK_PANEL_REGION_COUNT];
@@ -6599,9 +6604,42 @@ static void __xuiDockSurfaceSlots(xui_widget widget,void* raw,xui_surface_slot_a
     static const size_t offsets[]={offsetof(xui_dock_window_slot_t,pIconSurface)};
     *slots=(xui_surface_slot_array_t){data->arrWindows,XUI_DOCK_PANEL_WINDOW_CAPACITY,sizeof(data->arrWindows[0]),offsets,1};
 }
+static bool __xuiDockWindowValueReady(xvalue* pValue)
+{
+	if ( pValue == NULL ) return true;
+	xrtownershipref ref = xrtValueOwnership(pValue);
+	size_t count = 0;
+	return ref.Ops->Count(ref.Data, &count);
+}
+
+static bool __xuiDockWindowValuesReady(const xui_dock_panel_data_t* pData)
+{
+	if ( pData == NULL || pData->ppWindowValues == NULL ) return true;
+	for ( int i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; ++i )
+		if ( !__xuiDockWindowValueReady(pData->ppWindowValues[i]) ) return false;
+	return true;
+}
+
+static void __xuiDockDropWindowValues(xui_context context, xvalue** ppValues, int* status, xerror** first)
+{
+	if ( ppValues == NULL ) return;
+	for ( int i = 0; i < XUI_DOCK_PANEL_WINDOW_CAPACITY; ++i ) {
+		if ( ppValues[i] == NULL ) continue;
+		xrtValueRelease(ppValues[i]);
+		xuiInternalContextCleanupOutcome(context, XUI_OK, status, first);
+	}
+	xrtFree(ppValues);
+}
+
 static bool __xuiDockTraceCaches(xui_widget widget,const void* raw,xrtownershipvisitor visit,void* user)
 {
     const xui_dock_panel_data_t* data=raw;
+    if(!data)return true;
+    if(data->ppWindowValues)
+        for(int i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i){
+            xvalue* value=data->ppWindowValues[i];
+            if(value && !visit(xrtValueOwnership(value),user))return false;
+        }
     if(!widget->pContext->pOwnedProxy)return true;
     for(size_t i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i){
         const xui_dock_window_slot_t* window=&data->arrWindows[i];
@@ -6613,9 +6651,11 @@ static bool __xuiDockTraceCaches(xui_widget widget,const void* raw,xrtownershipv
 static int __xuiDockDestroyReady(xui_widget widget,const void* raw)
 {
     (void)widget;const xui_dock_panel_data_t* data=raw;
+    if(!data)return XUI_OK;
+    if(data->bClearingWindowValues)return XUI_ERROR_BUSY;
     for(size_t i=0;i<XUI_DOCK_PANEL_WINDOW_CAPACITY;++i)
         if(data->arrWindows[i].bAutoHideLabelUpdating)return XUI_ERROR_BUSY;
-    return XUI_OK;
+    return __xuiDockWindowValuesReady(data) ? XUI_OK : XUI_ERROR_BUSY;
 }
 static int __xuiDockDestroyPrepare(xui_widget widget,void* raw,bool* complete)
 {
@@ -6630,6 +6670,23 @@ static int __xuiDockDestroyPrepare(xui_widget widget,void* raw,bool* complete)
         xuiInternalContextCleanupOutcome(widget->pContext,next,&status,&first);
         if(data->arrWindows[i].pAutoHideLabelSurface || data->arrWindows[i].bAutoHideLabelUpdating){
             *complete=false;break;
+        }
+    }
+    if(*complete && data->ppWindowValues){
+        xrtownershipscope mutation={0};
+        xvalue** ppRetired=NULL;
+        if(xrtOwnershipMutationBegin(&mutation)){
+            if(__xuiDockWindowValuesReady(data)){
+                ppRetired=data->ppWindowValues;
+                data->ppWindowValues=NULL;
+            }
+            if(!xrtOwnershipScopeEnd(&mutation))abort();
+        }
+        if(ppRetired){
+            __xuiDockDropWindowValues(widget->pContext,ppRetired,&status,&first);
+        }else{
+            *complete=false;
+            xuiInternalContextCleanupOutcome(widget->pContext,XUI_ERROR_BUSY,&status,&first);
         }
     }
     xrtSetErrorTake(first);return status;
@@ -6764,9 +6821,8 @@ XUI_API int xuiDockPanelCreate(xui_context pContext, xui_widget* ppWidget, const
 	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
 }
 
-XUI_API int xuiDockPanelClear(xui_widget pWidget)
+static int __xuiDockClear(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue*** pppRetired)
 {
-	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	xui_proxy pProxy;
 	xlayout_context_t* pLayoutContext;
 	xui_font pFont;
@@ -6791,7 +6847,6 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	int iWindowChangeCount;
 	int bTabScrollButtonsVisible;
 	int i;
-	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
     xui_font_slot_update_t fontUpdate={0};
     int fontStatus=xuiInternalFontSlotPrepare(pWidget->pContext,&pData->pFont,pData->pFont,pWidget->bTypeInitialized!=0,true,&fontUpdate);
     if(fontStatus!=XUI_OK)return fontStatus;
@@ -6833,6 +6888,23 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	bTabScrollButtonsVisible = pData->bTabScrollButtonsVisible;
 	memcpy(arrMenuTitle, pData->arrMenuTitle, sizeof(arrMenuTitle));
 	memcpy(arrTooltipText, pData->arrTooltipText, sizeof(arrTooltipText));
+    xrtownershipscope valueMutation={0};
+    bool valuesLocked=false;
+    if(pData->ppWindowValues){
+        valuesLocked=xrtOwnershipMutationBegin(&valueMutation);
+        if(!valuesLocked || !__xuiDockWindowValuesReady(pData))surfaceStatus=XUI_ERROR_BUSY;
+    }
+    if(surfaceStatus==XUI_OK)surfaceStatus=xuiInternalSurfaceSlotsPublish(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY);
+    if(surfaceStatus==XUI_OK)surfaceStatus=xuiInternalFontSlotPublish(&fontUpdate);
+    if(surfaceStatus==XUI_OK){
+        *pppRetired=pData->ppWindowValues;
+        pData->ppWindowValues=NULL;
+    }
+    if(valuesLocked && !xrtOwnershipScopeEnd(&valueMutation))abort();
+    if(surfaceStatus!=XUI_OK){
+        surfaceStatus=xuiInternalSurfaceSlotsEnd(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY,false,surfaceStatus);
+        return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
+    }
 	(void)xuiMenuClose(pOptionMenu);
 	(void)xuiMenuClose(pOverflowMenu);
 	(void)xuiMenuClear(pOptionMenu);
@@ -6849,12 +6921,6 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	if ( xLayoutNodeIsValid(pData->pLayoutContext, pData->iRegionLayoutRoot) ) {
 		xLayoutNodeDestroy(pData->pLayoutContext, pData->iRegionLayoutRoot);
 	}
-    surfaceStatus=xuiInternalSurfaceSlotsPublish(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY);
-    if(surfaceStatus==XUI_OK)surfaceStatus=xuiInternalFontSlotPublish(&fontUpdate);
-    if(surfaceStatus!=XUI_OK){
-        surfaceStatus=xuiInternalSurfaceSlotsEnd(surfaces,XUI_DOCK_PANEL_WINDOW_CAPACITY,false,surfaceStatus);
-        return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
-    }
 	__xuiDockDefaults(pData);
 	pData->pWidget = pWidget;
 	pData->pLayoutContext = pLayoutContext;
@@ -6887,6 +6953,26 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	return xuiInternalFontSlotEnd(&fontUpdate,true,surfaceStatus);
 }
 
+XUI_API int xuiDockPanelClear(xui_widget pWidget)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context context = pWidget->pContext;
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(context, &scope);
+	if ( status != XUI_OK ) return status;
+	if ( pData->bClearingWindowValues || !__xuiDockWindowValuesReady(pData) )
+		return xuiInternalCallScopeEndRestored(&scope, XUI_ERROR_BUSY, xrtTakeError());
+	xvalue** ppRetired = NULL;
+	pData->bClearingWindowValues = true;
+	status = __xuiDockClear(pWidget, pData, &ppRetired);
+	pData->bClearingWindowValues = false;
+	xerror* first = xrtTakeError();
+	if ( status == XUI_OK && first != NULL ) status = XUI_ERROR_CALLBACK_FAILED;
+	__xuiDockDropWindowValues(context, ppRetired, &status, &first);
+	return xuiInternalCallScopeEndRestored(&scope, status, first);
+}
+
 XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_widget pClient, int* pWindow)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
@@ -6901,6 +6987,7 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 	int ret;
 	if ( pWindow != NULL ) *pWindow = -1;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bClearingWindowValues ) return XUI_ERROR_BUSY;
 	if ( pClient != NULL &&
 	     (!xuiInternalWidgetIsValid(pClient) ||
 	      xuiWidgetGetContext(pClient) != xuiWidgetGetContext(pWidget) ||
@@ -7011,6 +7098,7 @@ XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_wi
 		ret = xuiDockPanelSetWindowClient(pWidget, i, pClient);
 		if ( ret != XUI_OK ) goto failed;
 	}
+	w->bValueReady = true;
 	if ( pWindow != NULL ) *pWindow = i;
 	__xuiDockModelChanged(pData);
 	pData->iChangeCount++;
@@ -7263,6 +7351,76 @@ XUI_API void* xuiDockPanelGetWindowUserData(xui_widget pWidget, int iWindow)
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, iWindow);
 	return (w != NULL) ? w->pUser : NULL;
+}
+
+XUI_API int xuiDockPanelSetWindowValue(xui_widget pWidget, int iWindow, xvalue* pValue)
+{
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context context = pWidget->pContext;
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(context, &scope);
+	if ( status != XUI_OK ) return status;
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	const xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, iWindow);
+	if ( w == NULL )
+		return xuiInternalCallScopeEndRestored(&scope, XUI_ERROR_INVALID_ARGUMENT, xrtTakeError());
+	xvalue** ppNew = NULL;
+	xvalue* pRetired = NULL;
+	if ( pData->bClearingWindowValues || !w->bValueReady ) {
+		status = XUI_ERROR_BUSY;
+		goto done;
+	}
+	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
+	xvalue* pCurrent = pData->ppWindowValues == NULL ? NULL : pData->ppWindowValues[iWindow];
+	if ( pCurrent == pValue ) goto done;
+	if ( pData->ppWindowValues == NULL ) {
+		ppNew = xrtCalloc(XUI_DOCK_PANEL_WINDOW_CAPACITY, sizeof(*ppNew));
+		if ( ppNew == NULL ) {
+			status = XUI_ERROR_OUT_OF_MEMORY;
+			goto done;
+		}
+	}
+	xrtownershipscope mutation = {0};
+	if ( !xrtOwnershipMutationBegin(&mutation) ) {
+		status = XUI_ERROR_BUSY;
+		goto done;
+	}
+	if ( !__xuiDockWindowValueReady(pCurrent) ) status = XUI_ERROR_BUSY;
+	else if ( pValue != NULL && xrtValueRetain(pValue) == NULL ) status = XUI_ERROR_INVALID_STATE;
+	else {
+		if ( ppNew != NULL ) {
+			pData->ppWindowValues = ppNew;
+			ppNew = NULL;
+		}
+		pData->ppWindowValues[iWindow] = pValue;
+		pRetired = pCurrent;
+	}
+	if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+
+done:
+	xrtFree(ppNew);
+	xerror* first = xrtTakeError();
+	if ( pRetired != NULL ) {
+		xrtValueRelease(pRetired);
+		xuiInternalContextCleanupOutcome(context, XUI_OK, &status, &first);
+	}
+	return xuiInternalCallScopeEndRestored(&scope, status, first);
+}
+
+XUI_API int xuiDockPanelGetWindowValue(xui_widget pWidget, int iWindow, xvalue** ppValue)
+{
+	if ( ppValue == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppValue = NULL;
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_proxy proxy = pWidget->pContext->pOwnedProxy;
+	if ( proxy != NULL && !xuiInternalProxyCreator(proxy) ) return XUI_ERROR_BUSY;
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	const xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, iWindow);
+	if ( w == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bClearingWindowValues || !w->bValueReady ) return XUI_ERROR_BUSY;
+	xvalue* pValue = pData->ppWindowValues == NULL ? NULL : pData->ppWindowValues[iWindow];
+	if ( pValue != NULL && (*ppValue = xrtValueRetain(pValue)) == NULL ) return XUI_ERROR_INVALID_STATE;
+	return XUI_OK;
 }
 
 XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont)
