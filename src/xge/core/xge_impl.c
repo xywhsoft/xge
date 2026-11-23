@@ -456,7 +456,8 @@ static void __xgeEmojiDrainRetired(void);
 #endif
 #if defined(_WIN32) || defined(_WIN64)
 static void __xgeImeInstallWin32(void);
-static void __xgeImeUninstallWin32(void);
+static int __xgeImeUninstallWin32(void);
+static int __xgeImeRetireTextClient(void);
 #endif
 
 static void __xgeRenderRequestInternal(void)
@@ -1645,7 +1646,7 @@ static void __xgeSokolCleanup(void)
 	__xgeClipboardPlatformCleanup();
 	#if defined(_WIN32) || defined(_WIN64)
 		__xgeDragDropPlatformUnit();
-		__xgeImeUninstallWin32();
+		__xgeFrameRunFailure(__xgeImeUninstallWin32());
 	#endif
 	xrtAtomic64Store(&g_xgeTransferUiThread,0,XMEMORY_RELEASE);
 #if XGE_ENABLE_SHAPE_EX

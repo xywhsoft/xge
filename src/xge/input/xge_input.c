@@ -659,6 +659,28 @@ int xgeImeSetTextClient(const xge_ime_text_client_t* pClient)
 #endif
 }
 
+int xgeImeSetTextClientOwned(xge_ime_text_output_proc proc, void* user,
+	const xge_callback_owner_t* owner)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	return __xgeImeWin32SetTextClientOwned(proc, user, owner);
+#else
+	(void)proc; (void)user; (void)owner;
+	return XGE_ERROR_UNSUPPORTED;
+#endif
+}
+
+#if !defined(_WIN32) && !defined(_WIN64)
+int xgeImeTextOutputSet(xge_ime_text_output_t* output, const char* text,
+	int textSize, int selectionStart, int selectionEnd,
+	int documentOffset, int documentSize, uint32_t revision)
+{
+	(void)output; (void)text; (void)textSize; (void)selectionStart; (void)selectionEnd;
+	(void)documentOffset; (void)documentSize; (void)revision;
+	return XGE_ERROR_UNSUPPORTED;
+}
+#endif
+
 int xgeImeRefreshTextClient(void)
 {
 #if defined(_WIN32) || defined(_WIN64)

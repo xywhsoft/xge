@@ -34,6 +34,8 @@ typedef struct xge_tsf_text_store_t {
 	LONG iSelectionStart;
 	LONG iSelectionEnd;
 	int iDocumentOffset;
+	int iDocumentSize;
+	uint32_t iRevision;
 	uint64_t iImeOwner;
 	LONG iCompositionStart;
 	LONG iCompositionEnd;
@@ -56,6 +58,29 @@ typedef struct xge_tsf_text_store_t {
 	int bEndPending;
 	int bCancelPending;
 } xge_tsf_text_store_t;
+
+typedef struct xge_tsf_snapshot_t {
+	WCHAR* sText;
+	LONG iCapacity;
+	LONG iLength;
+	LONG iStart;
+	LONG iEnd;
+	int iDocumentOffset;
+	int iDocumentSize;
+	uint32_t iRevision;
+} xge_tsf_snapshot_t;
+
+struct xge_ime_text_output_t {
+	xge_tsf_snapshot_t tSnapshot;
+	bool bActive;
+	bool bWritten;
+};
+
+typedef struct xge_tsf_snapshot_change_t {
+	TS_TEXTCHANGE tText;
+	bool bText;
+	bool bSelection;
+} xge_tsf_snapshot_change_t;
 
 typedef struct xge_tsf_ui_element_sink_t {
 	ITfUIElementSink tSink;
@@ -106,6 +131,12 @@ typedef struct xge_win32_ime_state_t {
 	TfEditCookie iEditCookie;
 	xge_ime_text_client_t tTextClient;
 	int bHasTextClient;
+	bool bTextClientBusy;
+	xge_ime_text_output_proc onOwnedTextSnapshot;
+	void* pOwnedTextUser;
+	xge_callback_owner_t tTextClientOwner;
+	WCHAR* sSnapshotScratch;
+	LONG iSnapshotScratchCapacity;
 	xge_tsf_text_store_t tTextStore;
 } xge_win32_ime_state_t;
 
@@ -261,19 +292,23 @@ static int __xgeTsfStoreHasWriteLock(const xge_tsf_text_store_t* pStore)
 	return pStore != NULL && (pStore->iLockType & TS_LF_READWRITE) == TS_LF_READWRITE;
 }
 
+static int __xgeTsfReserveText(WCHAR** psText, LONG* pCapacity, LONG iCapacity)
+{
+	if ( iCapacity <= *pCapacity ) return 1;
+	LONG iNewCapacity = *pCapacity > 0 ? *pCapacity : 32;
+	while ( iNewCapacity < iCapacity ) {
+		iNewCapacity = iNewCapacity <= LONG_MAX / 2 ? iNewCapacity * 2 : iCapacity;
+	}
+	WCHAR* sNew = (WCHAR*)xrtRealloc(*psText, sizeof(WCHAR) * (size_t)iNewCapacity);
+	if ( sNew == NULL ) return 0;
+	*psText = sNew;
+	*pCapacity = iNewCapacity;
+	return 1;
+}
+
 static int __xgeTsfStoreReserve(xge_tsf_text_store_t* pStore, LONG iCapacity)
 {
-	WCHAR* sNew;
-	LONG iNewCapacity;
-
-	if ( iCapacity <= pStore->iTextCapacity ) return 1;
-	iNewCapacity = (pStore->iTextCapacity > 0) ? pStore->iTextCapacity * 2 : 32;
-	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
-	sNew = (WCHAR*)xrtRealloc(pStore->sText, sizeof(WCHAR) * (size_t)iNewCapacity);
-	if ( sNew == NULL ) return 0;
-	pStore->sText = sNew;
-	pStore->iTextCapacity = iNewCapacity;
-	return 1;
+	return __xgeTsfReserveText(&pStore->sText, &pStore->iTextCapacity, iCapacity);
 }
 
 static int __xgeTsfStoreReserveCompositionOriginal(xge_tsf_text_store_t* pStore, LONG iCapacity)
@@ -459,76 +494,72 @@ static LONG __xgeTsfUtf8ByteToWideOffset(const char* sText, int iTextLength, int
 	return (LONG)MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sText, iByteOffset, NULL, 0);
 }
 
-static int __xgeTsfStoreApplyClientSnapshot(xge_tsf_text_store_t* pStore,
-	const xge_ime_text_snapshot_t* pSnapshot)
+static xge_tsf_snapshot_change_t __xgeTsfStoreUpdateSnapshot(xge_tsf_text_store_t* pStore,
+	const xge_tsf_snapshot_t* pSnapshot, uint64_t iOwner)
 {
-	WCHAR* sWide;
-	TS_TEXTCHANGE tChange;
-	LONG iOldTextLength;
-	LONG iOldSelectionStart;
-	LONG iOldSelectionEnd;
-	LONG iNewSelectionStart;
-	LONG iNewSelectionEnd;
-	int iWideLength;
-	int iTextLength;
-	int iSelectionStart;
-	int iSelectionEnd;
-	int bTextChanged;
-
-	if ( pStore == NULL || pSnapshot == NULL || pStore->bComposing || pStore->iLockType != 0 ) return 0;
-	iTextLength = pSnapshot->iTextSize;
-	if ( pSnapshot->sText == NULL ) iTextLength = 0;
-	else if ( iTextLength < 0 ) iTextLength = (int)strlen(pSnapshot->sText);
-	iSelectionStart = pSnapshot->iSelectionStart;
-	iSelectionEnd = pSnapshot->iSelectionEnd;
-	if ( iSelectionStart < 0 ) iSelectionStart = 0;
-	if ( iSelectionEnd < iSelectionStart ) iSelectionEnd = iSelectionStart;
-	if ( iSelectionStart > iTextLength ) iSelectionStart = iTextLength;
-	if ( iSelectionEnd > iTextLength ) iSelectionEnd = iTextLength;
-	sWide = NULL;
-	iWideLength = 0;
-	if ( !__xgeTsfUtf8ToWide(pSnapshot->sText, iTextLength, &sWide, &iWideLength) ) return 0;
-	if ( !__xgeTsfStoreReserve(pStore, (LONG)iWideLength + 1) ) {
-		xrtFree(sWide);
-		return 0;
-	}
-	iOldTextLength = pStore->iTextLength;
-	iOldSelectionStart = pStore->iSelectionStart;
-	iOldSelectionEnd = pStore->iSelectionEnd;
-	iNewSelectionStart = __xgeTsfUtf8ByteToWideOffset(pSnapshot->sText, iTextLength, iSelectionStart);
-	iNewSelectionEnd = __xgeTsfUtf8ByteToWideOffset(pSnapshot->sText, iTextLength, iSelectionEnd);
-	memset(&tChange, 0, sizeof(tChange));
-	tChange.acpStart = 0;
-	tChange.acpOldEnd = iOldTextLength;
-	tChange.acpNewEnd = (LONG)iWideLength;
-	bTextChanged = (iOldTextLength != (LONG)iWideLength ||
-		(iWideLength > 0 && memcmp(pStore->sText, sWide,
-		 sizeof(WCHAR) * (size_t)iWideLength) != 0));
-	memcpy(pStore->sText, sWide, sizeof(WCHAR) * ((size_t)iWideLength + 1u));
-	pStore->iTextLength = (LONG)iWideLength;
-	pStore->iSelectionStart = iNewSelectionStart;
-	pStore->iSelectionEnd = iNewSelectionEnd;
+	xge_tsf_snapshot_change_t tChange = {
+		.tText = { .acpOldEnd = pStore->iTextLength, .acpNewEnd = pSnapshot->iLength },
+		.bText = pStore->iTextLength != pSnapshot->iLength || (pSnapshot->iLength > 0 &&
+			memcmp(pStore->sText, pSnapshot->sText, sizeof(WCHAR) * (size_t)pSnapshot->iLength) != 0),
+		.bSelection = pStore->iSelectionStart != pSnapshot->iStart || pStore->iSelectionEnd != pSnapshot->iEnd
+	};
+	pStore->iTextLength = pSnapshot->iLength;
+	pStore->iSelectionStart = pSnapshot->iStart;
+	pStore->iSelectionEnd = pSnapshot->iEnd;
 	pStore->iDocumentOffset = pSnapshot->iDocumentOffset;
-	pStore->iImeOwner = g_xge.iImeSnapshotOwner;
+	pStore->iDocumentSize = pSnapshot->iDocumentSize;
+	pStore->iRevision = pSnapshot->iRevision;
+	pStore->iImeOwner = iOwner;
 	pStore->bTextChanged = 0;
 	pStore->bEndPending = 0;
 	pStore->bHasCompositionRange = 0;
 	pStore->bHasReplacementRange = 0;
 	pStore->bPendingCompositionEdit = 0;
-	xrtFree(sWide);
-	if ( pStore->pSink != NULL && bTextChanged &&
+	return tChange;
+}
+
+static void __xgeTsfStoreNotifySnapshot(xge_tsf_text_store_t* pStore, const xge_tsf_snapshot_change_t* pChange)
+{
+	if ( pStore->pSink != NULL && pChange->bText &&
 	     (pStore->iSinkMask & TS_AS_TEXT_CHANGE) != 0 ) {
-		(void)pStore->pSink->lpVtbl->OnTextChange(pStore->pSink, 0, &tChange);
+		(void)pStore->pSink->lpVtbl->OnTextChange(pStore->pSink, 0, &pChange->tText);
 	}
-	if ( pStore->pSink != NULL &&
-	     (iOldSelectionStart != iNewSelectionStart || iOldSelectionEnd != iNewSelectionEnd) &&
+	if ( pStore->pSink != NULL && pChange->bSelection &&
 	     (pStore->iSinkMask & TS_AS_SEL_CHANGE) != 0 ) {
 		(void)pStore->pSink->lpVtbl->OnSelectionChange(pStore->pSink);
 	}
+}
+
+static int __xgeTsfStoreApplyClientSnapshot(xge_tsf_text_store_t* pStore,
+	const xge_ime_text_snapshot_t* pSnapshot)
+{
+	if ( pStore == NULL || pSnapshot == NULL || pStore->bComposing || pStore->iLockType != 0 ) return 0;
+	int iTextLength = pSnapshot->iTextSize;
+	if ( pSnapshot->sText == NULL ) iTextLength = 0;
+	else if ( iTextLength < 0 ) iTextLength = (int)strlen(pSnapshot->sText);
+	int iSelectionStart = __xgeTsfClampLong(pSnapshot->iSelectionStart, 0, iTextLength);
+	int iSelectionEnd = __xgeTsfClampLong(pSnapshot->iSelectionEnd, iSelectionStart, iTextLength);
+	int iWideLength = 0;
+	xge_tsf_snapshot_t tSnapshot = {
+		.iDocumentOffset = pSnapshot->iDocumentOffset, .iDocumentSize = pSnapshot->iDocumentSize,
+		.iRevision = pSnapshot->iRevision
+	};
+	if ( !__xgeTsfUtf8ToWide(pSnapshot->sText, iTextLength, &tSnapshot.sText, &iWideLength) ) return 0;
+	if ( iWideLength == LONG_MAX || !__xgeTsfStoreReserve(pStore, (LONG)iWideLength + 1) ) {
+		xrtFree(tSnapshot.sText);
+		return 0;
+	}
+	tSnapshot.iLength = iWideLength;
+	tSnapshot.iStart = __xgeTsfUtf8ByteToWideOffset(pSnapshot->sText, iTextLength, iSelectionStart);
+	tSnapshot.iEnd = __xgeTsfUtf8ByteToWideOffset(pSnapshot->sText, iTextLength, iSelectionEnd);
+	xge_tsf_snapshot_change_t tChange = __xgeTsfStoreUpdateSnapshot(pStore, &tSnapshot, g_xge.iImeSnapshotOwner);
+	memcpy(pStore->sText, tSnapshot.sText, sizeof(WCHAR) * ((size_t)iWideLength + 1u));
+	xrtFree(tSnapshot.sText);
+	__xgeTsfStoreNotifySnapshot(pStore, &tChange);
 	return 1;
 }
 
-static int __xgeTsfRefreshTextClient(void)
+static int __xgeTsfRefreshRawTextClient(void)
 {
 	xge_ime_text_snapshot_t tSnapshot;
 	int iRet;
@@ -542,6 +573,43 @@ static int __xgeTsfRefreshTextClient(void)
 	if ( iRet != XGE_OK ) return iRet;
 	if ( tSnapshot.iSize != 0u && tSnapshot.iSize < sizeof(tSnapshot) ) return XGE_ERROR_INVALID_ARGUMENT;
 	return __xgeTsfStoreApplyClientSnapshot(&g_xgeWin32Ime.tTextStore, &tSnapshot) ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
+}
+
+int xgeImeTextOutputSet(xge_ime_text_output_t* pOutput, const char* sText,
+	int iTextSize, int iSelectionStart, int iSelectionEnd,
+	int iDocumentOffset, int iDocumentSize, uint32_t iRevision)
+{
+	if ( pOutput == NULL || !pOutput->bActive ) return XGE_ERROR_INVALID_STATE;
+	if ( pOutput->bWritten ) return XGE_ERROR_BUSY;
+	if ( iTextSize < 0 || (!sText && iTextSize != 0) || iSelectionStart < 0 ||
+	     iSelectionEnd < iSelectionStart || iSelectionEnd > iTextSize ||
+	     iDocumentOffset < 0 || iDocumentOffset > INT_MAX - iTextSize ||
+	     iDocumentSize < -1 || (iDocumentSize >= 0 && iDocumentSize < iDocumentOffset + iTextSize) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iSelectionStart < iTextSize && (((unsigned char)sText[iSelectionStart] & 0xc0u) == 0x80u)) ||
+	     (iSelectionEnd < iTextSize && (((unsigned char)sText[iSelectionEnd] & 0xc0u) == 0x80u)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	int iLength = iTextSize == 0 ? 0 :
+		MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sText, iTextSize, NULL, 0);
+	if ( (iTextSize != 0 && iLength <= 0) || iLength == LONG_MAX ) return XGE_ERROR_INVALID_ARGUMENT;
+	xge_tsf_snapshot_t* pSnapshot = &pOutput->tSnapshot;
+	if ( !__xgeTsfReserveText(&pSnapshot->sText, &pSnapshot->iCapacity, (LONG)iLength + 1) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( iLength > 0 && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, sText, iTextSize,
+	     pSnapshot->sText, iLength) != iLength ) return XGE_ERROR_INVALID_ARGUMENT;
+	pSnapshot->sText[iLength] = L'\0';
+	pSnapshot->iLength = iLength;
+	pSnapshot->iStart = __xgeTsfUtf8ByteToWideOffset(sText, iTextSize, iSelectionStart);
+	pSnapshot->iEnd = iSelectionStart == iSelectionEnd ? pSnapshot->iStart :
+		__xgeTsfUtf8ByteToWideOffset(sText, iTextSize, iSelectionEnd);
+	pSnapshot->iDocumentOffset = iDocumentOffset;
+	pSnapshot->iDocumentSize = iDocumentSize;
+	pSnapshot->iRevision = iRevision;
+	pOutput->bWritten = true;
+	return XGE_OK;
 }
 
 static int __xgeTsfUtf8Offset(const WCHAR* sWide, int iWideLength)
@@ -1798,25 +1866,149 @@ static int __xgeTsfHandleKey(UINT iMessage, WPARAM wParam, LPARAM lParam)
 	return SUCCEEDED(iRet) && bEaten ? 1 : 0;
 }
 
+/* The TSF client is creator-thread state. This guard keeps callbacks and
+ * owner Hold/Drop from changing its slot or closing XGE during a snapshot. */
+static int __xgeImeBeginTextClientOperation(void)
+{
+	int result = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( result != XGE_OK ) return result;
+	if ( g_xgeWin32Ime.bTextClientBusy ) return XGE_ERROR_BUSY;
+	if ( !__xgeCallbackActivityEnter(false) ) return XGE_ERROR_BUSY;
+	g_xgeWin32Ime.bTextClientBusy = true;
+	return XGE_OK;
+}
+
+static int __xgeImeFinishTextClientOperation(int result, xerror* previous, xerror* first)
+{
+	__xgeCallbackOutcome(XGE_OK, &result, &first);
+	g_xgeWin32Ime.bTextClientBusy = false;
+	__xgeCallbackActivityLeave();
+	if ( result == XGE_OK ) xrtSetErrorTake(previous);
+	else {
+		xrtErrorFree(previous);
+		xrtSetErrorTake(first);
+	}
+	return result;
+}
+
+static int __xgeImeRetireTextClient(void)
+{
+	xge_callback_owner_t owner = g_xgeWin32Ime.tTextClientOwner;
+	g_xgeWin32Ime.tTextClientOwner = (xge_callback_owner_t){0};
+	g_xgeWin32Ime.onOwnedTextSnapshot = NULL;
+	g_xgeWin32Ime.pOwnedTextUser = NULL;
+	g_xgeWin32Ime.tTextClient = (xge_ime_text_client_t){0};
+	g_xgeWin32Ime.bHasTextClient = 0;
+	xrtFree(g_xgeWin32Ime.sSnapshotScratch);
+	g_xgeWin32Ime.sSnapshotScratch = NULL;
+	g_xgeWin32Ime.iSnapshotScratchCapacity = 0;
+	return __xgeCallbackOwnerDrop(owner);
+}
+
+static int __xgeImeCollectOwnedSnapshot(xge_ime_text_output_proc proc, void* user,
+	xge_ime_text_output_t* pOutput)
+{
+	pOutput->tSnapshot.sText = g_xgeWin32Ime.sSnapshotScratch;
+	pOutput->tSnapshot.iCapacity = g_xgeWin32Ime.iSnapshotScratchCapacity;
+	g_xgeWin32Ime.sSnapshotScratch = NULL;
+	g_xgeWin32Ime.iSnapshotScratchCapacity = 0;
+	pOutput->bActive = true;
+	int result = proc(pOutput, user);
+	pOutput->bActive = false;
+	if ( result > 0 ) return XGE_ERROR_CALLBACK_FAILED;
+	if ( result == XGE_OK && !pOutput->bWritten ) return XGE_ERROR_INVALID_ARGUMENT;
+	return result;
+}
+
+static void __xgeImeSaveScratch(const xge_tsf_snapshot_t* pSnapshot)
+{
+	g_xgeWin32Ime.sSnapshotScratch = pSnapshot->sText;
+	g_xgeWin32Ime.iSnapshotScratchCapacity = pSnapshot->iCapacity;
+}
+
+static void __xgeImePublishOwnedSnapshot(xge_tsf_snapshot_t* pSnapshot)
+{
+	xge_tsf_text_store_t* pStore = &g_xgeWin32Ime.tTextStore;
+	xge_tsf_snapshot_change_t tChange = __xgeTsfStoreUpdateSnapshot(pStore, pSnapshot, 0);
+	WCHAR* sOld = pStore->sText;
+	LONG iOldCapacity = pStore->iTextCapacity;
+	pStore->sText = pSnapshot->sText;
+	pStore->iTextCapacity = pSnapshot->iCapacity;
+	pSnapshot->sText = sOld;
+	pSnapshot->iCapacity = iOldCapacity;
+	__xgeTsfStoreNotifySnapshot(pStore, &tChange);
+}
+
+static int __xgeImeWin32SetTextClientOwned(xge_ime_text_output_proc proc, void* user,
+	const xge_callback_owner_t* owner)
+{
+	if ( !__xgeCallbackOwnerValid(owner) || (!proc && owner && owner->onHold) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	int result = __xgeImeBeginTextClientOperation();
+	if ( result != XGE_OK ) return result;
+	xerror* previous = xrtTakeError();
+	xerror* first = NULL;
+	if ( g_xgeWin32Ime.tTextStore.iLockType != 0 ) result = XGE_ERROR_BUSY;
+	else if ( !proc ) {
+		__xgeImeWin32AbortComposition();
+		__xgeCallbackOutcome(XGE_OK, &result, &first);
+		__xgeCallbackOutcome(__xgeImeRetireTextClient(), &result, &first);
+	} else if ( !g_xgeWin32Ime.bTsfInitialized ) result = XGE_ERROR_UNSUPPORTED;
+	else {
+		xge_callback_owner_t next = owner ? *owner : (xge_callback_owner_t){0};
+		bool held = false;
+		__xgeCallbackOutcome(__xgeCallbackOwnerHold(next, &held), &result, &first);
+		if ( result == XGE_OK ) {
+			xge_ime_text_output_t tOutput = {0};
+			__xgeCallbackOutcome(__xgeImeCollectOwnedSnapshot(proc, user, &tOutput), &result, &first);
+			if ( result == XGE_OK && g_xgeWin32Ime.tTextStore.iLockType != 0 ) result = XGE_ERROR_BUSY;
+			if ( result == XGE_OK ) {
+				__xgeImeWin32AbortComposition();
+				__xgeCallbackOutcome(XGE_OK, &result, &first);
+				xge_callback_owner_t old = g_xgeWin32Ime.tTextClientOwner;
+				g_xgeWin32Ime.tTextClient = (xge_ime_text_client_t){0};
+				g_xgeWin32Ime.bHasTextClient = 0;
+				g_xgeWin32Ime.onOwnedTextSnapshot = proc;
+				g_xgeWin32Ime.pOwnedTextUser = user;
+				g_xgeWin32Ime.tTextClientOwner = next;
+				held = false;
+				__xgeImePublishOwnedSnapshot(&tOutput.tSnapshot);
+				__xgeCallbackOutcome(XGE_OK, &result, &first);
+				__xgeCallbackOutcome(__xgeCallbackOwnerDrop(old), &result, &first);
+			}
+			__xgeImeSaveScratch(&tOutput.tSnapshot);
+		}
+		if ( held ) __xgeCallbackOutcome(__xgeCallbackOwnerDrop(next), &result, &first);
+	}
+	return __xgeImeFinishTextClientOperation(result, previous, first);
+}
+
 static int __xgeImeWin32SetTextClient(const xge_ime_text_client_t* pClient)
 {
-	if ( g_xge.bInitialized == 0 ) return XGE_ERROR_NOT_INITIALIZED;
-	if ( pClient != NULL && pClient->iSize != 0u &&
-	     pClient->iSize < sizeof(*pClient) ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( pClient != NULL && pClient->onSnapshot == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	int result = __xgeImeBeginTextClientOperation();
+	if ( result != XGE_OK ) return result;
+	xerror* previous = xrtTakeError();
+	xerror* first = NULL;
+	if ( pClient && ((pClient->iSize != 0u && pClient->iSize < sizeof(*pClient)) || !pClient->onSnapshot) ) {
+		return __xgeImeFinishTextClientOperation(XGE_ERROR_INVALID_ARGUMENT, previous, NULL);
+	}
+	xge_ime_text_client_t tClient = pClient ? *pClient : (xge_ime_text_client_t){0};
 	if ( pClient == NULL ||
+	     g_xgeWin32Ime.onOwnedTextSnapshot != NULL ||
 	     (g_xgeWin32Ime.bHasTextClient &&
-	      (pClient->onSnapshot != g_xgeWin32Ime.tTextClient.onSnapshot ||
-	       pClient->pUser != g_xgeWin32Ime.tTextClient.pUser)) ) {
+	      (tClient.onSnapshot != g_xgeWin32Ime.tTextClient.onSnapshot ||
+	       tClient.pUser != g_xgeWin32Ime.tTextClient.pUser)) ) {
 		__xgeImeWin32AbortComposition();
 	}
-	memset(&g_xgeWin32Ime.tTextClient, 0, sizeof(g_xgeWin32Ime.tTextClient));
-	g_xgeWin32Ime.bHasTextClient = 0;
-	if ( pClient == NULL ) return XGE_OK;
-	g_xgeWin32Ime.tTextClient = *pClient;
-	g_xgeWin32Ime.tTextClient.iSize = sizeof(g_xgeWin32Ime.tTextClient);
-	g_xgeWin32Ime.bHasTextClient = 1;
-	return __xgeTsfRefreshTextClient();
+	__xgeCallbackOutcome(__xgeImeRetireTextClient(), &result, &first);
+	if ( pClient != NULL ) {
+		tClient.iSize = sizeof(tClient);
+		g_xgeWin32Ime.tTextClient = tClient;
+		g_xgeWin32Ime.bHasTextClient = 1;
+		__xgeCallbackOutcome(__xgeTsfRefreshRawTextClient(), &result, &first);
+	}
+	return __xgeImeFinishTextClientOperation(result, previous, first);
 }
 
 static int __xgeImeWin32SetCandidatePresenterReady(int bReady)
@@ -1828,9 +2020,25 @@ static int __xgeImeWin32SetCandidatePresenterReady(int bReady)
 
 static int __xgeImeWin32RefreshTextClient(void)
 {
-	if ( g_xge.bInitialized == 0 ) return XGE_ERROR_NOT_INITIALIZED;
-	if ( !g_xgeWin32Ime.bTsfInitialized ) return XGE_ERROR_UNSUPPORTED;
-	return __xgeTsfRefreshTextClient();
+	int result = __xgeImeBeginTextClientOperation();
+	if ( result != XGE_OK ) return result;
+	xerror* previous = xrtTakeError();
+	xerror* first = NULL;
+	if ( !g_xgeWin32Ime.bTsfInitialized ) result = XGE_ERROR_UNSUPPORTED;
+	else if ( !g_xgeWin32Ime.onOwnedTextSnapshot ) {
+		__xgeCallbackOutcome(__xgeTsfRefreshRawTextClient(), &result, &first);
+	} else if ( !g_xgeWin32Ime.tTextStore.bComposing ) {
+		xge_ime_text_output_t tOutput = {0};
+		if ( g_xgeWin32Ime.tTextStore.iLockType != 0 ) result = XGE_ERROR_BUSY;
+		else {
+			int status = __xgeImeCollectOwnedSnapshot(g_xgeWin32Ime.onOwnedTextSnapshot,
+				g_xgeWin32Ime.pOwnedTextUser, &tOutput);
+			__xgeCallbackOutcome(status, &result, &first);
+			if ( result == XGE_OK ) __xgeImePublishOwnedSnapshot(&tOutput.tSnapshot);
+			__xgeImeSaveScratch(&tOutput.tSnapshot);
+		}
+	}
+	return __xgeImeFinishTextClientOperation(result, previous, first);
 }
 
 static int __xgeImeWin32CandidateGetInfo(xge_ime_candidate_info_t* pInfo)
@@ -2177,7 +2385,7 @@ static void __xgeImeInstallWin32(void)
 	__xgeTsfSetFocus(0);
 }
 
-static void __xgeImeUninstallWin32(void)
+static int __xgeImeUninstallWin32(void)
 {
 	if ( g_xgeWin32Ime.hWnd != NULL && g_xgeWin32Ime.pOriginalWindowProc != NULL &&
 	     (WNDPROC)GetWindowLongPtrW(g_xgeWin32Ime.hWnd, GWLP_WNDPROC) == __xgeImeWindowProc ) {
@@ -2192,8 +2400,7 @@ static void __xgeImeUninstallWin32(void)
 	g_xgeWin32Ime.pOriginalWindowProc = NULL;
 	g_xgeWin32Ime.bEnabled = 0;
 	g_xgeWin32Ime.bHasCandidateRect = 0;
-	g_xgeWin32Ime.bHasTextClient = 0;
-	memset(&g_xgeWin32Ime.tTextClient, 0, sizeof(g_xgeWin32Ime.tTextClient));
+	return __xgeImeRetireTextClient();
 }
 
 static void __xgeImeWin32ApplyImmCandidateRect(void)

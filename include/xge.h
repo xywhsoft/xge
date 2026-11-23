@@ -1983,6 +1983,9 @@ typedef struct xge_ime_text_client_t {
 	void* pUser;
 } xge_ime_text_client_t;
 
+typedef struct xge_ime_text_output_t xge_ime_text_output_t;
+typedef int (*xge_ime_text_output_proc)(xge_ime_text_output_t* pOutput, void* pUser);
+
 typedef struct xge_ime_candidate_info_t {
 	uint32_t iSize;
 	int bVisible;
@@ -4065,6 +4068,18 @@ XGE_API int xgeImeSetCandidateRect(xge_rect_t tRect);
 XGE_API int xgeImeGetCandidateRect(xge_rect_t* pRect);
 /* 注册文本客户端回调（组合串提交/替换范围/快照回推）。 */
 XGE_API int xgeImeSetTextClient(const xge_ime_text_client_t* pClient);
+/* Windows TSF, on the engine creator thread. Shares the legacy client slot.
+ * Calls the candidate before replacing the current client. A failed
+ * snapshot leaves the current client installed; a retired owner cannot
+ * republish from its Drop. NULL clears the slot. */
+XGE_API int xgeImeSetTextClientOwned(xge_ime_text_output_proc onSnapshot,
+	void* pUser, const xge_callback_owner_t* pOwner);
+/* Supply one snapshot during the callback. Text and offsets count UTF-8
+ * bytes. documentSize=-1 leaves the document length unspecified. The
+ * callback-scoped output consumes the bytes synchronously as UTF-16. */
+XGE_API int xgeImeTextOutputSet(xge_ime_text_output_t* pOutput, const char* sText,
+	int iTextSize, int iSelectionStart, int iSelectionEnd,
+	int iDocumentOffset, int iDocumentSize, uint32_t iRevision);
 /* 通知输入法文本客户端内容已变更（同步组合状态）。 */
 XGE_API int xgeImeRefreshTextClient(void);
 /* 输出候选列表信息（条数/页/当前选择）。 */

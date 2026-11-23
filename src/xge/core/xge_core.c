@@ -223,6 +223,9 @@ int xgeUnitChecked(void)
 	__xgeCallbackOutcome(xgeSetQuitRequestCallbackOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(xgeDragEventCallbackSetOwned(NULL,NULL,NULL),&result,&first);
 	__xgeCallbackOutcome(__xgeDragDropUnit(),&result,&first);
+#if defined(_WIN32) || defined(_WIN64)
+	__xgeCallbackOutcome(__xgeImeRetireTextClient(),&result,&first);
+#endif
 	__xgeCallbackOutcome(__xgeMiniProgramUnit(true),&result,&first);
 	__xgeCallbackOutcome(xgeResourceProviderClearChecked(),&result,&first);
 #if XGE_ENABLE_AUDIO
