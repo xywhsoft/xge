@@ -2135,7 +2135,7 @@ XUI_API int xuiCodeDocumentBatchCommitChecked(xui_code_document_batch batch,
     if(!committed)return XUI_ERROR_INVALID_ARGUMENT;
     *committed=false;
     if(!batch)return XUI_ERROR_INVALID_ARGUMENT;
-    if(batch->busy || batch->thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(xuiCodeDocumentBatchOwnershipBusy(batch))return XUI_ERROR_BUSY;
     if(batch->attempted || !batch->ready)return XUI_ERROR_INVALID_STATE;
     xui_code_document_batch_callbacks_t hooks={0};
     if(callbacks){if(callbacks->iSize!=sizeof(*callbacks))return XUI_ERROR_INVALID_ARGUMENT;hooks=*callbacks;}
