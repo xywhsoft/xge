@@ -8131,6 +8131,10 @@ XUI_API int xuiCodeDocumentBatchPrepare(const xui_code_document_batch_item_t* pI
     size_t iCount,size_t iBudget,xui_code_document_batch* ppBatch);
 XUI_API int xuiCodeDocumentBatchCommit(xui_code_document_batch pBatch,bool* pCommitted);
 XUI_API int xuiCodeDocumentBatchDestroy(xui_code_document_batch pBatch);
+/* Owner-thread query. The result survives observer and cleanup errors after publication. */
+XUI_API int xuiCodeDocumentBatchGetCommitted(xui_code_document_batch pBatch, bool* pCommitted);
+/* Retirement may inspect readiness only on the creator thread. */
+XUI_API bool xuiCodeDocumentBatchOwnershipBusy(xui_code_document_batch pBatch);
 
 /* Split preparation. Capture/Describe run on the owner and copy metadata only;
  * Capture ignores the legacy item's Before/After fields. Describe outputs a

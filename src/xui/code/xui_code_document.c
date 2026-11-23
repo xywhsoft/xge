@@ -1857,7 +1857,7 @@ typedef struct xui_document_batch_row_t {
 struct xui_code_document_batch_t {
     uint64_t thread,serial;
     size_t count,used,limit;
-    bool busy,attempted,ready;
+    bool busy,attempted,ready,committed;
     xui_document_batch_row_t* rows;
 };
 static void __xuiDocumentBatchGone(void* user)
@@ -2175,6 +2175,7 @@ XUI_API int xuiCodeDocumentBatchCommitChecked(xui_code_document_batch batch,
             ++d->iVersion;++d->iChangeVersion;d->iState=++d->iNextState;
             __xuiCodeDocumentUpdateDirty(d);__xuiCodeDocumentSetLastEditRange(d,0,d->iLength);
         }
+        batch->committed=true;
         *committed=true;
         if(hooks.published)hooks.published(hooks.pUser);
         for(size_t i=0;i<batch->count;++i){
@@ -2187,10 +2188,20 @@ XUI_API int xuiCodeDocumentBatchCommitChecked(xui_code_document_batch batch,
 }
 XUI_API int xuiCodeDocumentBatchCommit(xui_code_document_batch batch,bool* committed)
 {return xuiCodeDocumentBatchCommitChecked(batch,NULL,committed);}
+XUI_API bool xuiCodeDocumentBatchOwnershipBusy(xui_code_document_batch batch)
+{
+    return !batch || batch->thread!=xrtThreadCurrentId() || batch->busy;
+}
+XUI_API int xuiCodeDocumentBatchGetCommitted(xui_code_document_batch batch,bool* committed)
+{
+    if(!batch || !committed)return XUI_ERROR_INVALID_ARGUMENT;
+    if(xuiCodeDocumentBatchOwnershipBusy(batch))return XUI_ERROR_BUSY;
+    *committed=batch->committed;return XUI_OK;
+}
 XUI_API int xuiCodeDocumentBatchDestroy(xui_code_document_batch batch)
 {
     if(!batch)return XUI_OK;
-    if(batch->busy || batch->thread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(xuiCodeDocumentBatchOwnershipBusy(batch))return XUI_ERROR_BUSY;
     __xuiDocumentBatchFree(batch);return XUI_OK;
 }
 
