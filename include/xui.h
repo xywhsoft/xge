@@ -3306,7 +3306,8 @@ typedef void (*xui_input_change_proc)(xui_widget_t* pWidget, const char* sText, 
 typedef struct xui_edit_event_t {
 	uint32_t iSize;
 	int iType;
-	/* Document-backed controls may leave sText NULL; iTextSize remains authoritative. */
+	/* The managed callback can report a byte count without exposing a text
+	 * pointer. Legacy callbacks use zero when no text pointer is provided. */
 	const char* sText;
 	int iTextSize;
 	int iSelectionStart;
@@ -9246,6 +9247,13 @@ XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget);
 XUI_API uint32_t xuiEditGetCapabilities(xui_widget pWidget);
 /* 注册编辑事件回调（文本变更/光标移动等，编辑适配器协议）。 */
 XUI_API int xuiEditSetEvent(xui_widget pWidget, xui_edit_event_proc onEvent, void* pUser);
+/* Keeps the callback owner alive during notification, including replacement.
+ * Capture copies available text before entering the callback. The event and
+ * captured pointer expire on return. NULL text can still carry a byte count. */
+XUI_API int xuiEditSetEventOwned(xui_widget widget, bool captureText, xui_edit_event_proc callback,
+	void* user, const xui_callback_owner_t* owner);
+/* Read only captured text. Missing text returns a null, empty view. */
+XUI_API int xuiEditEventGetTextView(const xui_edit_event_t* event, xstrview* output);
 /* 覆盖编辑行为（制表宽度/自动换行等）。 */
 XUI_API int xuiEditSetBehavior(xui_widget pWidget, const xui_edit_behavior_t* pBehavior);
 /* 输出编辑行为。 */

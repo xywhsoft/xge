@@ -2,6 +2,7 @@
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 static xui_widget __xuiEditTarget(xui_widget pWidget)
@@ -125,9 +126,58 @@ const xui_edit_behavior_t* xuiInternalEditBehavior(xui_widget pWidget)
 int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
 	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid)
 {
-	return xuiInternalEditEmitSized(pWidget, iType, sText,
-		(sText != NULL) ? (int)strlen(sText) : 0, iSelectionStart, iSelectionEnd,
+	return xuiInternalEditEmitSized(pWidget, iType, sText, -1, iSelectionStart, iSelectionEnd,
 		iCompositionStart, iCompositionEnd, bValid);
+}
+
+enum {
+	XUI_EDIT_EVENT_LEGACY = 0,
+	XUI_EDIT_EVENT_METADATA,
+	XUI_EDIT_EVENT_CAPTURE_TEXT
+};
+
+static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event)
+{
+	xui_context context = host->pContext;
+	xui_call_scope_t scope = {0};
+	bool scoped = context->iOperationDepth == 0;
+	if ( scoped ) {
+		int status = xuiCallScopeBegin(context, &scope);
+		if ( status != XUI_OK ) return status;
+	}
+	xui_edit_event_proc callback = host->onEditEvent;
+	void* user = host->pEditEventUser;
+	char inlineText[256];
+	char* heapText = NULL;
+	int status = XUI_OK;
+	if ( host->iEditEventMode == XUI_EDIT_EVENT_CAPTURE_TEXT && event->sText ) {
+		size_t length = (size_t)event->iTextSize;
+		char* captured = inlineText;
+		if ( length >= sizeof(inlineText) ) {
+			heapText = xrtMalloc(length + 1);
+			captured = heapText;
+			if ( !captured ) status = XUI_ERROR_OUT_OF_MEMORY;
+		}
+		if ( status == XUI_OK ) {
+			memcpy(captured, event->sText, length);
+			captured[length] = '\0';
+			event->sText = captured;
+		}
+	} else {
+		event->sText = NULL;
+	}
+	if ( status == XUI_OK ) {
+		xui_callback_snapshot_t snapshot = {0};
+		status = xuiInternalCallbackSnapshotBeginReturned(host, &host->onEditEvent, &user, &snapshot);
+		if ( status == XUI_OK ) {
+			status = callback(host, event, user);
+			status = xuiInternalCallbackSnapshotEnd(&snapshot, status);
+		}
+	}
+	if ( heapText ) xrtFree(heapText);
+	xuiInternalContextRecordOutcome(context, status, xrtGetError());
+	if ( scoped ) return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+	return status;
 }
 
 int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
@@ -149,12 +199,22 @@ int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, i
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iType = iType;
 	tEvent.sText = sText;
-	tEvent.iTextSize = (sText != NULL && iTextSize > 0) ? iTextSize : 0;
+	if ( iTextSize < 0 && sText ) {
+		size_t length = strlen(sText);
+		if ( length <= INT_MAX ) iTextSize = (int)length;
+		else if ( pHost->iEditEventMode != XUI_EDIT_EVENT_LEGACY ) {
+			xuiInternalContextRecordOutcome(pHost->pContext, XUI_ERROR_LIMIT_EXCEEDED, NULL);
+			return XUI_ERROR_LIMIT_EXCEEDED;
+		}
+	}
+	tEvent.iTextSize = iTextSize > 0 ? iTextSize : 0;
 	tEvent.iSelectionStart = iSelectionStart;
 	tEvent.iSelectionEnd = iSelectionEnd;
 	tEvent.iCompositionStart = iCompositionStart;
 	tEvent.iCompositionEnd = iCompositionEnd;
 	tEvent.bValid = bValid ? 1 : 0;
+	if ( pHost->iEditEventMode != XUI_EDIT_EVENT_LEGACY ) return __xuiEditDispatchOwned(pHost, &tEvent);
+	if ( !sText ) tEvent.iTextSize = 0;
 	return pHost->onEditEvent(pHost, &tEvent, pHost->pEditEventUser);
 }
 
@@ -164,11 +224,44 @@ XUI_API uint32_t xuiEditGetCapabilities(xui_widget pWidget)
 	return (pWidget != NULL) ? pWidget->pEditAdapter->iCapabilities : 0u;
 }
 
+static int __xuiEditSetEventOwned(xui_widget widget, uint8_t mode, xui_edit_event_proc callback,
+	void* user, const xui_callback_owner_t* owner)
+{
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(widget, &widget->onEditEvent, callback != NULL, user, owner, &update);
+	if ( status != XUI_OK ) return status;
+	widget->onEditEvent = callback;
+	widget->pEditEventUser = user;
+	widget->iEditEventMode = mode;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
+XUI_API int xuiEditSetEventOwned(xui_widget widget, bool captureText, xui_edit_event_proc callback,
+	void* user, const xui_callback_owner_t* owner)
+{
+	if ( __xuiEditTarget(widget) == NULL ) return XUI_ERROR_UNSUPPORTED;
+	if ( callback && (!owner || !owner->onHold) ) return XUI_ERROR_INVALID_ARGUMENT;
+	uint8_t mode = !callback ? XUI_EDIT_EVENT_LEGACY :
+		captureText ? XUI_EDIT_EVENT_CAPTURE_TEXT : XUI_EDIT_EVENT_METADATA;
+	return __xuiEditSetEventOwned(widget, mode, callback, user, owner);
+}
+
 XUI_API int xuiEditSetEvent(xui_widget pWidget, xui_edit_event_proc onEvent, void* pUser)
 {
 	if ( __xuiEditTarget(pWidget) == NULL ) return XUI_ERROR_UNSUPPORTED;
+	if ( pWidget->iEditEventMode != XUI_EDIT_EVENT_LEGACY )
+		return __xuiEditSetEventOwned(pWidget, XUI_EDIT_EVENT_LEGACY, onEvent, pUser, NULL);
 	pWidget->onEditEvent = onEvent;
 	pWidget->pEditEventUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiEditEventGetTextView(const xui_edit_event_t* event, xstrview* output)
+{
+	if ( !event || !output || event->iSize < sizeof(*event) || event->iTextSize < 0 )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	*output = (xstrview){event->sText, event->sText ? (size_t)event->iTextSize : 0};
 	return XUI_OK;
 }
 

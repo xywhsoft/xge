@@ -860,6 +860,7 @@ struct xui_widget_t {
 	int iStyleClassCapacity;
 	xui_style_prop_t* pInlineStyle;
 	int iInlineStyleCount;
+	uint8_t iEditEventMode;
 	xui_style_prop_t* pResolvedStyle;
 	int iResolvedStyleCount;
 	uint32_t iResolvedStyleHash;
