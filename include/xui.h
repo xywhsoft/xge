@@ -7321,8 +7321,14 @@ XUI_API int xuiInputImeCompositionEx(xui_context pContext, const xui_ime_composi
 XUI_API int xuiInputViewport(xui_context pContext, int iWidth, int iHeight);
 /* 通知 DPI 变更（级联尺寸与缓存失效）。 */
 XUI_API int xuiInputDpi(xui_context pContext, float fDpiScale);
-/* 轮询一个待处理事件（外接事件循环用）；无事件返回非零。 */
+/* 无事件返回 0，取出一个事件返回 1，失败返回负错误码。 */
 XUI_API int xuiPollEvent(xui_context pContext, xui_event_t* pEvent);
+typedef int (*xui_event_visit_proc)(const xui_event_t* pEvent, void* pUser);
+/* Consume at most one queued event. The view is valid only in the visitor.
+ * A failing visitor still consumes the event and leaves pVisited unchanged.
+ * An empty queue succeeds with false and never invokes the visitor. */
+XUI_API int xuiPollEventVisit(xui_context pContext, xui_event_visit_proc onEvent,
+    void* pUser, bool* pVisited);
 /* 清空事件队列。 */
 XUI_API void xuiClearEvents(xui_context pContext);
 /* Directly dispatched text and IME events are validated against the xui_event_t

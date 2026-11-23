@@ -2515,6 +2515,24 @@ XUI_API int xuiPollEvent(xui_context pContext, xui_event_t* pEvent)
 	return 1;
 }
 
+XUI_API int xuiPollEventVisit(xui_context context, xui_event_visit_proc visit,
+    void* user, bool* visited)
+{
+    if ( !visit || !visited ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(context, &scope);
+    if ( status != XUI_OK ) return status;
+
+    xui_event_t event;
+    int count = xuiPollEvent(context, &event);
+    if ( count < 0 ) status = count;
+    else if ( count > 0 ) status = visit(&event, user);
+
+    status = xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+    if ( status == XUI_OK ) *visited = count > 0;
+    return status;
+}
+
 XUI_API void xuiClearEvents(xui_context pContext)
 {
 	if ( !xuiInternalContextIsValid(pContext) ) {
