@@ -872,8 +872,20 @@ static int __xuiTabsButtonEvent(xui_widget pButton, const xui_event_t* pEvent, v
 				if ( iRet == XUI_OK ) iRet = __xuiTabsInvalidateAll(pTabs, pData,
 					XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 				if ( iRet != XUI_OK ) return iRet;
-				if ( pData->onClose != NULL ) {
-					pData->onClose(pTabs, iIndex, pData->pCloseUser);
+				if ( !__xuiTabsWidgetAlive(pTabs, pData) ) return XUI_EVENT_DISPATCH_STOP;
+				xui_tabs_close_proc callback = pData->onClose;
+				if ( callback != NULL ) {
+					void* user = pData->pCloseUser;
+					if ( !pTabs->pEventOwners || !pTabs->pEventOwners->pBindings ) {
+						callback(pTabs, iIndex, user);
+					} else {
+						xui_callback_snapshot_t snapshot = {0};
+						iRet = xuiInternalCallbackSnapshotBeginReturned(pTabs, &pData->onClose, &user, &snapshot);
+						if ( iRet != XUI_OK ) return iRet;
+						callback(pTabs, iIndex, user);
+						iRet = xuiInternalCallbackSnapshotEnd(&snapshot, XUI_OK);
+						if ( iRet != XUI_OK ) return iRet;
+					}
 				}
 				return XUI_EVENT_DISPATCH_STOP;
 			}
@@ -2582,21 +2594,43 @@ XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, 
 	return XUI_OK;
 }
 
+static int __xuiTabsSyncCloseButtons(xui_widget widget, xui_tabs_data_t* data)
+{
+	if ( !data->bCloseButtons || data->onClose == NULL ) {
+		data->iCloseHoverIndex = -1;
+		int status = __xuiTabsClearInteraction(widget, data);
+		if ( status != XUI_OK ) return status;
+		if ( !__xuiTabsWidgetAlive(widget, data) ) return XUI_ERROR_INVALID_STATE;
+	}
+	return __xuiTabsInvalidateAll(widget, data, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiTabsSetCloseOwned(xui_widget widget, bool closeButtons, xui_tabs_close_proc callback,
+	void* user, const xui_callback_owner_t* owner)
+{
+	xui_tabs_data_t* data = __xuiTabsGetData(widget);
+	if ( data == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(widget, &data->onClose, callback != NULL, user, owner, &update);
+	if ( status != XUI_OK ) return status;
+	data->onClose = callback;
+	data->pCloseUser = user;
+	data->bCloseButtons = closeButtons;
+	xuiInternalCallbackUpdatePublish(&update);
+	status = __xuiTabsSyncCloseButtons(widget, data);
+	return xuiInternalCallbackUpdateEnd(&update, status);
+}
+
 XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int bCloseButtons, void* pUser)
 {
-	xui_tabs_data_t* pData;
-
-	pData = __xuiTabsGetData(pWidget);
+	xui_tabs_data_t* pData = __xuiTabsGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onClose) )
+		return xuiTabsSetCloseOwned(pWidget, bCloseButtons != 0, onClose, pUser, NULL);
 	pData->onClose = onClose;
-	pData->bCloseButtons = bCloseButtons ? 1 : 0;
 	pData->pCloseUser = pUser;
-	if ( !pData->bCloseButtons || onClose == NULL ) {
-		pData->iCloseHoverIndex = -1;
-		int iRet = __xuiTabsClearInteraction(pWidget, pData);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return __xuiTabsInvalidateAll(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	pData->bCloseButtons = bCloseButtons != 0;
+	return __xuiTabsSyncCloseButtons(pWidget, pData);
 }
 
 XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* ppPage)

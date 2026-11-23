@@ -10916,6 +10916,9 @@ XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, 
 XUI_API int xuiTabsSetSelectOwned(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册页签关闭回调；bCloseButtons 控制显示关闭钮。控件不自动删除页面，回调可调用 xuiTabsRemovePage。 */
 XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int bCloseButtons, void* pUser);
+/* The owned callback runs inside the native pointer dispatch scope. */
+XUI_API int xuiTabsSetCloseOwned(xui_widget widget, bool closeButtons, xui_tabs_close_proc callback,
+    void* user, const xui_callback_owner_t* owner);
 /* 注册页签右键回调。 */
 XUI_API int xuiTabsSetContextMenu(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser);
 XUI_API int xuiTabsSetContextMenuOwned(xui_widget pWidget, xui_tabs_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);
