@@ -597,7 +597,7 @@ XUI_API int xuiCodeLanguageRegistryRegisterOwned(xui_code_language_registry regi
 	return __xuiCodeLanguageRegister(registry, language, NULL, owner, NULL);
 }
 
-XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry registry,
+static int __xuiCodeLanguageRegisterCallbacks(xui_code_language_registry registry,
 	const xui_code_callback_language_t* language, const xui_callback_owner_t* owner)
 {
 	const size_t prefixSize = offsetof(xui_code_callback_language_t, pRegexRules);
@@ -617,6 +617,20 @@ XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry 
 		.pRegexRules = ruleCount > 0 ? language->pRegexRules : NULL, .iRegexRuleCount = ruleCount
 	};
 	return __xuiCodeLanguageRegister(registry, &native, language->pExtensions, owner, hasCallbacks ? language : NULL);
+}
+
+XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry registry,
+	const xui_code_callback_language_t* language, const xui_callback_owner_t* owner)
+{
+	return __xuiCodeLanguageRegisterCallbacks(registry, language, owner);
+}
+
+XUI_API int xuiCodeLanguageRegistryRegisterRegexCallbacks(xui_code_language_registry registry,
+	const xui_code_callback_language_t* language, const xui_callback_owner_t* owner)
+{
+	if ( language == NULL || language->iSize < sizeof(*language) || language->iRegexRuleCount <= 0 )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiCodeLanguageRegisterCallbacks(registry, language, owner);
 }
 
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry registry,

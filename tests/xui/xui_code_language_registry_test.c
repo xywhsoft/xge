@@ -234,7 +234,7 @@ static void check_mixed_registry(xui_context context, xui_widget editor, xui_sur
     xui_code_callback_language_t language = {.iSize=sizeof(language), .sId="mixed",
         .onFold=owned_language_fold, .pUser=&probe, .pRegexRules=&rule, .iRegexRuleCount=1};
     assert(xuiCodeEditSetText(editor, "abc\nnext\nend") == XUI_OK);
-    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_OK);
+    assert(xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, &owner) == XUI_OK);
     pattern[0] = 'x';
     assert(xuiCodeEditSetLanguage(editor, "mixed") == XUI_OK);
     require_first_token(context, editor, target, XUI_CODE_STYLE_COMMENT);
@@ -249,13 +249,14 @@ static void check_mixed_registry(xui_context context, xui_widget editor, xui_sur
     language.onLex = owned_language_lex;
     language.iSize = offsetof(xui_code_callback_language_t, pRegexRules) + 1;
     assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
     language.iSize = sizeof(language);
     int failures = 0;
     for ( int allowance = 0; allowance < 32; ++allowance ) {
         xmemdebugsnapshot before, after;
         xrtMemDebugSnapshot(&before);
         assert(xrtMemDebugFailAfter(allowance));
-        int status = xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner);
+        int status = xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, &owner);
         xrtMemDebugFailClear();
         xrtClearError();
         if ( status == XUI_OK ) break;
@@ -280,10 +281,12 @@ static void check_mixed_registry(xui_context context, xui_widget editor, xui_sur
     language.iSize = sizeof(language);
     language.onLex = NULL;
     language.onFold = NULL;
+    language.iRegexRuleCount = 0;
+    assert(xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, NULL) == XUI_ERROR_INVALID_ARGUMENT);
     language.iRegexRuleCount = 1;
-    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
+    assert(xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
     pattern[0] = 'a';
-    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, NULL) == XUI_OK);
+    assert(xuiCodeLanguageRegistryRegisterRegexCallbacks(probe.registry, &language, NULL) == XUI_OK);
     assert(probe.references == 0);
     require_first_token(context, editor, target, XUI_CODE_STYLE_COMMENT);
     assert(xuiCodeLanguageRegistryFold(probe.registry, "mixed", document, NULL, 0, &count) == XUI_ERROR_UNSUPPORTED);

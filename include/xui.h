@@ -8524,6 +8524,9 @@ XUI_API int xuiCodeLanguageRegistryRegisterOwned(xui_code_language_registry pReg
  * Both callbacks share pUser and pOwner. Older descriptors omit the regex tail. */
 XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry pRegistry,
 	const xui_code_callback_language_t* pLanguage, const xui_callback_owner_t* pOwner);
+/* Requires a full descriptor with at least one regex rule. Callbacks are optional. */
+XUI_API int xuiCodeLanguageRegistryRegisterRegexCallbacks(xui_code_language_registry pRegistry,
+	const xui_code_callback_language_t* pLanguage, const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeTokenOutputGetCapacity(const xui_code_token_output_t* pOutput);
 XUI_API int xuiCodeTokenOutputAppend(xui_code_token_output_t* pOutput, xui_code_token_t tToken);
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry pRegistry,
