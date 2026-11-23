@@ -8,6 +8,8 @@ int xuiInternalCodeDocumentSetEditObserverChecked(xui_code_document,xui_context,
     xui_internal_code_document_prepare_proc,xui_internal_code_document_edit_proc,void*);
 int xuiInternalCodeDocumentClaimOwner(xui_code_document,xui_widget);
 int xuiInternalCodeDocumentDestroyOwned(xui_widget,xui_code_document);
+/* The caller pins the document while validating output from a callback. */
+int xuiInternalCodeDocumentCheckVersions(xui_code_document,uint32_t version,uint32_t changeVersion);
 /* Counted internal edit over exact UTF-8 byte boundaries (not grapheme-clamped).
  * Native transformations share public validation, history, observers and the
  * checked write lifetime; public C-string edits keep their grapheme behavior. */

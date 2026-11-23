@@ -83,6 +83,13 @@ static int xuiTestEditDuringFold(xui_code_document document, xui_code_fold_outpu
 	return status != XUI_OK ? status:xuiCodeDocumentInsert(document, 0, "new\n");
 }
 
+static int xuiTestCloseDuringFold(xui_code_document document, xui_code_fold_output_t* output, void* user)
+{
+	bool* consumed = user;
+	(void)output;
+	return xuiCodeDocumentDestroyOwnerChecked(document, consumed);
+}
+
 int main(void)
 {
 	xui_code_fold_state pState;
@@ -255,6 +262,11 @@ int main(void)
 	iRet = xuiCodeFoldStateBuildFromCallback(pState, pDocument, xuiTestEditDuringFold, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && xuiCodeFoldStateGetCount(pState) == 2,
 		"rebuild rejects edited document without replacing existing folds");
+	bool consumed = false;
+	iRet = xuiCodeFoldStateBuildFromCallback(pState, pDocument, xuiTestCloseDuringFold, &consumed);
+	if ( consumed ) pDocument = NULL;
+	XUI_TEST_CHECK(consumed && iRet == XUI_ERROR_INVALID_STATE && xuiCodeFoldStateGetCount(pState) == 2,
+		"rebuild rejects retired document before replacing its folds");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);

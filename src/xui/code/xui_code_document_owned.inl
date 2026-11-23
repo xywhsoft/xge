@@ -8,6 +8,12 @@ static int __xuiCodeDocumentReadStatus(xui_code_document document)
         (document->pInternalOwner && !xuiInternalWidgetIsValid(document->pInternalOwner)))return XUI_ERROR_INVALID_STATE;
     return XUI_OK;
 }
+int xuiInternalCodeDocumentCheckVersions(xui_code_document document,uint32_t version,uint32_t changeVersion)
+{
+    int status=__xuiCodeDocumentReadStatus(document);
+    if(status!=XUI_OK)return status;
+    return document->iVersion==version && document->iChangeVersion==changeVersion ? XUI_OK:XUI_ERROR_INVALID_STATE;
+}
 XUI_API int xuiCodeDocumentCallBegin(xui_code_document document,xui_code_document_scope_t* scope)
 {
     if(!scope || scope->pSelf || scope->pDocument || scope->pContext || scope->tContext.pSelf)return XUI_ERROR_INVALID_ARGUMENT;
