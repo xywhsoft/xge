@@ -19,13 +19,15 @@ struct xui_code_fold_state_t {
 	int iHiddenRangeCount;
 	int iHiddenRangeCapacity;
 	int bHiddenDirty;
+	bool bCallingProvider;
 };
 
 static int __xuiCodeFoldStateStatus(xui_code_fold_state state, bool write)
 {
 	if ( state == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( state->pOwner != NULL && state->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	if ( write && state->bCallingProvider ) return XUI_ERROR_BUSY;
 	if ( state->pOwner == NULL ) return XUI_OK;
-	if ( state->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
 	return state->pOwnerOps->check(state->pOwner, write);
 }
 
@@ -252,8 +254,10 @@ void xuiInternalCodeFoldStateDestroyOwned(xui_code_fold_state pState, xui_widget
 
 XUI_API int xuiCodeFoldStateDestroyChecked(xui_code_fold_state state)
 {
-	if ( state != NULL && state->pOwner != NULL )
-		return state->iOwnerThread == xrtThreadCurrentId() ? XUI_ERROR_INVALID_STATE : XUI_ERROR_BUSY;
+	if ( state == NULL ) return XUI_OK;
+	if ( (state->pOwner != NULL && state->iOwnerThread != xrtThreadCurrentId()) || state->bCallingProvider )
+		return XUI_ERROR_BUSY;
+	if ( state->pOwner != NULL ) return XUI_ERROR_INVALID_STATE;
 	xuiInternalCodeFoldStateDestroyOwned(state, NULL);
 	return XUI_OK;
 }
@@ -368,6 +372,15 @@ XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine
 	return XUI_OK;
 }
 
+static int __xuiCodeFoldStateCallProvider(xui_code_fold_state state, xui_code_document document,
+	xui_code_fold_proc callback, void* user, xui_code_fold_range_t* ranges, int capacity, int* count)
+{
+	state->bCallingProvider = true;
+	int status = callback(document, ranges, capacity, count, user);
+	state->bCallingProvider = false;
+	return status;
+}
+
 int xuiInternalCodeFoldStateBuild(xui_code_fold_state pState, xui_code_document pDocument,
 	xui_code_fold_proc onFold, void* pUser)
 {
@@ -377,7 +390,7 @@ int xuiInternalCodeFoldStateBuild(xui_code_fold_state pState, xui_code_document 
 	int iAttempts;
 	int iRet;
 
-	iRet = onFold(pDocument, NULL, 0, &iCount, pUser);
+	iRet = __xuiCodeFoldStateCallProvider(pState, pDocument, onFold, pUser, NULL, 0, &iCount);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iCount < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRanges = NULL;
@@ -397,7 +410,7 @@ int xuiInternalCodeFoldStateBuild(xui_code_fold_state pState, xui_code_document 
 		}
 		pRanges = pNew;
 		iCount = iCapacity;
-		iRet = onFold(pDocument, pRanges, iCapacity, &iCount, pUser);
+		iRet = __xuiCodeFoldStateCallProvider(pState, pDocument, onFold, pUser, pRanges, iCapacity, &iCount);
 		if ( iRet != XUI_OK ) goto cleanup;
 		if ( iCount < 0 ) {
 			iRet = XUI_ERROR_INVALID_ARGUMENT;

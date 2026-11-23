@@ -113,6 +113,7 @@
     "src/xui/code/xui_code_selection.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/code/xui_code_theme.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/code/xui_code_fold_state.c": "XUI_ENABLE_CODE_EDIT",
+    "src/xui/code/xui_code_fold_provider.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/code/xui_code_annotation.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/code/xui_code_token_buffer.c": "XUI_ENABLE_CODE_EDIT",
     "src/xui/code/xui_code_provider.c": "XUI_ENABLE_CODE_EDIT",

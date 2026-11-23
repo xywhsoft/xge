@@ -8571,6 +8571,17 @@ XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code
 XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine, int iEndLine, int iNewEndLine);
 /* 以回调提供折叠范围并重建状态；几何位置不变的区间保留折叠状态。 */
 XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser);
+/* A bounded output for one synchronous fold callback. Append counts every
+   range and writes only the prefix that fits. The callback can be repeated
+   to fill storage. Rebuilding or mutating the same fold state returns BUSY.
+   The Document is pinned; changing it during the callback rejects the result. */
+typedef struct xui_code_fold_output_t xui_code_fold_output_t;
+typedef int (*xui_code_fold_output_proc)(xui_code_document pDocument,
+	xui_code_fold_output_t* pOutput, void* pUser);
+XUI_API int xuiCodeFoldOutputGetCapacity(const xui_code_fold_output_t* pOutput);
+XUI_API int xuiCodeFoldOutputAppend(xui_code_fold_output_t* pOutput, xui_code_fold_range_t tRange);
+XUI_API int xuiCodeFoldStateBuildFromCallback(xui_code_fold_state pState, xui_code_document pDocument,
+	xui_code_fold_output_proc onFold, void* pUser);
 /* 读取折叠区间数。 */
 XUI_API int xuiCodeFoldStateGetCount(xui_code_fold_state pState);
 /* 按索引输出折叠区间。 */

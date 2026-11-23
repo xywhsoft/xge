@@ -55,6 +55,34 @@ static int xuiTestGrowingFoldProvider(xui_code_document_t* pDocument,
 	return XUI_OK;
 }
 
+typedef struct xui_test_fold_callback_t {
+	xui_code_fold_state pState;
+	int iCalls;
+} xui_test_fold_callback_t;
+
+static int xuiTestFoldOutput(xui_code_document document, xui_code_fold_output_t* output, void* user)
+{
+	xui_test_fold_callback_t* probe = user;
+	int capacity = xuiCodeFoldOutputGetCapacity(output);
+	if ( capacity != probe->iCalls++ || xuiCodeDocumentGetLineCount(document) < 4 ||
+	     xuiCodeFoldStateClearChecked(probe->pState) != XUI_ERROR_BUSY ||
+	     xuiCodeFoldStateDestroyChecked(probe->pState) != XUI_ERROR_BUSY ||
+	     xuiCodeFoldStateBuildFromProvider(probe->pState, document, xuiTestFoldProvider, NULL) != XUI_ERROR_BUSY ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	int status = xuiCodeFoldOutputAppend(output, (xui_code_fold_range_t){.iStartLine=1, .iEndLine=3});
+	if ( status == XUI_OK && capacity != 0 )
+		status = xuiCodeFoldOutputAppend(output, (xui_code_fold_range_t){.iStartLine=0, .iEndLine=2});
+	return status;
+}
+
+static int xuiTestEditDuringFold(xui_code_document document, xui_code_fold_output_t* output, void* user)
+{
+	(void)user;
+	int status = xuiCodeFoldOutputAppend(output, (xui_code_fold_range_t){.iStartLine=0, .iEndLine=2});
+	return status != XUI_OK ? status:xuiCodeDocumentInsert(document, 0, "new\n");
+}
+
 int main(void)
 {
 	xui_code_fold_state pState;
@@ -219,6 +247,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0, "overflow row does not resolve to hidden tail");
 	iRet = xuiCodeFoldStateBuildVisibleLines(pState, 10, NULL, 1, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "missing visible output rejected");
+
+	xui_test_fold_callback_t probe = {pState,0};
+	iRet = xuiCodeFoldStateBuildFromCallback(pState, pDocument, xuiTestFoldOutput, &probe);
+	XUI_TEST_CHECK(iRet == XUI_OK && probe.iCalls == 3 && xuiCodeFoldStateGetCount(pState) == 2,
+		"callback retries with a bounded output and rejects model reentry");
+	iRet = xuiCodeFoldStateBuildFromCallback(pState, pDocument, xuiTestEditDuringFold, NULL);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_STATE && xuiCodeFoldStateGetCount(pState) == 2,
+		"rebuild rejects edited document without replacing existing folds");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);
