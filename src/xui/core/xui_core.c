@@ -3155,6 +3155,31 @@ XUI_API int xuiPainterEnd(xui_painter pPainter)
 	return iRet;
 }
 
+XUI_API int xuiPainterVisit(xui_context context, xui_draw_context draw, xui_painter_visit_proc visit, void* user)
+{
+    if ( !visit ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t contextScope = {0};
+    int status = xuiCallScopeBegin(context, &contextScope);
+    if ( status != XUI_OK ) return status;
+
+    xui_draw_scope_t drawScope = {0};
+    status = xuiDrawCallScopeBegin(draw, &drawScope);
+    if ( status != XUI_OK ) return xuiInternalCallScopeEndRestored(&contextScope, status, xrtTakeError());
+
+    if ( !context->pOwnedProxy || xuiDrawGetProxy(draw) != context->pOwnedProxy ) {
+        status = XUI_ERROR_INVALID_ARGUMENT;
+    } else {
+        xui_painter_t painter = { .iMagic = XUI_PAINTER_MAGIC, .pContext = context,
+            .pTarget = xuiDrawGetTarget(draw), .pDraw = draw };
+        status = visit(&painter, user);
+    }
+
+    xui_cleanup_receipt_t receipt;
+    xuiInternalCleanupStart(&receipt, status);
+    xuiInternalCleanupAdd(&receipt, xuiDrawCallScopeEnd(&drawScope));
+    return xuiInternalCallScopeEndRestored(&contextScope, receipt.status, receipt.error);
+}
+
 XUI_API xui_draw_context xuiPainterGetDrawContext(xui_painter pPainter)
 {
 	return __xuiPainterValid(pPainter) ? pPainter->pDraw : NULL;

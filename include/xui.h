@@ -7220,6 +7220,11 @@ XUI_API const char* xuiVectorIconGetName(int iIndex);
 XUI_API int xuiPainterBegin(xui_context pContext, xui_surface pTarget, xui_painter* ppPainter);
 /* 结束绘制会话并冲刷批命令。 */
 XUI_API int xuiPainterEnd(xui_painter pPainter);
+/* Visit a painter for an active owned Draw and its Context on the creator
+ * thread. Both must use the same Proxy. The Painter is valid only during
+ * the visitor. The caller keeps its ownership of the Draw. */
+typedef int (*xui_painter_visit_proc)(xui_painter pPainter, void* pUser);
+XUI_API int xuiPainterVisit(xui_context pContext, xui_draw_context pDraw, xui_painter_visit_proc onPaint, void* pUser);
 /* 取绘制上下文（命令式绘图入口）。 */
 XUI_API xui_draw_context xuiPainterGetDrawContext(xui_painter pPainter);
 /* 以颜色清除矩形区域。 */
