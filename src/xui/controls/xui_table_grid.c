@@ -2203,6 +2203,25 @@ XUI_API int xuiTableGridSetColumnDescriptors(xui_widget pWidget, const xui_table
 	return xuiTableGridSetColumnsCopy(pWidget, columns, iCount);
 }
 
+XUI_API int xuiTableGridSetColumnDescriptorsWithCallbacks(xui_widget pWidget, const xui_table_column_desc_t* pColumns,
+    int iCount, xui_table_column_setup_proc onSetup, void* pUser)
+{
+    if (onSetup == NULL) return xuiTableGridSetColumnDescriptors(pWidget, pColumns, iCount);
+    xui_table_view_column_t columns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    if (xuiInternalTableColumnsExpand(columns, pColumns, iCount) != XUI_OK || !__xuiTableGridColumnsValid(columns, iCount))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    xui_table_grid_data_t* data = __xuiTableGridGetData(pWidget);
+    if (data == NULL || data->pTable == NULL) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context = xuiWidgetGetContext(pWidget);
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(context, &scope);
+    if (status != XUI_OK) return status;
+    if (data->iEditingRow >= 0 && xuiTableGridEndEdit(pWidget, 0) == 0) status = XUI_ERROR_INVALID_STATE;
+    if (status == XUI_OK && !__xuiTableGridWidgetAlive(pWidget, data)) status = XUI_ERROR_INVALID_STATE;
+    if (status == XUI_OK) status = xuiTableViewSetColumnDescriptorsWithCallbacks(data->pTable, pColumns, iCount, onSetup, pUser);
+    return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
 XUI_API int xuiTableGridGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn)
 {
 	return xuiTableViewGetColumnDescriptor(xuiTableGridGetTableView(pWidget), iColumn, pColumn);

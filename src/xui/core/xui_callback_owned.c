@@ -119,8 +119,8 @@ int xuiInternalCallbackUpdateEnd(xui_callback_update_t* update,int result)
     memset(update,0,sizeof(*update));
     xrtSetErrorTake(first);return result;
 }
-int xuiInternalCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_entry_t* entries,
-    size_t count,xui_callback_group_update_t* update)
+static int __xuiCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_entry_t* entries,
+    size_t count,xui_callback_group_update_t* update,bool transfer)
 {
     if(!update || update->pContext || !entries || !count ||
        !xuiInternalWidgetIsValid(widget))return XUI_ERROR_INVALID_ARGUMENT;
@@ -137,7 +137,7 @@ int xuiInternalCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_ent
     int result=xuiCallScopeBegin(context,&update->tScope);
     if(result!=XUI_OK)return result;
     xui_event_owners_t* header=NULL;
-    for(size_t i=0;i<count;++i){
+    for(size_t i=0;!transfer && i<count;++i){
         result=xuiInternalCallbackHoldFresh(&entries[i].tCandidate,&entries[i].bHeld);
         if(result!=XUI_OK)goto fail;
         if(!xuiInternalWidgetIsValid(widget) || context->bCloseRequested || context->bDestroyPending || context->bDestroying){result=XUI_ERROR_INVALID_STATE;goto fail;}
@@ -186,6 +186,12 @@ fail: {
     xrtSetErrorTake(first);return result;
 }
 }
+int xuiInternalCallbackGroupUpdateBegin(xui_widget widget,xui_callback_group_entry_t* entries,
+    size_t count,xui_callback_group_update_t* update)
+{return __xuiCallbackGroupUpdateBegin(widget,entries,count,update,false);}
+int xuiInternalCallbackGroupUpdateBeginTransfer(xui_widget widget,xui_callback_group_entry_t* entries,
+    size_t count,xui_callback_group_update_t* update)
+{return __xuiCallbackGroupUpdateBegin(widget,entries,count,update,true);}
 void xuiInternalCallbackGroupUpdatePublish(xui_callback_group_update_t* update)
 {
     if(!update || !update->pContext || update->bPublished || !xrtOwnershipScopeEnd(&update->tMutation))abort();

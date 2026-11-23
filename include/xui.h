@@ -3191,6 +3191,8 @@ typedef int (*xui_table_view_format_proc)(xui_widget_t* pWidget, int iRow, int i
 typedef struct xui_table_view_format_output_t xui_table_view_format_output_t;
 typedef int (*xui_table_view_format_owned_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_table_view_format_output_t* pOutput, void* pUser);
 typedef int (*xui_table_view_cell_renderer_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef struct xui_table_column_setup_t xui_table_column_setup_t;
+typedef int (*xui_table_column_setup_proc)(xui_table_column_setup_t* pSetup, void* pUser);
 typedef int (*xui_table_view_header_renderer_proc)(xui_widget_t* pWidget, int iColumn, const xui_table_view_column_t* pColumn, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
 typedef void (*xui_table_view_sort_proc)(xui_widget_t* pWidget, int iColumn, int bDescending, void* pUser);
 typedef void (*xui_table_view_select_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
@@ -12413,6 +12415,13 @@ XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_colu
 XUI_API int xuiTableViewSetColumnsCopy(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
 /* Replace columns, copying the ID and title strings before returning. */
 XUI_API int xuiTableViewSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount);
+/* Configure projected callbacks once, against the relative indices of pColumns.
+ * The setup pointer expires at callback return. A prepublication failure
+ * leaves the old columns and callbacks installed. The callback returns XUI_OK
+ * to commit. Same-table column replacement/registration during setup is Busy. */
+XUI_API int xuiTableViewSetColumnDescriptorsWithCallbacks(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount, xui_table_column_setup_proc onSetup, void* pUser);
+XUI_API int xuiTableColumnSetupSetFormatter(xui_table_column_setup_t* pSetup, int iColumn, xui_table_view_format_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner);
+XUI_API int xuiTableColumnSetupSetRenderer(xui_table_column_setup_t* pSetup, int iColumn, xui_table_view_cell_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* Copy scalar settings and geometry. The text pointers are borrowed until
  * the next column replacement or widget destruction. */
 XUI_API int xuiTableViewGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn);
@@ -12626,6 +12635,8 @@ XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_colu
 XUI_API int xuiTableGridSetColumnsCopy(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
 /* Replace columns, copying the ID and title strings before returning. */
 XUI_API int xuiTableGridSetColumnDescriptors(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount);
+/* Use the same owned column configuration after ending any active edit. */
+XUI_API int xuiTableGridSetColumnDescriptorsWithCallbacks(xui_widget pWidget, const xui_table_column_desc_t* pColumns, int iCount, xui_table_column_setup_proc onSetup, void* pUser);
 /* Copy scalar settings and geometry. The text pointers are borrowed until
  * the next column replacement or widget destruction. */
 XUI_API int xuiTableGridGetColumnDescriptor(xui_widget pWidget, int iColumn, xui_table_column_desc_t* pColumn);

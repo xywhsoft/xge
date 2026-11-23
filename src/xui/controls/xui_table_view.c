@@ -91,6 +91,17 @@ typedef struct xui_table_column_callbacks_t {
     xui_table_column_renderer_t renderers[XUI_TABLE_VIEW_COLUMN_CAPACITY];
 } xui_table_column_callbacks_t;
 
+struct xui_table_column_setup_t {
+    xui_context context;
+    uint64_t creatorThread;
+    int columnCount;
+    bool updating;
+    bool open;
+    xui_table_column_callbacks_t callbacks;
+    xui_callback_owner_t formatOwners[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    xui_callback_owner_t renderOwners[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+};
+
 static int __xuiTableColumnStorageRetain(xui_table_column_storage_t* storage)
 {
     if (!storage) return XUI_OK;
@@ -122,6 +133,7 @@ typedef struct xui_table_view_data_t {
 	xui_table_view_column_t arrColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
     xui_table_column_storage_t* pColumnStorage;
     xui_table_column_callbacks_t* pColumnCallbacks;
+    bool bColumnSetup;
 	xui_table_view_row_t* arrRows;
 	xui_table_view_row_prefix_t* arrRowPrefix;
 	xui_table_view_merge_column_t arrMergeColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
@@ -1354,18 +1366,14 @@ static xui_rect_t __xuiTableViewHeaderRect(xui_widget pWidget, xui_table_view_da
 }
 
 static int __xuiTableViewUpdateContentSizeInternal(xui_widget pWidget,
-	xui_table_view_data_t* pData, int bSyncRowCount)
+	xui_table_view_data_t* pData, int bSyncRowCount, float fWidth)
 {
-	xui_rect_t tFrame;
-	float fWidth;
 	float fHeight;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pFrame == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	tFrame = __xuiTableViewFrameRect(pWidget, pData);
-	fWidth = __xuiTableViewContentWidth(pData);
 	fHeight = bSyncRowCount ? __xuiTableViewContentHeight(pWidget, pData) :
 		(float)__xuiTableViewContentHeightFor(pData->arrRowPrefix,
 			pData->iRowStateCount, pData->iRowCount, pData->fDefaultRowHeight);
@@ -1373,18 +1381,17 @@ static int __xuiTableViewUpdateContentSizeInternal(xui_widget pWidget,
 	if ( !__xuiTableViewFloatValid(fWidth) || !__xuiTableViewFloatValid(fHeight) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = xuiScrollFrameSetContentSize(pData->pFrame, __xuiTableViewMaxFloat(0.0f, fWidth), __xuiTableViewMaxFloat(0.0f, fHeight));
 	if ( iRet != XUI_OK ) return iRet;
-	(void)tFrame;
 	return xuiScrollFrameSetWheelStep(pData->pFrame, pData->fDefaultRowHeight * 3.0f);
 }
 
 static int __xuiTableViewUpdateContentSize(xui_widget pWidget, xui_table_view_data_t* pData)
 {
-	return __xuiTableViewUpdateContentSizeInternal(pWidget, pData, 1);
+	return __xuiTableViewUpdateContentSizeInternal(pWidget, pData, 1, __xuiTableViewContentWidth(pData));
 }
 
 static int __xuiTableViewUpdateContentSizeCommitted(xui_widget pWidget, xui_table_view_data_t* pData)
 {
-	return __xuiTableViewUpdateContentSizeInternal(pWidget, pData, 0);
+	return __xuiTableViewUpdateContentSizeInternal(pWidget, pData, 0, __xuiTableViewContentWidth(pData));
 }
 
 static void __xuiTableViewMakeTextSummary(const char* sText, char* sBuffer, int iCapacity)
@@ -3693,39 +3700,59 @@ int xuiInternalTableViewCreatePart(xui_widget pOwner,xui_widget* ppWidget,const 
 }
 
 
-static int __xuiTableViewColumnsChanged(xui_widget widget, xui_table_view_data_t* data)
+static int __xuiTableViewColumnsChanged(xui_widget widget, xui_table_view_data_t* data, bool invalidate)
 {
     ++data->iChangeCount;
     xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
     xuiInternalAccessibilityQueue(widget, XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED);
-    return __xuiTableViewInvalidate(widget, data, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+    return invalidate ? __xuiTableViewInvalidate(widget, data,
+        XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER) : XUI_OK;
 }
 
-static int __xuiTableViewPublishColumnCallbacks(xui_widget widget, xui_table_view_data_t* data, bool* published)
+static int __xuiTableViewPublishColumnCallbacks(xui_widget widget, xui_table_view_data_t* data,
+    xui_table_column_callbacks_t* candidate, xui_table_column_setup_t* setup, bool* published)
 {
     xui_table_column_callbacks_t* old = data->pColumnCallbacks;
-    xui_callback_group_entry_t entries[2 * XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    xui_callback_group_entry_t entries[4 * XUI_TABLE_VIEW_COLUMN_CAPACITY];
     size_t count = 0;
-    for (int i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; ++i) {
-        if (old->formatters[i].format)
-            entries[count++] = (xui_callback_group_entry_t){.pSlot = &old->formatters[i]};
-        if (old->renderers[i].render)
-            entries[count++] = (xui_callback_group_entry_t){.pSlot = &old->renderers[i]};
+    if (old != NULL) {
+        for (int i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; ++i) {
+            if (old->formatters[i].format)
+                entries[count++] = (xui_callback_group_entry_t){.pSlot = &old->formatters[i]};
+            if (old->renderers[i].render)
+                entries[count++] = (xui_callback_group_entry_t){.pSlot = &old->renderers[i]};
+        }
+    }
+    if (candidate != NULL) {
+        for (int i = 0; i < setup->columnCount; ++i) {
+            if (candidate->formatters[i].format)
+                entries[count++] = (xui_callback_group_entry_t){.pSlot = &candidate->formatters[i],
+                    .bHasCallback = true, .pUser = candidate->formatters[i].user, .pOwner = &setup->formatOwners[i]};
+            if (candidate->renderers[i].render)
+                entries[count++] = (xui_callback_group_entry_t){.pSlot = &candidate->renderers[i],
+                    .bHasCallback = true, .pUser = candidate->renderers[i].user, .pOwner = &setup->renderOwners[i]};
+        }
     }
     xui_callback_group_update_t update = {0};
-    int status = xuiInternalCallbackGroupUpdateBegin(widget, entries, count, &update);
+    int status = xuiInternalCallbackGroupUpdateBeginTransfer(widget, entries, count, &update);
     if (status != XUI_OK) return status;
 
-    data->pColumnCallbacks = NULL;
+    if (candidate != NULL) {
+        memset(setup->formatOwners, 0, sizeof(setup->formatOwners));
+        memset(setup->renderOwners, 0, sizeof(setup->renderOwners));
+    }
+    data->pColumnCallbacks = candidate;
     xuiInternalCallbackGroupUpdatePublish(&update);
     *published = true;
-    status = __xuiTableViewColumnsChanged(widget, data);
+    status = __xuiTableViewColumnsChanged(widget, data, setup == NULL);
     status = xuiInternalCallbackGroupUpdateEnd(&update, status);
     xrtFree(old);
     return status;
 }
 
-static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount, xui_table_column_storage_t* storage)
+static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount,
+    xui_table_column_storage_t* storage, xui_table_column_callbacks_t* candidate,
+    xui_table_column_setup_t* setup, bool* callbacksPublished)
 {
 	xui_table_view_data_t* pData;
 	xui_table_view_column_t arrNewColumns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
@@ -3744,6 +3771,7 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	if ( (pData == NULL) || (iCount < 0) || (iCount > XUI_TABLE_VIEW_COLUMN_CAPACITY) || ((iCount > 0) && (arrColumns == NULL)) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pData->bColumnSetup && setup == NULL ) return XUI_ERROR_BUSY;
 	if ( pData->onCount != NULL && __xuiTableViewSyncRowCount(pWidget, pData) < 0 ) return XUI_ERROR_INVALID_STATE;
     if (!__xuiTableViewWidgetAlive(pWidget,pData)) return XUI_ERROR_INVALID_STATE;
 	memset(arrNewColumns, 0, sizeof(arrNewColumns));
@@ -3768,8 +3796,14 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	for ( i = 0; i < XUI_TABLE_VIEW_COLUMN_CAPACITY; i++ ) {
 		memset(&arrOldColumns[i].tRect, 0, sizeof(arrOldColumns[i].tRect));
 	}
-	if ( pData->pColumnCallbacks == NULL && pData->iColumnCount == iCount &&
+	if ( candidate == NULL && pData->pColumnCallbacks == NULL && pData->iColumnCount == iCount &&
 	     memcmp(arrOldColumns, arrNewColumns, sizeof(arrNewColumns)) == 0 ) return XUI_OK;
+	float oldOffsetX = 0.0f, oldOffsetY = 0.0f;
+	if ( setup != NULL ) {
+		uint64_t oldGeneration = pData->iCallbackGeneration;
+		__xuiTableViewCancelPointer(pWidget, pData, 1);
+		if ( !__xuiTableViewCallbackCurrent(pWidget, pData, oldGeneration) ) return XUI_ERROR_INVALID_STATE;
+	}
 	memcpy(arrOldColumns, pData->arrColumns, sizeof(arrOldColumns));
 	iOldColumnCount = pData->iColumnCount;
 	iOldSelectedColumn = pData->iSelectedColumn;
@@ -3787,12 +3821,34 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
     }
 	uint64_t generation = pData->iCallbackGeneration;
 	bool hadCallbacks = pData->pColumnCallbacks != NULL;
-	__xuiTableViewCancelPointer(pWidget, pData, 1);
+	if ( setup == NULL ) __xuiTableViewCancelPointer(pWidget, pData, 1);
     if (!__xuiTableViewWidgetAlive(pWidget,pData) ||
         ((hadCallbacks || pData->pColumnCallbacks) && generation != pData->iCallbackGeneration)) {
         __xuiTableColumnStorageRelease(oldStorage);
         __xuiTableColumnStorageRelease(storage);
         return XUI_ERROR_INVALID_STATE;
+    }
+    if (setup != NULL) {
+        (void)xuiScrollFrameGetOffset(pData->pFrame, &oldOffsetX, &oldOffsetY);
+        float width = (float)__xuiTableViewContentWidthFor(arrNewColumns, iCount, pData->fDefaultColumnWidth);
+        /* Viewport resize can cancel a captured drag. Keep both old columns
+         * and old callback slots visible until all preparations return. */
+        iRet = __xuiTableViewUpdateContentSizeInternal(pWidget, pData, 0, width);
+        if (iRet == XUI_OK && __xuiTableViewCallbackCurrent(pWidget, pData, generation))
+            iRet = __xuiTableViewInvalidate(pWidget, pData,
+                XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+        if (iRet == XUI_OK && !__xuiTableViewCallbackCurrent(pWidget, pData, generation)) iRet = XUI_ERROR_INVALID_STATE;
+        if (iRet != XUI_OK) {
+            xerror* first = xrtTakeError();
+            if (__xuiTableViewWidgetAlive(pWidget, pData)) {
+                (void)__xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
+                (void)xuiScrollFrameSetOffset(pData->pFrame, oldOffsetX, oldOffsetY);
+            }
+            __xuiTableColumnStorageRelease(oldStorage);
+            __xuiTableColumnStorageRelease(storage);
+            xrtSetErrorTake(first);
+            return iRet;
+        }
     }
     xui_table_column_storage_t* previousStorage = pData->pColumnStorage;
     pData->pColumnStorage = storage; /* transfer the reserved field reference */
@@ -3804,18 +3860,19 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 	if ( pData->iHoverColumn >= iCount ) { pData->iHoverRow = -1; pData->iHoverColumn = -1; }
 	if ( pData->iSortColumn >= iCount ) { pData->iSortColumn = -1; pData->bSortDescending = 0; }
 	__xuiTableViewInvalidateMerges(pData);
-	iRet = __xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
+	iRet = setup != NULL ? XUI_OK : __xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
     if (!__xuiTableViewWidgetAlive(pWidget,pData)) {
         __xuiTableColumnStorageRelease(oldStorage);
         return iRet == XUI_OK ? XUI_ERROR_INVALID_STATE : iRet;
     }
 	bool published = false;
 	if ( iRet == XUI_OK ) {
-		if ( pData->pColumnCallbacks != NULL ) {
-			iRet = __xuiTableViewPublishColumnCallbacks(pWidget, pData, &published);
+		if ( pData->pColumnCallbacks != NULL || candidate != NULL ) {
+			iRet = __xuiTableViewPublishColumnCallbacks(pWidget, pData, candidate, setup, &published);
+			if ( callbacksPublished != NULL ) *callbacksPublished = published;
 		} else {
 			published = true;
-			iRet = __xuiTableViewColumnsChanged(pWidget, pData);
+			iRet = __xuiTableViewColumnsChanged(pWidget, pData, setup == NULL);
 		}
 	}
 	if ( !published ) {
@@ -3831,7 +3888,10 @@ static int __xuiTableViewSetColumnsOperation(xui_widget pWidget, const xui_table
 		pData->iSortColumn = iOldSortColumn;
 		pData->bSortDescending = bOldSortDescending;
 		__xuiTableViewInvalidateMerges(pData);
+		xerror* first = xrtTakeError();
 		(void)__xuiTableViewUpdateContentSizeCommitted(pWidget, pData);
+		if ( setup != NULL ) (void)xuiScrollFrameSetOffset(pData->pFrame, oldOffsetX, oldOffsetY);
+		xrtSetErrorTake(first);
 		return iRet;
 	}
     __xuiTableColumnStorageRelease(oldStorage);
@@ -4338,6 +4398,7 @@ static int __xuiTableViewSetColumnCallback(xui_widget widget, int column, bool r
     if (!data || column < 0 || column >= data->iColumnCount ||
         !xuiInternalCallbackOwnerValid(owner) || (!registering && owner && owner->onHold))
         return XUI_ERROR_INVALID_ARGUMENT;
+    if (data->bColumnSetup) return XUI_ERROR_BUSY;
 
     int status = __xuiTableViewInvalidate(widget, data, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
     if (status != XUI_OK) return status;
@@ -5040,19 +5101,15 @@ XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_colu
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	int iRet;
 	xuiInternalOperationEnter(pContext);
-	iRet = __xuiTableViewSetColumnsOperation(pWidget, arrColumns, iCount, NULL);
+	iRet = __xuiTableViewSetColumnsOperation(pWidget, arrColumns, iCount, NULL, NULL, NULL, NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
 
-/* The ordinary setter keeps its existing borrowed-string contract. This
- * variant owns one contiguous copy of both text fields. Other pointer fields
- * (callbacks/user data) keep their explicit C borrowing contract. */
-XUI_API int xuiTableViewSetColumnsCopy(xui_widget widget,
-    const xui_table_view_column_t* columns, int count)
+static int __xuiTableColumnsCopy(const xui_table_view_column_t* columns, int count,
+    xui_table_column_storage_t** output)
 {
-    if (!__xuiTableViewGetData(widget) || count < 0 ||
-        count > XUI_TABLE_VIEW_COLUMN_CAPACITY || (count && !columns))
+    if (count < 0 || count > XUI_TABLE_VIEW_COLUMN_CAPACITY || (count && !columns))
         return XUI_ERROR_INVALID_ARGUMENT;
     size_t bytes = sizeof(xui_table_column_storage_t) + (size_t)count * sizeof(*columns);
     for (int i = 0; i < count; ++i) {
@@ -5083,10 +5140,25 @@ XUI_API int xuiTableViewSetColumnsCopy(xui_widget widget,
             }
         }
     }
+    *output = storage;
+    return XUI_OK;
+}
+
+/* Text has one contiguous native copy. Callback/user pointers are borrowed
+ * as in the ordinary C column setter. */
+XUI_API int xuiTableViewSetColumnsCopy(xui_widget widget,
+    const xui_table_view_column_t* columns, int count)
+{
+    xui_table_view_data_t* data = __xuiTableViewGetData(widget);
+    if (data == NULL) return XUI_ERROR_INVALID_ARGUMENT;
+    if (data->bColumnSetup) return XUI_ERROR_BUSY;
+    xui_table_column_storage_t* storage = NULL;
+    int status = __xuiTableColumnsCopy(columns, count, &storage);
+    if (status != XUI_OK) return status;
     xui_context context = xuiWidgetGetContext(widget);
     xuiInternalOperationEnter(context);
     int result = __xuiTableViewSetColumnsOperation(widget,
-        storage ? storage->columns : NULL, count, storage);
+        storage ? storage->columns : NULL, count, storage, NULL, NULL, NULL);
     xuiInternalOperationLeave(context);
     __xuiTableColumnStorageRelease(storage);
     return result;
@@ -5117,6 +5189,102 @@ XUI_API int xuiTableViewSetColumnDescriptors(xui_widget pWidget, const xui_table
 	int status = xuiInternalTableColumnsExpand(columns, pColumns, iCount);
 	if ( status != XUI_OK ) return status;
 	return xuiTableViewSetColumnsCopy(pWidget, columns, iCount);
+}
+
+static int __xuiTableColumnSetupSet(xui_table_column_setup_t* setup, int column, bool rendering,
+    xui_table_view_format_owned_proc format, xui_table_view_cell_renderer_proc render,
+    void* user, const xui_callback_owner_t* owner)
+{
+    if (setup == NULL) return XUI_ERROR_INVALID_ARGUMENT;
+    if (setup->creatorThread != xrtThreadCurrentId() || setup->updating) return XUI_ERROR_BUSY;
+    if (!setup->open) return XUI_ERROR_INVALID_STATE;
+    bool registering = rendering ? render != NULL : format != NULL;
+    if (column < 0 || column >= setup->columnCount || !xuiInternalCallbackOwnerValid(owner) ||
+        (!registering && owner != NULL && owner->onHold != NULL)) return XUI_ERROR_INVALID_ARGUMENT;
+
+    xui_callback_owner_t incoming = owner != NULL ? *owner : (xui_callback_owner_t){0};
+    bool held = false;
+    setup->updating = true;
+    int status = xuiInternalCallbackHoldFresh(&incoming, &held);
+    xerror* first = xrtTakeError();
+    if (status == XUI_OK) {
+        xui_table_column_formatter_t* formatter = &setup->callbacks.formatters[column];
+        xui_table_column_renderer_t* renderer = &setup->callbacks.renderers[column];
+        xui_callback_owner_t* slot = rendering ? &setup->renderOwners[column] : &setup->formatOwners[column];
+        bool existing = rendering ? renderer->render != NULL : formatter->format != NULL;
+        xui_callback_owner_t old = *slot;
+        *slot = incoming;
+        if (rendering) *renderer = (xui_table_column_renderer_t){render, registering ? user : NULL};
+        else *formatter = (xui_table_column_formatter_t){format, registering ? user : NULL};
+        setup->callbacks.count += registering - existing;
+        __xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(setup->context, &old, status, first), &status, &first);
+    } else if (held) {
+        __xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(setup->context, &incoming, status, first), &status, &first);
+    }
+    setup->updating = false;
+    xrtSetErrorTake(first);
+    return status;
+}
+
+XUI_API int xuiTableColumnSetupSetFormatter(xui_table_column_setup_t* pSetup, int iColumn,
+    xui_table_view_format_owned_proc onFormat, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    return __xuiTableColumnSetupSet(pSetup, iColumn, false, onFormat, NULL, pUser, pOwner);
+}
+
+XUI_API int xuiTableColumnSetupSetRenderer(xui_table_column_setup_t* pSetup, int iColumn,
+    xui_table_view_cell_renderer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner)
+{
+    return __xuiTableColumnSetupSet(pSetup, iColumn, true, NULL, onRender, pUser, pOwner);
+}
+
+XUI_API int xuiTableViewSetColumnDescriptorsWithCallbacks(xui_widget pWidget, const xui_table_column_desc_t* pColumns,
+    int iCount, xui_table_column_setup_proc onSetup, void* pUser)
+{
+    if (onSetup == NULL) return xuiTableViewSetColumnDescriptors(pWidget, pColumns, iCount);
+    xui_table_view_data_t* data = __xuiTableViewGetData(pWidget);
+    if (data == NULL) return XUI_ERROR_INVALID_ARGUMENT;
+    if (data->bColumnSetup) return XUI_ERROR_BUSY;
+
+    xui_call_scope_t scope = {0};
+    xui_context context = xuiWidgetGetContext(pWidget);
+    int status = xuiCallScopeBegin(context, &scope);
+    if (status != XUI_OK) return status;
+    xui_table_view_column_t columns[XUI_TABLE_VIEW_COLUMN_CAPACITY];
+    xui_table_column_storage_t* storage = NULL;
+    status = xuiInternalTableColumnsExpand(columns, pColumns, iCount);
+    if (status == XUI_OK) status = __xuiTableColumnsCopy(columns, iCount, &storage);
+    if (status != XUI_OK) return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+
+    xui_table_column_setup_t setup = {.context = context, .creatorThread = xrtThreadCurrentId(),
+        .columnCount = iCount, .open = true};
+    data->bColumnSetup = true;
+    status = onSetup(&setup, pUser);
+    setup.open = false;
+    if (status > XUI_OK || (status == XUI_OK && xrtGetError() != NULL)) status = XUI_ERROR_CALLBACK_FAILED;
+    if (status == XUI_OK && !__xuiTableViewWidgetAlive(pWidget, data)) status = XUI_ERROR_INVALID_STATE;
+
+    xui_table_column_callbacks_t* candidate = NULL;
+    if (status == XUI_OK && setup.callbacks.count != 0) {
+        candidate = xrtMalloc(sizeof(*candidate));
+        if (candidate != NULL) *candidate = setup.callbacks;
+        else status = XUI_ERROR_OUT_OF_MEMORY;
+    }
+    bool published = false;
+    if (status == XUI_OK) {
+        status = __xuiTableViewSetColumnsOperation(pWidget, storage ? storage->columns : NULL,
+            iCount, storage, candidate, &setup, &published);
+    }
+    if (!published) xrtFree(candidate);
+    __xuiTableColumnStorageRelease(storage);
+    xerror* first = xrtTakeError();
+    if (first != NULL && status == XUI_OK) status = XUI_ERROR_CALLBACK_FAILED;
+    for (int i = iCount - 1; i >= 0; --i) {
+        __xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(context, &setup.renderOwners[i], status, first), &status, &first);
+        __xuiTableViewLeaseOutcome(xuiInternalCallbackOwnerDropOutcome(context, &setup.formatOwners[i], status, first), &status, &first);
+    }
+    data->bColumnSetup = false;
+    return xuiInternalCallScopeEndRestored(&scope, status, first);
 }
 
 XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount)

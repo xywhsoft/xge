@@ -960,6 +960,9 @@ int xuiInternalCallbackUpdateBeginPrepared(xui_widget,const void*,bool,void*,con
 void xuiInternalCallbackUpdatePublish(xui_callback_update_t*);
 int xuiInternalCallbackUpdateEnd(xui_callback_update_t*,int);
 int xuiInternalCallbackGroupUpdateBegin(xui_widget,xui_callback_group_entry_t*,size_t,xui_callback_group_update_t*);
+/* Transfer each already held pOwner reference on successful Begin. The caller
+ * retains responsibility for every input reference on failure. */
+int xuiInternalCallbackGroupUpdateBeginTransfer(xui_widget,xui_callback_group_entry_t*,size_t,xui_callback_group_update_t*);
 void xuiInternalCallbackGroupUpdatePublish(xui_callback_group_update_t*);
 int xuiInternalCallbackGroupUpdateEnd(xui_callback_group_update_t*,int);
 /* Returned: the consumer propagates negative status. Reported: a void/value/
