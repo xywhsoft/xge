@@ -9730,7 +9730,18 @@ int xgeShapeExAddRef(xge_shape_ex pShape)
 	if ( !__xgeShapeExValid(pShape) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( pShape->iRefCount <= 0 || pShape->iRefCount == INT_MAX ) return XGE_ERROR_INVALID_STATE;
 	pShape->iRefCount++;
+	return XGE_OK;
+}
+
+int xgeShapeExShareOwned(xge_shape_ex pShape, xge_shape_ex* ppShared)
+{
+	if ( ppShared == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppShared = NULL;
+	int iRet = xgeShapeExAddRef(pShape);
+	if ( iRet != XGE_OK ) return iRet;
+	*ppShared = pShape;
 	return XGE_OK;
 }
 
@@ -16511,7 +16522,18 @@ int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene)
 int xgeShapeExSceneAddRef(xge_shape_ex_scene pScene)
 {
 	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pScene->iRefCount <= 0 || pScene->iRefCount == INT_MAX ) return XGE_ERROR_INVALID_STATE;
 	pScene->iRefCount++;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneShareOwned(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppShared)
+{
+	if ( ppShared == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppShared = NULL;
+	int iRet = xgeShapeExSceneAddRef(pScene);
+	if ( iRet != XGE_OK ) return iRet;
+	*ppShared = pScene;
 	return XGE_OK;
 }
 

@@ -1954,7 +1954,8 @@ static int __xgeSvgDefAddShape(xge_svg_def_t* pDef, xge_shape_ex pShape, const x
 		pDef->pShapeStyles = pShapeStyles;
 		pDef->iShapeCapacity = iCapacity;
 	}
-	xgeShapeExAddRef(pShape);
+	iRet = xgeShapeExAddRef(pShape);
+	if ( iRet != XGE_OK ) return iRet;
 	iIndex = pDef->iShapeCount++;
 	pDef->pShapes[iIndex] = pShape;
 	if ( pStyle != NULL ) {

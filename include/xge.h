@@ -3376,6 +3376,10 @@ XGE_API int xgeShapeExMatrixStrokeScale(float* pScale, const xge_shape_ex_matrix
 XGE_API int xgeShapeExCreate(xge_shape_ex* ppShape);
 /* 路径引用计数加一。 */
 XGE_API int xgeShapeExAddRef(xge_shape_ex pShape);
+/* Take an independent owning reference to the same shape on its owning
+ * thread. The input must stay alive during the call. No geometry is copied.
+ * *ppShared is cleared on failure. Release success with xgeShapeExDestroy. */
+XGE_API int xgeShapeExShareOwned(xge_shape_ex pShape, xge_shape_ex* ppShared);
 /* 读取路径引用计数。 */
 XGE_API int xgeShapeExRefCountGet(xge_shape_ex pShape, int* pRefCount);
 /* 由名称散列出形状 id（跨进程稳定）。 */
@@ -3670,6 +3674,10 @@ XGE_API int xgeShapeExDrawPxEx(xge_shape_ex pShape, float fTolerance, const xge_
 XGE_API int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene);
 /* 场景引用计数加一。 */
 XGE_API int xgeShapeExSceneAddRef(xge_shape_ex_scene pScene);
+/* Take an independent owning reference to the same scene on its owning
+ * thread. The input must stay alive during the call. No children are copied.
+ * *ppShared is cleared on failure. Release success with xgeShapeExSceneDestroy. */
+XGE_API int xgeShapeExSceneShareOwned(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppShared);
 /* 读取场景引用计数。 */
 XGE_API int xgeShapeExSceneRefCountGet(xge_shape_ex_scene pScene, int* pRefCount);
 /* 设置场景 id。 */
