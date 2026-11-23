@@ -14148,6 +14148,10 @@ XUI_API int xuiWidgetGetInstanceState(xui_widget pWidget, xvalue** ppValue);
 XUI_API void xuiWidgetSetUserData(xui_widget pWidget, void* pUser);
 /* 读取实例用户指针。 */
 XUI_API void* xuiWidgetGetUserData(xui_widget pWidget);
+/* The value is independent of the raw user pointer and managed instance state.
+ * Set retains it, NULL clears it, and Get transfers one retained reference. */
+XUI_API int xuiWidgetSetUserValue(xui_widget pWidget, xvalue* pValue);
+XUI_API int xuiWidgetGetUserValue(xui_widget pWidget, xvalue** ppValue);
 
 /* 追加尚无父级的子控件；迁移现有子控件须先调用 xuiWidgetRemoveFromParent。此后由本控件持有。 */
 XUI_API int xuiWidgetAddChild(xui_widget pParent, xui_widget pChild);

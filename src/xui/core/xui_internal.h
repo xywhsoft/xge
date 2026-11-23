@@ -841,6 +841,7 @@ struct xui_widget_t {
 	uint32_t iDpiGeneration;
 	uint32_t iStyleVersion;
 	void* pUser;
+	xvalue* pUserValue;
 	xui_widget pOverlayOwner;
 	void* pTypeData;
 	const xui_internal_edit_adapter_t* pEditAdapter;
