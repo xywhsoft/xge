@@ -186,16 +186,14 @@ static int __xgeImeQueuePushOwnedRangeAttribute(int iType, const char* sText, in
 		return 0;
 	}
 	pItem = &g_xge.pImeQueue[g_xge.iImeQueueCount++];
-	memset(pItem, 0, sizeof(*pItem));
-	pItem->iType = iType;
-	pItem->iTextSize = iTextSize;
-	pItem->iCursor = (iCursor >= 0) ? iCursor : iTextSize;
-	pItem->iSelectStart = (iSelectStart >= 0) ? iSelectStart : pItem->iCursor;
-	pItem->iSelectEnd = (iSelectEnd >= 0) ? iSelectEnd : pItem->iCursor;
-	pItem->bReplacementRange = bReplacementRange != 0;
-	pItem->iReplacementStart = iReplacementStart;
-	pItem->iReplacementEnd = iReplacementEnd;
-	pItem->iAttribute = iAttribute;
+	pItem->tInfo = (xge_ime_event_info_t){
+		.iSize = sizeof(pItem->tInfo), .iType = iType,
+		.iSequence = g_xge.iInputEventSequence, .iTextSize = iTextSize,
+		.iCursor = tInput.iCursor, .iSelectStart = tInput.iSelectStart,
+		.iSelectEnd = tInput.iSelectEnd, .bReplacementRange = tInput.bReplacementRange,
+		.iReplacementStart = iReplacementStart, .iReplacementEnd = iReplacementEnd,
+		.iAttribute = iAttribute
+	};
 	pItem->sText = sCopy;
 	return 1;
 }
@@ -330,25 +328,53 @@ uint32_t xgeTextGet(void)
 	return __xgeTextPop();
 }
 
-static void __xgeInputDiscardLegacyIme(int iType)
+/* Remove a queue item and transfer its counted text to the caller. */
+static char* __xgeImeQueueTake(int iIndex)
 {
-	xge_ime_queue_item_t* pItem;
-
-	if ( g_xge.iImeQueueCount <= 0 ) return;
-	pItem = &g_xge.pImeQueue[0];
-	if ( pItem->iType != iType ) return;
-	if ( pItem->sText != NULL ) xrtFree(pItem->sText);
+	xge_ime_queue_item_t* pItem = &g_xge.pImeQueue[iIndex];
+	char* sText = pItem->sText;
 	g_xge.iImeQueueCount--;
-	if ( g_xge.iImeQueueCount > 0 ) {
-		memmove(g_xge.pImeQueue, g_xge.pImeQueue + 1, sizeof(*g_xge.pImeQueue) * (size_t)g_xge.iImeQueueCount);
+	int iTrailing = g_xge.iImeQueueCount - iIndex;
+	if ( iTrailing > 0 ) {
+		memmove(pItem, pItem + 1, sizeof(*pItem) * (size_t)iTrailing);
 	}
 	memset(&g_xge.pImeQueue[g_xge.iImeQueueCount], 0, sizeof(*g_xge.pImeQueue));
+	return sText;
+}
+
+static void __xgeInputDiscardLegacyIme(uint64_t iSequence)
+{
+	int iCount = g_xge.iImeQueueCount;
+	if ( iCount == 0 ) return;
+	uint64_t iLatest = g_xge.iInputEventSequence;
+	uint64_t iAge = iLatest - iSequence;
+	uint64_t iHeadAge = iLatest - g_xge.pImeQueue[0].tInfo.iSequence;
+	if ( iHeadAge < iAge ) return;
+	if ( iHeadAge == iAge ) {
+		xrtFree(__xgeImeQueueTake(0));
+		return;
+	}
+
+	/* The ordered queue resets each frame. Older legacy events may still
+	 * precede the matching sequence. Unsigned ages also handle wraparound. */
+	int iLow = 1;
+	int iHigh = iCount;
+	while ( iLow < iHigh ) {
+		int iMid = iLow + (iHigh - iLow) / 2;
+		if ( iLatest - g_xge.pImeQueue[iMid].tInfo.iSequence > iAge ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
+	if ( iLow < iCount && g_xge.pImeQueue[iLow].tInfo.iSequence == iSequence ) {
+		xrtFree(__xgeImeQueueTake(iLow));
+	}
 }
 
 static void __xgeInputEventConsume(xge_input_queue_item_t* pItem)
 {
 	int iType = pItem->tEvent.iType;
 	uint32_t iCodepoint = pItem->tEvent.iCodepoint;
+	uint64_t iSequence = pItem->tEvent.iSequence;
+	uint32_t iFlags = pItem->tEvent.iFlags;
 	g_xge.iInputImeOwner = pItem->iImeOwner;
 	__xgeInputQueueItemFree(pItem);
 	g_xge.iInputEventQueueHead = (g_xge.iInputEventQueueHead + 1) % g_xge.iInputEventQueueCapacity;
@@ -356,12 +382,9 @@ static void __xgeInputEventConsume(xge_input_queue_item_t* pItem)
 	if ( (iType == XGE_EVENT_TEXT) && (g_xge.iTextQueueCount > 0) &&
 	     (g_xge.arrTextQueue[g_xge.iTextQueueHead] == iCodepoint) ) {
 		(void)__xgeTextPop();
-	} else if ( (iType == XGE_EVENT_IME_START) || (iType == XGE_EVENT_IME_UPDATE) ||
-	            (iType == XGE_EVENT_IME_COMMIT) || (iType == XGE_EVENT_IME_END) ||
-	            (iType == XGE_EVENT_IME_CANDIDATE_START) ||
-	            (iType == XGE_EVENT_IME_CANDIDATE_UPDATE) ||
-	            (iType == XGE_EVENT_IME_CANDIDATE_END) ) {
-		__xgeInputDiscardLegacyIme(iType);
+	} else if ( (iFlags & (XGE_INPUT_EVENT_FLAG_NATIVE_IME | XGE_INPUT_EVENT_FLAG_SYNTHETIC)) ==
+	            XGE_INPUT_EVENT_FLAG_NATIVE_IME ) {
+		__xgeInputDiscardLegacyIme(iSequence);
 	}
 }
 
@@ -499,8 +522,6 @@ uint64_t xgeInputEventDroppedCount(void)
 
 int xgeImeEventGet(xge_ime_event_t* pEvent)
 {
-	xge_ime_queue_item_t* pItem;
-
 	if ( pEvent == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( g_xge.sImeEventText != NULL ) {
 		xrtFree(g_xge.sImeEventText);
@@ -512,24 +533,37 @@ int xgeImeEventGet(xge_ime_event_t* pEvent)
 	if ( g_xge.iImeQueueCount <= 0 ) {
 		return 0;
 	}
-	pItem = &g_xge.pImeQueue[0];
-	g_xge.sImeEventText = pItem->sText;
-	pEvent->iType = pItem->iType;
+	const xge_ime_event_info_t tInfo = g_xge.pImeQueue[0].tInfo;
+	g_xge.sImeEventText = __xgeImeQueueTake(0);
+	pEvent->iType = tInfo.iType;
 	pEvent->sText = (g_xge.sImeEventText != NULL) ? g_xge.sImeEventText : "";
-	pEvent->iTextSize = pItem->iTextSize;
-	pEvent->iCursor = pItem->iCursor;
-	pEvent->iSelectStart = pItem->iSelectStart;
-	pEvent->iSelectEnd = pItem->iSelectEnd;
-	pEvent->bReplacementRange = pItem->bReplacementRange;
-	pEvent->iReplacementStart = pItem->iReplacementStart;
-	pEvent->iReplacementEnd = pItem->iReplacementEnd;
-	pEvent->iAttribute = pItem->iAttribute;
-	g_xge.iImeQueueCount--;
-	if ( g_xge.iImeQueueCount > 0 ) {
-		memmove(g_xge.pImeQueue, g_xge.pImeQueue + 1, sizeof(*g_xge.pImeQueue) * (size_t)g_xge.iImeQueueCount);
-	}
-	memset(&g_xge.pImeQueue[g_xge.iImeQueueCount], 0, sizeof(*g_xge.pImeQueue));
+	pEvent->iTextSize = tInfo.iTextSize;
+	pEvent->iCursor = tInfo.iCursor;
+	pEvent->iSelectStart = tInfo.iSelectStart;
+	pEvent->iSelectEnd = tInfo.iSelectEnd;
+	pEvent->bReplacementRange = tInfo.bReplacementRange;
+	pEvent->iReplacementStart = tInfo.iReplacementStart;
+	pEvent->iReplacementEnd = tInfo.iReplacementEnd;
+	pEvent->iAttribute = tInfo.iAttribute;
 	return 1;
+}
+
+int xgeImeEventRead(xge_ime_event_info_t* pInfo, void* pText, size_t iCapacity)
+{
+	if ( pInfo == NULL || (pText == NULL && iCapacity != 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	int iRet = __xgeGraphicsWindowAccess(&g_xgeGraphicsLifetime);
+	if ( iRet != XGE_OK ) return iRet;
+	if ( g_xge.iImeQueueCount == 0 ) {
+		*pInfo = (xge_ime_event_info_t){ .iSize = sizeof(*pInfo) };
+		return XGE_INPUT_READ_EMPTY;
+	}
+	const xge_ime_queue_item_t* pItem = &g_xge.pImeQueue[0];
+	*pInfo = pItem->tInfo;
+	size_t iBytes = (size_t)pInfo->iTextSize;
+	if ( iBytes > iCapacity ) return XGE_INPUT_READ_NEED_BUFFER;
+	if ( iBytes != 0 ) memcpy(pText, pItem->sText, iBytes);
+	xrtFree(__xgeImeQueueTake(0));
+	return XGE_INPUT_READ_READY;
 }
 
 int xgeImeGetEnabled(void)

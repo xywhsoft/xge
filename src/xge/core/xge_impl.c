@@ -126,15 +126,7 @@ typedef struct xge_render_command_t {
 } xge_render_command_t;
 
 typedef struct xge_ime_queue_item_t {
-	int iType;
-	int iTextSize;
-	int iCursor;
-	int iSelectStart;
-	int iSelectEnd;
-	int bReplacementRange;
-	int iReplacementStart;
-	int iReplacementEnd;
-	int iAttribute;
+	xge_ime_event_info_t tInfo;
 	char* sText;
 } xge_ime_queue_item_t;
 

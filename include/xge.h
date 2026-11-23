@@ -1871,6 +1871,22 @@ typedef struct xge_ime_event_t {
 	int iAttribute;
 } xge_ime_event_t;
 
+/* Counted metadata for the legacy IME queue. The sequence identifies the
+ * same event in the ordered input queue. Text offsets are UTF-8 bytes. */
+typedef struct xge_ime_event_info_t {
+	uint32_t iSize;
+	int iType;
+	uint64_t iSequence;
+	int iTextSize;
+	int iCursor;
+	int iSelectStart;
+	int iSelectEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
+	int iAttribute;
+} xge_ime_event_info_t;
+
 /*
  * Ordered input event delivered on the platform UI thread.
  * Events keep their native arrival order and are consumed in the same frame.
@@ -4061,6 +4077,10 @@ XGE_API int xgeImeCandidateSelect(int iIndex);
 XGE_API int xgeImeCandidateFinalize(void);
 /* sText remains valid until the next xgeImeEventGet call or xgeUnit. */
 XGE_API int xgeImeEventGet(xge_ime_event_t* pEvent);
+/* Creator thread. Returns XGE_INPUT_READ_* (or a negative error).
+ * NEED_BUFFER publishes the byte length without consuming the event or
+ * writing to pText. READY copies only the counted bytes, without a NUL. */
+XGE_API int xgeImeEventRead(xge_ime_event_info_t* pInfo, void* pText, size_t iCapacity);
 /* 当前触摸点数量（最多 8 点）。 */
 XGE_API int xgeTouchGetCount(void);
 /* 按索引取触摸点状态。 */
