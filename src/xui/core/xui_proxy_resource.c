@@ -132,6 +132,12 @@ static int resourceRef(xui_owned_resource_t* value,bool owner,bool pin)
     if(pin)resourceStateSet(value,state|RESOURCE_PINNED);
     resourceUnlock(value);mutationEnd(&mutation);return XUI_OK;
 }
+static int resourceShare(xui_owned_resource_t* value,unsigned kind)
+{
+    if(!valid(value) || value->iKind!=kind)return XUI_ERROR_INVALID_ARGUMENT;
+    if(value->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    return resourceRef(value,true,false);
+}
 static void outcome(int next,int* status,xerror** first)
 {
     xerror* error=xrtTakeError();
@@ -298,6 +304,14 @@ static int resourceRelease(xui_owned_resource_t* value,bool owner,bool pin,bool*
 }
 int xuiProxyAddRef(xui_proxy proxy)
 {return resourceRef(proxyResource(proxy),true,false);}
+int xuiProxyShareOwned(xui_proxy proxy,xui_proxy* shared)
+{
+    if(!shared)return XUI_ERROR_INVALID_ARGUMENT;
+    *shared=NULL;
+    int status=resourceShare(proxyResource(proxy),XUI_OWNED_PROXY);
+    if(status==XUI_OK)*shared=&proxy->_pCapability->tProxy;
+    return status;
+}
 int xuiProxyReleaseOwnerChecked(xui_proxy proxy,bool* consumed)
 {return resourceRelease(proxyResource(proxy),true,false,consumed);}
 int xuiProxyReleaseChecked(xui_proxy proxy)
@@ -306,6 +320,22 @@ int xuiFontAddRef(xui_font font)
 {return xuiInternalProxyResourceManaged(font,XUI_OWNED_FONT) ? resourceRef((void*)font,true,false):XUI_ERROR_INVALID_ARGUMENT;}
 int xuiSurfaceAddRef(xui_surface surface)
 {return xuiInternalProxyResourceManaged(surface,XUI_OWNED_SURFACE) ? resourceRef((void*)surface,true,false):XUI_ERROR_INVALID_ARGUMENT;}
+int xuiFontShareOwned(xui_font font,xui_font* shared)
+{
+    if(!shared)return XUI_ERROR_INVALID_ARGUMENT;
+    *shared=NULL;
+    int status=resourceShare((void*)font,XUI_OWNED_FONT);
+    if(status==XUI_OK)*shared=font;
+    return status;
+}
+int xuiSurfaceShareOwned(xui_surface surface,xui_surface* shared)
+{
+    if(!shared)return XUI_ERROR_INVALID_ARGUMENT;
+    *shared=NULL;
+    int status=resourceShare((void*)surface,XUI_OWNED_SURFACE);
+    if(status==XUI_OK)*shared=surface;
+    return status;
+}
 int xuiFontReleaseOwnerChecked(xui_font font,bool* consumed)
 {if(consumed)*consumed=false;return xuiInternalProxyResourceManaged(font,XUI_OWNED_FONT) ? resourceRelease((void*)font,true,false,consumed):XUI_ERROR_INVALID_ARGUMENT;}
 int xuiSurfaceReleaseOwnerChecked(xui_surface surface,bool* consumed)
@@ -396,6 +426,14 @@ int xuiInternalTextShapeAllocateOwned(xui_proxy proxy,xui_text_shape_t** output)
 }
 int xuiTextShapeAddRef(const xui_text_shape_t* shape)
 {return resourceRef(textShapeResource(shape),true,false);}
+int xuiTextShapeShareOwned(const xui_text_shape_t* shape,const xui_text_shape_t** shared)
+{
+    if(!shared)return XUI_ERROR_INVALID_ARGUMENT;
+    *shared=NULL;
+    int status=resourceShare(textShapeResource(shape),XUI_OWNED_TEXT_SHAPE);
+    if(status==XUI_OK)*shared=shape;
+    return status;
+}
 int xuiTextShapeReleaseOwnerChecked(const xui_text_shape_t* shape,bool* consumed)
 {return resourceRelease(textShapeResource(shape),true,false,consumed);}
 int xuiTextShapeReleaseChecked(const xui_text_shape_t* shape)
@@ -425,6 +463,14 @@ int xuiDrawCreateOwnedEx(xui_proxy proxy,xui_surface target,size_t payload,xui_p
 }
 int xuiDrawAddRef(xui_draw_context draw)
 {return xuiInternalProxyResourceManaged(draw,XUI_OWNED_DRAW) ? resourceRef((void*)draw,true,false):XUI_ERROR_INVALID_ARGUMENT;}
+int xuiDrawShareOwned(xui_draw_context draw,xui_draw_context* shared)
+{
+    if(!shared)return XUI_ERROR_INVALID_ARGUMENT;
+    *shared=NULL;
+    int status=resourceShare((void*)draw,XUI_OWNED_DRAW);
+    if(status==XUI_OK)*shared=draw;
+    return status;
+}
 int xuiDrawReleaseOwnerChecked(xui_draw_context draw,bool* consumed)
 {if(consumed)*consumed=false;return xuiInternalProxyResourceManaged(draw,XUI_OWNED_DRAW) ? resourceRelease((void*)draw,true,false,consumed):XUI_ERROR_INVALID_ARGUMENT;}
 int xuiDrawReleaseChecked(xui_draw_context draw)

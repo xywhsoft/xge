@@ -6754,6 +6754,9 @@ XUI_API int xuiProxyCreateOwnedEx(const xui_proxy_t* pSource, const xui_callback
 XUI_API int xuiProxyCreateOwned(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, xui_proxy* ppProxy);
 XUI_API int xuiProxyXgeCreate(xui_proxy* ppProxy);
 XUI_API int xuiProxyAddRef(xui_proxy pProxy);
+/* Share APIs transfer one independent owner on the resource's creator
+ * thread. The output is NULL on failure. */
+XUI_API int xuiProxyShareOwned(xui_proxy pProxy, xui_proxy* ppShared);
 XUI_API int xuiProxyReleaseOwnerChecked(xui_proxy pProxy, bool* pConsumed);
 XUI_API xrtownershipref xuiProxyOwnership(xui_proxy pProxy);
 XUI_API bool xuiProxyIsOwned(const xui_proxy_t* pProxy);
@@ -6770,6 +6773,8 @@ XUI_API int xuiDrawCreateOwned(xui_proxy pProxy, xui_surface pTarget, size_t iPa
 XUI_API int xuiDrawCreateOwnedEx(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_proxy_payload_ready_proc onCanEnd, xui_draw_context* ppDraw, void** ppPayload);
 XUI_API int xuiDrawEndChecked(xui_draw_context pDraw);
 XUI_API int xuiDrawAddRef(xui_draw_context pDraw);
+/* A shared view is the same session; End affects every view. */
+XUI_API int xuiDrawShareOwned(xui_draw_context pDraw, xui_draw_context* ppShared);
 XUI_API int xuiDrawReleaseOwnerChecked(xui_draw_context pDraw, bool* pConsumed);
 XUI_API int xuiDrawReleaseChecked(xui_draw_context pDraw);
 XUI_API int xuiDrawCallScopeBegin(xui_draw_context pDraw, xui_draw_scope_t* pScope);
@@ -6779,10 +6784,12 @@ XUI_API xui_proxy xuiDrawGetProxy(xui_draw_context pDraw); /* borrowed; NULL aft
 XUI_API xui_surface xuiDrawGetTarget(xui_draw_context pDraw); /* borrowed; NULL after End */
 XUI_API xrtownershipref xuiDrawOwnership(xui_draw_context pDraw);
 XUI_API int xuiFontAddRef(xui_font pFont);
+XUI_API int xuiFontShareOwned(xui_font pFont, xui_font* ppShared);
 XUI_API int xuiFontReleaseOwnerChecked(xui_font pFont, bool* pConsumed);
 XUI_API xui_proxy xuiFontGetProxy(xui_font pFont); /* borrowed, exact capability */
 XUI_API xrtownershipref xuiFontOwnership(xui_font pFont);
 XUI_API int xuiSurfaceAddRef(xui_surface pSurface);
+XUI_API int xuiSurfaceShareOwned(xui_surface pSurface, xui_surface* ppShared);
 XUI_API int xuiSurfaceReleaseOwnerChecked(xui_surface pSurface, bool* pConsumed);
 XUI_API xui_proxy xuiSurfaceGetProxy(xui_surface pSurface);
 XUI_API xrtownershipref xuiSurfaceOwnership(xui_surface pSurface);
@@ -7399,6 +7406,7 @@ XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem,
  * Raw stack records continue to use xuiTextShapeFreeChecked. */
 XUI_API int xuiTextShapeCreateOwned(xui_proxy pProxy, const xui_text_item_t* pTextItem, const xui_text_shape_t** ppShape);
 XUI_API int xuiTextShapeAddRef(const xui_text_shape_t* pShape);
+XUI_API int xuiTextShapeShareOwned(const xui_text_shape_t* pShape, const xui_text_shape_t** ppShared);
 XUI_API int xuiTextShapeReleaseOwnerChecked(const xui_text_shape_t* pShape, bool* pConsumed);
 XUI_API int xuiTextShapeReleaseChecked(const xui_text_shape_t* pShape);
 XUI_API xui_proxy xuiTextShapeGetProxy(const xui_text_shape_t* pShape);
