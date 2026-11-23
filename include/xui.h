@@ -12953,13 +12953,16 @@ XUI_API int xuiPropertyGridSetSelect(xui_widget pWidget, xui_property_grid_selec
 XUI_API int xuiPropertyGridSetSelectOwned(xui_widget pWidget, xui_property_grid_select_proc onSelect, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册值校验回调。 */
 XUI_API int xuiPropertyGridSetValidate(xui_widget pWidget, xui_property_grid_validate_proc onValidate, void* pUser);
+XUI_API int xuiPropertyGridSetValidateOwned(xui_widget pWidget, xui_property_grid_validate_proc onValidate, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册值变更回调。 */
 XUI_API int xuiPropertyGridSetChange(xui_widget pWidget, xui_property_grid_change_proc onChange, void* pUser);
 XUI_API int xuiPropertyGridSetChangeOwned(xui_widget pWidget, xui_property_grid_change_proc onChange, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册全局动作回调（缺省动作兜底）。 */
 XUI_API int xuiPropertyGridSetGlobalAction(xui_widget pWidget, xui_property_grid_action_proc onAction, void* pUser);
+XUI_API int xuiPropertyGridSetGlobalActionOwned(xui_widget pWidget, xui_property_grid_action_proc onAction, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册全局自绘回调（缺省绘制兜底）。 */
 XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_grid_render_proc onRender, void* pUser);
+XUI_API int xuiPropertyGridSetGlobalRendererOwned(xui_widget pWidget, xui_property_grid_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 注册右键回调。 */
 XUI_API int xuiPropertyGridSetContextMenu(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser);
 XUI_API int xuiPropertyGridSetContextMenuOwned(xui_widget pWidget, xui_property_grid_context_proc onContext, void* pUser, const xui_callback_owner_t* pOwner);

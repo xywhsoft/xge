@@ -40,6 +40,7 @@ typedef struct xui_property_grid_data_t {
 	int iPropertyCount;
 	int iVisibleCount;
 	int iSelectedProperty;
+	uint64_t iPropertyGeneration;
 	int iDescriptionMode;
 	float fDescriptionPanelHeight;
 	float fNameWidth;
@@ -107,6 +108,15 @@ static int __xuiPropertyGridCanInteract(xui_widget pWidget)
 {
 	return pWidget != NULL && xuiWidgetGetEffectiveEnabled(pWidget) &&
 	       xuiWidgetGetEffectiveVisible(pWidget);
+}
+
+static int __xuiPropertyGridFinishCallback(xui_context context, xui_callback_snapshot_t* snapshot,
+    int status, int result)
+{
+    if ( status == XUI_OK && snapshot->pContext != NULL && result < 0 ) status = result;
+    status = xuiInternalCallbackSnapshotEnd(snapshot, status);
+    if ( status != XUI_OK ) xuiInternalContextRecordFailure(context, status);
+    return status;
 }
 
 static int __xuiPropertyGridDescriptionHasPanel(int iMode)
@@ -1110,10 +1120,19 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 	onRender = (pProp->onRender != NULL) ? pProp->onRender : pData->onRender;
 	pRenderUser = (pProp->onRender != NULL) ? pProp->pRenderUser : pData->pRenderUser;
 	if ( onRender != NULL ) {
-		iRet = onRender(pOwner, iProperty, iColumn, pCell, pDraw, tRect, iState, pRenderUser);
+		const void* slot = pProp->onRender != NULL ? &pProp->onRender : &pData->onRender;
+		xui_context context = xuiWidgetGetContext(pOwner);
+		uint64_t generation = pData->iPropertyGeneration;
+		xui_callback_snapshot_t snapshot = {0};
+		int status = xuiInternalCallbackSnapshotBeginReturned(pOwner, slot, &pRenderUser, &snapshot);
+		iRet = 1;
+		if ( status == XUI_OK && pData->iPropertyGeneration == generation )
+			iRet = onRender(pOwner, iProperty, iColumn, pCell, pDraw, tRect, iState, pRenderUser);
+		status = __xuiPropertyGridFinishCallback(context, &snapshot, status, iRet);
+		if ( status != XUI_OK ) return status;
 		if ( !__xuiPropertyGridWidgetAlive(pOwner, pData) ) return iRet != 0 ? iRet : 1;
 		if ( iRet != 0 ) return iRet;
-		if ( !__xuiPropertyGridValidProperty(pData, iProperty) ) return 1;
+		if ( pData->iPropertyGeneration != generation || !__xuiPropertyGridValidProperty(pData, iProperty) ) return 1;
 		pProp = &pData->arrProperties[iProperty];
 	}
 	if ( pProp->iType != XUI_TABLE_CELL_TYPE_ENUM || pProp->bHasEditorConfig == 0 ) {
@@ -1289,8 +1308,17 @@ static int __xuiPropertyGridValidateProc(xui_widget pWidget, int iRow, int iColu
 	if ( onValidate == NULL ) {
 		return 1;
 	}
+	xui_context context = xuiWidgetGetContext(pOwner);
+	uint64_t generation = pData->iPropertyGeneration;
 	__xuiPropertyGridCopy(sId, (int)sizeof(sId), pProp->sId);
-	return onValidate(pOwner, iProperty, sId, sValue, iType, pValidateUser);
+	xui_callback_snapshot_t snapshot = {0};
+	int status = xuiInternalCallbackSnapshotBeginReturned(pOwner, &pData->onValidate, &pValidateUser, &snapshot);
+	int accepted = 0;
+	if ( status == XUI_OK && pData->iPropertyGeneration == generation )
+		accepted = onValidate(pOwner, iProperty, sId, sValue, iType, pValidateUser);
+	status = __xuiPropertyGridFinishCallback(context, &snapshot, status, accepted);
+	return status == XUI_OK && __xuiPropertyGridWidgetAlive(pOwner, pData) &&
+		pData->iPropertyGeneration == generation ? accepted : 0;
 }
 
 static void __xuiPropertyGridChangeProc(xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
@@ -1346,8 +1374,17 @@ static int __xuiPropertyGridEditorProc(xui_widget pWidget, int iRow, int iColumn
 	if ( onAction == NULL ) {
 		return 0;
 	}
+	const void* slot = pProp->onAction != NULL ? &pProp->onAction : &pData->onAction;
+	xui_context context = xuiWidgetGetContext(pOwner);
+	uint64_t generation = pData->iPropertyGeneration;
 	__xuiPropertyGridCopy(sId, (int)sizeof(sId), pProp->sId);
-	return onAction(pOwner, iProperty, sId, tWorldRect, pActionUser);
+	xui_callback_snapshot_t snapshot = {0};
+	int status = xuiInternalCallbackSnapshotBeginReturned(pOwner, slot, &pActionUser, &snapshot);
+	int handled = 0;
+	if ( status == XUI_OK && pData->iPropertyGeneration == generation )
+		handled = onAction(pOwner, iProperty, sId, tWorldRect, pActionUser);
+	status = __xuiPropertyGridFinishCallback(context, &snapshot, status, handled);
+	return status == XUI_OK ? handled : 0;
 }
 
 static int __xuiPropertyGridEditorConfigProc(xui_widget pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig, void* pUser)
@@ -2014,6 +2051,7 @@ XUI_API int xuiPropertyGridClear(xui_widget pWidget)
 	__xuiPropertyGridFreeOwnedEditors(pData, iOldPropertyCount);
 	memset(pData->arrCategories, 0, sizeof(pData->arrCategories));
 	memset(pData->arrProperties, 0, sizeof(pData->arrProperties));
+	++pData->iPropertyGeneration;
 	xuiInternalOperationLeave(pContext);
 	return XUI_OK;
 }
@@ -2852,10 +2890,26 @@ XUI_API int xuiPropertyGridSetSelect(xui_widget pWidget, xui_property_grid_selec
 	return XUI_OK;
 }
 
+XUI_API int xuiPropertyGridSetValidateOwned(xui_widget pWidget, xui_property_grid_validate_proc onValidate,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(pWidget, &pData->onValidate, onValidate != NULL, pUser, pOwner, &update);
+	if ( status != XUI_OK ) return status;
+	pData->onValidate = onValidate;
+	pData->pValidateUser = pUser;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
 XUI_API int xuiPropertyGridSetValidate(xui_widget pWidget, xui_property_grid_validate_proc onValidate, void* pUser)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onValidate) )
+		return xuiPropertyGridSetValidateOwned(pWidget, onValidate, pUser, NULL);
 	pData->onValidate = onValidate;
 	pData->pValidateUser = pUser;
 	return XUI_OK;
@@ -2885,13 +2939,50 @@ XUI_API int xuiPropertyGridSetChange(xui_widget pWidget, xui_property_grid_chang
 	return XUI_OK;
 }
 
+XUI_API int xuiPropertyGridSetGlobalActionOwned(xui_widget pWidget, xui_property_grid_action_proc onAction,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBegin(pWidget, &pData->onAction, onAction != NULL, pUser, pOwner, &update);
+	if ( status != XUI_OK ) return status;
+	pData->onAction = onAction;
+	pData->pActionUser = pUser;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
+}
+
 XUI_API int xuiPropertyGridSetGlobalAction(xui_widget pWidget, xui_property_grid_action_proc onAction, void* pUser)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onAction) )
+		return xuiPropertyGridSetGlobalActionOwned(pWidget, onAction, pUser, NULL);
 	pData->onAction = onAction;
 	pData->pActionUser = pUser;
 	return XUI_OK;
+}
+
+static int __xuiPropertyGridPrepareRenderer(xui_widget widget, void* data)
+{
+	(void)widget;
+	return __xuiPropertyGridInvalidateCells(data);
+}
+
+XUI_API int xuiPropertyGridSetGlobalRendererOwned(xui_widget pWidget, xui_property_grid_render_proc onRender,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t update = {0};
+	int status = xuiInternalCallbackUpdateBeginPrepared(pWidget, &pData->onRender, onRender != NULL,
+		pUser, pOwner, __xuiPropertyGridPrepareRenderer, pData, &update);
+	if ( status != XUI_OK ) return status;
+	pData->onRender = onRender;
+	pData->pRenderUser = pUser;
+	xuiInternalCallbackUpdatePublish(&update);
+	return xuiInternalCallbackUpdateEnd(&update, XUI_OK);
 }
 
 XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_grid_render_proc onRender, void* pUser)
@@ -2899,6 +2990,8 @@ XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_gr
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( xuiInternalCallbackSlotOwned(pWidget, &pData->onRender) )
+		return xuiPropertyGridSetGlobalRendererOwned(pWidget, onRender, pUser, NULL);
 	if ( pData->onRender == onRender && pData->pRenderUser == pUser ) return XUI_OK;
 	iRet = __xuiPropertyGridInvalidateCells(pData);
 	if ( iRet != XUI_OK ) return iRet;

@@ -1,0 +1,164 @@
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC) && defined(_WIN32)
+#define XRT_USE_SHARED
+#endif
+#ifndef XRT_MODULE_ALL
+#define XRT_MODULE_ALL
+#endif
+#include "xui.h"
+#include "xui_test_proxy.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
+#include "xge_host_xrt_contract.h"
+static xge_host_xrt_proc resolve(void* user, const char* name)
+{
+    (void)user;
+#define XGE_HOST_XRT_SLOT(symbol) if ( !strcmp(name, #symbol) ) return (xge_host_xrt_proc)&symbol;
+#include "xge_host_xrt_slots.inc"
+#undef XGE_HOST_XRT_SLOT
+    return NULL;
+}
+#endif
+
+typedef struct CallbackState {
+    size_t references;
+    unsigned calls;
+    bool reject;
+} CallbackState;
+
+static bool retain(const void* source)
+{
+    ++((CallbackState*)source)->references;
+    return true;
+}
+
+static bool release(const void* source)
+{
+    CallbackState* state = (CallbackState*)source;
+    assert(state->references > 1);
+    --state->references;
+    return true;
+}
+
+static bool count(const void* source, size_t* references)
+{
+    *references = ((const CallbackState*)source)->references;
+    return true;
+}
+
+static bool trace(const void* source, xrtownershipvisitor visitor, void* user)
+{
+    (void)source;
+    (void)visitor;
+    (void)user;
+    return true;
+}
+
+static xui_callback_owner_t owner(CallbackState* state)
+{
+    static const xrtownershipops ops = {count, trace};
+    return (xui_callback_owner_t){{state, &ops}, retain, release};
+}
+
+static int validate(xui_widget widget, int property, const char* id, const char* value, int type, void* user)
+{
+    (void)widget;
+    CallbackState* state = user;
+    assert(state->references == 3 && property == 0 && type == XUI_TABLE_CELL_TYPE_BOOL);
+    assert(!strcmp(id, "enabled") && value);
+    ++state->calls;
+    if ( state->reject ) {
+        xrtSetErrorKind(XERR_STATE);
+        return XUI_ERROR_CALLBACK_FAILED;
+    }
+    return 1;
+}
+
+static int activate(xui_widget widget, int property, const char* id, xui_rect_t rect, void* user)
+{
+    CallbackState* state = user;
+    assert(state->references == 3 && property == 1 && !strcmp(id, "path") && rect.fW > 0);
+    ++state->calls;
+    assert(xuiPropertyGridSetGlobalAction(widget, NULL, NULL) == XUI_OK);
+    assert(state->references == 2 && !strcmp(id, "path"));
+    return 1;
+}
+
+static int paint(xui_widget widget, int property, int column, const xui_table_view_cell_t* cell,
+                 xui_draw_context_t* draw, xui_rect_t rect, int flags, void* user)
+{
+    (void)widget;
+    (void)flags;
+    CallbackState* state = user;
+    assert(state->references == 3 && property >= 0 && column == 1 && cell && draw && rect.fW > 0);
+    ++state->calls;
+    return 0;
+}
+
+int main(void)
+{
+#if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
+    const xge_host_xrt_contract_t contract = XGE_HOST_XRT_LOCAL_CONTRACT_INIT;
+    assert(xgeHostXrtBind(&contract, resolve, NULL, NULL) == XGE_HOST_XRT_OK);
+#endif
+    xui_test_proxy_state_t backend;
+    xuiTestProxyInit(&backend);
+    xui_context_desc_t desc;
+    xuiContextDescDefault(&desc);
+    desc.iSystemFontPolicy = XUI_SYSTEM_FONT_DISABLED;
+    xui_context context = NULL;
+    xui_widget grid = NULL;
+    xui_surface target = NULL;
+    assert(xuiCreateEx(&desc, &context) == XUI_OK);
+    assert(xuiSetProxy(context, &backend.tProxy) == XUI_OK);
+    assert(xuiInputViewport(context, 480, 320) == XUI_OK);
+    assert(xuiPropertyGridCreate(context, &grid, NULL) == XUI_OK);
+    assert(xuiWidgetSetRect(grid, (xui_rect_t){0, 0, 480, 320}) == XUI_OK);
+    assert(xuiSetRootWidget(context, grid) == XUI_OK);
+    int category = xuiPropertyGridAddCategory(grid, "general", "General", 1);
+    const xui_property_desc_t enabled = {.sId="enabled", .sValue="false", .iType=XUI_TABLE_CELL_TYPE_BOOL};
+    const xui_property_desc_t path = {.sId="path", .sValue="data.txt", .iType=XUI_TABLE_CELL_TYPE_FILE};
+    assert(category == 0 && xuiPropertyGridAddProperty(grid, category, &enabled) == 0);
+    assert(xuiPropertyGridAddProperty(grid, category, &path) == 1);
+
+    CallbackState validator = {.references=1};
+    CallbackState action = {.references=1};
+    CallbackState renderer = {.references=1};
+    xui_callback_owner_t validateOwner = owner(&validator);
+    xui_callback_owner_t actionOwner = owner(&action);
+    xui_callback_owner_t renderOwner = owner(&renderer);
+
+    assert(xrtMemDebugEnabled() || xrtMemDebugEnable(true));
+    assert(xrtMemDebugFailAfter(0));
+    assert(xuiPropertyGridSetValidateOwned(grid, validate, &validator, &validateOwner) == XUI_ERROR_OUT_OF_MEMORY);
+    xrtMemDebugFailClear();
+    xrtClearError();
+    assert(validator.references == 1);
+    assert(xuiPropertyGridSetValidateOwned(grid, validate, &validator, &validateOwner) == XUI_OK);
+    assert(xuiPropertyGridSetGlobalActionOwned(grid, activate, &action, &actionOwner) == XUI_OK);
+    assert(xuiPropertyGridSetGlobalRendererOwned(grid, paint, &renderer, &renderOwner) == XUI_OK);
+    assert(xuiLayout(context) == XUI_OK);
+    assert(xuiPropertyGridBeginEdit(grid, 0) == 1 && validator.calls == 1 && validator.references == 2);
+    assert(!strcmp(xuiPropertyGridGetValue(grid, 0), "true"));
+    validator.reject = true;
+    xui_call_scope_t receipt = {0};
+    assert(xuiCallScopeBegin(context, &receipt) == XUI_OK);
+    assert(xuiPropertyGridBeginEdit(grid, 0) == 0 && validator.calls == 2);
+    assert(xuiCallScopeEnd(&receipt) == XUI_ERROR_CALLBACK_FAILED && xrtGetError() != NULL);
+    xrtClearError();
+    assert(!strcmp(xuiPropertyGridGetValue(grid, 0), "true"));
+    assert(xuiPropertyGridBeginEdit(grid, 1) == 1 && action.calls == 1 && action.references == 1);
+
+    assert(xuiTestSurfaceCreate(&backend, &target, 480, 320, XUI_SURFACE_USAGE_TARGET) == XUI_OK);
+    const xui_rect_i_t region = {0, 0, 480, 320};
+    assert(xuiRender(context, target, &region, 1) == XUI_OK && renderer.calls > 0 && renderer.references == 2);
+    assert(xuiPropertyGridClear(grid) == XUI_OK && renderer.references == 2 && validator.references == 2);
+    assert(xuiDestroyChecked(context) == XUI_OK);
+    assert(validator.references == 1 && renderer.references == 1);
+    backend.tProxy.surfaceDestroy(&backend.tProxy, target);
+    puts("property_grid_callbacks: owned validation, action and rendering passed");
+    return 0;
+}
