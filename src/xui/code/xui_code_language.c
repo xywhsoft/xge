@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -599,16 +600,23 @@ XUI_API int xuiCodeLanguageRegistryRegisterOwned(xui_code_language_registry regi
 XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry registry,
 	const xui_code_callback_language_t* language, const xui_callback_owner_t* owner)
 {
-	if ( language == NULL || language->iSize < sizeof(*language) ||
-	     (language->onLex == NULL && language->onFold == NULL) || !xuiInternalCallbackOwnerRawValid(owner) )
+	const size_t prefixSize = offsetof(xui_code_callback_language_t, pRegexRules);
+	if ( language == NULL || !xuiInternalCallbackOwnerRawValid(owner) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( language->iSize != prefixSize && language->iSize < sizeof(*language) ) return XUI_ERROR_INVALID_ARGUMENT;
+	bool hasRulesField = language->iSize >= sizeof(*language);
+	int ruleCount = hasRulesField ? language->iRegexRuleCount : 0;
+	bool hasCallbacks = language->onLex != NULL || language->onFold != NULL;
+	if ( ruleCount < 0 || (!hasCallbacks && (ruleCount == 0 || (owner != NULL && owner->onHold != NULL))) )
 		return XUI_ERROR_INVALID_ARGUMENT;
 	xui_code_language_t native = {
 		.iSize = sizeof(native), .sId = language->sId, .sName = language->sName,
 		.sLineComment = language->sLineComment, .sBlockCommentStart = language->sBlockCommentStart,
-		.sBlockCommentEnd = language->sBlockCommentEnd, .iLexerType = XUI_CODE_LEXER_CALLBACK,
-		.iExtensionCount = language->iExtensionCount, .pUser = language->pUser
+		.sBlockCommentEnd = language->sBlockCommentEnd,
+		.iLexerType = ruleCount > 0 ? XUI_CODE_LEXER_REGEX : XUI_CODE_LEXER_CALLBACK,
+		.iExtensionCount = language->iExtensionCount, .pUser = language->pUser,
+		.pRegexRules = ruleCount > 0 ? language->pRegexRules : NULL, .iRegexRuleCount = ruleCount
 	};
-	return __xuiCodeLanguageRegister(registry, &native, language->pExtensions, owner, language);
+	return __xuiCodeLanguageRegister(registry, &native, language->pExtensions, owner, hasCallbacks ? language : NULL);
 }
 
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry registry,

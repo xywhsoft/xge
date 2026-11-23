@@ -7,6 +7,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 #include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -222,6 +223,73 @@ static void check_rollback(xui_code_language_registry registry, xui_code_regex_l
     printf("language registry replaced only after %d allocation failures\n", failures);
 }
 
+static void check_mixed_registry(xui_context context, xui_widget editor, xui_surface target)
+{
+    static const xrtownershipops ops = {owned_language_count, owned_language_trace};
+    owned_language_probe_t probe = {.registry=xuiCodeEditGetLanguageRegistry(editor)};
+    const xui_callback_owner_t owner = {{&probe, &ops}, owned_language_hold, owned_language_drop};
+    char pattern[] = "abc";
+    const xui_code_regex_rule_t rule = {.iSize=sizeof(rule), .sPattern=pattern,
+        .iTokenKind=XUI_CODE_TOKEN_COMMENT, .iStyle=XUI_CODE_STYLE_COMMENT};
+    xui_code_callback_language_t language = {.iSize=sizeof(language), .sId="mixed",
+        .onFold=owned_language_fold, .pUser=&probe, .pRegexRules=&rule, .iRegexRuleCount=1};
+    assert(xuiCodeEditSetText(editor, "abc\nnext\nend") == XUI_OK);
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_OK);
+    pattern[0] = 'x';
+    assert(xuiCodeEditSetLanguage(editor, "mixed") == XUI_OK);
+    require_first_token(context, editor, target, XUI_CODE_STYLE_COMMENT);
+    xui_code_document document = xuiCodeEditGetDocument(editor);
+    xui_code_fold_range_t range = {0};
+    int count = 0;
+    assert(xuiCodeLanguageRegistryFold(probe.registry, "mixed", document, &range, 1, &count) == XUI_OK);
+    assert(count == 1 && range.iStartLine == 0 && range.iEndLine == 2 && probe.references == 1);
+    assert(xuiCodeLanguageRegistryTraceOwnership(probe.registry, visit_owned_language, &probe) && probe.visits == 1);
+
+    // The custom lexer takes precedence over the regex rules on the same definition.
+    language.onLex = owned_language_lex;
+    language.iSize = offsetof(xui_code_callback_language_t, pRegexRules) + 1;
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
+    language.iSize = sizeof(language);
+    int failures = 0;
+    for ( int allowance = 0; allowance < 32; ++allowance ) {
+        xmemdebugsnapshot before, after;
+        xrtMemDebugSnapshot(&before);
+        assert(xrtMemDebugFailAfter(allowance));
+        int status = xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner);
+        xrtMemDebugFailClear();
+        xrtClearError();
+        if ( status == XUI_OK ) break;
+        assert(status == XUI_ERROR_OUT_OF_MEMORY && probe.references == 1);
+        ++failures;
+        xrtMemDebugSnapshot(&after);
+        assert(after.LiveCount == before.LiveCount && after.LiveBytes == before.LiveBytes);
+        require_first_token(context, editor, target, XUI_CODE_STYLE_COMMENT);
+    }
+    assert(failures > 0 && failures < 32 && probe.references == 1);
+    require_first_token(context, editor, target, XUI_CODE_STYLE_KEYWORD);
+    assert(probe.calls > 0 && probe.references == 1);
+
+    // The original descriptor length must hide the tail even if bytes follow it.
+    language.iSize = offsetof(xui_code_callback_language_t, pRegexRules);
+    language.iRegexRuleCount = -1;
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_OK);
+    xui_code_language_t stored = {0};
+    assert(xuiCodeLanguageRegistryFind(probe.registry, "mixed", &stored) == XUI_OK);
+    assert(stored.iLexerType == XUI_CODE_LEXER_CALLBACK && stored.iRegexRuleCount == 0);
+
+    language.iSize = sizeof(language);
+    language.onLex = NULL;
+    language.onFold = NULL;
+    language.iRegexRuleCount = 1;
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, &owner) == XUI_ERROR_INVALID_ARGUMENT);
+    pattern[0] = 'a';
+    assert(xuiCodeLanguageRegistryRegisterCallbacks(probe.registry, &language, NULL) == XUI_OK);
+    assert(probe.references == 0);
+    require_first_token(context, editor, target, XUI_CODE_STYLE_COMMENT);
+    assert(xuiCodeLanguageRegistryFold(probe.registry, "mixed", document, NULL, 0, &count) == XUI_ERROR_UNSUPPORTED);
+    puts("code_edit_language_registry: mixed regex and callbacks passed");
+}
+
 int main(void)
 {
 #if XGE_XRT_HOST && !defined(XL6_XGE_STATIC)
@@ -297,6 +365,7 @@ int main(void)
     assert(xuiCodeEditSetLanguage(editor,"owned-test") == XUI_OK);
     require_first_token(context, editor, target, XUI_CODE_STYLE_KEYWORD);
     assert(owned.references == 1 && owned.calls > 0);
+    check_mixed_registry(context, editor, target);
     assert(xuiCodeLanguageRegistryClearChecked(registry) == XUI_OK);
     assert(xuiCodeLanguageRegistryGetCount(registry) == 0 && owned.references == 0);
 

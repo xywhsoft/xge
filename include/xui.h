@@ -2866,6 +2866,10 @@ typedef struct xui_code_callback_language_t {
 	xui_code_lex_output_proc onLex;
 	xui_code_fold_output_proc onFold;
 	void* pUser;
+	/* Optional tail. Positive count copies the rules into the registry.
+	 * A custom lexer takes precedence when both are supplied. */
+	const xui_code_regex_rule_t* pRegexRules;
+	int iRegexRuleCount;
 } xui_code_callback_language_t;
 
 struct xui_code_completion_item_t {
@@ -8516,6 +8520,8 @@ XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry
    Returned language definitions remain borrowed until registry mutation. */
 XUI_API int xuiCodeLanguageRegistryRegisterOwned(xui_code_language_registry pRegistry,
 	const xui_code_language_t* pLanguage, const xui_callback_owner_t* pOwner);
+/* The descriptor can contain a lexer, a folder, regex rules, or any combination.
+ * Both callbacks share pUser and pOwner. Older descriptors omit the regex tail. */
 XUI_API int xuiCodeLanguageRegistryRegisterCallbacks(xui_code_language_registry pRegistry,
 	const xui_code_callback_language_t* pLanguage, const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeTokenOutputGetCapacity(const xui_code_token_output_t* pOutput);
