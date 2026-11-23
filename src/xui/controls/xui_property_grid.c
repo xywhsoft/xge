@@ -346,12 +346,9 @@ fail:
 	return iRet;
 }
 
-static void __xuiPropertyGridFreeAllOwnedEditors(xui_property_grid_data_t* pData)
+static void __xuiPropertyGridFreeOwnedEditors(xui_property_grid_data_t* pData, int iCount)
 {
-	int i;
-
-	if ( pData == NULL ) return;
-	for ( i = 0; i < pData->iPropertyCount; i++ ) {
+	for ( int i = 0; i < iCount; i++ ) {
 		__xuiPropertyGridFreeOwnedEditor(&pData->arrEditorOwned[i]);
 	}
 }
@@ -1891,7 +1888,7 @@ static void __xuiPropertyGridDestroy(xui_widget pWidget, void* pTypeData, void* 
 	(void)pUser;
 	pData = (xui_property_grid_data_t*)pTypeData;
 	if ( pData != NULL ) {
-		__xuiPropertyGridFreeAllOwnedEditors(pData);
+		__xuiPropertyGridFreeOwnedEditors(pData, pData->iPropertyCount);
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -2014,7 +2011,7 @@ XUI_API int xuiPropertyGridClear(xui_widget pWidget)
 		xuiInternalOperationLeave(pContext);
 		return iRet;
 	}
-	__xuiPropertyGridFreeAllOwnedEditors(pData);
+	__xuiPropertyGridFreeOwnedEditors(pData, iOldPropertyCount);
 	memset(pData->arrCategories, 0, sizeof(pData->arrCategories));
 	memset(pData->arrProperties, 0, sizeof(pData->arrProperties));
 	xuiInternalOperationLeave(pContext);
