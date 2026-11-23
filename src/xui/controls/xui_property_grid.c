@@ -2617,6 +2617,26 @@ XUI_API int xuiPropertyGridEndEdit(xui_widget pWidget, int bCommit)
 	return (pData != NULL && pData->pTableGrid != NULL) ? xuiTableGridEndEdit(pData->pTableGrid, bCommit) : 1;
 }
 
+XUI_API int xuiPropertyGridBeginEditChecked(xui_widget widget, int property)
+{
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(xuiWidgetGetContext(widget), &scope);
+	if ( status != XUI_OK ) return status;
+	int accepted = xuiPropertyGridBeginEdit(widget, property);
+	status = xuiCallScopeEnd(&scope);
+	return status == XUI_OK ? accepted : status;
+}
+
+XUI_API int xuiPropertyGridEndEditChecked(xui_widget widget, int commit)
+{
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(xuiWidgetGetContext(widget), &scope);
+	if ( status != XUI_OK ) return status;
+	int accepted = xuiPropertyGridEndEdit(widget, commit);
+	status = xuiCallScopeEnd(&scope);
+	return status == XUI_OK ? accepted : status;
+}
+
 XUI_API int xuiPropertyGridSetFont(xui_widget pWidget, xui_font pFont)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);

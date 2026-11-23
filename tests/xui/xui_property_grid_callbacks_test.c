@@ -67,8 +67,9 @@ static int validate(xui_widget widget, int property, const char* id, const char*
 {
     (void)widget;
     CallbackState* state = user;
-    assert(state->references == 3 && property == 0 && type == XUI_TABLE_CELL_TYPE_BOOL);
-    assert(!strcmp(id, "enabled") && value);
+    assert(state->references == 3 && value);
+    assert((property == 0 && type == XUI_TABLE_CELL_TYPE_BOOL && !strcmp(id, "enabled")) ||
+           (property == 2 && type == XUI_TABLE_CELL_TYPE_TEXT && !strcmp(id, "label")));
     ++state->calls;
     if ( state->reject ) {
         xrtSetErrorKind(XERR_STATE);
@@ -121,8 +122,10 @@ int main(void)
     int category = xuiPropertyGridAddCategory(grid, "general", "General", 1);
     const xui_property_desc_t enabled = {.sId="enabled", .sValue="false", .iType=XUI_TABLE_CELL_TYPE_BOOL};
     const xui_property_desc_t path = {.sId="path", .sValue="data.txt", .iType=XUI_TABLE_CELL_TYPE_FILE};
+    const xui_property_desc_t label = {.sId="label", .sValue="draft", .iType=XUI_TABLE_CELL_TYPE_TEXT};
     assert(category == 0 && xuiPropertyGridAddProperty(grid, category, &enabled) == 0);
     assert(xuiPropertyGridAddProperty(grid, category, &path) == 1);
+    assert(xuiPropertyGridAddProperty(grid, category, &label) == 2);
 
     CallbackState validator = {.references=1};
     CallbackState action = {.references=1};
@@ -149,7 +152,15 @@ int main(void)
     assert(xuiPropertyGridBeginEdit(grid, 0) == 0 && validator.calls == 2);
     assert(xuiCallScopeEnd(&receipt) == XUI_ERROR_CALLBACK_FAILED && xrtGetError() != NULL);
     xrtClearError();
+    assert(xuiPropertyGridBeginEditChecked(grid, 0) == XUI_ERROR_CALLBACK_FAILED && validator.calls == 3);
+    assert(xrtGetError() != NULL);
+    xrtClearError();
     assert(!strcmp(xuiPropertyGridGetValue(grid, 0), "true"));
+    assert(xuiPropertyGridBeginEditChecked(grid, 2) == 1);
+    assert(xuiPropertyGridEndEditChecked(grid, 1) == XUI_ERROR_CALLBACK_FAILED && validator.calls == 4);
+    assert(xrtGetError() != NULL);
+    xrtClearError();
+    assert(xuiPropertyGridEndEditChecked(grid, 0) == 1);
     assert(xuiPropertyGridBeginEdit(grid, 1) == 1 && action.calls == 1 && action.references == 1);
 
     assert(xuiTestSurfaceCreate(&backend, &target, 480, 320, XUI_SURFACE_USAGE_TARGET) == XUI_OK);

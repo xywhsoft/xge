@@ -12922,8 +12922,11 @@ XUI_API int xuiPropertyGridSetAction(xui_widget pWidget, int iProperty, xui_prop
 XUI_API int xuiPropertyGridIsEditing(xui_widget pWidget);
 /* 进入属性编辑态。 */
 XUI_API int xuiPropertyGridBeginEdit(xui_widget pWidget, int iProperty);
+/* Checked editing returns 0/1 for rejection/acceptance and a negative status for failure. */
+XUI_API int xuiPropertyGridBeginEditChecked(xui_widget widget, int property);
 /* 结束编辑；bCommit 为真提交。 */
 XUI_API int xuiPropertyGridEndEdit(xui_widget pWidget, int bCommit);
+XUI_API int xuiPropertyGridEndEditChecked(xui_widget widget, int commit);
 /* 设置借用字体；调用方须保证字体生命周期覆盖控件使用期。 */
 XUI_API int xuiPropertyGridSetFont(xui_widget pWidget, xui_font pFont);
 /* 读取字体。 */
