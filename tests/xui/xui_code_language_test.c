@@ -24,6 +24,8 @@ static void* xuiTestLanguageRealloc(void* pMemory, size_t iSize)
 	return xrtRealloc(pMemory, iSize);
 }
 
+#undef xrtMalloc
+#undef xrtRealloc
 #define xrtMalloc xuiTestLanguageMalloc
 #define xrtRealloc xuiTestLanguageRealloc
 #include "../../src/xui/code/xui_code_language.c"
@@ -53,6 +55,20 @@ static int xuiTestLexer(xui_code_document_t* pDocument, int iStartLine, int iEnd
 	}
 	*pTokenCount = 1;
 	return XUI_OK;
+}
+
+static int xuiTestGuardedLexer(xui_code_document_t* document, int firstLine, int endLine,
+	xui_code_token_t* tokens, int capacity, int* count, void* user)
+{
+	xui_code_language_registry registry = user;
+	int nestedCount = 99;
+	if ( xuiCodeLanguageRegistryClearChecked(registry) != XUI_ERROR_BUSY ||
+	     xuiCodeLanguageRegistryDestroyChecked(registry) != XUI_ERROR_BUSY ||
+	     xuiCodeLanguageRegistryFold(registry, "c", document, NULL, 0, &nestedCount) != XUI_ERROR_BUSY ||
+	     nestedCount != 0 ) {
+		return XUI_ERROR_INVALID_STATE;
+	}
+	return xuiTestLexer(document, firstLine, endLine, tokens, capacity, count, NULL);
 }
 
 static int xuiTestInvalidLexer(xui_code_document_t* pDocument, int iStartLine,
@@ -188,6 +204,16 @@ int main(void)
 	XUI_TEST_CHECK(arrTokens[0].iKind == XUI_CODE_TOKEN_TYPE, "c language token");
 	iRet = xuiCodeLanguageFold(&tLanguage, pDocument, arrFolds, 8, &iFoldCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iFoldCount == 1, "c language fold");
+	iRet = xuiCodeLanguageRegistryLex(pRegistry, "c", pDocument, 0, -1, NULL, 0, &iTokenCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount > 1 && sError[0] == '\0', "registry lex count");
+	int expectedCount = iTokenCount;
+	iRet = xuiCodeLanguageRegistryLex(pRegistry, "c", pDocument, 0, -1, arrTokens, 1, &iTokenCount, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == expectedCount && arrTokens[0].iKind == XUI_CODE_TOKEN_TYPE,
+		"registry lex prefix preserves total count");
+	iRet = xuiCodeLanguageRegistryFold(pRegistry, "c", pDocument, NULL, 0, &iFoldCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iFoldCount == 1, "registry fold count");
+	iRet = xuiCodeLanguageRegistryFold(pRegistry, "missing", pDocument, NULL, 0, &iFoldCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && iFoldCount == 0, "missing language resets count");
 
 	memset(&tCustom, 0, sizeof(tCustom));
 	tCustom.iSize = sizeof(tCustom);
@@ -204,6 +230,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tLanguage.sId, "toy") == 0, "find callback language");
 	iRet = xuiCodeLanguageLex(&tLanguage, pDocument, 0, -1, arrTokens, 16, &iTokenCount, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 && arrTokens[0].iKind == XUI_CODE_TOKEN_CUSTOM_BASE + 1, "callback lex");
+	tCustom.pUser = pRegistry;
+	tCustom.onLex = xuiTestGuardedLexer;
+	iRet = xuiCodeLanguageRegistryRegister(pRegistry, &tCustom);
+	XUI_TEST_CHECK(iRet == XUI_OK, "install guarded callback");
+	iRet = xuiCodeLanguageRegistryLex(pRegistry, "toy", pDocument, 0, -1, arrTokens, 16, &iTokenCount, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount == 1 && xuiCodeLanguageRegistryGetCount(pRegistry) == 2,
+		"checked registry callback blocks recursive execution, clear and destruction");
 
 	memset(&tRule, 0, sizeof(tRule));
 	tRule.iSize = sizeof(tRule);

@@ -8506,6 +8506,14 @@ XUI_API int xuiCodeLanguageRegistryGetRegexRule(xui_code_language_registry pRegi
 XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);
 /* 按语言定义构建折叠区间。 */
 XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
+/* Execute a registered language with its document pinned for the call.
+   Registry mutation, retirement and recursive execution return BUSY during callbacks.
+   Counts include all results even when only a prefix fits. On error the count is zero. */
+XUI_API int xuiCodeLanguageRegistryLex(xui_code_language_registry pRegistry, const char* sId,
+	xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity,
+	int* pTokenCount, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeLanguageRegistryFold(xui_code_language_registry pRegistry, const char* sId,
+	xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
 /* 创建 token 缓冲（带文本版本号的词法缓存）。 */
 XUI_API int xuiCodeTokenBufferCreate(xui_code_token_buffer* ppBuffer);
 /* 释放 token 缓冲。 */

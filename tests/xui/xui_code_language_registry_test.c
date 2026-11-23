@@ -54,6 +54,18 @@ static int guarded_lex(xui_code_document doc, int first, int last, xui_code_toke
     return XUI_OK;
 }
 
+static int close_editor_lex(xui_code_document document, int first, int last,
+    xui_code_token_t* tokens, int capacity, int* count, void* user)
+{
+    (void)document;
+    (void)first;
+    (void)last;
+    (void)tokens;
+    (void)capacity;
+    *count = 0;
+    return xuiWidgetDestroyChecked(user);
+}
+
 static void require_first_token(xui_context context, xui_widget editor, xui_surface target, int style)
 {
     assert(xuiLayout(context) == XUI_OK);
@@ -172,6 +184,20 @@ int main(void)
     assert(xuiWidgetDestroyChecked(editor) == XUI_OK && calls == 1);
     assert(xuiCodeLanguageRegistryGetCount(registry) == XUI_ERROR_INVALID_STATE);
     assert(xuiCallScopeEnd(&scope) == XUI_OK);
+
+    assert(xuiCodeEditCreate(context, &editor, NULL) == XUI_OK);
+    assert(xuiSetRootWidget(context, editor) == XUI_OK);
+    registry = xuiCodeEditGetLanguageRegistry(editor);
+    xui_lifetime_link_t closeLink = {0};
+    assert(xuiCodeLanguageRegistryEditorLifetimeWatch(registry, &closeLink, invalidate, &calls) == XUI_OK);
+    xui_code_language_t closer = {
+        .iSize = sizeof(closer), .sId = "close-editor", .onLex = close_editor_lex, .pUser = editor
+    };
+    assert(xuiCodeLanguageRegistryRegister(registry, &closer) == XUI_OK);
+    int count = 99;
+    assert(xuiCodeLanguageRegistryLex(registry, "close-editor", xuiCodeEditGetDocument(editor),
+        0, -1, NULL, 0, &count, NULL, 0) == XUI_OK);
+    assert(count == 0 && calls == 2);
     proxy.tProxy.surfaceDestroy(&proxy.tProxy, target);
     xuiDestroy(context);
     proxy.tProxy.fontDestroy(&proxy.tProxy, font);

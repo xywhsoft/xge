@@ -28,13 +28,15 @@ struct xui_code_language_registry_t {
 	uint64_t iOwnerThread;
 	int iCount;
 	int iCapacity;
+	bool bExecuting;
 };
 
 static int __xuiCodeLanguageRegistryStatus(xui_code_language_registry registry, bool write)
 {
 	if ( registry == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( registry->pOwner != NULL && registry->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	if ( write && registry->bExecuting ) return XUI_ERROR_BUSY;
 	if ( registry->pOwner == NULL ) return XUI_OK;
-	if ( registry->iOwnerThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
 	return registry->pOwnerOps->check(registry->pOwner, write);
 }
 
@@ -613,6 +615,74 @@ XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_d
 		return iRet;
 	}
 	return XUI_ERROR_UNSUPPORTED;
+}
+
+typedef struct xui_code_language_call_t {
+	xui_call_scope_t tOwner;
+	xui_code_document_scope_t tDocument;
+} xui_code_language_call_t;
+
+static int __xuiCodeLanguageCallBegin(xui_code_language_registry registry, const char* id,
+	xui_code_document document, xui_code_language_t* language, xui_code_language_call_t* call)
+{
+	int status = xuiCodeLanguageRegistryFind(registry, id, language);
+	if ( status != XUI_OK ) return status;
+	if ( registry->bExecuting ) return XUI_ERROR_BUSY;
+	if ( registry->pOwner != NULL ) {
+		status = xuiCallScopeBegin(registry->pOwner->pContext, &call->tOwner);
+		if ( status != XUI_OK ) return status;
+	}
+	status = xuiCodeDocumentCallBegin(document, &call->tDocument);
+	if ( status != XUI_OK ) {
+		if ( call->tOwner.pSelf != NULL )
+			return xuiInternalCallScopeEndRestored(&call->tOwner, status, xrtTakeError());
+		return status;
+	}
+	registry->bExecuting = true;
+	return XUI_OK;
+}
+
+static int __xuiCodeLanguageCallEnd(xui_code_language_registry registry,
+	xui_code_language_call_t* call, int status, int* count)
+{
+	xui_cleanup_receipt_t receipt = {0};
+	xuiInternalCleanupStart(&receipt, status);
+	xuiInternalCleanupAdd(&receipt, xuiCodeDocumentCallEnd(&call->tDocument));
+	registry->bExecuting = false;
+	if ( call->tOwner.pSelf != NULL )
+		receipt.status = xuiInternalCallScopeEndOutcome(&call->tOwner, receipt.status, &receipt.error);
+	status = xuiInternalCleanupEnd(NULL, &receipt);
+	if ( status != XUI_OK ) *count = 0;
+	return status;
+}
+
+XUI_API int xuiCodeLanguageRegistryLex(xui_code_language_registry registry, const char* id,
+	xui_code_document document, int firstLine, int endLine, xui_code_token_t* tokens, int capacity,
+	int* count, char* diagnostic, int diagnosticCapacity)
+{
+	if ( count == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*count = 0;
+	__xuiCodeLanguageSetError(diagnostic, diagnosticCapacity, "");
+	xui_code_language_t language;
+	xui_code_language_call_t call = {0};
+	int status = __xuiCodeLanguageCallBegin(registry, id, document, &language, &call);
+	if ( status != XUI_OK ) return status;
+	status = xuiCodeLanguageLex(&language, document, firstLine, endLine, tokens, capacity,
+		count, diagnostic, diagnosticCapacity);
+	return __xuiCodeLanguageCallEnd(registry, &call, status, count);
+}
+
+XUI_API int xuiCodeLanguageRegistryFold(xui_code_language_registry registry, const char* id,
+	xui_code_document document, xui_code_fold_range_t* ranges, int capacity, int* count)
+{
+	if ( count == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*count = 0;
+	xui_code_language_t language;
+	xui_code_language_call_t call = {0};
+	int status = __xuiCodeLanguageCallBegin(registry, id, document, &language, &call);
+	if ( status != XUI_OK ) return status;
+	status = xuiCodeLanguageFold(&language, document, ranges, capacity, count);
+	return __xuiCodeLanguageCallEnd(registry, &call, status, count);
 }
 
 #endif
