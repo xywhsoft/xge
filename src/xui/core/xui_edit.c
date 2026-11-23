@@ -1,6 +1,7 @@
 #include "xui_config.h"
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
+#include "xui_edit_internal.h"
 
 #include <limits.h>
 #include <string.h>
@@ -130,13 +131,12 @@ int xuiInternalEditEmit(xui_widget pWidget, int iType, const char* sText,
 		iCompositionStart, iCompositionEnd, bValid);
 }
 
-enum {
-	XUI_EDIT_EVENT_LEGACY = 0,
-	XUI_EDIT_EVENT_METADATA,
-	XUI_EDIT_EVENT_CAPTURE_TEXT
-};
+xui_edit_event_mode_t xuiInternalEditEventMode(xui_widget host)
+{
+	return host && host->onEditEvent ? (xui_edit_event_mode_t)host->iEditEventMode : XUI_EDIT_EVENT_UNOBSERVED;
+}
 
-static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event)
+static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event, bool stableText)
 {
 	xui_context context = host->pContext;
 	xui_call_scope_t scope = {0};
@@ -150,7 +150,7 @@ static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event)
 	char inlineText[256];
 	char* heapText = NULL;
 	int status = XUI_OK;
-	if ( host->iEditEventMode == XUI_EDIT_EVENT_CAPTURE_TEXT && event->sText ) {
+	if ( host->iEditEventMode == XUI_EDIT_EVENT_CAPTURE_TEXT && event->sText && !stableText ) {
 		size_t length = (size_t)event->iTextSize;
 		char* captured = inlineText;
 		if ( length >= sizeof(inlineText) ) {
@@ -163,7 +163,7 @@ static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event)
 			captured[length] = '\0';
 			event->sText = captured;
 		}
-	} else {
+	} else if ( host->iEditEventMode != XUI_EDIT_EVENT_CAPTURE_TEXT ) {
 		event->sText = NULL;
 	}
 	if ( status == XUI_OK ) {
@@ -180,8 +180,8 @@ static int __xuiEditDispatchOwned(xui_widget host, xui_edit_event_t* event)
 	return status;
 }
 
-int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
-	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid)
+static int __xuiEditEmitSized(xui_widget pWidget, int iType, const char* sText, int iTextSize,
+	int iSelectionStart, int iSelectionEnd, int iCompositionStart, int iCompositionEnd, int bValid, bool stableText)
 {
 	xui_edit_event_t tEvent;
 	xui_widget pHost;
@@ -213,9 +213,21 @@ int xuiInternalEditEmitSized(xui_widget pWidget, int iType, const char* sText, i
 	tEvent.iCompositionStart = iCompositionStart;
 	tEvent.iCompositionEnd = iCompositionEnd;
 	tEvent.bValid = bValid ? 1 : 0;
-	if ( pHost->iEditEventMode != XUI_EDIT_EVENT_LEGACY ) return __xuiEditDispatchOwned(pHost, &tEvent);
+	if ( pHost->iEditEventMode != XUI_EDIT_EVENT_LEGACY ) return __xuiEditDispatchOwned(pHost, &tEvent, stableText);
 	if ( !sText ) tEvent.iTextSize = 0;
 	return pHost->onEditEvent(pHost, &tEvent, pHost->pEditEventUser);
+}
+
+int xuiInternalEditEmitSized(xui_widget widget, int type, const char* text, int textSize,
+	int first, int last, int compositionStart, int compositionEnd, int valid)
+{
+	return __xuiEditEmitSized(widget, type, text, textSize, first, last, compositionStart, compositionEnd, valid, false);
+}
+
+int xuiInternalEditEmitStable(xui_widget widget, int type, const char* text, int textSize,
+	int first, int last, int compositionStart, int compositionEnd, int valid)
+{
+	return __xuiEditEmitSized(widget, type, text, textSize, first, last, compositionStart, compositionEnd, valid, true);
 }
 
 XUI_API uint32_t xuiEditGetCapabilities(xui_widget pWidget)

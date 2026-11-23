@@ -3,6 +3,7 @@
 #include "xui_document_view_internal.h"
 #include "xui_document_accessible_internal.h"
 #include "xui_internal.h"
+#include "xui_edit_internal.h"
 #include "xui_accessibility_text_internal.h"
 #include "xui_unicode_core.h"
 #include "xui_document_image_resource_internal.h"
@@ -1364,9 +1365,37 @@ int doc_view_register_edit(xui_widget w, int editable)
         doc_view_accessible_action, doc_view_get(w));
     return result;
 }
+static int doc_view_edit_event_payload(xui_widget w, doc_view_data* v, xui_edit_event_mode_t mode,
+    char** text, int* size, int* first, int* last)
+{
+    if (mode == XUI_EDIT_EVENT_UNOBSERVED) return XUI_OK;
+    if (mode != XUI_EDIT_EVENT_METADATA) {
+        int result = doc_view_project_edit(v);
+        if (result != XUI_OK) return mode == XUI_EDIT_EVENT_LEGACY ? XUI_OK : result;
+    }
+    int result = doc_view_edit_get_selection(w, first, last);
+    if (result != XUI_OK && mode != XUI_EDIT_EVENT_LEGACY) return result;
+    bool source_offsets = v->renderer->mode != XUI_DOC_VISUAL &&
+        v->selection.tAnchor.iKind == XUI_DOC_POSITION_SOURCE &&
+        v->selection.tCaret.iKind == XUI_DOC_POSITION_SOURCE;
+    uint64_t bytes = mode == XUI_EDIT_EVENT_METADATA && source_offsets ?
+        doc_seq_size(doc_render_source(v->renderer)) : v->edit_projection.bytes;
+    if (bytes > INT_MAX) return mode == XUI_EDIT_EVENT_LEGACY ? XUI_OK : XUI_DOC_ERROR_LIMIT;
+    const char* projected = v->edit_projection.text;
+    if (mode == XUI_EDIT_EVENT_LEGACY && projected) bytes = strlen(projected);
+    if (mode != XUI_EDIT_EVENT_METADATA && projected) {
+        *text = xrtMalloc((size_t)bytes + 1);
+        if (!*text) return XUI_ERROR_OUT_OF_MEMORY;
+        memcpy(*text, projected, (size_t)bytes);
+        (*text)[bytes] = '\0';
+    }
+    *size = (int)bytes;
+    return XUI_OK;
+}
+
 int doc_view_update(xui_widget w, float dt, void* user)
 {
-    doc_view_data* v = doc_view_get(w); unsigned events; const char* text; char* retained = NULL; int a = 0, b = 0; xui_widget host;
+    doc_view_data* v = doc_view_get(w);
     (void)user;
     if (v) {
         int result = doc_view_refresh_resources(v);
@@ -1375,19 +1404,22 @@ int doc_view_update(xui_widget w, float dt, void* user)
         if (result != XUI_OK) return result;
     }
     if (!v || !v->pending_edit_events) return XUI_OK;
-    events = v->pending_edit_events; v->pending_edit_events = 0;
-    host = xuiInternalEditHost(w);
-    /* Queue accessibility notifications without flattening an unread document.
-     * The compatibility text projection is built only for an actual listener. */
-    text = host && host->onEditEvent ? doc_view_edit_text(w) : NULL;
-    if (text) {
-        size_t length = strlen(text);
-        retained = malloc(length + 1); if (!retained) { v->pending_edit_events |= events; return XUI_ERROR_OUT_OF_MEMORY; }
-        memcpy(retained, text, length + 1); text = retained; doc_view_edit_get_selection(w, &a, &b);
+    unsigned events = v->pending_edit_events;
+    v->pending_edit_events = 0;
+    char* retained = NULL;
+    int bytes = 0, first = 0, last = 0;
+    xui_edit_event_mode_t mode = xuiInternalEditEventMode(xuiInternalEditHost(w));
+    int result = doc_view_edit_event_payload(w, v, mode, &retained, &bytes, &first, &last);
+    if (result != XUI_OK) {
+        v->pending_edit_events |= events;
+        if (mode != XUI_EDIT_EVENT_LEGACY)
+            xuiInternalContextRecordOutcome(w->pContext, result, xrtGetError());
+        return result;
     }
-    if (events & 1) xuiInternalEditEmit(w, XUI_EDIT_EVENT_TEXT_CHANGED, text, a, b, 0, 0, 1);
-    if (xuiInternalWidgetIsValid(w) && events & 2) xuiInternalEditEmit(w, XUI_EDIT_EVENT_SELECTION_CHANGED, text, a, b, 0, 0, 1);
-    free(retained);
+    if (events & 1) (void)xuiInternalEditEmitStable(w, XUI_EDIT_EVENT_TEXT_CHANGED, retained, bytes, first, last, 0, 0, 1);
+    if ((events & 2) && xuiInternalWidgetIsValid(w) && !xuiInternalContextDestroyPending(w->pContext))
+        (void)xuiInternalEditEmitStable(w, XUI_EDIT_EVENT_SELECTION_CHANGED, retained, bytes, first, last, 0, 0, 1);
+    if (retained) xrtFree(retained);
     return XUI_OK;
 }
 
