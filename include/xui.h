@@ -2108,6 +2108,7 @@ typedef struct xui_msgtip_t xui_msgtip_t;
 typedef struct xui_toast_t xui_toast_t;
 typedef struct xui_tree_view_node_t xui_tree_view_node_t;
 typedef struct xui_tree_view_node_output_t xui_tree_view_node_output_t;
+typedef struct xui_tree_view_value_output_t xui_tree_view_value_output_t;
 typedef struct xui_table_view_column_t xui_table_view_column_t;
 typedef struct xui_table_view_row_t xui_table_view_row_t;
 typedef struct xui_table_view_cell_t xui_table_view_cell_t;
@@ -12268,6 +12269,14 @@ XUI_API void xuiTreeViewNodeOutputDispose(xui_tree_view_node_output_t* pOutput);
 XUI_API int xuiTreeViewSetAdapterOwned(xui_widget pWidget,
     xui_tree_view_count_proc onCount, void* pCountUser, const xui_callback_owner_t* pCountOwner,
     xui_tree_view_node_owned_proc onNode, void* pNodeUser, const xui_callback_owner_t* pNodeOwner);
+/* The extra value output has the same callback lifetime as the node output.
+ * Set retains a reference, NULL clears it, and refresh transfers it with the row. */
+typedef int (*xui_tree_view_node_data_proc)(xui_widget pWidget, int iIndex,
+    xui_tree_view_node_output_t* pNode, xui_tree_view_value_output_t* pValue, void* pUser);
+XUI_API int xuiTreeViewValueOutputSet(xui_tree_view_value_output_t* pOutput, xvalue* pValue);
+XUI_API int xuiTreeViewSetDataAdapterOwned(xui_widget pWidget,
+    xui_tree_view_count_proc onCount, void* pCountUser, const xui_callback_owner_t* pCountOwner,
+    xui_tree_view_node_data_proc onNode, void* pNodeUser, const xui_callback_owner_t* pNodeOwner);
 /* Adapter reads observe the old tree until commit. Reentrant refresh/rebind or
  * a callback invalidating the tree aborts with XUI_ERROR_INVALID_STATE. */
 XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget);
@@ -12277,6 +12286,13 @@ XUI_API int xuiTreeViewClear(xui_widget pWidget);
 XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount);
 /* Replaces the tree from parent-first descriptors and owns its text copy. */
 XUI_API int xuiTreeViewSetNodeDescriptors(xui_widget pWidget, const xui_tree_node_desc_t* pNodes, int iCount);
+/* pValues is an XRT array of iCount values or NULL. Nodes and values publish together. */
+XUI_API int xuiTreeViewSetNodeDescriptorsWithValues(xui_widget pWidget, const xui_tree_node_desc_t* pNodes,
+    int iCount, xvalue* pValues);
+/* The value is independent of the raw pUser field. NULL clears it and Get
+ * returns one owned reference. Replacing the tree retires the previous values. */
+XUI_API int xuiTreeViewSetNodeValue(xui_widget pWidget, int iNodeId, xvalue* pValue);
+XUI_API int xuiTreeViewGetNodeValue(xui_widget pWidget, int iNodeId, xvalue** ppValue);
 /* Returns node values and text borrowed until the next tree replacement or destruction. */
 XUI_API int xuiTreeViewGetNodeDescriptor(xui_widget pWidget, int iIndex, xui_tree_node_desc_t* pNode);
 XUI_API int xuiTreeViewGetNodeDescriptorById(xui_widget pWidget, int iNodeId, xui_tree_node_desc_t* pNode);

@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT 24.0f
@@ -32,11 +33,22 @@ typedef struct xui_tree_view_text_pin_t {
 	bool bRetired;
 } xui_tree_view_text_pin_t;
 
+typedef struct xui_tree_view_values_t {
+	xvalue** arrValues;
+	int iCapacity;
+} xui_tree_view_values_t;
+
+struct xui_tree_view_value_output_t {
+	xui_context pContext;
+	xvalue* pValue;
+};
+
 typedef struct xui_tree_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_tree_view_node_t* arrNodes;
 	xui_tree_view_index_t* arrIndex;
+	xui_tree_view_values_t tValues;
 	xmap mapNodeIds;
 	int* arrVisible;
 	int iFirstRoot;
@@ -53,6 +65,7 @@ typedef struct xui_tree_view_data_t {
 	xui_tree_view_count_proc onCount;
 	xui_tree_view_node_proc onNode;
 	xui_tree_view_node_owned_proc onNodeOwned;
+	xui_tree_view_node_data_proc onNodeData;
 	void* pCountUser;
 	void* pNodeUser;
 	int bRefreshingAdapter;
@@ -267,10 +280,88 @@ static void __xuiTreeViewFreeNodeText(xui_tree_view_data_t* pData, xui_tree_view
 	pNode->sText = NULL;
 }
 
+static xvalue* __xuiTreeViewValueAt(const xui_tree_view_data_t* pData, int iIndex)
+{
+	return iIndex < pData->tValues.iCapacity ? pData->tValues.arrValues[iIndex] : NULL;
+}
+
+static bool __xuiTreeViewValueReady(xvalue* pValue)
+{
+	if ( pValue == NULL ) return true;
+	xrtownershipref ref = xrtValueOwnership(pValue);
+	size_t count = 0;
+	return ref.Ops->Count(ref.Data, &count);
+}
+
+static bool __xuiTreeViewValuesReady(const xui_tree_view_values_t* pValues)
+{
+	for ( int i = 0; i < pValues->iCapacity; ++i )
+		if ( !__xuiTreeViewValueReady(pValues->arrValues[i]) ) return false;
+	return true;
+}
+
+static int __xuiTreeViewDropValues(xui_context pContext, xui_tree_view_values_t* pValues, int status)
+{
+	if ( pValues->arrValues == NULL ) return status;
+	xui_tree_view_values_t retired = *pValues;
+	*pValues = (xui_tree_view_values_t){0};
+	xerror* first = xrtTakeError();
+	if ( status == XUI_OK && first != NULL ) status = XUI_ERROR_CALLBACK_FAILED;
+	for ( int i = 0; i < retired.iCapacity; ++i ) {
+		if ( retired.arrValues[i] == NULL ) continue;
+		xrtValueRelease(retired.arrValues[i]);
+		xuiInternalContextCleanupOutcome(pContext, XUI_OK, &status, &first);
+	}
+	xrtFree(retired.arrValues);
+	xrtSetErrorTake(first);
+	return status;
+}
+
+/* Exchange with an owning reference. Staging callers move the callback's
+ * value into the row; live callers hold the graph mutation scope. */
+static int __xuiTreeViewExchangeValue(xui_tree_view_data_t* pData, int iIndex, xvalue** ppValue)
+{
+	xui_tree_view_values_t* pValues = &pData->tValues;
+	xvalue* pOld = __xuiTreeViewValueAt(pData, iIndex);
+	if ( pOld == *ppValue ) return XUI_OK;
+	if ( !__xuiTreeViewValueReady(pOld) ) return XUI_ERROR_BUSY;
+	if ( iIndex >= pValues->iCapacity ) {
+		size_t count = (size_t)pData->iNodeCapacity;
+		if ( count > SIZE_MAX / sizeof(*pValues->arrValues) ) return XUI_ERROR_OUT_OF_MEMORY;
+		xvalue** arrValues = xrtRealloc(pValues->arrValues, count * sizeof(*arrValues));
+		if ( arrValues == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		memset(arrValues + pValues->iCapacity, 0, (count - (size_t)pValues->iCapacity) * sizeof(*arrValues));
+		pValues->arrValues = arrValues;
+		pValues->iCapacity = pData->iNodeCapacity;
+	}
+	pValues->arrValues[iIndex] = *ppValue;
+	*ppValue = pOld;
+	return XUI_OK;
+}
+
+XUI_API int xuiTreeViewValueOutputSet(xui_tree_view_value_output_t* pOutput, xvalue* pValue)
+{
+	if ( pOutput == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
+	if ( pOutput->pValue == pValue ) return XUI_OK;
+	if ( !__xuiTreeViewValueReady(pOutput->pValue) ) return XUI_ERROR_BUSY;
+	if ( pValue != NULL && xrtValueRetain(pValue) == NULL ) return XUI_ERROR_INVALID_STATE;
+	xvalue* pOld = pOutput->pValue;
+	pOutput->pValue = pValue;
+	if ( pOld == NULL ) return XUI_OK;
+	xerror* first = xrtTakeError();
+	int status = first ? XUI_ERROR_CALLBACK_FAILED : XUI_OK;
+	xrtValueRelease(pOld);
+	xuiInternalContextCleanupOutcome(pOutput->pContext, XUI_OK, &status, &first);
+	xrtSetErrorTake(first);
+	return status;
+}
+
 static void __xuiTreeViewInitNodeStorage(xui_tree_view_data_t* pData)
 {
 	pData->arrNodes = NULL;
 	pData->arrIndex = NULL;
+	pData->tValues = (xui_tree_view_values_t){0};
 	memset(&pData->mapNodeIds, 0, sizeof(pData->mapNodeIds));
 	pData->arrVisible = NULL;
 	pData->iFirstRoot = -1;
@@ -284,6 +375,7 @@ static void __xuiTreeViewInitNodeStorage(xui_tree_view_data_t* pData)
 static void __xuiTreeViewMoveNodeStorage(xui_tree_view_data_t* target,xui_tree_view_data_t* source)
 {
     target->arrNodes=source->arrNodes;target->arrIndex=source->arrIndex;
+    target->tValues=source->tValues;
     target->mapNodeIds=source->mapNodeIds;target->arrVisible=source->arrVisible;
     target->iFirstRoot=source->iFirstRoot;target->iLastRoot=source->iLastRoot;
     target->iNodeCount=source->iNodeCount;target->iNodeCapacity=source->iNodeCapacity;
@@ -2567,9 +2659,46 @@ static void __xuiTreeViewDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	(void)pUser;
 	pData = (xui_tree_view_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		xui_tree_view_values_t retired = pData->tValues;
 		__xuiTreeViewClearNodeStorage(pData);
 		memset(pData, 0, sizeof(*pData));
+		(void)__xuiTreeViewDropValues(pWidget->pContext, &retired, XUI_OK);
 	}
+}
+
+static bool __xuiTreeViewTraceValues(xui_widget pWidget, const void* raw, xrtownershipvisitor visit, void* user)
+{
+	(void)pWidget;
+	const xui_tree_view_data_t* pData = raw;
+	for ( int i = 0; i < pData->tValues.iCapacity; ++i ) {
+		xvalue* pValue = pData->tValues.arrValues[i];
+		if ( pValue != NULL && !visit(xrtValueOwnership(pValue), user) ) return false;
+	}
+	return true;
+}
+
+static int __xuiTreeViewDestroyReady(xui_widget pWidget, const void* raw)
+{
+	(void)pWidget;
+	const xui_tree_view_data_t* pData = raw;
+	return __xuiTreeViewValuesReady(&pData->tValues) ? XUI_OK : XUI_ERROR_BUSY;
+}
+
+static int __xuiTreeViewDestroyPrepare(xui_widget pWidget, void* raw, bool* complete)
+{
+	xui_tree_view_data_t* pData = raw;
+	*complete = pData->tValues.arrValues == NULL;
+	if ( *complete ) return XUI_OK;
+	xrtownershipscope mutation = {0};
+	if ( !xrtOwnershipMutationBegin(&mutation) ) return XUI_STATUS_DEFERRED;
+	xui_tree_view_values_t retired = {0};
+	if ( __xuiTreeViewValuesReady(&pData->tValues) ) {
+		retired = pData->tValues;
+		pData->tValues = (xui_tree_view_values_t){0};
+		*complete = true;
+	}
+	if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+	return *complete ? __xuiTreeViewDropValues(pWidget->pContext, &retired, XUI_OK) : XUI_STATUS_DEFERRED;
 }
 
 static void __xuiTreeViewRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
@@ -2690,6 +2819,9 @@ XUI_API xui_widget_type xuiTreeViewGetType(xui_context pContext)
 	}
 	__xuiTreeViewRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiTreeViewPreparePaint;
+	pType->onTraceOwnership = __xuiTreeViewTraceValues;
+	pType->onDestroyReady = __xuiTreeViewDestroyReady;
+	pType->onDestroyPrepare = __xuiTreeViewDestroyPrepare;
 	    static const size_t fontOffsets[]={offsetof(xui_tree_view_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
     return pType;
@@ -2837,20 +2969,21 @@ XUI_API int xuiTreeViewSetIconRenderer(xui_widget widget, xui_tree_view_icon_pro
 
 static int __xuiTreeViewSetAdapter(xui_widget widget,xui_tree_view_count_proc count,void* countUser,
     const xui_callback_owner_t* countOwner,xui_tree_view_node_proc rawNode,
-    xui_tree_view_node_owned_proc ownedNode,void* nodeUser,const xui_callback_owner_t* nodeOwner)
+    xui_tree_view_node_owned_proc ownedNode,xui_tree_view_node_data_proc dataNode,
+    void* nodeUser,const xui_callback_owner_t* nodeOwner)
 {
     xui_tree_view_data_t* data=__xuiTreeViewGetData(widget);
     if(!data)return XUI_ERROR_INVALID_ARGUMENT;
     if(data->bRefreshingAdapter)return XUI_ERROR_INVALID_STATE;
     xui_callback_group_entry_t entries[]={
         {.pSlot=&data->onCount,.bHasCallback=count!=NULL,.pUser=countUser,.pOwner=countOwner},
-        {.pSlot=&data->onNodeOwned,.bHasCallback=ownedNode!=NULL,.pUser=nodeUser,.pOwner=nodeOwner},
+        {.pSlot=&data->onNodeOwned,.bHasCallback=ownedNode!=NULL || dataNode!=NULL,.pUser=nodeUser,.pOwner=nodeOwner},
     };
     xui_callback_group_update_t update={0};
     int result=xuiInternalCallbackGroupUpdateBegin(widget,entries,2,&update);
     if(result!=XUI_OK)return result;
     data->onCount=count;data->pCountUser=countUser;
-    data->onNode=rawNode;data->onNodeOwned=ownedNode;data->pNodeUser=nodeUser;
+    data->onNode=rawNode;data->onNodeOwned=ownedNode;data->onNodeData=dataNode;data->pNodeUser=nodeUser;
     xuiInternalCallbackGroupUpdatePublish(&update);
     result=xuiTreeViewRefreshAdapter(widget);
     return xuiInternalCallbackGroupUpdateEnd(&update,result);
@@ -2858,9 +2991,13 @@ static int __xuiTreeViewSetAdapter(xui_widget widget,xui_tree_view_count_proc co
 XUI_API int xuiTreeViewSetAdapterOwned(xui_widget widget,
     xui_tree_view_count_proc count,void* countUser,const xui_callback_owner_t* countOwner,
     xui_tree_view_node_owned_proc node,void* nodeUser,const xui_callback_owner_t* nodeOwner)
-{return __xuiTreeViewSetAdapter(widget,count,countUser,countOwner,NULL,node,nodeUser,nodeOwner);}
+{return __xuiTreeViewSetAdapter(widget,count,countUser,countOwner,NULL,node,NULL,nodeUser,nodeOwner);}
+XUI_API int xuiTreeViewSetDataAdapterOwned(xui_widget widget,
+    xui_tree_view_count_proc count,void* countUser,const xui_callback_owner_t* countOwner,
+    xui_tree_view_node_data_proc node,void* nodeUser,const xui_callback_owner_t* nodeOwner)
+{return __xuiTreeViewSetAdapter(widget,count,countUser,countOwner,NULL,NULL,node,nodeUser,nodeOwner);}
 XUI_API int xuiTreeViewSetAdapter(xui_widget widget,xui_tree_view_count_proc count,xui_tree_view_node_proc node,void* user)
-{return __xuiTreeViewSetAdapter(widget,count,user,NULL,node,NULL,user,NULL);}
+{return __xuiTreeViewSetAdapter(widget,count,user,NULL,node,NULL,NULL,user,NULL);}
 
 static int __xuiTreeViewAdapterCurrent(xui_widget widget, xui_tree_view_data_t* data, int change)
 {
@@ -2871,8 +3008,9 @@ static int __xuiTreeViewAdapterCurrent(xui_widget widget, xui_tree_view_data_t* 
 /* Staged nodes and their owned strings are transferred only after layout
  * accepts the replacement. The caller holds the context operation scope. */
 static int __xuiTreeViewPublishNodes(xui_widget pWidget, xui_tree_view_data_t* pData,
-	xui_tree_view_data_t* pStaged)
+	xui_tree_view_data_t* pStaged, xui_tree_view_values_t* pRetired)
 {
+	if ( !__xuiTreeViewValuesReady(&pData->tValues) ) return XUI_ERROR_BUSY;
 	pStaged->iSelectedId = -1;
 	int iRet = __xuiTreeViewRebuildVisible(NULL, pStaged, -1);
 	if ( iRet != XUI_OK ) return iRet;
@@ -2894,8 +3032,23 @@ static int __xuiTreeViewPublishNodes(xui_widget pWidget, xui_tree_view_data_t* p
 		return iRet;
 	}
 	__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
+	xrtownershipscope mutation = {0};
+	bool hasValues = pData->tValues.arrValues != NULL || pStaged->tValues.arrValues != NULL;
+	if ( hasValues && !xrtOwnershipMutationBegin(&mutation) ) iRet = XUI_ERROR_BUSY;
+	else if ( hasValues && !__xuiTreeViewValuesReady(&pData->tValues) ) {
+		if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+		iRet = XUI_ERROR_BUSY;
+	}
+	if ( iRet != XUI_OK ) {
+		(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+		(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+		return iRet;
+	}
 	xui_tree_view_data_t tOld = *pData;
+	*pRetired = tOld.tValues;
 	__xuiTreeViewMoveNodeStorage(pData, pStaged);
+	if ( hasValues && !xrtOwnershipScopeEnd(&mutation) ) abort();
 	pData->iSelectedId = -1;
 	pData->iHoverVisible = -1;
 	pData->iFocusVisible = -1;
@@ -2921,11 +3074,14 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
 	int iReadRet;
 	float fScroll;
 	int iRet = XUI_OK;
+	xui_tree_view_values_t retired = {0};
+	xui_tree_view_values_t stagedValues;
 
 	pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bRefreshingAdapter ) return XUI_ERROR_INVALID_STATE;
-	if ( (pData->onCount == NULL) || (pData->onNode == NULL && pData->onNodeOwned == NULL) ) {
+	bool ownedNode = pData->onNodeOwned != NULL || pData->onNodeData != NULL;
+	if ( (pData->onCount == NULL) || (pData->onNode == NULL && !ownedNode) ) {
 		return XUI_OK;
 	}
 	pData->bRefreshingAdapter = 1;
@@ -2938,7 +3094,7 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
     iRet=xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onCount,&countUser,&countSnapshot);
     if(iRet!=XUI_OK)goto cleanup;
     iCount=countCallback(pWidget,countUser);
-    iRet=xuiInternalCallbackSnapshotEnd(&countSnapshot,pData->onNodeOwned && iCount<0 ? iCount:XUI_OK);
+    iRet=xuiInternalCallbackSnapshotEnd(&countSnapshot,ownedNode && iCount<0 ? iCount:XUI_OK);
     if(iRet!=XUI_OK)goto cleanup;
 	if ( !__xuiTreeViewAdapterCurrent(pWidget, pData, iChange) ) {
 		iRet = XUI_ERROR_INVALID_STATE;
@@ -2954,22 +3110,33 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
 		tNode.sText = "";
 		tNode.bEnabled = 1;
 		tNode.bIconReserved = 1;
-        if(pData->onNodeOwned){
+        if(ownedNode){
             xui_tree_view_node_output_t output;
+            xui_tree_view_value_output_t dataOutput={.pContext=pWidget->pContext};
             xuiTreeViewNodeOutputInit(&output);
             xui_tree_view_node_owned_proc nodeCallback=pData->onNodeOwned;
+            xui_tree_view_node_data_proc dataCallback=pData->onNodeData;
             void* nodeUser=pData->pNodeUser;
             xui_callback_snapshot_t nodeSnapshot={0};
             iReadRet=xuiInternalCallbackSnapshotBeginReturned(pWidget,&pData->onNodeOwned,&nodeUser,&nodeSnapshot);
-            if(iReadRet==XUI_OK)iReadRet=nodeCallback(pWidget,i,&output,nodeUser);
+            if(iReadRet==XUI_OK)iReadRet=dataCallback ? dataCallback(pWidget,i,&output,&dataOutput,nodeUser) :
+                nodeCallback(pWidget,i,&output,nodeUser);
             if(!__xuiTreeViewAdapterCurrent(pWidget,pData,iChange))iReadRet=XUI_ERROR_INVALID_STATE;
             if(iReadRet==XUI_OK){
                 tNode=__xuiTreeViewNodeOutputBorrow(&output);
                 iReadRet=__xuiTreeViewAppendNodeDataTakeText(&tStaged,&tNode,&output._tText);
+                if(iReadRet==XUI_OK && dataOutput.pValue)
+                    iReadRet=__xuiTreeViewExchangeValue(&tStaged,tStaged.iNodeCount-1,&dataOutput.pValue);
             }
             /* Output data is either moved into staged storage or disposed;
              * neither its text nor callback code can outlive this snapshot. */
             xuiTreeViewNodeOutputDispose(&output);
+            if(dataOutput.pValue){
+                xerror* first=xrtTakeError();
+                xrtValueRelease(dataOutput.pValue);
+                xuiInternalContextCleanupOutcome(pWidget->pContext,XUI_OK,&iReadRet,&first);
+                xrtSetErrorTake(first);
+            }
             iRet=xuiInternalCallbackSnapshotEnd(&nodeSnapshot,iReadRet);
             if(iRet!=XUI_OK)goto cleanup;
             continue;
@@ -2989,15 +3156,17 @@ static int __xuiTreeViewRefreshAdapterOperation(xui_widget pWidget)
 	 * remains on the widget, including changes made by adapter callbacks. */
 	iSelectedId = pData->iSelectedId;
 	fScroll = xuiTreeViewGetScroll(pWidget);
-	iRet = __xuiTreeViewPublishNodes(pWidget, pData, &tStaged);
+	iRet = __xuiTreeViewPublishNodes(pWidget, pData, &tStaged, &retired);
 	if ( iRet == XUI_OK ) {
 		iRet = xuiTreeViewSetSelected(pWidget, iSelectedId);
 		if ( iRet == XUI_OK ) iRet = xuiTreeViewSetScroll(pWidget, fScroll);
 	}
 cleanup:
+	stagedValues = tStaged.tValues;
 	__xuiTreeViewClearNodeStorage(&tStaged);
 	pData->bRefreshingAdapter = 0;
-	return iRet;
+	iRet = __xuiTreeViewDropValues(pWidget->pContext, &stagedValues, iRet);
+	return __xuiTreeViewDropValues(pWidget->pContext, &retired, iRet);
 }
 
 XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
@@ -3010,7 +3179,7 @@ XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget)
 	return result;
 }
 
-XUI_API int xuiTreeViewClear(xui_widget pWidget)
+static int __xuiTreeViewClearOperation(xui_widget pWidget, xui_tree_view_values_t* pRetired)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	float fOldScroll;
@@ -3021,6 +3190,7 @@ XUI_API int xuiTreeViewClear(xui_widget pWidget)
 	if ( pData->iNodeCount == 0 && pData->iSelectedId < 0 &&
 	     pData->iHoverVisible < 0 && pData->iFocusVisible < 0 &&
 	     pData->iActiveVisible < 0 ) return XUI_OK;
+	if ( !__xuiTreeViewValuesReady(&pData->tValues) ) return XUI_ERROR_BUSY;
 	iRet = __xuiTreeViewInvalidateLayoutRows(pWidget, pData);
 	if ( iRet != XUI_OK || !__xuiTreeViewWidgetAlive(pWidget, pData) ) return iRet;
 	fOldScroll = xuiTreeViewGetScroll(pWidget);
@@ -3036,6 +3206,23 @@ XUI_API int xuiTreeViewClear(xui_widget pWidget)
 		return iRet;
 	}
 	__xuiTreeViewCancelPointer(pWidget, pData, 1);
+	if ( !__xuiTreeViewWidgetAlive(pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
+	if ( pData->tValues.arrValues != NULL ) {
+		xrtownershipscope mutation = {0};
+		if ( !xrtOwnershipMutationBegin(&mutation) ) iRet = XUI_ERROR_BUSY;
+		else {
+			if ( __xuiTreeViewValuesReady(&pData->tValues) ) {
+				*pRetired = pData->tValues;
+				pData->tValues = (xui_tree_view_values_t){0};
+			} else iRet = XUI_ERROR_BUSY;
+			if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+		}
+		if ( iRet != XUI_OK ) {
+			(void)__xuiTreeViewUpdateContentSize(pWidget, pData);
+			(void)xuiTreeViewSetScroll(pWidget, fOldScroll);
+			return iRet;
+		}
+	}
 	__xuiTreeViewResetNodes(pData);
 	pData->iSelectedId = -1;
 	pData->iHoverVisible = -1;
@@ -3051,13 +3238,29 @@ XUI_API int xuiTreeViewClear(xui_widget pWidget)
 	return XUI_OK;
 }
 
+XUI_API int xuiTreeViewClear(xui_widget pWidget)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_tree_view_values_t retired = {0};
+	xuiInternalOperationEnter(pContext);
+	int status = __xuiTreeViewClearOperation(pWidget, &retired);
+	status = __xuiTreeViewDropValues(pContext, &retired, status);
+	xuiInternalOperationLeave(pContext);
+	return status;
+}
+
 static int __xuiTreeViewSetNodesOperation(xui_widget pWidget,
-	const xui_tree_view_node_t* pNodes, const xui_tree_node_desc_t* pDescriptors, int iCount)
+	const xui_tree_view_node_t* pNodes, const xui_tree_node_desc_t* pDescriptors, int iCount,
+	const xvalue* pValues)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL || iCount < 0 || (iCount > 0 && pNodes == NULL && pDescriptors == NULL) )
 		return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pValues != NULL && xrtValueIs(pValues, XVALUE_NULL) ) pValues = NULL;
+	if ( pValues != NULL && (!xrtValueIs(pValues, XVALUE_ARRAY) || xrtValueCount(pValues) != (size_t)iCount) )
+		return XUI_ERROR_INVALID_ARGUMENT;
 	xui_tree_view_data_t tStaged = *pData;
+	xui_tree_view_values_t retired = {0};
 	__xuiTreeViewInitNodeStorage(&tStaged);
 	int iRet = XUI_OK;
 
@@ -3078,17 +3281,28 @@ static int __xuiTreeViewSetNodesOperation(xui_widget pWidget,
 		}
 		iRet = __xuiTreeViewAppendNodeData(&tStaged, pInput);
 		if ( iRet != XUI_OK ) break;
+		if ( pValues != NULL ) {
+			xvalue* pValue = xrtValueArrayGet(pValues, (size_t)i);
+			if ( pValue == NULL || xrtValueIs(pValue, XVALUE_NULL) ) continue;
+			xvalue* pHeld = xrtValueRetain(pValue);
+			if ( pHeld == NULL ) { iRet = XUI_ERROR_INVALID_STATE; break; }
+			iRet = __xuiTreeViewExchangeValue(&tStaged, i, &pHeld);
+			xrtValueRelease(pHeld);
+			if ( iRet != XUI_OK ) break;
+		}
 	}
-	if ( iRet == XUI_OK ) iRet = __xuiTreeViewPublishNodes(pWidget, pData, &tStaged);
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewPublishNodes(pWidget, pData, &tStaged, &retired);
+	xui_tree_view_values_t stagedValues = tStaged.tValues;
 	__xuiTreeViewClearNodeStorage(&tStaged);
-	return iRet;
+	iRet = __xuiTreeViewDropValues(pWidget->pContext, &stagedValues, iRet);
+	return __xuiTreeViewDropValues(pWidget->pContext, &retired, iRet);
 }
 
 XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount)
 {
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
-	int iRet = __xuiTreeViewSetNodesOperation(pWidget, pNodes, NULL, iCount);
+	int iRet = __xuiTreeViewSetNodesOperation(pWidget, pNodes, NULL, iCount, NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -3097,9 +3311,65 @@ XUI_API int xuiTreeViewSetNodeDescriptors(xui_widget pWidget, const xui_tree_nod
 {
 	xui_context pContext = xuiWidgetGetContext(pWidget);
 	xuiInternalOperationEnter(pContext);
-	int iRet = __xuiTreeViewSetNodesOperation(pWidget, NULL, pNodes, iCount);
+	int iRet = __xuiTreeViewSetNodesOperation(pWidget, NULL, pNodes, iCount, NULL);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
+}
+
+XUI_API int xuiTreeViewSetNodeDescriptorsWithValues(xui_widget pWidget,
+	const xui_tree_node_desc_t* pNodes, int iCount, xvalue* pValues)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(pContext, &scope);
+	if ( status != XUI_OK ) return status;
+	status = __xuiTreeViewSetNodesOperation(pWidget, NULL, pNodes, iCount, pValues);
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
+XUI_API int xuiTreeViewSetNodeValue(xui_widget pWidget, int iNodeId, xvalue* pValue)
+{
+	xui_context pContext = xuiWidgetGetContext(pWidget);
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(pContext, &scope);
+	if ( status != XUI_OK ) return status;
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return xuiInternalCallScopeEndRestored(&scope, XUI_ERROR_INVALID_ARGUMENT, xrtTakeError());
+	int index = __xuiTreeViewFindNodeData(pData, iNodeId);
+	if ( index < 0 ) return xuiInternalCallScopeEndRestored(&scope, XUI_ERROR_NOT_FOUND, xrtTakeError());
+	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
+	xvalue* pHeld = NULL;
+	if ( __xuiTreeViewValueAt(pData, index) != pValue ) {
+		xrtownershipscope mutation = {0};
+		if ( !xrtOwnershipMutationBegin(&mutation) ) status = XUI_ERROR_BUSY;
+		else {
+			if ( pValue != NULL && (pHeld = xrtValueRetain(pValue)) == NULL ) status = XUI_ERROR_INVALID_STATE;
+			else status = __xuiTreeViewExchangeValue(pData, index, &pHeld);
+			if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+		}
+	}
+	xerror* first = xrtTakeError();
+	if ( pHeld != NULL ) {
+		xrtValueRelease(pHeld);
+		xuiInternalContextCleanupOutcome(pContext, XUI_OK, &status, &first);
+	}
+	return xuiInternalCallScopeEndRestored(&scope, status, first);
+}
+
+XUI_API int xuiTreeViewGetNodeValue(xui_widget pWidget, int iNodeId, xvalue** ppValue)
+{
+	if ( ppValue == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppValue = NULL;
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_proxy proxy = pWidget->pContext->pOwnedProxy;
+	if ( proxy != NULL && !xuiInternalProxyCreator(proxy) ) return XUI_ERROR_BUSY;
+	const xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	int index = __xuiTreeViewFindNodeData(pData, iNodeId);
+	if ( index < 0 ) return XUI_ERROR_NOT_FOUND;
+	xvalue* pValue = __xuiTreeViewValueAt(pData, index);
+	if ( pValue != NULL && (*ppValue = xrtValueRetain(pValue)) == NULL ) return XUI_ERROR_INVALID_STATE;
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const char* sText)
