@@ -7304,6 +7304,19 @@ XUI_API int xuiTextLayoutDestroyOwnerChecked(xui_text_layout pLayout,bool* pCons
 XUI_API int xuiTextLayoutDestroyChecked(xui_text_layout pLayout);
 XUI_API int xuiTextLayoutRequestClose(xui_text_layout pLayout);
 XUI_API xui_context xuiTextLayoutGetContext(xui_text_layout pLayout);
+/* A zeroed, creator-thread scope protects the layout until End. Reading its
+ * Context pins that Context until End. Other layout calls need no Context pin
+ * from this scope. An expired Context returns NULL. An invalid lookup
+ * publishes a checked XRT error. */
+typedef struct xui_text_layout_context_scope_t {
+    xui_text_layout pLayout;
+    struct xui_text_layout_context_scope_t* pPrevious;
+    struct xui_text_layout_context_scope_t* pNext;
+    xui_call_scope_t tContext;
+} xui_text_layout_context_scope_t;
+XUI_API int xuiTextLayoutContextScopeBegin(xui_text_layout pLayout,xui_text_layout_context_scope_t* pScope);
+XUI_API int xuiTextLayoutContextScopeEnd(xui_text_layout_context_scope_t* pScope);
+XUI_API xui_context xuiTextLayoutGetScopedContext(xui_text_layout pLayout);
 XUI_API bool xuiTextLayoutOwnershipBusy(xui_text_layout pLayout);
 XUI_API bool xuiTextLayoutTraceOwnership(xui_text_layout pLayout,xrtownershipvisitor onVisit,void* pUser);
 /* Only actual unique destruction consumes this watch; Context expiry merely

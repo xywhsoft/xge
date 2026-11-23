@@ -153,6 +153,7 @@ struct xui_text_layout_t {
     uint64_t iCreatorThread;
     xui_lifetime_link_t tContextLink;
     xui_lifetime_link_t* pLifetimeLinks;
+    xui_text_layout_context_scope_t* pContextScopes;
     int iCalls,bRefreshing;
     /* Only payload ownership moves. Watches, callbacks and native identity
      * remain attached to this one allocation throughout a failed rebuild. */
@@ -1694,10 +1695,60 @@ static void __xuiTextLayoutContextGone(void* raw)
 }
 XUI_API xui_context xuiTextLayoutGetContext(xui_text_layout layout)
 {return __xuiTextLayoutValid(layout) && !layout->bDestroying ? layout->pContext:NULL;}
+XUI_API int xuiTextLayoutContextScopeBegin(xui_text_layout layout,xui_text_layout_context_scope_t* scope)
+{
+    if(!layout || !scope)return XUI_ERROR_INVALID_ARGUMENT;
+    if(layout->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(!__xuiTextLayoutValid(layout) || layout->bDestroying || layout->bRetiring ||
+        scope->pLayout || scope->pPrevious || scope->pNext || scope->tContext.pSelf)return XUI_ERROR_INVALID_STATE;
+    scope->pLayout=layout;
+    scope->pPrevious=layout->pContextScopes;
+    if(scope->pPrevious)scope->pPrevious->pNext=scope;
+    layout->pContextScopes=scope;
+    return XUI_OK;
+}
+XUI_API int xuiTextLayoutContextScopeEnd(xui_text_layout_context_scope_t* scope)
+{
+    if(!scope || !scope->pLayout)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_text_layout layout=scope->pLayout;
+    if(layout->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(scope->pNext){
+        if(scope->pNext->pPrevious!=scope)return XUI_ERROR_INVALID_STATE;
+        scope->pNext->pPrevious=scope->pPrevious;
+    }else{
+        if(layout->pContextScopes!=scope)return XUI_ERROR_INVALID_STATE;
+        layout->pContextScopes=scope->pPrevious;
+    }
+    if(scope->pPrevious)scope->pPrevious->pNext=scope->pNext;
+    scope->pLayout=NULL;
+    scope->pPrevious=NULL;
+    scope->pNext=NULL;
+    if(!scope->tContext.pSelf)return XUI_OK;
+    return xuiCallScopeEnd(&scope->tContext);
+}
+XUI_API xui_context xuiTextLayoutGetScopedContext(xui_text_layout layout)
+{
+    if(!layout || layout->iCreatorThread!=xrtThreadCurrentId() || !__xuiTextLayoutValid(layout) ||
+        layout->bRetiring || !layout->pContextScopes){
+        xrtSetErrorInfo(XERR_STATE,"xui",XUI_ERROR_INVALID_STATE,"TextLayout context lookup requires a live scope.");
+        return NULL;
+    }
+    xui_context context=layout->pContext;
+    xui_call_scope_t* contextScope=&layout->pContextScopes->tContext;
+    if(context && !contextScope->pSelf){
+        int status=xuiCallScopeBeginManaged(context,contextScope);
+        if(status!=XUI_OK){
+            if(!xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",status,"TextLayout context could not be pinned.");
+            return NULL;
+        }
+    }
+    return context;
+}
 int xuiInternalTextLayoutDestroyReady(xui_text_layout layout)
 {
     if(!__xuiTextLayoutValid(layout))return XUI_ERROR_INVALID_ARGUMENT;
-    if(layout->iCreatorThread!=xrtThreadCurrentId() || layout->bRefreshing || layout->bDestroying || layout->iCalls)return XUI_ERROR_BUSY;
+    if(layout->iCreatorThread!=xrtThreadCurrentId() || layout->bRefreshing || layout->bDestroying ||
+        layout->iCalls || layout->pContextScopes)return XUI_ERROR_BUSY;
     bool managed=layout->pContext && layout->pContext->pOwnedProxy;
     int status=xuiInternalTextShapeReady(&layout->tShape,managed || layout->bOwnedFont);
     return status==XUI_OK ? xuiInternalTextShapeReady(&layout->draft.tShape,managed || layout->draft.bOwnedFont):status;
@@ -1757,7 +1808,7 @@ XUI_API int xuiTextLayoutDestroyOwnerChecked(xui_text_layout layout,bool* consum
     if(layout->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
     if(layout->bDestroying)return XUI_ERROR_INVALID_STATE;
     layout->bRetiring=true;
-    if(layout->bRefreshing || layout->iCalls)return XUI_STATUS_DEFERRED;
+    if(layout->bRefreshing || layout->iCalls || layout->pContextScopes)return XUI_STATUS_DEFERRED;
     xui_context context=layout->pContext;xui_call_scope_t scope={0};
     if(context){int status=xuiInternalCleanupCallScopeBegin(context,&scope);if(status!=XUI_OK)return status;}
     layout->bRefreshing=1;
