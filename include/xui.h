@@ -12770,6 +12770,15 @@ XUI_API int xuiTimeLineViewSetSpanCustomType(xui_widget pWidget, int iSpanId, co
 XUI_API int xuiTimeLineViewSetSpanUserData(xui_widget pWidget, int iSpanId, void* pUser);
 /* 读取区间用户指针。 */
 XUI_API void* xuiTimeLineViewGetSpanUserData(xui_widget pWidget, int iSpanId);
+/* Independent, retained XRT values. NULL clears a slot; getters return one owned
+ * reference or NULL. Tracks and spans follow the native record lifetime.
+ * Setting a frame value requires an existing frame record. */
+XUI_API int xuiTimeLineViewSetLayerValue(xui_widget pWidget, int iLayer, xvalue* pValue);
+XUI_API int xuiTimeLineViewGetLayerValue(xui_widget pWidget, int iLayer, xvalue** ppValue);
+XUI_API int xuiTimeLineViewSetFrameValue(xui_widget pWidget, int iLayer, int iFrame, xvalue* pValue);
+XUI_API int xuiTimeLineViewGetFrameValue(xui_widget pWidget, int iLayer, int iFrame, xvalue** ppValue);
+XUI_API int xuiTimeLineViewSetSpanValue(xui_widget pWidget, int iSpanId, xvalue* pValue);
+XUI_API int xuiTimeLineViewGetSpanValue(xui_widget pWidget, int iSpanId, xvalue** ppValue);
 /* 清空帧选择集。 */
 XUI_API int xuiTimeLineViewClearSelection(xui_widget pWidget);
 /* 设置帧选中态。 */

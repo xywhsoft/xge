@@ -5,6 +5,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_TIMELINE_DEFAULT_FRAME_COUNT 120
@@ -18,7 +19,26 @@
 #define XUI_TIMELINE_MENU_TITLE_COUNT 14
 #define XUI_TIMELINE_RENDER_ABORTED 1
 
+typedef struct xui_timeline_value_t {
+	xvalue* pValue;
+	struct xui_timeline_value_t* pNext;
+} xui_timeline_value_t;
+
+/* Allocated only when the first value is installed. Native pUser stays intact. */
+typedef struct xui_timeline_values_t {
+	xui_timeline_value_t* arrLayers[XUI_TIMELINE_LAYER_CAPACITY];
+	xui_timeline_value_t* arrFrames[XUI_TIMELINE_FRAME_CAPACITY];
+	xui_timeline_value_t* arrSpans[XUI_TIMELINE_SPAN_CAPACITY];
+} xui_timeline_values_t;
+
+typedef struct xui_timeline_retirement_t {
+	xui_call_scope_t tCall;
+	xrtownershipscope tMutation;
+	xui_timeline_value_t* pRetired;
+} xui_timeline_retirement_t;
+
 typedef struct xui_timeline_view_data_t {
+	xui_timeline_values_t* pValues;
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_widget pLayerMenu;
@@ -554,6 +574,146 @@ static int __xuiTimeLineFindSpan(const xui_timeline_view_data_t* pData, int iSpa
 		if ( pData->arrSpans[i].iId == iSpanId ) return i;
 	}
 	return -1;
+}
+
+static bool __xuiTimeLineValueReady(const xui_timeline_value_t* pNode)
+{
+	if ( pNode == NULL ) return true;
+	xrtownershipref tRef = xrtValueOwnership(pNode->pValue);
+	size_t iCount = 0;
+	return tRef.Ops->Count(tRef.Data, &iCount);
+}
+
+static bool __xuiTimeLineValuesReady(xui_timeline_value_t* const* arrValues, int iCount)
+{
+	for ( int i = 0; i < iCount; ++i )
+		if ( !__xuiTimeLineValueReady(arrValues[i]) ) return false;
+	return true;
+}
+
+static int __xuiTimeLineDestroyReady(xui_widget pWidget, const void* pTypeData)
+{
+	const xui_timeline_view_data_t* pData = pTypeData;
+	(void)pWidget;
+	const xui_timeline_values_t* pValues = pData != NULL ? pData->pValues : NULL;
+	if ( pValues == NULL ) return XUI_OK;
+	return __xuiTimeLineValuesReady(pValues->arrLayers, pData->iLayerCount) &&
+	       __xuiTimeLineValuesReady(pValues->arrFrames, pData->iFrameRecordCount) &&
+	       __xuiTimeLineValuesReady(pValues->arrSpans, pData->iSpanCount)
+	       ? XUI_OK : XUI_ERROR_BUSY;
+}
+
+static void __xuiTimeLineRetireSlot(xui_timeline_value_t** ppSlot, xui_timeline_value_t** ppRetired)
+{
+	xui_timeline_value_t* pNode = *ppSlot;
+	if ( pNode != NULL ) {
+		*ppSlot = NULL;
+		pNode->pNext = *ppRetired;
+		*ppRetired = pNode;
+	}
+}
+
+static void __xuiTimeLineRemoveValue(xui_timeline_value_t** arrValues, int iIndex, int iLast,
+	xui_timeline_retirement_t* pRetirement)
+{
+	__xuiTimeLineRetireSlot(&arrValues[iIndex], &pRetirement->pRetired);
+	arrValues[iIndex] = arrValues[iLast];
+	arrValues[iLast] = NULL;
+}
+
+static void __xuiTimeLineDetachValues(xui_timeline_view_data_t* pData, xui_timeline_value_t** ppRetired)
+{
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( pValues == NULL ) return;
+	pData->pValues = NULL;
+	for ( int i = 0; i < pData->iLayerCount; ++i ) __xuiTimeLineRetireSlot(&pValues->arrLayers[i], ppRetired);
+	for ( int i = 0; i < pData->iFrameRecordCount; ++i ) __xuiTimeLineRetireSlot(&pValues->arrFrames[i], ppRetired);
+	for ( int i = 0; i < pData->iSpanCount; ++i ) __xuiTimeLineRetireSlot(&pValues->arrSpans[i], ppRetired);
+	xrtFree(pValues);
+}
+
+static void __xuiTimeLineDropValues(xui_context pContext, xui_timeline_value_t* pNode, int* pStatus,
+	xerror** ppFirst)
+{
+	while ( pNode != NULL ) {
+		xui_timeline_value_t* pNext = pNode->pNext;
+		xrtValueRelease(pNode->pValue);
+		xuiInternalContextCleanupOutcome(pContext, XUI_OK, pStatus, ppFirst);
+		xrtFree(pNode);
+		pNode = pNext;
+	}
+}
+
+static int __xuiTimeLineDestroyPrepare(xui_widget pWidget, void* pTypeData, bool* pComplete)
+{
+	xui_timeline_view_data_t* pData = pTypeData;
+	*pComplete = true;
+	if ( pData == NULL || pData->pValues == NULL ) return XUI_OK;
+	xrtownershipscope tMutation = {0};
+	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
+		*pComplete = false;
+		return XUI_ERROR_BUSY;
+	}
+	if ( __xuiTimeLineDestroyReady(pWidget, pData) != XUI_OK ) {
+		if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+		*pComplete = false;
+		return XUI_ERROR_BUSY;
+	}
+	xui_timeline_value_t* pRetired = NULL;
+	__xuiTimeLineDetachValues(pData, &pRetired);
+	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	int iStatus = XUI_OK;
+	xerror* pFirst = xrtTakeError();
+	__xuiTimeLineDropValues(pWidget->pContext, pRetired, &iStatus, &pFirst);
+	xrtSetErrorTake(pFirst);
+	return iStatus;
+}
+
+static bool __xuiTimeLineTraceValueSlots(xui_timeline_value_t* const* arrSlots, int iCapacity,
+	xrtownershipvisitor onVisit, void* pUser)
+{
+	for ( int i = 0; i < iCapacity; ++i ) {
+		const xui_timeline_value_t* pNode = arrSlots[i];
+		if ( pNode != NULL && !onVisit(xrtValueOwnership(pNode->pValue), pUser) ) return false;
+	}
+	return true;
+}
+
+static bool __xuiTimeLineTraceValues(xui_widget pWidget, const void* pTypeData,
+	xrtownershipvisitor onVisit, void* pUser)
+{
+	const xui_timeline_view_data_t* pData = pTypeData;
+	(void)pWidget;
+	const xui_timeline_values_t* pValues = pData != NULL ? pData->pValues : NULL;
+	return pValues == NULL ||
+	       (__xuiTimeLineTraceValueSlots(pValues->arrLayers, XUI_TIMELINE_LAYER_CAPACITY, onVisit, pUser) &&
+	        __xuiTimeLineTraceValueSlots(pValues->arrFrames, XUI_TIMELINE_FRAME_CAPACITY, onVisit, pUser) &&
+	        __xuiTimeLineTraceValueSlots(pValues->arrSpans, XUI_TIMELINE_SPAN_CAPACITY, onVisit, pUser));
+}
+
+static int __xuiTimeLineFinishRetirement(xui_timeline_retirement_t* pRetirement, int iStatus)
+{
+	xui_call_scope_t* pCall = &pRetirement->tCall;
+	if ( pCall->pSelf == NULL ) return iStatus;
+	xerror* pFirst = xrtTakeError();
+	__xuiTimeLineDropValues(pCall->pContext, pRetirement->pRetired, &iStatus, &pFirst);
+	return xuiInternalCallScopeEndRestored(pCall, iStatus, pFirst);
+}
+
+static int __xuiTimeLineBeginRetirement(xui_widget pWidget, const xui_timeline_view_data_t* pData,
+	xui_timeline_retirement_t* pRetirement)
+{
+	if ( pData->pValues == NULL ) return XUI_OK;
+	int iStatus = xuiCallScopeBegin(pWidget->pContext, &pRetirement->tCall);
+	if ( iStatus != XUI_OK ) return iStatus;
+	if ( !xrtOwnershipMutationBegin(&pRetirement->tMutation) )
+		return __xuiTimeLineFinishRetirement(pRetirement, XUI_ERROR_BUSY);
+	return XUI_OK;
+}
+
+static void __xuiTimeLineEndRetirementMutation(xui_timeline_retirement_t* pRetirement)
+{
+	if ( pRetirement->tCall.pSelf != NULL && !xrtOwnershipScopeEnd(&pRetirement->tMutation) ) abort();
 }
 
 static int __xuiTimeLineFindSelection(const xui_timeline_view_data_t* pData, int iLayer, int iFrame)
@@ -2728,6 +2888,9 @@ XUI_API xui_widget_type xuiTimeLineViewGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) return NULL;
 	__xuiTimeLineRegisterStyleProperties(pContext, pType);
 	pType->onPreparePaint = __xuiTimeLinePreparePaint;
+	pType->onTraceOwnership = __xuiTimeLineTraceValues;
+	pType->onDestroyReady = __xuiTimeLineDestroyReady;
+	pType->onDestroyPrepare = __xuiTimeLineDestroyPrepare;
 	    static const size_t fontOffsets[]={offsetof(xui_timeline_view_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
     return pType;
@@ -2782,6 +2945,14 @@ XUI_API int xuiTimeLineViewClear(xui_widget pWidget)
 	bSelectionChanged = pData->iSelectionCount > 0;
 	iRet = __xuiTimeLineCancelInteraction(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	xui_timeline_retirement_t tRetirement = {0};
+	int iStatus = __xuiTimeLineBeginRetirement(pWidget, pData, &tRetirement);
+	if ( iStatus != XUI_OK ) return iStatus;
+	if ( __xuiTimeLineDestroyReady(pWidget, pData) != XUI_OK ) {
+		__xuiTimeLineEndRetirementMutation(&tRetirement);
+		return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+	}
+	__xuiTimeLineDetachValues(pData, &tRetirement.pRetired);
 	pData->iLayerCount = 0;
 	pData->iFrameRecordCount = 0;
 	pData->iSpanCount = 0;
@@ -2797,13 +2968,14 @@ XUI_API int xuiTimeLineViewClear(xui_widget pWidget)
 	pData->iNextLayerId = 1;
 	pData->iNextSpanId = 1;
 	pData->iChangeCount++;
+	__xuiTimeLineEndRetirementMutation(&tRetirement);
 	iRet = __xuiTimeLineUpdateContentSize(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return __xuiTimeLineFinishRetirement(&tRetirement, iRet);
 	if ( bSelectionChanged ) {
 		iRet = __xuiTimeLineSelectionNotify(pWidget, pData);
-		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, iRet);
 	}
-	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiTimeLineFinishRetirement(&tRetirement, __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiTimeLineViewSetFont(xui_widget pWidget, xui_font pFont)
@@ -2861,19 +3033,50 @@ XUI_API int xuiTimeLineViewSetFrameCount(xui_widget pWidget, int iFrameCount)
 	iOldSelectionCount = pData->iSelectionCount;
 	pData->iTotalFrames = iFrameCount;
 	iRet = __xuiTimeLineUpdateContentSize(pWidget, pData);
+	if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return iRet;
 	if ( iRet != XUI_OK ) {
 		pData->iTotalFrames = iOldFrameCount;
 		(void)__xuiTimeLineUpdateContentSize(pWidget, pData);
 		return iRet;
 	}
+	/* Scroll notifications may modify the timeline. Read the value slots only
+	 * after returning to the current model. */
+	if ( pData->iTotalFrames != iFrameCount ) return XUI_OK;
+	xui_timeline_retirement_t tRetirement = {0};
+	int iStatus = __xuiTimeLineBeginRetirement(pWidget, pData, &tRetirement);
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( iStatus == XUI_OK && pValues != NULL ) {
+		for ( int i = 0; i < pData->iFrameRecordCount; ++i ) {
+			if ( pData->arrFrames[i].iFrame >= iFrameCount && !__xuiTimeLineValueReady(pValues->arrFrames[i]) ) {
+				iStatus = XUI_ERROR_BUSY;
+				break;
+			}
+		}
+		for ( int i = 0; iStatus == XUI_OK && i < pData->iSpanCount; ++i ) {
+			if ( pData->arrSpans[i].iStartFrame >= iFrameCount && !__xuiTimeLineValueReady(pValues->arrSpans[i]) ) {
+				iStatus = XUI_ERROR_BUSY;
+				break;
+			}
+		}
+	}
+	if ( iStatus != XUI_OK ) {
+		if ( tRetirement.tCall.pSelf != NULL ) __xuiTimeLineEndRetirementMutation(&tRetirement);
+		pData->iTotalFrames = iOldFrameCount;
+		(void)__xuiTimeLineUpdateContentSize(pWidget, pData);
+		return __xuiTimeLineFinishRetirement(&tRetirement, iStatus);
+	}
 	pData->iCurrentFrame = __xuiTimeLineClampInt(pData->iCurrentFrame, 0, pData->iTotalFrames - 1);
 	for ( i = 0; i < pData->iFrameRecordCount; ) {
-		if ( pData->arrFrames[i].iFrame >= pData->iTotalFrames ) pData->arrFrames[i] = pData->arrFrames[--pData->iFrameRecordCount];
+		if ( pData->arrFrames[i].iFrame >= pData->iTotalFrames ) {
+			pData->arrFrames[i] = pData->arrFrames[--pData->iFrameRecordCount];
+			if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrFrames, i, pData->iFrameRecordCount, &tRetirement);
+		}
 		else i++;
 	}
 	for ( i = 0; i < pData->iSpanCount; ) {
 		if ( pData->arrSpans[i].iStartFrame >= pData->iTotalFrames ) {
 			pData->arrSpans[i] = pData->arrSpans[--pData->iSpanCount];
+			if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrSpans, i, pData->iSpanCount, &tRetirement);
 			pData->arrSpanCustomColor[i] = pData->arrSpanCustomColor[pData->iSpanCount];
 		}
 		else {
@@ -2890,18 +3093,19 @@ XUI_API int xuiTimeLineViewSetFrameCount(xui_widget pWidget, int iFrameCount)
 	if ( pData->iSpanCount != iOldSpanCount ) pData->iSpanChangeCount++;
 	if ( pData->iCurrentFrame != iOldCurrentFrame ) pData->iCurrentFrameChangeCount++;
 	pData->iChangeCount++;
+	__xuiTimeLineEndRetirementMutation(&tRetirement);
 	if ( pData->iCurrentFrame != iOldCurrentFrame ) {
 		onCurrentChanged = pData->onCurrentChanged;
 		if ( onCurrentChanged != NULL ) {
 			XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onCurrentChanged, xui_timeline_current_frame_changed_proc, pData->pCurrentChangedUser, pWidget, iOldCurrentFrame, pData->iCurrentFrame);
-			if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
+			if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, XUI_OK);
 		}
 	}
 	if ( pData->iSelectionCount != iOldSelectionCount ) {
 		iRet = __xuiTimeLineSelectionNotify(pWidget, pData);
-		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, iRet);
 	}
-	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiTimeLineFinishRetirement(&tRetirement, __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiTimeLineViewGetFrameCount(xui_widget pWidget)
@@ -3148,8 +3352,34 @@ XUI_API int xuiTimeLineViewRemoveLayer(xui_widget pWidget, int iLayer)
 	bSelectionChanged = 0;
 	iRet = __xuiTimeLineCancelInteraction(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	xui_timeline_retirement_t tRetirement = {0};
+	int iStatus = __xuiTimeLineBeginRetirement(pWidget, pData, &tRetirement);
+	if ( iStatus != XUI_OK ) return iStatus;
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( pValues != NULL ) {
+		if ( !__xuiTimeLineValueReady(pValues->arrLayers[iLayer]) ) {
+			__xuiTimeLineEndRetirementMutation(&tRetirement);
+			return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+		}
+		for ( int i = 0; i < pData->iFrameRecordCount; ++i ) {
+			if ( pData->arrFrames[i].iLayer == iLayer && !__xuiTimeLineValueReady(pValues->arrFrames[i]) ) {
+				__xuiTimeLineEndRetirementMutation(&tRetirement);
+				return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+			}
+		}
+		for ( int i = 0; i < pData->iSpanCount; ++i ) {
+			if ( pData->arrSpans[i].iLayer == iLayer && !__xuiTimeLineValueReady(pValues->arrSpans[i]) ) {
+				__xuiTimeLineEndRetirementMutation(&tRetirement);
+				return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+			}
+		}
+		__xuiTimeLineRetireSlot(&pValues->arrLayers[iLayer], &tRetirement.pRetired);
+	}
 	for ( i = 0; i < pData->iFrameRecordCount; ) {
-		if ( pData->arrFrames[i].iLayer == iLayer ) pData->arrFrames[i] = pData->arrFrames[--pData->iFrameRecordCount];
+		if ( pData->arrFrames[i].iLayer == iLayer ) {
+			pData->arrFrames[i] = pData->arrFrames[--pData->iFrameRecordCount];
+			if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrFrames, i, pData->iFrameRecordCount, &tRetirement);
+		}
 		else {
 			if ( pData->arrFrames[i].iLayer > iLayer ) pData->arrFrames[i].iLayer--;
 			i++;
@@ -3158,6 +3388,7 @@ XUI_API int xuiTimeLineViewRemoveLayer(xui_widget pWidget, int iLayer)
 	for ( i = 0; i < pData->iSpanCount; ) {
 		if ( pData->arrSpans[i].iLayer == iLayer ) {
 			pData->arrSpans[i] = pData->arrSpans[--pData->iSpanCount];
+			if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrSpans, i, pData->iSpanCount, &tRetirement);
 			pData->arrSpanCustomColor[i] = pData->arrSpanCustomColor[pData->iSpanCount];
 		}
 		else {
@@ -3180,9 +3411,11 @@ XUI_API int xuiTimeLineViewRemoveLayer(xui_widget pWidget, int iLayer)
 	}
 	for ( i = iLayer; i < pData->iLayerCount - 1; i++ ) {
 		pData->arrLayers[i] = pData->arrLayers[i + 1];
+		if ( pValues != NULL ) pValues->arrLayers[i] = pValues->arrLayers[i + 1];
 		pData->arrLayerCustomColor[i] = pData->arrLayerCustomColor[i + 1];
 	}
 	pData->iLayerCount--;
+	if ( pValues != NULL ) pValues->arrLayers[pData->iLayerCount] = NULL;
 	if ( pData->iActiveLayer == iLayer ) pData->iActiveLayer = __xuiTimeLineClampInt(iLayer, 0, pData->iLayerCount - 1);
 	else if ( pData->iActiveLayer > iLayer ) pData->iActiveLayer--;
 	if ( pData->iLayerCount <= 0 ) pData->iActiveLayer = -1;
@@ -3197,13 +3430,14 @@ XUI_API int xuiTimeLineViewRemoveLayer(xui_widget pWidget, int iLayer)
 	if ( pData->iSpanCount != iOldSpanCount ) pData->iSpanChangeCount++;
 	pData->iLayerChangeCount++;
 	pData->iChangeCount++;
+	__xuiTimeLineEndRetirementMutation(&tRetirement);
 	iRet = __xuiTimeLineUpdateContentSize(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) return __xuiTimeLineFinishRetirement(&tRetirement, iRet);
 	if ( bSelectionChanged ) {
 		iRet = __xuiTimeLineSelectionNotify(pWidget, pData);
-		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return iRet;
+		if ( iRet != XUI_OK || !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, iRet);
 	}
-	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiTimeLineFinishRetirement(&tRetirement, __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiTimeLineViewMoveLayer(xui_widget pWidget, int iLayer, int iToLayer)
@@ -3217,6 +3451,20 @@ XUI_API int xuiTimeLineViewMoveLayer(xui_widget pWidget, int iLayer, int iToLaye
 	if ( iLayer == iToLayer ) return XUI_OK;
 	iRet = __xuiTimeLineCancelInteraction(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( pValues != NULL ) {
+		xrtownershipscope tMutation = {0};
+		if ( !xrtOwnershipMutationBegin(&tMutation) ) return XUI_ERROR_BUSY;
+		xui_timeline_value_t* pMove = pValues->arrLayers[iLayer];
+		if ( iLayer < iToLayer )
+			memmove(&pValues->arrLayers[iLayer], &pValues->arrLayers[iLayer + 1],
+				(size_t)(iToLayer - iLayer) * sizeof(pMove));
+		else
+			memmove(&pValues->arrLayers[iToLayer + 1], &pValues->arrLayers[iToLayer],
+				(size_t)(iLayer - iToLayer) * sizeof(pMove));
+		pValues->arrLayers[iToLayer] = pMove;
+		if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	}
 	tMove = pData->arrLayers[iLayer];
 	bCustomColor = pData->arrLayerCustomColor[iLayer];
 	if ( iLayer < iToLayer ) {
@@ -3549,15 +3797,25 @@ XUI_API int xuiTimeLineViewClearFrame(xui_widget pWidget, int iLayer, int iFrame
 		iIndex = __xuiTimeLineFindFrame(pData, iLayer, iFrame);
 		if ( iIndex < 0 ) return XUI_OK;
 	}
+	xui_timeline_retirement_t tRetirement = {0};
+	int iStatus = __xuiTimeLineBeginRetirement(pWidget, pData, &tRetirement);
+	if ( iStatus != XUI_OK ) return iStatus;
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( pValues != NULL && !__xuiTimeLineValueReady(pValues->arrFrames[iIndex]) ) {
+		__xuiTimeLineEndRetirementMutation(&tRetirement);
+		return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+	}
 	pData->arrFrames[iIndex] = pData->arrFrames[--pData->iFrameRecordCount];
+	if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrFrames, iIndex, pData->iFrameRecordCount, &tRetirement);
+	__xuiTimeLineEndRetirementMutation(&tRetirement);
 	pData->iFrameChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onFrameChanged;
 	if ( onChanged != NULL ) {
 		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onFrameChanged, xui_timeline_frame_changed_proc, pData->pFrameChangedUser, pWidget, iLayer, iFrame, iOldType, XUI_TIMELINE_FRAME_EMPTY);
-		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, XUI_OK);
 	}
-	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiTimeLineFinishRetirement(&tRetirement, __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiTimeLineViewSetFrameUserData(xui_widget pWidget, int iLayer, int iFrame, void* pUser)
@@ -3660,16 +3918,26 @@ XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId)
 		iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
 		if ( iIndex < 0 ) return XUI_OK;
 	}
+	xui_timeline_retirement_t tRetirement = {0};
+	int iStatus = __xuiTimeLineBeginRetirement(pWidget, pData, &tRetirement);
+	if ( iStatus != XUI_OK ) return iStatus;
+	xui_timeline_values_t* pValues = pData->pValues;
+	if ( pValues != NULL && !__xuiTimeLineValueReady(pValues->arrSpans[iIndex]) ) {
+		__xuiTimeLineEndRetirementMutation(&tRetirement);
+		return __xuiTimeLineFinishRetirement(&tRetirement, XUI_ERROR_BUSY);
+	}
 	pData->arrSpans[iIndex] = pData->arrSpans[--pData->iSpanCount];
+	if ( pValues != NULL ) __xuiTimeLineRemoveValue(pValues->arrSpans, iIndex, pData->iSpanCount, &tRetirement);
+	__xuiTimeLineEndRetirementMutation(&tRetirement);
 	pData->arrSpanCustomColor[iIndex] = pData->arrSpanCustomColor[pData->iSpanCount];
 	pData->iSpanChangeCount++;
 	pData->iChangeCount++;
 	onChanged = pData->onSpanChanged;
 	if ( onChanged != NULL ) {
 		XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onSpanChanged, xui_timeline_span_changed_proc, pData->pSpanChangedUser, pWidget, iSpanId, XUI_TIMELINE_SPAN_CHANGE_REMOVE);
-		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return XUI_OK;
+		if ( !__xuiTimeLineAlive(pContext, pWidget, pData) ) return __xuiTimeLineFinishRetirement(&tRetirement, XUI_OK);
 	}
-	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiTimeLineFinishRetirement(&tRetirement, __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER));
 }
 
 XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFrame, int iEndFrame, int iType, const char* sLabel)
@@ -3796,6 +4064,172 @@ XUI_API void* xuiTimeLineViewGetSpanUserData(xui_widget pWidget, int iSpanId)
 	if ( pData == NULL ) return NULL;
 	iIndex = __xuiTimeLineFindSpan(pData, iSpanId);
 	return (iIndex >= 0) ? pData->arrSpans[iIndex].pUser : NULL;
+}
+
+typedef enum xui_timeline_value_kind_t {
+	XUI_TIMELINE_VALUE_LAYER,
+	XUI_TIMELINE_VALUE_FRAME,
+	XUI_TIMELINE_VALUE_SPAN
+} xui_timeline_value_kind_t;
+
+static int __xuiTimeLineLocateValue(xui_widget pWidget, xui_timeline_value_kind_t iKind,
+	int iKey, int iFrame, xui_timeline_view_data_t** ppData, int* pIndex)
+{
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_context pContext = pWidget->pContext;
+	if ( pContext->pOwnedProxy != NULL && !xuiInternalProxyCreator(pContext->pOwnedProxy) )
+		return XUI_ERROR_BUSY;
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppData = pData;
+	if ( iKind == XUI_TIMELINE_VALUE_SPAN ) {
+		*pIndex = __xuiTimeLineFindSpan(pData, iKey);
+		return *pIndex >= 0 ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iKey < 0 || iKey >= pData->iLayerCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iKind == XUI_TIMELINE_VALUE_LAYER ) {
+		*pIndex = iKey;
+		return XUI_OK;
+	}
+	if ( iFrame < 0 || iFrame >= pData->iTotalFrames ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pIndex = __xuiTimeLineFindFrame(pData, iKey, iFrame);
+	return XUI_OK;
+}
+
+static xui_timeline_value_t** __xuiTimeLineValueSlot(xui_timeline_values_t* pValues,
+	xui_timeline_value_kind_t iKind, int iIndex)
+{
+	if ( iKind == XUI_TIMELINE_VALUE_LAYER ) return &pValues->arrLayers[iIndex];
+	if ( iKind == XUI_TIMELINE_VALUE_FRAME ) return &pValues->arrFrames[iIndex];
+	return &pValues->arrSpans[iIndex];
+}
+
+static int __xuiTimeLineGetValue(xui_widget pWidget, xui_timeline_value_kind_t iKind,
+	int iKey, int iFrame, xvalue** ppOutput)
+{
+	if ( ppOutput == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppOutput = NULL;
+	xui_timeline_view_data_t* pData;
+	int iIndex;
+	int iStatus = __xuiTimeLineLocateValue(pWidget, iKind, iKey, iFrame, &pData, &iIndex);
+	if ( iStatus != XUI_OK || iIndex < 0 || pData->pValues == NULL ) return iStatus;
+	xui_timeline_value_t* pNode = *__xuiTimeLineValueSlot(pData->pValues, iKind, iIndex);
+	if ( pNode != NULL && (*ppOutput = xrtValueRetain(pNode->pValue)) == NULL )
+		return XUI_ERROR_INVALID_STATE;
+	return XUI_OK;
+}
+
+static int __xuiTimeLineSetValue(xui_widget pWidget, xui_timeline_value_kind_t iKind,
+	int iKey, int iFrame, xvalue* pValue)
+{
+	xui_timeline_view_data_t* pData;
+	int iIndex;
+	int iStatus = __xuiTimeLineLocateValue(pWidget, iKind, iKey, iFrame, &pData, &iIndex);
+	if ( iStatus != XUI_OK ) return iStatus;
+	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
+
+	xui_timeline_values_t* pValues = pData->pValues;
+	xui_timeline_value_t** ppSlot = pValues == NULL ? NULL : __xuiTimeLineValueSlot(pValues, iKind, iIndex);
+	xui_timeline_value_t* pNode = ppSlot == NULL ? NULL : *ppSlot;
+	if ( (pNode == NULL ? NULL : pNode->pValue) == pValue ) return XUI_OK;
+	xui_context pContext = pWidget->pContext;
+	xui_call_scope_t tCall = {0};
+	iStatus = xuiCallScopeBegin(pContext, &tCall);
+	if ( iStatus != XUI_OK ) return iStatus;
+
+	xui_timeline_values_t* pNewValues = NULL;
+	xui_timeline_value_t* pNewNode = NULL;
+	xvalue* pOldValue = NULL;
+	if ( pValues == NULL ) {
+		pNewValues = xrtMalloc(sizeof(*pNewValues));
+		if ( pNewValues == NULL ) {
+			iStatus = XUI_ERROR_OUT_OF_MEMORY;
+			goto finish;
+		}
+		memset(pNewValues, 0, sizeof(*pNewValues));
+		ppSlot = __xuiTimeLineValueSlot(pNewValues, iKind, iIndex);
+	}
+	if ( pNode == NULL ) {
+		pNewNode = xrtMalloc(sizeof(*pNewNode));
+		if ( pNewNode == NULL ) {
+			iStatus = XUI_ERROR_OUT_OF_MEMORY;
+			goto finish;
+		}
+	}
+	xrtownershipscope tMutation = {0};
+	if ( !xrtOwnershipMutationBegin(&tMutation) ) {
+		iStatus = XUI_ERROR_BUSY;
+		goto finish;
+	}
+	if ( !__xuiTimeLineValueReady(pNode) ) iStatus = XUI_ERROR_BUSY;
+	else if ( pValue != NULL && xrtValueRetain(pValue) == NULL ) iStatus = XUI_ERROR_INVALID_STATE;
+	else {
+		if ( pNode != NULL ) pOldValue = pNode->pValue;
+		if ( pValue == NULL ) {
+			*ppSlot = NULL;
+			xrtFree(pNode);
+		} else {
+			if ( pNode == NULL ) {
+				pNode = pNewNode;
+				pNewNode = NULL;
+				pNode->pNext = NULL;
+				*ppSlot = pNode;
+			}
+			pNode->pValue = pValue;
+			if ( pNewValues != NULL ) {
+				pData->pValues = pNewValues;
+				pNewValues = NULL;
+			}
+		}
+	}
+	if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+	if ( iStatus == XUI_OK ) {
+		if ( iKind == XUI_TIMELINE_VALUE_LAYER ) pData->iLayerChangeCount++;
+		else if ( iKind == XUI_TIMELINE_VALUE_FRAME ) pData->iFrameChangeCount++;
+		else pData->iSpanChangeCount++;
+		iStatus = __xuiTimeLineChanged(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+
+finish:
+	xrtFree(pNewNode);
+	xrtFree(pNewValues);
+	xerror* pFirst = xrtTakeError();
+	if ( pOldValue != NULL ) {
+		xrtValueRelease(pOldValue);
+		xuiInternalContextCleanupOutcome(pContext, XUI_OK, &iStatus, &pFirst);
+	}
+	return xuiInternalCallScopeEndRestored(&tCall, iStatus, pFirst);
+}
+
+XUI_API int xuiTimeLineViewSetLayerValue(xui_widget pWidget, int iLayer, xvalue* pValue)
+{
+	return __xuiTimeLineSetValue(pWidget, XUI_TIMELINE_VALUE_LAYER, iLayer, 0, pValue);
+}
+
+XUI_API int xuiTimeLineViewGetLayerValue(xui_widget pWidget, int iLayer, xvalue** ppValue)
+{
+	return __xuiTimeLineGetValue(pWidget, XUI_TIMELINE_VALUE_LAYER, iLayer, 0, ppValue);
+}
+
+XUI_API int xuiTimeLineViewSetFrameValue(xui_widget pWidget, int iLayer, int iFrame, xvalue* pValue)
+{
+	return __xuiTimeLineSetValue(pWidget, XUI_TIMELINE_VALUE_FRAME, iLayer, iFrame, pValue);
+}
+
+XUI_API int xuiTimeLineViewGetFrameValue(xui_widget pWidget, int iLayer, int iFrame, xvalue** ppValue)
+{
+	return __xuiTimeLineGetValue(pWidget, XUI_TIMELINE_VALUE_FRAME, iLayer, iFrame, ppValue);
+}
+
+XUI_API int xuiTimeLineViewSetSpanValue(xui_widget pWidget, int iSpanId, xvalue* pValue)
+{
+	return __xuiTimeLineSetValue(pWidget, XUI_TIMELINE_VALUE_SPAN, iSpanId, 0, pValue);
+}
+
+XUI_API int xuiTimeLineViewGetSpanValue(xui_widget pWidget, int iSpanId, xvalue** ppValue)
+{
+	return __xuiTimeLineGetValue(pWidget, XUI_TIMELINE_VALUE_SPAN, iSpanId, 0, ppValue);
 }
 
 XUI_API int xuiTimeLineViewClearSelection(xui_widget pWidget)
