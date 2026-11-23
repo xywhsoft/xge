@@ -633,6 +633,26 @@ XUI_API int xuiCodeLanguageRegistryRegisterRegexCallbacks(xui_code_language_regi
 	return __xuiCodeLanguageRegisterCallbacks(registry, language, owner);
 }
 
+XUI_API int xuiCodeLanguageRegistryRegisterPlain(xui_code_language_registry registry,
+    const xui_code_plain_language_t* language)
+{
+    if ( language == NULL || language->iSize < sizeof(*language) )
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if ( language->iLexerType != XUI_CODE_LEXER_EXTERNAL &&
+         language->iLexerType != XUI_CODE_LEXER_BUILTIN_C )
+        return XUI_ERROR_INVALID_ARGUMENT;
+
+    const bool builtin = language->iLexerType == XUI_CODE_LEXER_BUILTIN_C;
+    const xui_code_language_t native = {
+        .iSize = sizeof(native), .sId = language->sId, .sName = language->sName,
+        .sLineComment = language->sLineComment, .sBlockCommentStart = language->sBlockCommentStart,
+        .sBlockCommentEnd = language->sBlockCommentEnd, .iLexerType = language->iLexerType,
+        .iExtensionCount = language->iExtensionCount,
+        .onLex = builtin ? __xuiCodeLanguageCLex : NULL, .onFold = builtin ? __xuiCodeLanguageCFold : NULL
+    };
+    return __xuiCodeLanguageRegister(registry, &native, language->pExtensions, NULL, NULL);
+}
+
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry registry,
 	const xui_code_regex_language_t* language)
 {

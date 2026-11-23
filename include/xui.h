@@ -2834,6 +2834,20 @@ typedef struct xui_code_language_extension_t {
 	const char* sExtension;
 } xui_code_language_extension_t;
 
+/* Language metadata for an external token source or the built-in C lexer.
+ * The registry copies the descriptor's strings and extension list. */
+typedef struct xui_code_plain_language_t {
+    uint32_t iSize;
+    const char* sId;
+    const char* sName;
+    const char* sLineComment;
+    const char* sBlockCommentStart;
+    const char* sBlockCommentEnd;
+    const xui_code_language_extension_t* pExtensions;
+    int iExtensionCount;
+    int iLexerType;
+} xui_code_plain_language_t;
+
 /* Declarative language. The registry copies the descriptor's strings and arrays. */
 typedef struct xui_code_regex_language_t {
 	uint32_t iSize;
@@ -8558,6 +8572,9 @@ XUI_API int xuiCodeLanguageRegistryRegisterRegexCallbacks(xui_code_language_regi
 	const xui_code_callback_language_t* pLanguage, const xui_callback_owner_t* pOwner);
 XUI_API int xuiCodeTokenOutputGetCapacity(const xui_code_token_output_t* pOutput);
 XUI_API int xuiCodeTokenOutputAppend(xui_code_token_output_t* pOutput, xui_code_token_t tToken);
+/* iLexerType must be XUI_CODE_LEXER_EXTERNAL or XUI_CODE_LEXER_BUILTIN_C. */
+XUI_API int xuiCodeLanguageRegistryRegisterPlain(xui_code_language_registry pRegistry,
+    const xui_code_plain_language_t* pLanguage);
 XUI_API int xuiCodeLanguageRegistryRegisterRegex(xui_code_language_registry pRegistry,
     const xui_code_regex_language_t* pLanguage);
 /* 读取已注册语言数。 */
