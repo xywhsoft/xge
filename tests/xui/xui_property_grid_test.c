@@ -458,6 +458,7 @@ static int __xuiPropertyGridRebuildOomPreserves(xui_context pContext, xui_font p
 	     xuiPropertyGridGetToggleCount(pGrid) != 0 ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 1 ||
 	     xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	xrtClearError();
 	if ( xuiPropertyGridSetCategoryExpanded(pGrid, iCategory, 1) != XUI_OK ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 2 || xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
 	xuiWidgetDestroy(pGrid);
@@ -479,6 +480,7 @@ static int __xuiPropertyGridRebuildOomPreserves(xui_context pContext, xui_font p
 	if ( iProperty != -1 || xuiPropertyGridGetPropertyCount(pGrid) != 0 ||
 	     xuiPropertyGridFindProperty(pGrid, "value") != -1 ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 1 || xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
+	xrtClearError();
 	iProperty = xuiPropertyGridAddProperty(pGrid, iCategory, &tProp);
 	if ( iProperty != 0 || xuiPropertyGridGetPropertyCount(pGrid) != 1 ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 2 || xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
@@ -499,6 +501,7 @@ static int __xuiPropertyGridRebuildOomPreserves(xui_context pContext, xui_font p
 	if ( iCategory != -1 || xuiPropertyGridGetCategoryCount(pGrid) != 0 ||
 	     xuiPropertyGridFindCategory(pGrid, "oom") != -1 ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 0 || xuiTableViewGetRowCount(pTableView) != 0 ) goto cleanup;
+	xrtClearError();
 	iCategory = xuiPropertyGridAddCategory(pGrid, "oom", "OOM", 1);
 	if ( iCategory != 0 || xuiPropertyGridGetCategoryCount(pGrid) != 1 ||
 	     xuiPropertyGridGetVisibleCount(pGrid) != 1 || xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
@@ -522,6 +525,7 @@ static int __xuiPropertyGridRebuildOomPreserves(xui_context pContext, xui_font p
 	if ( iRet != XUI_ERROR_OUT_OF_MEMORY || xuiPropertyGridGetPropertyFlags(pGrid, iProperty) != 0 ||
 	     xuiPropertyGridGetSelected(pGrid) != iProperty || xuiPropertyGridGetVisibleCount(pGrid) != 2 ||
 	     xuiTableViewGetRowCount(pTableView) != 2 ) goto cleanup;
+	xrtClearError();
 	if ( xuiPropertyGridSetPropertyFlags(pGrid, iProperty, XUI_PROPERTY_FLAG_HIDDEN) != XUI_OK ||
 	     xuiPropertyGridGetSelected(pGrid) != -1 || xuiPropertyGridGetVisibleCount(pGrid) != 1 ||
 	     xuiTableViewGetRowCount(pTableView) != 1 ) goto cleanup;
