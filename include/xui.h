@@ -3844,6 +3844,23 @@ typedef struct xui_inventory_slot_content_t {
 	const char* sHotkey;
 } xui_inventory_slot_content_t;
 
+/* Complete editable slot descriptor. The setter copies the strings and uses
+ * the same icon ownership rule as SetSlotIcon. Getter pointers are borrowed
+ * until the next slot mutation or grid destruction. The legacy animation
+ * object is supplied by the C caller and is unaffected by descriptor edits. */
+typedef struct xui_inventory_slot_desc_t {
+	uint32_t iSize;
+	xui_inventory_slot_settings_t tSettings;
+	const char* sText;
+	const char* sHotkey;
+	struct xui_surface_t* pIcon;
+	xui_rect_t tIconSrc;
+	uint32_t iIconTint;
+	uint32_t iAnimationFlags;
+	float fAnimationScale;
+	uint32_t iAnimationTint;
+} xui_inventory_slot_desc_t;
+
 typedef struct xui_inventory_indices_t* xui_inventory_indices;
 
 typedef struct xui_inventory_gamepad_profile_t {
@@ -10462,6 +10479,8 @@ XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inv
 XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory_slot_t* pSlot);
 XUI_API int xuiInventoryGridSetSlotContent(xui_widget pWidget, int iSlot, const xui_inventory_slot_content_t* pContent);
 XUI_API int xuiInventoryGridGetSlotContent(xui_widget pWidget, int iSlot, xui_inventory_slot_content_t* pContent);
+XUI_API int xuiInventoryGridSetSlotDescriptor(xui_widget pWidget, int iSlot, const xui_inventory_slot_desc_t* pDesc);
+XUI_API int xuiInventoryGridGetSlotDescriptor(xui_widget pWidget, int iSlot, xui_inventory_slot_desc_t* pDesc);
 /* 绑定拥有式 Proxy 的网格保留图标引用；旧式借用 Proxy 的网格沿用 C 借用规则。 */
 XUI_API int xuiInventoryGridSetSlotIcon(xui_widget pWidget, int iSlot, xui_surface pIcon, xui_rect_t tSource, uint32_t iTint);
 /* 输出图标由网格借出。需要独立使用时调用 xuiSurfaceAddRef。 */

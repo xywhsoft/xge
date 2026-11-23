@@ -162,12 +162,45 @@ static int __xuiInventoryCheckOwnedIcons(void)
 		__xuiInventoryNewTestIcon(otherProxy, &probe, &second) == XUI_OK, "create mismatched proxy icon");
 	XUI_TEST_CHECK(xuiInventoryGridSetSlotIcon(probe.grid, 0, second, (xui_rect_t){0}, 0) == XUI_ERROR_INVALID_ARGUMENT,
 		"reject an icon from another owned proxy");
+	xui_animation_object_t* animation = (xui_animation_object_t*)0x1234;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimation(probe.grid, 0, animation, 11, 1.5f, 0) == XUI_OK,
+		"set a caller-supplied native animation");
+	xui_inventory_slot_desc_t slot = {.iSize=sizeof(slot), .tSettings={.iItemId=47,.iCount=2},
+		.sText="Original",.sHotkey="F1",.iAnimationFlags=8,.fAnimationScale=1.25f,
+		.iAnimationTint=XUI_COLOR_RGBA(20, 40, 60, 255)};
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotDescriptor(probe.grid, 0, &slot) == XUI_OK,
+		"commit combined slot descriptor");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotAnimation(probe.grid, 0, NULL, NULL, NULL) == animation,
+		"descriptor edits preserve raw animation objects");
+	slot.pIcon = second;
+	slot.sText = "Foreign icon";
+	slot.tSettings.iItemId = 99;
+	slot.iAnimationFlags = 19;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotDescriptor(probe.grid, 0, &slot) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject a complete descriptor with a foreign icon");
+	xrtClearError();
+	slot.pIcon = NULL;
+	slot.fAnimationScale = NAN;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotDescriptor(probe.grid, 0, &slot) == XUI_ERROR_INVALID_ARGUMENT,
+		"reject invalid animation geometry before changing the slot");
+	xui_inventory_slot_desc_t snapshot = {.iSize=1,.tSettings={.iItemId=90}};
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotDescriptor(probe.grid, 0, &snapshot) == XUI_ERROR_INVALID_ARGUMENT &&
+		snapshot.tSettings.iItemId == 90, "short output descriptor is untouched");
+	snapshot.iSize = sizeof(snapshot);
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotDescriptor(probe.grid, 0, &snapshot) == XUI_OK &&
+		snapshot.tSettings.iItemId == 47 && snapshot.tSettings.iCount == 2 &&
+		strcmp(snapshot.sText, "Original") == 0 && strcmp(snapshot.sHotkey, "F1") == 0 &&
+		snapshot.pIcon == NULL && snapshot.iAnimationFlags == 8 && snapshot.fAnimationScale == 1.25f &&
+		snapshot.iAnimationTint == XUI_COLOR_RGBA(20, 40, 60, 255), "invalid descriptors leave every field unchanged");
 	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(second) == XUI_OK && probe.releases == 3, "foreign icon was not retained");
 	second = NULL;
 	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(probe.grid, 100000) == XUI_OK, "large grid grows without owner recursion");
-	XUI_TEST_CHECK(__xuiInventoryNewTestIcon(proxy, &probe, &first) == XUI_OK &&
-		xuiInventoryGridSetSlotIcon(probe.grid, 99999, first, (xui_rect_t){0}, 0) == XUI_OK,
-		"install last icon in large grid");
+	XUI_TEST_CHECK(__xuiInventoryNewTestIcon(proxy, &probe, &first) == XUI_OK,
+		"create the last icon in the large grid");
+	slot.pIcon = first;
+	slot.fAnimationScale = 1.0f;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotDescriptor(probe.grid, 99999, &slot) == XUI_OK,
+		"install last icon by descriptor in large grid");
 	XUI_TEST_CHECK(xuiSurfaceReleaseChecked(first) == XUI_OK, "drop last caller icon reference");
 	first = NULL;
 	XUI_TEST_CHECK(xuiWidgetDestroyChecked(probe.grid) == XUI_OK && probe.releases == 4, "destroy large owned grid on bounded stack");

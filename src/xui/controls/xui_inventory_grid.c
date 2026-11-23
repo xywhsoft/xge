@@ -4200,6 +4200,7 @@ static void __xuiInventoryCopySlotMedia(xui_inventory_slot_t* pTo, const xui_inv
 typedef enum xui_inventory_slot_update_t {
 	XUI_INVENTORY_UPDATE_SLOT,
 	XUI_INVENTORY_UPDATE_CONTENT,
+	XUI_INVENTORY_UPDATE_DESCRIPTOR,
 	XUI_INVENTORY_UPDATE_ICON
 } xui_inventory_slot_update_t;
 
@@ -4209,6 +4210,7 @@ static xui_inventory_slot_t __xuiInventorySlotUpdate(xui_inventory_grid_data_t* 
 	const xui_inventory_slot_t* pOld = &pData->arrSlots[iSlot];
 	xui_inventory_slot_t slot = *pChange;
 	if ( update == XUI_INVENTORY_UPDATE_CONTENT ) __xuiInventoryCopySlotMedia(&slot, pOld);
+	if ( update == XUI_INVENTORY_UPDATE_DESCRIPTOR ) slot.pAnimation = pOld->pAnimation;
 	if ( update == XUI_INVENTORY_UPDATE_ICON ) {
 		slot = *pOld;
 		slot.pIcon = pChange->pIcon;
@@ -4307,17 +4309,38 @@ XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory
 	return XUI_OK;
 }
 
+static void __xuiInventoryCopyDescription(xui_inventory_slot_t* pSlot,
+	const xui_inventory_slot_settings_t* pSettings,const char* sText,const char* sHotkey)
+{
+	pSlot->iSlotId = pSettings->iSlotId;
+	pSlot->iItemId = pSettings->iItemId;
+	pSlot->iCount = pSettings->iCount;
+	pSlot->iMaxCount = pSettings->iMaxCount;
+	pSlot->iSlotType = pSettings->iSlotType;
+	pSlot->iItemType = pSettings->iItemType;
+	pSlot->iFlags = pSettings->iFlags;
+	pSlot->iQualityColor = pSettings->iQualityColor;
+	pSlot->fCooldownRate = pSettings->fCooldownRate;
+	pSlot->fDurabilityRate = pSettings->fDurabilityRate;
+	__xuiInventorySafeCopy(pSlot->sText, sizeof(pSlot->sText), sText);
+	__xuiInventorySafeCopy(pSlot->sHotkey, sizeof(pSlot->sHotkey), sHotkey);
+}
+
+static xui_inventory_slot_settings_t __xuiInventorySlotSettings(const xui_inventory_slot_t* pSlot)
+{
+	return (xui_inventory_slot_settings_t){
+		.iSlotId=pSlot->iSlotId, .iItemId=pSlot->iItemId, .iCount=pSlot->iCount, .iMaxCount=pSlot->iMaxCount,
+		.iSlotType=pSlot->iSlotType, .iItemType=pSlot->iItemType, .iFlags=pSlot->iFlags,
+		.iQualityColor=pSlot->iQualityColor, .fCooldownRate=pSlot->fCooldownRate,
+		.fDurabilityRate=pSlot->fDurabilityRate};
+}
+
 XUI_API int xuiInventoryGridSetSlotContent(xui_widget pWidget, int iSlot, const xui_inventory_slot_content_t* pContent)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
 	if ( pData == NULL || pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	const xui_inventory_slot_settings_t* p = &pContent->tSettings;
-	xui_inventory_slot_t slot = {.iSize=sizeof(slot), .iSlotId=p->iSlotId, .iItemId=p->iItemId,
-		.iCount=p->iCount, .iMaxCount=p->iMaxCount, .iSlotType=p->iSlotType, .iItemType=p->iItemType,
-		.iFlags=p->iFlags, .iQualityColor=p->iQualityColor, .fCooldownRate=p->fCooldownRate,
-		.fDurabilityRate=p->fDurabilityRate};
-	__xuiInventorySafeCopy(slot.sText, sizeof(slot.sText), pContent->sText);
-	__xuiInventorySafeCopy(slot.sHotkey, sizeof(slot.sHotkey), pContent->sHotkey);
+	xui_inventory_slot_t slot = {.iSize=sizeof(slot)};
+	__xuiInventoryCopyDescription(&slot, &pContent->tSettings, pContent->sText, pContent->sHotkey);
 	xui_context pContext = pWidget->pContext;
 	xuiInternalOperationEnter(pContext);
 	int status = __xuiInventorySetSlot(pWidget, pData, iSlot, &slot, XUI_INVENTORY_UPDATE_CONTENT);
@@ -4331,10 +4354,37 @@ XUI_API int xuiInventoryGridGetSlotContent(xui_widget pWidget, int iSlot, xui_in
 	if ( pData == NULL || pContent == NULL || iSlot < 0 || iSlot >= pData->iSlotCount ) return XUI_ERROR_INVALID_ARGUMENT;
 	const xui_inventory_slot_t* p = &pData->arrSlots[iSlot];
 	*pContent = (xui_inventory_slot_content_t){
-		.tSettings={.iSlotId=p->iSlotId, .iItemId=p->iItemId, .iCount=p->iCount, .iMaxCount=p->iMaxCount,
-			.iSlotType=p->iSlotType, .iItemType=p->iItemType, .iFlags=p->iFlags, .iQualityColor=p->iQualityColor,
-			.fCooldownRate=p->fCooldownRate, .fDurabilityRate=p->fDurabilityRate},
+		.tSettings=__xuiInventorySlotSettings(p),
 		.sText=p->sText, .sHotkey=p->sHotkey};
+	return XUI_OK;
+}
+
+XUI_API int xuiInventoryGridSetSlotDescriptor(xui_widget pWidget, int iSlot, const xui_inventory_slot_desc_t* pDesc)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pDesc == NULL || pDesc->iSize < sizeof(*pDesc) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_inventory_slot_t slot = {.iSize=sizeof(slot), .pIcon=pDesc->pIcon, .tIconSrc=pDesc->tIconSrc,
+		.iIconTint=pDesc->iIconTint, .iAnimationFlags=pDesc->iAnimationFlags,
+		.fAnimationScale=pDesc->fAnimationScale, .iAnimationTint=pDesc->iAnimationTint};
+	__xuiInventoryCopyDescription(&slot, &pDesc->tSettings, pDesc->sText, pDesc->sHotkey);
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(pWidget->pContext, &scope);
+	if ( status != XUI_OK ) return status;
+	status = __xuiInventorySetSlot(pWidget, pData, iSlot, &slot, XUI_INVENTORY_UPDATE_DESCRIPTOR);
+	return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+}
+
+XUI_API int xuiInventoryGridGetSlotDescriptor(xui_widget pWidget, int iSlot, xui_inventory_slot_desc_t* pDesc)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pDesc == NULL || pDesc->iSize < sizeof(*pDesc) || iSlot < 0 || iSlot >= pData->iSlotCount )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_inventory_slot_t* pSlot = &pData->arrSlots[iSlot];
+	*pDesc = (xui_inventory_slot_desc_t){.iSize=sizeof(*pDesc), .tSettings=__xuiInventorySlotSettings(pSlot),
+		.sText=pSlot->sText, .sHotkey=pSlot->sHotkey, .pIcon=pSlot->pIcon, .tIconSrc=pSlot->tIconSrc,
+		.iIconTint=pSlot->iIconTint, .iAnimationFlags=pSlot->iAnimationFlags,
+		.fAnimationScale=pSlot->fAnimationScale, .iAnimationTint=pSlot->iAnimationTint};
 	return XUI_OK;
 }
 
