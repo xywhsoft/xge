@@ -23,9 +23,19 @@
 #define XUI_INVENTORY_STATE_DRAG_SOURCE 0x00100000u
 #define XUI_INVENTORY_STATE_DROP_TARGET 0x00200000u
 
+typedef struct xui_inventory_slot_painter_t {
+	int iSlot;
+	xui_inventory_animation_layer_proc onRender;
+	void* pUser;
+	xui_callback_record_t* pOwner;
+} xui_inventory_slot_painter_t;
+
 typedef struct xui_inventory_grid_data_t {
 	xui_inventory_slot_t* arrSlots;
 	xui_surface_dependency_t* arrIconDependencies;
+	xui_inventory_slot_painter_t* arrSlotPainters;
+	size_t iSlotPainterCount;
+	size_t iSlotPainterCapacity;
 	xui_font pFont;
 	xui_scroll_model_t tScroll;
 	xui_inventory_grid_layout_t tLayout;
@@ -1907,6 +1917,81 @@ static int __xuiInventoryDrawCooldownRadial(xui_proxy pProxy, xui_draw_context p
 	return pProxy->drawMeshTriangles(pProxy, pDraw, arrVertices, iSegments + 2, arrIndices, iSegments * 3, 0);
 }
 
+static size_t __xuiInventoryPainterPosition(const xui_inventory_grid_data_t* pData, int iSlot)
+{
+	size_t first = 0;
+	size_t last = pData->iSlotPainterCount;
+	while ( first < last ) {
+		size_t mid = first + (last - first) / 2;
+		if ( pData->arrSlotPainters[mid].iSlot < iSlot ) first = mid + 1;
+		else last = mid;
+	}
+	return first;
+}
+
+static const xui_inventory_slot_painter_t* __xuiInventoryFindPainter(
+	const xui_inventory_grid_data_t* pData, int iSlot)
+{
+	size_t i = __xuiInventoryPainterPosition(pData, iSlot);
+	return i < pData->iSlotPainterCount && pData->arrSlotPainters[i].iSlot == iSlot
+		? &pData->arrSlotPainters[i] : NULL;
+}
+
+/* The graph mutation covers publication of the new array. Drop may reenter
+ * and reuse an index afterwards, so it only receives the detached list. */
+static xui_callback_record_t* __xuiInventoryDetachPainters(
+	xui_inventory_grid_data_t* pData, int iFirstSlot, int iAfterLastSlot)
+{
+	size_t first = __xuiInventoryPainterPosition(pData, iFirstSlot);
+	size_t last = __xuiInventoryPainterPosition(pData, iAfterLastSlot);
+	if ( first == last ) return NULL;
+	xui_callback_record_t* pRetired = NULL;
+	for ( size_t i = first; i < last; ++i ) {
+		xui_callback_record_t* pOwner = pData->arrSlotPainters[i].pOwner;
+		if ( pOwner != NULL ) {
+			pOwner->pNext = pRetired;
+			pRetired = pOwner;
+		}
+	}
+	memmove(pData->arrSlotPainters + first, pData->arrSlotPainters + last,
+		(pData->iSlotPainterCount - last) * sizeof(*pData->arrSlotPainters));
+	pData->iSlotPainterCount -= last - first;
+	return pRetired;
+}
+
+static int __xuiInventoryReleasePainters(xui_context pContext, xui_callback_record_t* pRetired, int iStatus)
+{
+	if ( pRetired == NULL ) return iStatus;
+	xerror* pFirst = xrtTakeError();
+	if ( iStatus == XUI_OK && pFirst != NULL ) iStatus = XUI_ERROR_CALLBACK_FAILED;
+	xuiInternalContextRecordOutcome(pContext, iStatus, pFirst);
+	while ( pRetired != NULL ) {
+		xui_callback_record_t* pNext = pRetired->pNext;
+		pRetired->pNext = NULL;
+		int iNext = xuiInternalCallbackRecordRelease(pContext, pRetired, iStatus, pFirst);
+		xuiInternalContextCleanupOutcome(pContext, iNext, &iStatus, &pFirst);
+		pRetired = pNext;
+	}
+	xrtSetErrorTake(pFirst);
+	return iStatus;
+}
+
+static int __xuiInventoryInvokeSlotPainter(xui_widget pWidget, xui_inventory_slot_painter_t tPainter,
+	const xui_inventory_slot_t* pSlot, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iTint)
+{
+	xui_context pContext = pWidget->pContext;
+	int iStatus = xuiInternalCallbackRecordRetain(tPainter.pOwner);
+	if ( iStatus != XUI_OK ) return iStatus;
+	iStatus = tPainter.onRender(pWidget, tPainter.iSlot, pSlot, pDraw, tRect, iState,
+		pSlot->iAnimationFlags, iTint, tPainter.pUser);
+	xerror* pFirst = xrtTakeError();
+	if ( iStatus == XUI_OK && pFirst != NULL ) iStatus = XUI_ERROR_CALLBACK_FAILED;
+	int iNext = xuiInternalCallbackRecordRelease(pContext, tPainter.pOwner, iStatus, pFirst);
+	xuiInternalContextCleanupOutcome(pContext, iNext, &iStatus, &pFirst);
+	xrtSetErrorTake(pFirst);
+	return iStatus;
+}
+
 static int __xuiInventoryPaintCurrent(xui_widget pWidget, xui_inventory_grid_data_t* pData, uint64_t iRevision)
 {
 	return __xuiInventoryDataAlive(pWidget, pData) && pData->iPaintRevision == iRevision;
@@ -1933,6 +2018,7 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 	int iRet;
 
 	tSlotData = pData->arrSlots[iSlot];
+	uint64_t iSlotRevision = pData->iPaintRevision;
 	pSlot = &tSlotData;
 	(void)__xuiInventorySyncSlotIcon(pProxy, pData, iSlot);
 	tSlot = __xuiInventorySlotLocalRect(pWidget, pData, pResolved, iSlot);
@@ -1996,46 +2082,55 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 		iRet = __xuiInventoryDrawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pResolved->pFont, .sText=pSlot->sText, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tText, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( (((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) || (pSlot->pAnimation != NULL)) &&
-	     (pData->onRenderAnimation != NULL || pData->onRenderAnimationOwned != NULL) ) {
-		xui_rect_t tAnimation;
-		float fScale;
-
-		tAnimation = tSlot;
-		fScale = (pSlot->fAnimationScale > 0.0f) ? pSlot->fAnimationScale : 1.0f;
-		if ( fScale != 1.0f ) {
-			float fW;
-			float fH;
-
-			fW = tSlot.fW * fScale;
-			fH = tSlot.fH * fScale;
-			tAnimation.fX = tSlot.fX + (tSlot.fW - fW) * 0.5f;
-			tAnimation.fY = tSlot.fY + (tSlot.fH - fH) * 0.5f;
-			tAnimation.fW = fW;
-			tAnimation.fH = fH;
-		}
-		tAnimation = xuiInternalSnapRect(tAnimation);
-		uint32_t iTint = pSlot->iAnimationTint != 0u ? pSlot->iAnimationTint : XUI_COLOR_WHITE;
-		xui_inventory_animation_render_proc onRender = pData->onRenderAnimation;
-		xui_inventory_animation_layer_proc onRenderOwned = pData->onRenderAnimationOwned;
-		void* pUser = pData->pRenderAnimationUser;
-		uint64_t iRevision = pData->iPaintRevision;
-		xui_callback_snapshot_t tSnapshot = {0};
-		iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderAnimationOwned, &pUser, &tSnapshot);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( __xuiInventoryPaintCurrent(pWidget, pData, iRevision) ) {
-			iRet = onRenderOwned != NULL ?
-				onRenderOwned(pWidget, iSlot, pSlot, pDraw, tAnimation, iState, pSlot->iAnimationFlags, iTint, pUser) :
-				onRender(pWidget, iSlot, pSlot, pSlot->pAnimation, pDraw, tAnimation, iState, pSlot->iAnimationFlags, iTint, pUser);
-		}
-		iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iRet);
-		if ( iRet != XUI_OK ) return iRet;
-		if ( !__xuiInventoryPaintCurrent(pWidget, pData, iRevision) ) {
+	if ( ((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) || pSlot->pAnimation != NULL ) {
+		if ( !__xuiInventoryPaintCurrent(pWidget, pData, iSlotRevision) ) {
 			*pInterrupted = true;
 			return XUI_OK;
 		}
-		pResolved->pFont = __xuiInventoryStyleFont(pWidget, pData->pFont != NULL ?
-			pData->pFont : xuiGetDefaultFont(pWidget->pContext));
+		const xui_inventory_slot_painter_t* pPainter = __xuiInventoryFindPainter(pData, iSlot);
+		if ( pPainter != NULL || pData->onRenderAnimation != NULL || pData->onRenderAnimationOwned != NULL ) {
+			xui_rect_t tAnimation;
+			float fScale;
+
+			tAnimation = tSlot;
+			fScale = (pSlot->fAnimationScale > 0.0f) ? pSlot->fAnimationScale : 1.0f;
+			if ( fScale != 1.0f ) {
+				float fW;
+				float fH;
+
+				fW = tSlot.fW * fScale;
+				fH = tSlot.fH * fScale;
+				tAnimation.fX = tSlot.fX + (tSlot.fW - fW) * 0.5f;
+				tAnimation.fY = tSlot.fY + (tSlot.fH - fH) * 0.5f;
+				tAnimation.fW = fW;
+				tAnimation.fH = fH;
+			}
+			tAnimation = xuiInternalSnapRect(tAnimation);
+			uint32_t iTint = pSlot->iAnimationTint != 0u ? pSlot->iAnimationTint : XUI_COLOR_WHITE;
+			if ( pPainter != NULL ) {
+				iRet = __xuiInventoryInvokeSlotPainter(pWidget, *pPainter, pSlot, pDraw, tAnimation, iState, iTint);
+			} else {
+				xui_inventory_animation_render_proc onRender = pData->onRenderAnimation;
+				xui_inventory_animation_layer_proc onRenderOwned = pData->onRenderAnimationOwned;
+				void* pUser = pData->pRenderAnimationUser;
+				xui_callback_snapshot_t tSnapshot = {0};
+				iRet = xuiInternalCallbackSnapshotBeginReturned(pWidget, &pData->onRenderAnimationOwned, &pUser, &tSnapshot);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( __xuiInventoryPaintCurrent(pWidget, pData, iSlotRevision) ) {
+					iRet = onRenderOwned != NULL ?
+						onRenderOwned(pWidget, iSlot, pSlot, pDraw, tAnimation, iState, pSlot->iAnimationFlags, iTint, pUser) :
+						onRender(pWidget, iSlot, pSlot, pSlot->pAnimation, pDraw, tAnimation, iState, pSlot->iAnimationFlags, iTint, pUser);
+				}
+				iRet = xuiInternalCallbackSnapshotEnd(&tSnapshot, iRet);
+			}
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !__xuiInventoryPaintCurrent(pWidget, pData, iSlotRevision) ) {
+				*pInterrupted = true;
+				return XUI_OK;
+			}
+			pResolved->pFont = __xuiInventoryStyleFont(pWidget, pData->pFont != NULL ?
+				pData->pFont : xuiGetDefaultFont(pWidget->pContext));
+		}
 	}
 	fCooldownRate = __xuiInventoryClampFloat(pSlot->fCooldownRate, 0.0f, 1.0f);
 	if ( ((pSlot->iFlags & XUI_INVENTORY_SLOT_COOLDOWN) != 0u) && (fCooldownRate > 0.0f) ) {
@@ -3714,8 +3809,9 @@ static int __xuiInventorySetSlotCountInternal(xui_widget pWidget, xui_inventory_
 		for ( i = iCopyCount; i < iSlotCount; i++ ) __xuiInventoryResetSlot(&arrSlots[i], i);
 	}
 	bool bOwned = pData->bOwnIcons;
+	bool bMutate = bOwned || pData->iSlotPainterCount != 0;
 	xrtownershipscope mutation = {0};
-	if ( bOwned && !xrtOwnershipMutationBegin(&mutation) ) {
+	if ( bMutate && !xrtOwnershipMutationBegin(&mutation) ) {
 		xrtFree(arrSlots);
 		xrtFree(arrIconDependencies);
 		return XUI_ERROR_INVALID_STATE;
@@ -3725,7 +3821,8 @@ static int __xuiInventorySetSlotCountInternal(xui_widget pWidget, xui_inventory_
 	pData->arrSlots = arrSlots;
 	pData->arrIconDependencies = arrIconDependencies;
 	pData->iSlotCount = iSlotCount;
-	if ( bOwned && !xrtOwnershipScopeEnd(&mutation) ) abort();
+	xui_callback_record_t* pRetiredPainters = __xuiInventoryDetachPainters(pData, iSlotCount, INT_MAX);
+	if ( bMutate && !xrtOwnershipScopeEnd(&mutation) ) abort();
 	xrtFree(arrRetiredDeps);
 	if ( pData->iCurrent >= iSlotCount ) pData->iCurrent = -1;
 	if ( pData->iHoverSlot >= iSlotCount ) pData->iHoverSlot = -1;
@@ -3739,7 +3836,7 @@ static int __xuiInventorySetSlotCountInternal(xui_widget pWidget, xui_inventory_
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED);
 	if ( bOwned ) iRet = __xuiInventoryReleaseSlotIcons(pWidget->pContext, arrRetired, iCopyCount, iOldCount, XUI_OK);
 	xrtFree(arrRetired);
-	return iRet;
+	return __xuiInventoryReleasePainters(pWidget->pContext, pRetiredPainters, iRet);
 }
 
 static void __xuiInventoryReleaseOwned(xui_widget pWidget, xui_inventory_grid_data_t* pData)
@@ -3762,16 +3859,21 @@ static void __xuiInventoryReleaseOwned(xui_widget pWidget, xui_inventory_grid_da
 	xui_surface_dependency_t* arrRetiredDeps = pData->arrIconDependencies;
 	int iCount = pData->iSlotCount;
 	bool bOwned = pData->bOwnIcons;
+	bool bMutate = bOwned || pData->iSlotPainterCount != 0;
 	xrtownershipscope mutation = {0};
-	if ( bOwned && !xrtOwnershipMutationBegin(&mutation) ) abort();
+	if ( bMutate && !xrtOwnershipMutationBegin(&mutation) ) abort();
 	pData->arrSlots = NULL;
 	pData->arrIconDependencies = NULL;
 	pData->iSlotCount = 0;
-	if ( bOwned && !xrtOwnershipScopeEnd(&mutation) ) abort();
-	if ( bOwned ) {
-		int iRet = __xuiInventoryReleaseSlotIcons(pWidget->pContext, arrRetired, 0, iCount, XUI_OK);
-		xuiInternalContextRecordFailure(pWidget->pContext, iRet);
-	}
+	xui_callback_record_t* pRetiredPainters = __xuiInventoryDetachPainters(pData, 0, INT_MAX);
+	xui_inventory_slot_painter_t* arrPainters = pData->arrSlotPainters;
+	pData->arrSlotPainters = NULL;
+	pData->iSlotPainterCapacity = 0;
+	if ( bMutate && !xrtOwnershipScopeEnd(&mutation) ) abort();
+	xrtFree(arrPainters);
+	int iRet = bOwned ? __xuiInventoryReleaseSlotIcons(pWidget->pContext, arrRetired, 0, iCount, XUI_OK) : XUI_OK;
+	iRet = __xuiInventoryReleasePainters(pWidget->pContext, pRetiredPainters, iRet);
+	if ( iRet != XUI_OK ) xuiInternalContextRecordFailure(pWidget->pContext, iRet);
 	xrtFree(arrRetired);
 	xrtFree(arrRetiredDeps);
 }
@@ -3858,10 +3960,15 @@ fail:
 	return iRet;
 }
 
-static bool __xuiInventoryTraceIcons(xui_widget pWidget, const void* pTypeData, xrtownershipvisitor onVisit, void* pUser)
+static bool __xuiInventoryTraceSlots(xui_widget pWidget, const void* pTypeData, xrtownershipvisitor onVisit, void* pUser)
 {
 	(void)pWidget;
 	const xui_inventory_grid_data_t* pData = pTypeData;
+	if ( pData == NULL ) return true;
+	for ( size_t i = 0; i < pData->iSlotPainterCount; ++i ) {
+		const xui_callback_record_t* pOwner = pData->arrSlotPainters[i].pOwner;
+		if ( pOwner != NULL && !onVisit(pOwner->tOwner.tReference, pUser) ) return false;
+	}
 	if ( !pData->bOwnIcons ) return true;
 	for ( int i = 0; i < pData->iSlotCount; i++ ) {
 		xui_surface icon = pData->arrSlots[i].pIcon;
@@ -4147,7 +4254,7 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	tDesc.tCachePolicy = tPolicy;
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
 	if ( iRet != XUI_OK ) return NULL;
-	pType->onTraceOwnership = __xuiInventoryTraceIcons;
+	pType->onTraceOwnership = __xuiInventoryTraceSlots;
 	__xuiInventoryRegisterStyleProperties(pContext, pType);
 	    static const size_t fontOffsets[]={offsetof(xui_inventory_grid_data_t,pFont)};
     pType->pFontOffsets=fontOffsets;pType->iFontSlotCount=sizeof(fontOffsets)/sizeof(fontOffsets[0]);
@@ -4210,7 +4317,10 @@ static xui_inventory_slot_t __xuiInventorySlotUpdate(xui_inventory_grid_data_t* 
 	const xui_inventory_slot_t* pOld = &pData->arrSlots[iSlot];
 	xui_inventory_slot_t slot = *pChange;
 	if ( update == XUI_INVENTORY_UPDATE_CONTENT ) __xuiInventoryCopySlotMedia(&slot, pOld);
-	if ( update == XUI_INVENTORY_UPDATE_DESCRIPTOR ) slot.pAnimation = pOld->pAnimation;
+	if ( update == XUI_INVENTORY_UPDATE_DESCRIPTOR ) {
+		slot.pAnimation = pOld->pAnimation;
+		if ( __xuiInventoryFindPainter(pData, iSlot) != NULL ) slot.iFlags |= XUI_INVENTORY_SLOT_ANIMATION;
+	}
 	if ( update == XUI_INVENTORY_UPDATE_ICON ) {
 		slot = *pOld;
 		slot.pIcon = pChange->pIcon;
@@ -4232,10 +4342,12 @@ static int __xuiInventorySetSlot(xui_widget pWidget, xui_inventory_grid_data_t* 
 	if ( pSlot != NULL ) change = *pSlot;
 	else __xuiInventoryResetSlot(&change, iSlot);
 	xui_inventory_slot_t tSlot = __xuiInventorySlotUpdate(pData, iSlot, &change, update);
-	if ( __xuiInventorySlotEqual(&pData->arrSlots[iSlot], &tSlot) ) return XUI_OK;
+	if ( __xuiInventorySlotEqual(&pData->arrSlots[iSlot], &tSlot) &&
+	     (update != XUI_INVENTORY_UPDATE_SLOT || __xuiInventoryFindPainter(pData, iSlot) == NULL) ) return XUI_OK;
 	xui_context pContext = pWidget->pContext;
 	bool bOwned = pData->bOwnIcons;
 	xui_surface pRelease = NULL;
+	xui_callback_record_t* pRetiredPainters = NULL;
 	int iRet = XUI_OK;
 	if ( bOwned && update != XUI_INVENTORY_UPDATE_CONTENT && tSlot.pIcon != NULL ) {
 		iRet = xuiInternalSurfaceAdmit(pContext, tSlot.pIcon);
@@ -4264,7 +4376,8 @@ static int __xuiInventorySetSlot(xui_widget pWidget, xui_inventory_grid_data_t* 
 	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	if ( iRet != XUI_OK ) goto done;
 	xrtownershipscope mutation = {0};
-	if ( bOwned && !xrtOwnershipMutationBegin(&mutation) ) {
+	bool bMutate = bOwned || (update == XUI_INVENTORY_UPDATE_SLOT && pData->iSlotPainterCount != 0);
+	if ( bMutate && !xrtOwnershipMutationBegin(&mutation) ) {
 		iRet = XUI_ERROR_INVALID_STATE;
 		goto done;
 	}
@@ -4272,7 +4385,8 @@ static int __xuiInventorySetSlot(xui_widget pWidget, xui_inventory_grid_data_t* 
 		pRelease = pData->arrSlots[iSlot].pIcon;
 	}
 	pData->arrSlots[iSlot] = tSlot;
-	if ( bOwned && !xrtOwnershipScopeEnd(&mutation) ) abort();
+	if ( update == XUI_INVENTORY_UPDATE_SLOT ) pRetiredPainters = __xuiInventoryDetachPainters(pData, iSlot, iSlot + 1);
+	if ( bMutate && !xrtOwnershipScopeEnd(&mutation) ) abort();
 	int bSelectionChanged = __xuiInventoryNormalizeSelectionState(pData,
 		__xuiInventorySelected(&tSlot) ? iSlot : -1);
 	__xuiInventoryIncrementCounter(&pData->iChangeCount);
@@ -4287,7 +4401,7 @@ done:
 		xuiInternalContextCleanupOutcome(pContext, xuiSurfaceReleaseChecked(pRelease), &iRet, &first);
 		xrtSetErrorTake(first);
 	}
-	return iRet;
+	return __xuiInventoryReleasePainters(pContext, pRetiredPainters, iRet);
 }
 
 XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot)
@@ -4450,6 +4564,7 @@ XUI_API int xuiInventoryGridClearAll(xui_widget pWidget)
 		return (iRet != XUI_OK) ? iRet : XUI_ERROR_INVALID_ARGUMENT;
 	}
 	bool bOwned = pData->bOwnIcons;
+	bool bMutate = bOwned || pData->iSlotPainterCount != 0;
 	int iIcons = 0;
 	if ( bOwned ) {
 		for ( i = 0; i < pData->iSlotCount; i++ ) iIcons += pData->arrSlots[i].pIcon != NULL;
@@ -4463,7 +4578,7 @@ XUI_API int xuiInventoryGridClearAll(xui_widget pWidget)
 		}
 	}
 	xrtownershipscope mutation = {0};
-	if ( bOwned && !xrtOwnershipMutationBegin(&mutation) ) {
+	if ( bMutate && !xrtOwnershipMutationBegin(&mutation) ) {
 		xrtFree(arrRetired);
 		xuiInternalOperationLeave(pContext);
 		return XUI_ERROR_INVALID_STATE;
@@ -4473,7 +4588,8 @@ XUI_API int xuiInventoryGridClearAll(xui_widget pWidget)
 		if ( bOwned && pData->arrSlots[i].pIcon != NULL ) arrRetired[iRetired++] = pData->arrSlots[i].pIcon;
 		__xuiInventoryResetSlot(&pData->arrSlots[i], i);
 	}
-	if ( bOwned && !xrtOwnershipScopeEnd(&mutation) ) abort();
+	xui_callback_record_t* pRetiredPainters = __xuiInventoryDetachPainters(pData, 0, INT_MAX);
+	if ( bMutate && !xrtOwnershipScopeEnd(&mutation) ) abort();
 	pData->iCurrent = -1;
 	pData->iHoverSlot = -1;
 	pData->iActiveSlot = -1;
@@ -4491,6 +4607,7 @@ XUI_API int xuiInventoryGridClearAll(xui_widget pWidget)
 		xrtSetErrorTake(first);
 	}
 	xrtFree(arrRetired);
+	iRet = __xuiInventoryReleasePainters(pContext, pRetiredPainters, iRet);
 	xuiInternalOperationLeave(pContext);
 	return iRet;
 }
@@ -5675,45 +5792,137 @@ XUI_API int xuiInventoryGridGetSplitCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSplitCount : 0;
 }
 
+/* The caller holds the graph mutation gate and still owns the candidate
+ * reference on failure. Array growth never runs an application callback. */
+static int __xuiInventoryPublishPainter(xui_inventory_grid_data_t* pData, int iSlot,
+	xui_inventory_slot_painter_t* pCandidate, xui_callback_record_t** ppRetired)
+{
+	size_t i = __xuiInventoryPainterPosition(pData, iSlot);
+	bool bExisting = i < pData->iSlotPainterCount && pData->arrSlotPainters[i].iSlot == iSlot;
+	if ( pCandidate->onRender == NULL ) {
+		if ( bExisting ) *ppRetired = __xuiInventoryDetachPainters(pData, iSlot, iSlot + 1);
+		return XUI_OK;
+	}
+	if ( bExisting ) *ppRetired = pData->arrSlotPainters[i].pOwner;
+	else {
+		if ( pData->iSlotPainterCount == pData->iSlotPainterCapacity ) {
+			size_t capacity = pData->iSlotPainterCapacity ? pData->iSlotPainterCapacity * 2 : 4;
+			xui_inventory_slot_painter_t* arrNext = capacity > SIZE_MAX / sizeof(*arrNext)
+				? NULL : xrtRealloc(pData->arrSlotPainters, capacity * sizeof(*arrNext));
+			if ( arrNext == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+			pData->arrSlotPainters = arrNext;
+			pData->iSlotPainterCapacity = capacity;
+		}
+		memmove(pData->arrSlotPainters + i + 1, pData->arrSlotPainters + i,
+			(pData->iSlotPainterCount - i) * sizeof(*pData->arrSlotPainters));
+		pData->iSlotPainterCount++;
+	}
+	pData->arrSlotPainters[i] = *pCandidate;
+	pCandidate->pOwner = NULL;
+	return XUI_OK;
+}
+
 static int __xuiInventorySetSlotAnimation(xui_widget pWidget, int iSlot, xui_animation_object_t* pAnimation,
+	const xui_inventory_slot_painter_t* pPainter, const xui_callback_owner_t* pOwner,
 	uint32_t iFlags, float fScale, uint32_t iTint, bool bStyleOnly)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
-	float fResolvedScale;
-	uint32_t iResolvedTint;
-	int iRet;
-	if ( (pData == NULL) || (iSlot < 0) || (iSlot >= pData->iSlotCount) ||
+	if ( pData == NULL || iSlot < 0 || iSlot >= pData->iSlotCount ||
 	     !__xuiInventoryFloatFinite(fScale) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( bStyleOnly ) pAnimation = pData->arrSlots[iSlot].pAnimation;
-	bool bActive = bStyleOnly || pAnimation != NULL;
-	fResolvedScale = (fScale > 0.0f) ? fScale : 1.0f;
-	iResolvedTint = (iTint != 0u) ? iTint : XUI_COLOR_WHITE;
-	if ( (pData->arrSlots[iSlot].pAnimation == pAnimation) &&
-	     (pData->arrSlots[iSlot].iAnimationFlags == iFlags) &&
-	     (pData->arrSlots[iSlot].fAnimationScale == fResolvedScale) &&
-	     (pData->arrSlots[iSlot].iAnimationTint == iResolvedTint) &&
-	     (((pData->arrSlots[iSlot].iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) == bActive) ) return XUI_OK;
-	iRet = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	if ( iRet != XUI_OK ) return iRet;
-	pData->arrSlots[iSlot].pAnimation = pAnimation;
-	pData->arrSlots[iSlot].iAnimationFlags = iFlags;
-	pData->arrSlots[iSlot].fAnimationScale = fResolvedScale;
-	pData->arrSlots[iSlot].iAnimationTint = iResolvedTint;
-	if ( bActive ) pData->arrSlots[iSlot].iFlags |= XUI_INVENTORY_SLOT_ANIMATION;
-	else pData->arrSlots[iSlot].iFlags &= ~XUI_INVENTORY_SLOT_ANIMATION;
+	xui_inventory_slot_t* pSlot = &pData->arrSlots[iSlot];
+	if ( bStyleOnly ) pAnimation = pSlot->pAnimation;
+	bool bActive = bStyleOnly || pAnimation != NULL || (pPainter != NULL && pPainter->onRender != NULL);
+	float fResolvedScale = (fScale > 0.0f) ? fScale : 1.0f;
+	uint32_t iResolvedTint = (iTint != 0u) ? iTint : XUI_COLOR_WHITE;
+	bool bUpdatePainter = !bStyleOnly &&
+		(pPainter != NULL || __xuiInventoryFindPainter(pData, iSlot) != NULL);
+	if ( !bUpdatePainter && pSlot->pAnimation == pAnimation && pSlot->iAnimationFlags == iFlags &&
+	     pSlot->fAnimationScale == fResolvedScale && pSlot->iAnimationTint == iResolvedTint &&
+	     (((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) == bActive) ) return XUI_OK;
+
+	xui_context pContext = pWidget->pContext;
+	xui_call_scope_t tScope = {0};
+	int iStatus = XUI_OK;
+	xui_inventory_slot_painter_t tCandidate = {0};
+	xui_callback_record_t* pRetired = NULL;
+	uint64_t iRevision = pData->iPaintRevision;
+	if ( bUpdatePainter ) {
+		iStatus = xuiCallScopeBegin(pContext, &tScope);
+		if ( iStatus != XUI_OK ) return iStatus;
+		if ( pPainter != NULL ) tCandidate = *pPainter;
+		iStatus = xuiInternalCallbackRecordCreate(pContext, tCandidate.onRender != NULL, pOwner, &tCandidate.pOwner);
+		if ( iStatus != XUI_OK ) goto finish;
+		if ( !__xuiInventoryPaintCurrent(pWidget, pData, iRevision) ) {
+			iStatus = XUI_ERROR_INVALID_STATE;
+			goto finish;
+		}
+	}
+	iStatus = __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iStatus != XUI_OK ) goto finish;
+	if ( !__xuiInventoryPaintCurrent(pWidget, pData, iRevision + 1) ) {
+		iStatus = XUI_ERROR_INVALID_STATE;
+		goto finish;
+	}
+	xrtownershipscope tMutation = {0};
+	if ( bUpdatePainter ) {
+		if ( !xrtOwnershipMutationBegin(&tMutation) ) {
+			iStatus = XUI_ERROR_INVALID_STATE;
+			goto finish;
+		}
+		iStatus = __xuiInventoryPublishPainter(pData, iSlot, &tCandidate, &pRetired);
+		if ( iStatus != XUI_OK ) {
+			if ( !xrtOwnershipScopeEnd(&tMutation) ) abort();
+			goto finish;
+		}
+	}
+	pSlot = &pData->arrSlots[iSlot];
+	pSlot->pAnimation = pAnimation;
+	pSlot->iAnimationFlags = iFlags;
+	pSlot->fAnimationScale = fResolvedScale;
+	pSlot->iAnimationTint = iResolvedTint;
+	if ( bActive ) pSlot->iFlags |= XUI_INVENTORY_SLOT_ANIMATION;
+	else pSlot->iFlags &= ~XUI_INVENTORY_SLOT_ANIMATION;
+	if ( bUpdatePainter && !xrtOwnershipScopeEnd(&tMutation) ) abort();
 	__xuiInventoryIncrementCounter(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED);
-	return XUI_OK;
+
+finish:
+	if ( !bUpdatePainter ) return iStatus;
+	iStatus = __xuiInventoryReleasePainters(pContext, tCandidate.pOwner, iStatus);
+	iStatus = __xuiInventoryReleasePainters(pContext, pRetired, iStatus);
+	return xuiInternalCallScopeEndRestored(&tScope, iStatus, xrtTakeError());
 }
 
 XUI_API int xuiInventoryGridSetSlotAnimation(xui_widget pWidget, int iSlot, xui_animation_object_t* pAnimation, uint32_t iFlags, float fScale, uint32_t iTint)
 {
-	return __xuiInventorySetSlotAnimation(pWidget, iSlot, pAnimation, iFlags, fScale, iTint, false);
+	return __xuiInventorySetSlotAnimation(pWidget, iSlot, pAnimation, NULL, NULL, iFlags, fScale, iTint, false);
+}
+
+XUI_API int xuiInventoryGridSetSlotAnimationLayerOwned(xui_widget pWidget, int iSlot,
+	xui_inventory_animation_layer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner,
+	uint32_t iFlags, float fScale, uint32_t iTint)
+{
+	const xui_inventory_slot_painter_t tPainter = {.iSlot=iSlot, .onRender=onRender, .pUser=pUser};
+	return __xuiInventorySetSlotAnimation(pWidget, iSlot, NULL, &tPainter, pOwner, iFlags, fScale, iTint, false);
+}
+
+XUI_API int xuiInventoryGridGetSlotAnimationLayer(xui_widget pWidget, int iSlot, int* pHasRenderer,
+	uint32_t* pFlags, float* pScale, uint32_t* pTint)
+{
+	const xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL || pHasRenderer == NULL || iSlot < 0 || iSlot >= pData->iSlotCount )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	const xui_inventory_slot_t* pSlot = &pData->arrSlots[iSlot];
+	*pHasRenderer = __xuiInventoryFindPainter(pData, iSlot) != NULL;
+	if ( pFlags != NULL ) *pFlags = pSlot->iAnimationFlags;
+	if ( pScale != NULL ) *pScale = pSlot->fAnimationScale;
+	if ( pTint != NULL ) *pTint = pSlot->iAnimationTint;
+	return XUI_OK;
 }
 
 XUI_API int xuiInventoryGridSetSlotAnimationStyle(xui_widget pWidget, int iSlot, uint32_t iFlags, float fScale, uint32_t iTint)
 {
-	return __xuiInventorySetSlotAnimation(pWidget, iSlot, NULL, iFlags, fScale, iTint, true);
+	return __xuiInventorySetSlotAnimation(pWidget, iSlot, NULL, NULL, NULL, iFlags, fScale, iTint, true);
 }
 
 XUI_API int xuiInventoryGridGetSlotAnimationStyle(xui_widget pWidget, int iSlot, int* pActive, uint32_t* pFlags, float* pScale, uint32_t* pTint)

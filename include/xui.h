@@ -10603,6 +10603,13 @@ XUI_API int xuiInventoryGridGetSplitSlot(xui_widget pWidget);
 XUI_API int xuiInventoryGridGetSplitCount(xui_widget pWidget);
 /* 为槽位设置动画对象（含缩放/着色）。 */
 XUI_API int xuiInventoryGridSetSlotAnimation(xui_widget pWidget, int iSlot, xui_animation_object_t* pAnimation, uint32_t iFlags, float fScale, uint32_t iTint);
+/* Per-slot drawing takes precedence over the grid animation renderer.
+ * Passing NULL removes the slot animation. Style-only updates keep it. */
+XUI_API int xuiInventoryGridSetSlotAnimationLayerOwned(xui_widget pWidget, int iSlot,
+	xui_inventory_animation_layer_proc onRender, void* pUser, const xui_callback_owner_t* pOwner,
+	uint32_t iFlags, float fScale, uint32_t iTint);
+XUI_API int xuiInventoryGridGetSlotAnimationLayer(xui_widget pWidget, int iSlot, int* pHasRenderer,
+	uint32_t* pFlags, float* pScale, uint32_t* pTint);
 /* 设置由绘制回调提供的动画层，保留该槽位已有的 C 动画指针。 */
 XUI_API int xuiInventoryGridSetSlotAnimationStyle(xui_widget pWidget, int iSlot, uint32_t iFlags, float fScale, uint32_t iTint);
 XUI_API int xuiInventoryGridGetSlotAnimationStyle(xui_widget pWidget, int iSlot, int* pActive, uint32_t* pFlags, float* pScale, uint32_t* pTint);

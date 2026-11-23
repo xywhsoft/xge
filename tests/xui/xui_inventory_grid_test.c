@@ -2,6 +2,7 @@
 #include "src/xui/core/xui_xrt_port.h"
 #include "xui_test_proxy.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -212,6 +213,153 @@ cleanup:
 	if ( proxy != NULL ) (void)xuiProxyReleaseChecked(proxy);
 	if ( otherProxy != NULL ) (void)xuiProxyReleaseChecked(otherProxy);
 	return !iFailed && state.iCallbackRefs == 1;
+}
+
+typedef struct inventory_painter_probe_t {
+	xui_widget grid;
+	xui_callback_owner_t owner;
+	size_t references;
+	int holds;
+	int calls;
+	bool withdrawOnHold;
+	bool installOnDrop;
+	bool detachOnDraw;
+	bool failDrop;
+} inventory_painter_probe_t;
+
+static bool __xuiInventoryPainterCount(const void* data, size_t* count)
+{
+	*count = ((const inventory_painter_probe_t*)data)->references;
+	return true;
+}
+
+static int __xuiInventoryProbePainter(xui_widget grid, int index, const xui_inventory_slot_t* slot,
+	xui_draw_context draw, xui_rect_t bounds, uint32_t state, uint32_t flags, uint32_t tint, void* user)
+{
+	(void)slot; (void)draw; (void)bounds; (void)state; (void)flags; (void)tint;
+	inventory_painter_probe_t* probe = user;
+	assert(probe->grid == grid);
+	++probe->calls;
+	if ( probe->detachOnDraw ) {
+		size_t references = probe->references;
+		probe->detachOnDraw = false;
+		assert(xuiInventoryGridClearSlotAnimation(grid, index) == XUI_OK);
+		assert(probe->references == references);
+	}
+	return XUI_OK;
+}
+
+static bool __xuiInventoryPainterHold(const void* data)
+{
+	inventory_painter_probe_t* probe = (inventory_painter_probe_t*)data;
+	++probe->references;
+	++probe->holds;
+	if ( probe->withdrawOnHold ) {
+		probe->withdrawOnHold = false;
+		assert(xuiInventoryGridClearAll(probe->grid) == XUI_OK);
+	}
+	return true;
+}
+
+static bool __xuiInventoryPainterDrop(const void* data)
+{
+	inventory_painter_probe_t* probe = (inventory_painter_probe_t*)data;
+	--probe->references;
+	if ( probe->installOnDrop ) {
+		probe->installOnDrop = false;
+		assert(xuiInventoryGridSetSlotAnimationLayerOwned(probe->grid, 0, __xuiInventoryProbePainter,
+			probe, &probe->owner, 17, 1, 0) == XUI_OK);
+	}
+	return !probe->failDrop;
+}
+
+static int __xuiInventoryCheckSlotPainters(void)
+{
+	inventory_painter_probe_t probe = {.references=1};
+	static const xrtownershipops ops = {__xuiInventoryPainterCount,__xuiInventoryGridTestCallbackTrace};
+	probe.owner = (xui_callback_owner_t){{&probe,&ops},__xuiInventoryPainterHold,__xuiInventoryPainterDrop};
+	xui_test_proxy_state_t backend;
+	xuiTestProxyInit(&backend);
+	xui_context context = NULL;
+	xui_surface target = NULL;
+	xui_context_desc_t config = {.iSize=sizeof(config),.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED};
+	int iFailed = 0;
+	int present = -1;
+	uint32_t flags = 0;
+	float scale = 0;
+	XUI_TEST_CHECK(xuiCreateEx(&config,&context) == XUI_OK &&
+		xuiSetProxy(context,&backend.tProxy) == XUI_OK &&
+		xuiInventoryGridCreate(context,&probe.grid,NULL) == XUI_OK &&
+		xuiInventoryGridSetSlotCount(probe.grid,8) == XUI_OK, "create slot animation test grid");
+#if defined(XRT_FEATURE_MEMORY_DEBUG)
+	for (int budget=0; budget<2; ++budget) {
+		XUI_TEST_CHECK(xrtMemDebugEnabled() || xrtMemDebugEnable(true), "enable painter allocation fault injection");
+		XUI_TEST_CHECK(xrtMemDebugFailAfter(budget), "reject painter owner or first index allocation");
+		int status = xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid, 1, __xuiInventoryProbePainter,
+			&probe, &probe.owner, 1, 1, 0);
+		bool injected = xrtMemDebugFailTriggered();
+		xrtMemDebugFailClear();
+		xrtClearError();
+		XUI_TEST_CHECK(status == XUI_ERROR_OUT_OF_MEMORY && injected && probe.references == 1 &&
+			xuiInventoryGridGetSlotAnimationLayer(probe.grid,1,&present,NULL,NULL,NULL) == XUI_OK &&
+			present == 0, "allocation failure publishes no painter or owner");
+	}
+#endif
+	const int order[] = {6,2,0,5,4};
+	for (size_t i=0;i<sizeof(order)/sizeof(order[0]);++i) {
+		int index = order[i];
+		XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid,index,__xuiInventoryProbePainter,
+			&probe,&probe.owner,(uint32_t)(index+11),1.25f,0) == XUI_OK, "install sparse painter");
+	}
+	XUI_TEST_CHECK(probe.references == 6, "each painter owns an independent registration");
+	inventory_icon_trace trace = {&probe,NULL,0};
+	XUI_TEST_CHECK(xuiContextTraceOwnership(context,__xuiInventoryVisitIcon,&trace) && trace.visits == 5,
+		"ownership graph visits each registered painter");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(probe.grid,3) == XUI_OK && probe.references == 3,
+		"shrink retires only removed indices");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotCount(probe.grid,8) == XUI_OK &&
+		xuiInventoryGridGetSlotAnimationLayer(probe.grid,6,&present,NULL,NULL,NULL) == XUI_OK && present == 0,
+		"growing again does not revive a retired callback");
+	XUI_TEST_CHECK(xuiInventoryGridGetSlotAnimationLayer(probe.grid,2,&present,&flags,&scale,NULL) == XUI_OK &&
+		present == 1 && flags == 13 && scale == 1.25f, "a retained index keeps its style");
+
+	probe.withdrawOnHold = true;
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid,2,__xuiInventoryProbePainter,
+		&probe,&probe.owner,1,1,0) == XUI_ERROR_INVALID_STATE && probe.references == 1,
+		"Hold may clear the grid without resurrecting the previous slot");
+	xrtClearError();
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid,0,__xuiInventoryProbePainter,
+		&probe,&probe.owner,1,1,0) == XUI_OK, "attach a test painter again");
+	probe.installOnDrop = true;
+	XUI_TEST_CHECK(xuiInventoryGridClearAll(probe.grid) == XUI_OK && probe.references == 2 &&
+		xuiInventoryGridGetSlotAnimationLayer(probe.grid,0,&present,&flags,NULL,NULL) == XUI_OK &&
+		present == 1 && flags == 17, "Drop can attach a different painter after publication");
+
+	XUI_TEST_CHECK(xuiWidgetSetRect(probe.grid,(xui_rect_t){0,0,160,100}) == XUI_OK &&
+		xuiSetRootWidget(context,probe.grid) == XUI_OK && xuiSetViewportSize(context,160,100) == XUI_OK &&
+		xuiLayout(context) == XUI_OK &&
+		backend.tProxy.surfaceCreateRGBA(&backend.tProxy,&target,160,100,NULL,0,XUI_SURFACE_USAGE_TARGET) == XUI_OK,
+		"configure CPU render of a retained slot painter");
+	int holds = probe.holds;
+	probe.detachOnDraw = true;
+	XUI_TEST_CHECK(xuiRender(context,target,NULL,0) == XUI_OK && probe.calls == 1 &&
+		probe.references == 1 && probe.holds == holds, "paint keeps a private pin without an owner Hold");
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid,0,__xuiInventoryProbePainter,
+		&probe,&probe.owner,0,1,0) == XUI_OK, "install a painter with status-only retiring failure");
+	probe.failDrop = true;
+	XUI_TEST_CHECK(xuiInventoryGridClearSlot(probe.grid,0) == XUI_ERROR_CALLBACK_FAILED &&
+		xuiInventoryGridGetSlotAnimationLayer(probe.grid,0,&present,NULL,NULL,NULL) == XUI_OK &&
+		present == 0 && probe.references == 1, "Drop failure propagates after committed removal");
+	probe.failDrop = false;
+	xrtClearError();
+	XUI_TEST_CHECK(xuiInventoryGridSetSlotAnimationLayerOwned(probe.grid,0,__xuiInventoryProbePainter,
+		&probe,&probe.owner,0,1,0) == XUI_OK &&
+		xuiWidgetDestroyChecked(probe.grid) == XUI_OK && probe.references == 1, "widget releases last painter");
+
+cleanup:
+	if (target != NULL) backend.tProxy.surfaceDestroy(&backend.tProxy,target);
+	if (context != NULL) (void)xuiDestroyChecked(context);
+	return !iFailed && probe.references == 1;
 }
 
 static int __xuiInventoryCheckScrollSnapshot(void)
@@ -1688,6 +1836,7 @@ cleanup:
 		return 1;
 	}
 	if ( !__xuiInventoryCheckOwnedIcons() ) return 1;
+	if ( !__xuiInventoryCheckSlotPainters() ) return 1;
 	if ( !__xuiInventoryCheckScrollSnapshot() ) return 1;
 	printf("xui_inventory_grid_test passed\n");
 	return 0;
