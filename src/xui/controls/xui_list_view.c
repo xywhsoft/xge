@@ -10,6 +10,15 @@
 #define XUI_LIST_VIEW_DEFAULT_WIDTH 180.0f
 #define XUI_LIST_VIEW_DEFAULT_ROWS 6
 
+struct xui_list_selection_buffer_t {
+	xatomic32 iReferences;
+	uint64_t iCreatorThread;
+	int iCapacity;
+	int iActiveCount;
+	bool bInUse;
+	int arrFlags[];
+};
+
 typedef struct xui_list_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
@@ -17,6 +26,7 @@ typedef struct xui_list_view_data_t {
 	int* arrEnabled;
 	int* arrSelected;
 	int* arrExternalSelected;
+	xui_list_selection_buffer pSelectionBuffer;
 	xui_font pFont;
 	xui_list_view_select_proc onSelect;
 	void* pSelectUser;
@@ -32,6 +42,7 @@ typedef struct xui_list_view_data_t {
 	char* sLegacyOwnedText;
 	uint64_t iSourceVersion;
 	bool bSourceChanging;
+	bool bSelectionBufferChanging;
 	bool bReadingOwnedText;
 	int bVirtualItems;
 	int iItemCount;
@@ -1956,6 +1967,10 @@ static void __xuiListViewDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	(void)pUser;
 	pData = (xui_list_view_data_t*)pTypeData;
 	if ( pData != NULL ) {
+		if ( pData->pSelectionBuffer != NULL ) {
+			pData->pSelectionBuffer->bInUse = false;
+			xuiListSelectionBufferRelease(pData->pSelectionBuffer);
+		}
 		__xuiListViewFreeItems(pData->arrItems, pData->iItemCount);
 		xrtFree(pData->sLegacyOwnedText);
 		if ( pData->arrEnabled != NULL ) xrtFree(pData->arrEnabled);
@@ -2226,10 +2241,11 @@ typedef struct xui_list_view_source_t {
 
 static int __xuiListViewValidateSource(const xui_list_view_data_t* pData, int iCount)
 {
-	if ( pData == NULL || iCount < 0 || (double)iCount * pData->fItemHeight > XUI_LAYOUT_UNBOUNDED ||
+	if ( pData == NULL || iCount < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bSourceChanging || pData->bSelectionBufferChanging ) return XUI_ERROR_BUSY;
+	if ( (double)iCount * pData->fItemHeight > XUI_LAYOUT_UNBOUNDED ||
 	     (pData->arrExternalSelected != NULL && pData->iExternalSelectedCount < iCount) )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->bSourceChanging ) return XUI_ERROR_BUSY;
 	return XUI_OK;
 }
 
@@ -2268,6 +2284,14 @@ static void __xuiListViewCommitSource(xui_list_view_data_t* pData, xui_list_view
 	pData->onTextOwned = pSource->onTextOwned;
 	pData->pTextUser = pSource->pUser;
 	pData->iItemCount = pSource->iCount;
+	xui_list_selection_buffer pBuffer = pData->pSelectionBuffer;
+	if ( pBuffer != NULL ) {
+		if ( pSource->iCount > pBuffer->iActiveCount ) {
+			memset(pBuffer->arrFlags + pBuffer->iActiveCount, 0,
+				(size_t)(pSource->iCount - pBuffer->iActiveCount) * sizeof(int));
+		}
+		pBuffer->iActiveCount = pSource->iCount;
+	}
 	pData->iHover = -1;
 	if ( pSource->bResetSelection || !__xuiListViewItemEnabledData(pData, pData->iSelected) )
 		pData->iSelected = -1;
@@ -2702,53 +2726,81 @@ XUI_API int xuiListViewGetSelectionMode(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSelectionMode : XUI_SELECTION_SINGLE;
 }
 
-XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, int iCount)
+XUI_API int xuiListSelectionBufferCreate(xui_list_selection_buffer* ppBuffer, int iCapacity)
 {
-	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
-	int* arrNewInternal;
-	int* arrNewExternal;
-	int i;
-	int iCopyCount;
-	int* arrOld;
+	if ( ppBuffer == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppBuffer = NULL;
+	if ( iCapacity <= 0 || (size_t)iCapacity > (SIZE_MAX - sizeof(**ppBuffer)) / sizeof(int) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	xui_list_selection_buffer pBuffer = xrtCalloc(1, sizeof(*pBuffer) + (size_t)iCapacity * sizeof(int));
+	if ( pBuffer == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	xrtAtomic32Store(&pBuffer->iReferences, 1, XMEMORY_RELAXED);
+	pBuffer->iCreatorThread = xrtThreadCurrentId();
+	pBuffer->iCapacity = iCapacity;
+	*ppBuffer = pBuffer;
+	return XUI_OK;
+}
+
+XUI_API int xuiListSelectionBufferAddRef(xui_list_selection_buffer pBuffer)
+{
+	if ( pBuffer == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	uint32_t iRefs = xrtAtomic32Load(&pBuffer->iReferences, XMEMORY_RELAXED);
+	do {
+		if ( iRefs == 0 || iRefs == UINT32_MAX ) return XUI_ERROR_INVALID_STATE;
+	} while ( !xrtAtomic32CompareExchange(&pBuffer->iReferences, &iRefs, iRefs + 1,
+		XMEMORY_RELAXED, XMEMORY_RELAXED) );
+	return XUI_OK;
+}
+
+XUI_API void xuiListSelectionBufferRelease(xui_list_selection_buffer pBuffer)
+{
+	if ( pBuffer != NULL && xrtAtomic32FetchSub(&pBuffer->iReferences, 1, XMEMORY_ACQ_REL) == 1 )
+		xrtFree(pBuffer);
+}
+
+XUI_API int xuiListSelectionBufferGetCapacity(xui_list_selection_buffer pBuffer)
+{
+	return pBuffer != NULL ? pBuffer->iCapacity : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiListSelectionBufferGet(xui_list_selection_buffer pBuffer, int iIndex)
+{
+	if ( pBuffer == NULL || iIndex < 0 || iIndex >= pBuffer->iCapacity ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBuffer->iCreatorThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return iIndex < pBuffer->iActiveCount && pBuffer->arrFlags[iIndex] != 0;
+}
+
+static int __xuiListViewPrepareSelectionBuffer(xui_widget pWidget, xui_list_view_data_t* pData,
+	const int* arrSelected)
+{
+	int iRet = __xuiListViewInvalidateRows(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !__xuiListViewWidgetAlive(pWidget, pData) ) return XUI_ERROR_INVALID_STATE;
+	if ( arrSelected == NULL && pData->iSelectionMode != XUI_SELECTION_SINGLE &&
+	     pData->arrSelected == NULL && pData->iItemCount > 0 ) {
+		pData->arrSelected = xrtCalloc((size_t)pData->iItemCount, sizeof(int));
+		if ( pData->arrSelected == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	return XUI_OK;
+}
+
+static void __xuiListViewPublishSelectionBuffer(xui_widget pWidget, xui_list_view_data_t* pData,
+	int* arrSelected, int iCount, xui_list_selection_buffer pBuffer)
+{
 	int iOldCount;
-	int iRet;
-	if ( (pData == NULL) || (iCount < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	arrNewExternal = (arrSelected != NULL && iCount > 0) ? arrSelected : NULL;
-	if ( arrNewExternal != NULL && iCount < pData->iItemCount ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pData->arrExternalSelected == arrNewExternal &&
-	     pData->iExternalSelectedCount == (arrNewExternal != NULL ? iCount : 0) ) return XUI_OK;
-	arrNewInternal = NULL;
-	if (arrNewExternal == NULL && pData->iSelectionMode != XUI_SELECTION_SINGLE && !pData->arrSelected && pData->iItemCount > 0) {
-		arrNewInternal = xrtMalloc((size_t)pData->iItemCount * sizeof(int));
-		if (!arrNewInternal) return XUI_ERROR_OUT_OF_MEMORY;
-		memset(arrNewInternal, 0, (size_t)pData->iItemCount * sizeof(int));
+	int* arrOld = __xuiListViewSelectionArray(pData, &iOldCount);
+	int* arrNew = arrSelected != NULL ? arrSelected : pData->arrSelected;
+	if ( arrNew != NULL ) {
+		if ( arrOld != NULL && arrOld != arrNew && iOldCount > 0 )
+			memmove(arrNew, arrOld, (size_t)iOldCount * sizeof(int));
+		for ( int i = 0; i < pData->iItemCount; i++ )
+			arrNew[i] = i < iOldCount && arrNew[i] != 0;
 	}
-	arrOld = __xuiListViewSelectionArray(pData, &iOldCount);
-	iRet = __xuiListViewInvalidateRows(pWidget, pData);
-	if ( iRet != XUI_OK || !__xuiListViewWidgetAlive(pWidget, pData) ) {
-		if ( arrNewInternal != NULL ) xrtFree(arrNewInternal);
-		return iRet;
-	}
-	if ( arrNewInternal != NULL ) pData->arrSelected = arrNewInternal;
-	if ( arrNewExternal != NULL ) {
-		iCopyCount = (iOldCount < iCount) ? iOldCount : iCount;
-		if ( arrOld != NULL && iCopyCount > 0 ) {
-			memmove(arrNewExternal, arrOld, (size_t)iCopyCount * sizeof(int));
-		}
-		for ( i = 0; i < pData->iItemCount; i++ ) {
-			arrNewExternal[i] = (i < iCopyCount && arrNewExternal[i]) ? 1 : 0;
-		}
-	} else if ( pData->arrSelected != NULL ) {
-		iCopyCount = (iOldCount < pData->iItemCount) ? iOldCount : pData->iItemCount;
-		if ( arrOld != NULL && arrOld != pData->arrSelected && iCopyCount > 0 ) {
-			memmove(pData->arrSelected, arrOld, (size_t)iCopyCount * sizeof(int));
-		}
-		for ( i = 0; i < pData->iItemCount; i++ ) {
-			pData->arrSelected[i] = (i < iCopyCount && pData->arrSelected[i]) ? 1 : 0;
-		}
-	}
-	pData->arrExternalSelected = arrNewExternal;
-	pData->iExternalSelectedCount = (arrNewExternal != NULL) ? iCount : 0;
+	xui_list_selection_buffer pOldBuffer = pData->pSelectionBuffer;
+	pData->arrExternalSelected = arrSelected;
+	pData->iExternalSelectedCount = iCount;
+	pData->pSelectionBuffer = pBuffer;
+	if ( pBuffer != NULL ) pBuffer->iActiveCount = pData->iItemCount;
 	if ( pData->iSelectionMode == XUI_SELECTION_SINGLE ) {
 		__xuiListViewSyncSingleSelection(pData);
 	} else {
@@ -2757,7 +2809,61 @@ XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, 
 	__xuiListViewIncrement(&pData->iChangeCount);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED);
 	xuiInternalAccessibilityQueue(pWidget, XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED);
-	return XUI_OK;
+	if ( pOldBuffer != NULL ) {
+		pOldBuffer->bInUse = false;
+		xuiListSelectionBufferRelease(pOldBuffer);
+	}
+}
+
+static int __xuiListViewBindSelectionBuffer(xui_widget pWidget, int* arrSelected, int iCount,
+	xui_list_selection_buffer pBuffer)
+{
+	if ( !xuiInternalWidgetIsValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_call_scope_t tScope = {0};
+	int iRet = xuiCallScopeBegin(pWidget->pContext, &tScope);
+	if ( iRet != XUI_OK ) return iRet;
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) iRet = XUI_ERROR_INVALID_ARGUMENT;
+	else if ( pData->bSourceChanging || pData->bSelectionBufferChanging ) iRet = XUI_ERROR_BUSY;
+	else if ( arrSelected != NULL && iCount < pData->iItemCount ) iRet = XUI_ERROR_INVALID_ARGUMENT;
+	else if ( pBuffer != pData->pSelectionBuffer || arrSelected != pData->arrExternalSelected ||
+	          iCount != pData->iExternalSelectedCount ) {
+		if ( pBuffer != NULL ) {
+			iRet = pBuffer->bInUse ? XUI_ERROR_BUSY : xuiListSelectionBufferAddRef(pBuffer);
+			if ( iRet != XUI_OK ) return xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
+			/* Reserve before invalidation, which may invoke a backend callback. */
+			pBuffer->bInUse = true;
+		}
+		pData->bSelectionBufferChanging = true;
+		iRet = __xuiListViewPrepareSelectionBuffer(pWidget, pData, arrSelected);
+		if ( iRet == XUI_OK ) __xuiListViewPublishSelectionBuffer(pWidget, pData, arrSelected, iCount, pBuffer);
+		else if ( pBuffer != NULL ) {
+			pBuffer->bInUse = false;
+			xuiListSelectionBufferRelease(pBuffer);
+		}
+		pData->bSelectionBufferChanging = false;
+	}
+	return xuiInternalCallScopeEndRestored(&tScope, iRet, xrtTakeError());
+}
+
+XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, int iCount)
+{
+	if ( iCount < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( arrSelected == NULL || iCount == 0 ) return __xuiListViewBindSelectionBuffer(pWidget, NULL, 0, NULL);
+	return __xuiListViewBindSelectionBuffer(pWidget, arrSelected, iCount, NULL);
+}
+
+XUI_API int xuiListViewSetSelectionBufferOwned(xui_widget pWidget, xui_list_selection_buffer pBuffer)
+{
+	if ( pBuffer == NULL ) return __xuiListViewBindSelectionBuffer(pWidget, NULL, 0, NULL);
+	if ( pBuffer->iCreatorThread != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+	return __xuiListViewBindSelectionBuffer(pWidget, pBuffer->arrFlags, pBuffer->iCapacity, pBuffer);
+}
+
+XUI_API xui_list_selection_buffer xuiListViewGetSelectionBufferOwned(xui_widget pWidget)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	return pData != NULL ? pData->pSelectionBuffer : NULL;
 }
 
 XUI_API int xuiListViewClearSelection(xui_widget pWidget)

@@ -12082,6 +12082,19 @@ XUI_API int xuiListViewGetSelectionMode(xui_widget pWidget);
 /* 绑定外部多选缓冲；有效容量必须不小于当前条目数。缓冲为借用资源，
  * 解除绑定时当前选择会复制回内部存储。NULL 或 iCount==0 表示解除绑定。 */
 XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, int iCount);
+/* 固定容量的受管选择缓冲。引用可跨线程释放，选择状态只能在创建线程读取。
+ * 同一缓冲只能绑定一个 ListView。解绑后仍可读取最后一次绑定时的状态。 */
+typedef struct xui_list_selection_buffer_t* xui_list_selection_buffer;
+XUI_API int xuiListSelectionBufferCreate(xui_list_selection_buffer* ppBuffer, int iCapacity);
+XUI_API int xuiListSelectionBufferAddRef(xui_list_selection_buffer pBuffer);
+XUI_API void xuiListSelectionBufferRelease(xui_list_selection_buffer pBuffer);
+XUI_API int xuiListSelectionBufferGetCapacity(xui_list_selection_buffer pBuffer);
+/* 返回 0/1 或负错误码。容量内未在列表中使用的位置返回 0。 */
+XUI_API int xuiListSelectionBufferGet(xui_list_selection_buffer pBuffer, int iIndex);
+/* 控件保留独立引用。NULL 恢复内部存储，保留列表当前的选择。 */
+XUI_API int xuiListViewSetSelectionBufferOwned(xui_widget pWidget, xui_list_selection_buffer pBuffer);
+/* 返回借用指针。需要在调用方持有独立引用时使用 AddRef。 */
+XUI_API xui_list_selection_buffer xuiListViewGetSelectionBufferOwned(xui_widget pWidget);
 /* 清空选择。 */
 XUI_API int xuiListViewClearSelection(xui_widget pWidget);
 /* 设置条目选中态（多选模式）。 */
