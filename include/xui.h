@@ -7430,6 +7430,10 @@ XUI_API int xuiTextShape(xui_context pContext, const xui_text_item_t* pTextItem,
 /* These lifetime APIs accept only the owned factory's record handle.
  * Raw stack records continue to use xuiTextShapeFreeChecked. */
 XUI_API int xuiTextShapeCreateOwned(xui_proxy pProxy, const xui_text_item_t* pTextItem, const xui_text_shape_t** ppShape);
+/* Shapes with the Context's bound Proxy and cached capabilities. A non-NULL
+ * output owns a shape reference even if the Context scope reports an error. */
+XUI_API int xuiContextTextShapeCreateOwned(xui_context pContext, const xui_text_item_t* pTextItem,
+    const xui_text_shape_t** ppShape);
 XUI_API int xuiTextShapeAddRef(const xui_text_shape_t* pShape);
 XUI_API int xuiTextShapeShareOwned(const xui_text_shape_t* pShape, const xui_text_shape_t** ppShared);
 XUI_API int xuiTextShapeReleaseOwnerChecked(const xui_text_shape_t* pShape, bool* pConsumed);

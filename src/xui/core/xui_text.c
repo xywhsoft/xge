@@ -1660,20 +1660,22 @@ int xuiInternalOwnedTextShapeFinalize(xui_proxy proxy,void* payload)
      * one arrays/paint owner. Ready is stable for its caller's operation. */
     return xuiTextShapeFreeChecked(payload);
 }
-XUI_API int xuiTextShapeCreateOwned(xui_proxy proxy,const xui_text_item_t* item,const xui_text_shape_t** output)
+static int __xuiTextShapeOwnedInputStatus(xui_proxy proxy, const xui_text_item_t* item)
 {
-    if(!output)return XUI_ERROR_INVALID_ARGUMENT;
-    *output=NULL;
-    if(!xuiProxyIsOwned(proxy) || !xuiInternalProxyReady(proxy))return XUI_ERROR_INVALID_STATE;
-    if(!item || !item->pFont)return XUI_ERROR_INVALID_ARGUMENT;
-    xui_proxy fontProxy=xuiFontGetProxy(item->pFont);
-    if(!fontProxy || fontProxy->_pCapability!=proxy->_pCapability)return XUI_ERROR_INVALID_ARGUMENT;
-    if(!proxy->getCaps)return XUI_ERROR_UNSUPPORTED;
-    xui_proxy_caps_t caps={.iSize=sizeof(caps)};
-    int status=proxy->getCaps(proxy,&caps);if(status!=XUI_OK)return status;
-    xui_text_shape_t* shape=NULL;
-    status=xuiInternalTextShapeAllocateOwned(proxy,&shape);if(status!=XUI_OK)return status;
-    status=__xuiTextShapeWithProxy(proxy,&caps,item,shape);
+    if ( !xuiProxyIsOwned(proxy) || !xuiInternalProxyReady(proxy) ) return XUI_ERROR_INVALID_STATE;
+    if ( !item || !item->pFont ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_proxy fontProxy = xuiFontGetProxy(item->pFont);
+    if ( !fontProxy || fontProxy->_pCapability != proxy->_pCapability ) return XUI_ERROR_INVALID_ARGUMENT;
+    return XUI_OK;
+}
+
+static int __xuiTextShapeCreateWithCaps(xui_proxy proxy, const xui_proxy_caps_t* caps,
+    const xui_text_item_t* item, const xui_text_shape_t** output)
+{
+    xui_text_shape_t* shape = NULL;
+    int status = xuiInternalTextShapeAllocateOwned(proxy, &shape);
+    if ( status != XUI_OK ) return status;
+    status = __xuiTextShapeWithProxy(proxy, caps, item, shape);
     /* Readiness controls cleanup, not validity: an immutable shape with a
      * valid PaintV1 can be returned while an external native lease is busy. */
     if(status==XUI_OK && shape->pPaint && !__xuiTextPaintProtocol(shape->pPaintOwnership))status=XUI_ERROR_UNSUPPORTED;
@@ -1687,6 +1689,39 @@ XUI_API int xuiTextShapeCreateOwned(xui_proxy proxy,const xui_text_item_t* item,
         return xuiInternalCleanupEnd(NULL,&receipt);
     }
     *output=shape;return XUI_OK;
+}
+
+XUI_API int xuiTextShapeCreateOwned(xui_proxy proxy, const xui_text_item_t* item,
+    const xui_text_shape_t** output)
+{
+    if ( !output ) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    int status = __xuiTextShapeOwnedInputStatus(proxy, item);
+    if ( status != XUI_OK ) return status;
+    if ( !proxy->getCaps ) return XUI_ERROR_UNSUPPORTED;
+
+    xui_proxy_caps_t caps = {.iSize = sizeof(caps)};
+    status = proxy->getCaps(proxy, &caps);
+    if ( status != XUI_OK ) return status;
+    return __xuiTextShapeCreateWithCaps(proxy, &caps, item, output);
+}
+
+XUI_API int xuiContextTextShapeCreateOwned(xui_context context, const xui_text_item_t* item,
+    const xui_text_shape_t** output)
+{
+    if ( !output ) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(context, &scope);
+    if ( status != XUI_OK ) return status;
+
+    xui_proxy proxy = xuiInternalContextGetProxy(context);
+    xui_proxy_caps_t caps;
+    status = xuiGetProxyCaps(context, &caps);
+    if ( status == XUI_OK ) status = __xuiTextShapeOwnedInputStatus(proxy, item);
+    if ( status == XUI_OK ) status = __xuiTextShapeCreateWithCaps(proxy, &caps, item, output);
+
+    return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
 }
 
 static void __xuiTextLayoutContextGone(void* raw)
