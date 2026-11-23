@@ -83,6 +83,7 @@ typedef struct xge_build_info_t {
 #define XGE_PLATFORM_BACKEND_SOKOL	1
 #define XGE_PLATFORM_BACKEND_MINIPROGRAM	2
 #define XGE_PLATFORM_BACKEND_EGL	3
+#define XGE_PLATFORM_BACKEND_WGL	4
 #define XGE_PLATFORM_BACKEND_CUSTOM	100
 
 #define XGE_GPU_BACKEND_NONE		0
@@ -2469,11 +2470,16 @@ XGE_API int xgeEGLMakeCurrent(xge_egl_context_t* pContext);
  * On failure, a non-NULL output retains a checked cleanup obligation. */
 XGE_API int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int height,bool surfaceless,
     const xge_callback_owner_t* codeOwner);
+/* Use a hidden WGL OpenGL 3.3 drawable on Windows, or an EGL GLES3 PBuffer
+ * in an EGL-enabled SDK. Requires the same exclusive manual engine lifetime
+ * and observes the same failed-creation cleanup contract as the EGL factory. */
+XGE_API int xgeGraphicsContextCreateOffscreenOwned(xge_graphics_context* out,int width,int height,
+    const xge_callback_owner_t* codeOwner);
 XGE_API int xgeGraphicsContextShareOwned(xge_graphics_context context,xge_graphics_context* out);
 /* Last release logically retires the renderer, cancelling its private queues.
  * Existing children remain usable with the retained context; new graphics
  * owners are refused. Storage/code remain until all children have released and
- * checked EGL/API cleanup completes. DEFERRED consumes none. A completed graphics
+ * checked native cleanup completes. DEFERRED consumes none. A completed graphics
  * epoch requires engine Unit/Init before another context, as with Sokol Run.
  * An active callback/pass or a wrong thread cannot physically destroy it. */
 XGE_API int xgeGraphicsContextReleaseOwnerChecked(xge_graphics_context context,bool* consumed);

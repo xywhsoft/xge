@@ -1,6 +1,9 @@
 /* Exclusive creator-thread renderer session. The shared DataObject kernel
  * provides graph/retirement mechanics; drawing still calls the normal XGE API. */
 #include "xge_data_lifetime_internal.h"
+#if defined(_WIN32)
+#include "src/xge/platform/xge_wgl_offscreen.c"
+#endif
 
 typedef struct xge_graphics_snapshot_t {
     xge_platform_backend_t platform;
@@ -16,9 +19,14 @@ typedef struct xge_graphics_snapshot_t {
 struct xge_graphics_context_t {
     atomic_uint refs;
     bool attached,closing,destroyed,nativeCleanupStarted,tableLoaded,reserved,restoreApi;
+    bool surfaceless;
+    int width,height,backend;
     unsigned previousApi;
     xge_callback_owner_t code;
     xge_egl_context_t egl;
+#if defined(_WIN32)
+    xge_wgl_offscreen_t wgl;
+#endif
     xge_graphics_snapshot_t previous;
 };
 static xge_data_lifetime_t* __xgeOwnedContextRoot(xge_graphics_context context)
@@ -26,7 +34,7 @@ static xge_data_lifetime_t* __xgeOwnedContextRoot(xge_graphics_context context)
 static bool __xgeContextReadable(const void* data)
 {
     const struct xge_graphics_context_t* context=data;
-    return context->attached && !context->closing && !context->destroyed && context->egl.bInitialized;
+    return context->attached && !context->closing && !context->destroyed;
 }
 static bool __xgeContextTrace(const void*,xrtownershipvisitor,void*);
 static int __xgeContextFinalize(void*,bool*);
@@ -100,6 +108,60 @@ static void __xgeContextRendererStop(void)
     xrtFree(g_xge.pShapeAutoVertices);g_xge.pShapeAutoVertices=NULL;g_xge.iShapeAutoVertexCapacity=0;
     xrtFree(g_xge.pShapeAutoIndices);g_xge.pShapeAutoIndices=NULL;g_xge.iShapeAutoIndexCapacity=0;
 }
+
+static void __xgeContextSetGraphicsReady(bool ready)
+{
+    g_xge.bGraphicsRunning=ready;
+#if XGE_ENABLE_3D
+    xrtAtomic32Store(&g_xge3d_context_active,ready,XMEMORY_RELEASE);
+#endif
+}
+
+static bool __xgeContextNativeIsCurrent(const struct xge_graphics_context_t* context)
+{
+#if defined(_WIN32)
+    if(context->backend==XGE_GPU_BACKEND_OPENGL33)return __xgeWglOffscreenIsCurrent(&context->wgl);
+#endif
+#if defined(XGE_HAS_EGL)
+    return context->egl.bInitialized && eglGetCurrentContext()==(EGLContext)context->egl.pContext &&
+        eglQueryAPI()==EGL_OPENGL_ES_API;
+#else
+    (void)context;
+    return false;
+#endif
+}
+
+static int __xgeContextNativeMakeCurrent(xge_graphics_context context)
+{
+#if defined(_WIN32)
+    if(context->backend==XGE_GPU_BACKEND_OPENGL33)return __xgeWglOffscreenMakeCurrent(&context->wgl);
+#endif
+#if defined(XGE_HAS_EGL)
+    if(!eglBindAPI(EGL_OPENGL_ES_API))return __xgeEGLFail(&context->egl,"eglBindAPI",XGE_ERROR_BACKEND_FAILED);
+    return xgeEGLMakeCurrent(&context->egl);
+#else
+    (void)context;
+    return XGE_ERROR_UNSUPPORTED;
+#endif
+}
+
+static int __xgeContextNativeUnit(xge_graphics_context context)
+{
+#if defined(_WIN32)
+    if(context->backend==XGE_GPU_BACKEND_OPENGL33)return __xgeWglOffscreenUnit(&context->wgl);
+#endif
+    int status=xgeEGLUnitChecked(&context->egl);
+    if(status!=XGE_OK)return status;
+#if defined(XGE_HAS_EGL)
+    if(context->restoreApi){
+        if(!eglBindAPI((EGLenum)context->previousApi))
+            return __xgeEGLFail(&context->egl,"eglRestoreAPI",XGE_ERROR_BACKEND_FAILED);
+        context->restoreApi=false;
+    }
+#endif
+    return XGE_OK;
+}
+
 static int __xgeContextFinalize(void* data,bool* complete)
 {
     xge_graphics_context context=data;*complete=false;
@@ -109,20 +171,12 @@ static int __xgeContextFinalize(void* data,bool* complete)
         /* Retained children must keep working until their final release. Only
          * the cold retirement path rebinds a displaced context; draw calls do
          * not acquire another context reference or look up a parent. */
-#if defined(XGE_HAS_EGL)
-        if(eglGetCurrentContext()!=(EGLContext)context->egl.pContext || eglQueryAPI()!=EGL_OPENGL_ES_API){
-            g_xge.bGraphicsRunning=0;
-#if XGE_ENABLE_3D
-            xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
-#endif
-            if(!eglBindAPI(EGL_OPENGL_ES_API))return __xgeEGLFail(&context->egl,"eglBindAPI",XGE_ERROR_BACKEND_FAILED);
-            int current=xgeEGLMakeCurrent(&context->egl);if(current!=XGE_OK)return current;
+        if(!__xgeContextNativeIsCurrent(context)){
+            __xgeContextSetGraphicsReady(false);
+            int status=__xgeContextNativeMakeCurrent(context);
+            if(status!=XGE_OK)return status;
         }
-#endif
-        g_xge.bGraphicsRunning=1;
-#if XGE_ENABLE_3D
-        xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
-#endif
+        __xgeContextSetGraphicsReady(true);
 #if XGE_ENABLE_2D
         __xgeRenderCommandReset();__xgeShapeAutoBatchReset();
 #endif
@@ -135,15 +189,8 @@ static int __xgeContextFinalize(void* data,bool* complete)
     }
     if(context->attached)__xgeContextRendererStop();
     if(context->tableLoaded){xge_gl_unload();context->tableLoaded=false;}
-    int status=xgeEGLUnitChecked(&context->egl);
+    int status=__xgeContextNativeUnit(context);
     if(status!=XGE_OK)return status;
-#if defined(XGE_HAS_EGL)
-    if(context->restoreApi){
-        if(!eglBindAPI((EGLenum)context->previousApi))
-            return __xgeEGLFail(&context->egl,"eglRestoreAPI",XGE_ERROR_BACKEND_FAILED);
-        context->restoreApi=false;
-    }
-#endif
     __xgeContextRestore(&context->previous);context->destroyed=true;*complete=true;return XGE_OK;
 }
 static int __xgeContextFinish(void* data)
@@ -182,12 +229,10 @@ int xgeGraphicsContextInfoGet(xge_graphics_context context,xge_graphics_context_
     if(!out || out->size!=sizeof(*out))return XGE_ERROR_INVALID_ARGUMENT;
     int status=__xgeOwnedContextAdmit(__xgeOwnedContextRoot(context));if(status!=XGE_OK)return status;
     xge_graphics_context_info_t info={0};info.size=sizeof(info);
-    info.width=context->egl.iWidth;info.height=context->egl.iHeight;info.backend=XGE_GPU_BACKEND_GLES30;
-    info.surfaceless=context->egl.bSurfaceless!=0;info.graphicsReady=g_xge.bGraphicsRunning!=0;
+    info.width=context->width;info.height=context->height;info.backend=context->backend;
+    info.surfaceless=context->surfaceless;info.current=__xgeContextNativeIsCurrent(context);
+    info.graphicsReady=info.current && g_xge.bGraphicsRunning!=0;
     info.otherResources=__xgeGraphicsOwnerCount(&g_xgeGraphicsLifetime)-1;
-#if defined(XGE_HAS_EGL)
-    info.current=eglGetCurrentContext()==(EGLContext)context->egl.pContext;
-#endif
     *out=info;return XGE_OK;
 }
 int xgeGraphicsContextMakeCurrent(xge_graphics_context context)
@@ -196,24 +241,9 @@ int xgeGraphicsContextMakeCurrent(xge_graphics_context context)
     if(status!=XGE_OK)return status;
     status=__xgeOwnedContextAcquire(root,true,true);if(status!=XGE_OK)return status;
     xerror* ambient=xrtTakeError();
-    g_xge.bGraphicsRunning=0;
-#if XGE_ENABLE_3D
-    xrtAtomic32Store(&g_xge3d_context_active,0,XMEMORY_RELEASE);
-#endif
-#if defined(XGE_HAS_EGL)
-    if(!eglBindAPI(EGL_OPENGL_ES_API))status=__xgeEGLFail(&context->egl,"eglBindAPI",XGE_ERROR_BACKEND_FAILED);
-    else status=xgeEGLMakeCurrent(&context->egl);
-#else
-    status=XGE_ERROR_UNSUPPORTED;
-#endif
-    bool current=status==XGE_OK;
-#if defined(XGE_HAS_EGL)
-    current=eglGetCurrentContext()==(EGLContext)context->egl.pContext && eglQueryAPI()==EGL_OPENGL_ES_API;
-#endif
-    g_xge.bGraphicsRunning=current;
-#if XGE_ENABLE_3D
-    xrtAtomic32Store(&g_xge3d_context_active,current,XMEMORY_RELEASE);
-#endif
+    __xgeContextSetGraphicsReady(false);
+    status=__xgeContextNativeMakeCurrent(context);
+    __xgeContextSetGraphicsReady(status==XGE_OK && __xgeContextNativeIsCurrent(context));
     xge_data_outcome_t outcome={0};__xgeOwnedContextOutcomeBegin(&outcome,status);
     __xgeOwnedContextOutcomeAdd(&outcome,__xgeOwnedContextActivityEnd(root));
     return __xgeOwnedContextOutcomeEnd(&outcome,ambient);
@@ -237,19 +267,90 @@ static int __xgeContextEglValidate(xge_graphics_context context,int width,int he
     return xge_gl_load_ex(__xgeContextEglLoad,NULL) ? XGE_OK:XGE_ERROR_BACKEND_FAILED;
 }
 #endif
-int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int height,bool surfaceless,
-    const xge_callback_owner_t* codeOwner)
+
+static bool __xgeContextBackendAvailable(int backend)
+{
+#if defined(_WIN32)
+    if(backend==XGE_GPU_BACKEND_OPENGL33)return true;
+#endif
+#if defined(XGE_HAS_EGL)
+    return backend==XGE_GPU_BACKEND_GLES30;
+#else
+    (void)backend;
+    return false;
+#endif
+}
+
+static int __xgeContextNativeInit(xge_graphics_context context)
+{
+#if defined(_WIN32)
+    if(context->backend==XGE_GPU_BACKEND_OPENGL33){
+        int status=__xgeWglOffscreenInit(&context->wgl,context->width,context->height);
+        if(status==XGE_OK){
+            const xge_platform_backend_t platform={.iType=XGE_PLATFORM_BACKEND_WGL,.sName="wgl-offscreen"};
+            const xge_graphics_backend_t graphics=xgeGraphicsBackendDefault();
+            xgePlatformBackendSet(&platform);
+            xgeGraphicsBackendSet(&graphics);
+        }
+        return status;
+    }
+#endif
+#if defined(XGE_HAS_EGL)
+    context->previousApi=(unsigned)eglQueryAPI();
+    xge_egl_desc_t desc={0};
+    desc.iWidth=context->width;
+    desc.iHeight=context->height;
+    desc.bSurfaceless=context->surfaceless;
+    desc.bPBuffer=!context->surfaceless;
+    int status=xgeEGLInit(&context->egl,&desc);
+    context->restoreApi=(unsigned)eglQueryAPI()!=context->previousApi;
+    return status==XGE_OK ? __xgeContextEglValidate(context,context->width,context->height):status;
+#else
+    (void)context;
+    return XGE_ERROR_UNSUPPORTED;
+#endif
+}
+
+static void __xgeContextAttachRenderer(xge_graphics_context context)
+{
+    int width=context->width,height=context->height;
+    context->tableLoaded=true;
+    context->attached=true;
+    g_xge.iWidth=g_xge.iWindowWidth=g_xge.iFramebufferWidth=width;
+    g_xge.iHeight=g_xge.iWindowHeight=g_xge.iFramebufferHeight=height;
+    g_xge.fDpiScale=1;
+    g_xge.iCurrentFramebufferId=g_xge.iWindowFramebufferId=0;
+    g_xge.bClipEnabled=g_xge.bViewportEnabled=0;
+    memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));
+    memset(&g_xge.tViewportRect,0,sizeof(g_xge.tViewportRect));
+#if XGE_ENABLE_2D
+    g_xge.tCamera=xgeCameraDefault((float)width,(float)height);
+#endif
+#if XGE_ENABLE_3D
+    xrtAtomic64FetchAdd(&g_xge3d_context_serial,1,XMEMORY_RELAXED);
+    xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
+#endif
+    __xgeContextSetGraphicsReady(true);
+    __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime,false);
+    __xgePlatformRuntimeUpdate();
+    __xgeBlendApply(g_xge.iBlend);
+    __xgeDepthTestApply();
+}
+
+static int __xgeContextCreateOwned(xge_graphics_context* out,int width,int height,bool surfaceless,
+    int backend,const xge_callback_owner_t* codeOwner)
 {
     if(!out)return XGE_ERROR_INVALID_ARGUMENT;
     *out=NULL;
     if(width<=0 || height<=0 || !__xgeCallbackOwnerValid(codeOwner))return XGE_ERROR_INVALID_ARGUMENT;
-#if !defined(XGE_HAS_EGL)
-    (void)surfaceless;return XGE_ERROR_UNSUPPORTED;
-#else
+    if(!__xgeContextBackendAvailable(backend))return XGE_ERROR_UNSUPPORTED;
     int status=__xgeGraphicsContextBegin(&g_xgeGraphicsLifetime);if(status!=XGE_OK)return status;
     if(!g_xge.bInitialized)status=XGE_ERROR_NOT_INITIALIZED;
     else if(g_xge.objDesc.iRunMode!=XGE_RUN_MANUAL)status=XGE_ERROR_UNSUPPORTED;
-    else if(g_xge.bGraphicsRunning || __xgeContextFrameBusy() || eglGetCurrentContext()!=EGL_NO_CONTEXT)status=XGE_ERROR_BUSY;
+    else if(g_xge.bGraphicsRunning || __xgeContextFrameBusy())status=XGE_ERROR_BUSY;
+#if defined(XGE_HAS_EGL)
+    else if(backend==XGE_GPU_BACKEND_GLES30 && eglGetCurrentContext()!=EGL_NO_CONTEXT)status=XGE_ERROR_BUSY;
+#endif
     if(status!=XGE_OK){__xgeGraphicsContextFinish(&g_xgeGraphicsLifetime,false);return status;}
     xerror* ambient=xrtTakeError();
     xge_graphics_context context=xrtCalloc(1,sizeof(*context)+sizeof(xge_data_lifetime_t));
@@ -258,36 +359,19 @@ int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int hei
         xge_data_outcome_t outcome={0};__xgeOwnedContextOutcomeBegin(&outcome,XGE_ERROR_OUT_OF_MEMORY);
         return __xgeOwnedContextOutcomeEnd(&outcome,ambient);
     }
-    atomic_init(&context->refs,1u);context->reserved=true;__xgeContextSave(&context->previous);
+    atomic_init(&context->refs,1u);
+    context->reserved=true;
+    context->backend=backend;
+    context->width=width;
+    context->height=height;
+    context->surfaceless=surfaceless;
+    __xgeContextSave(&context->previous);
     __xgeOwnedContextInit(__xgeOwnedContextRoot(context),&__xgeOwnedContextType,xrtThreadCurrentId());
     xge_callback_owner_t code=codeOwner ? *codeOwner:(xge_callback_owner_t){0};bool held=false;
     status=xrtGetError() ? XGE_ERROR_CALLBACK_FAILED:__xgeCallbackOwnerHold(code,&held);
     if(held)context->code=code;
-    if(status==XGE_OK){
-        context->previousApi=(unsigned)eglQueryAPI();
-        xge_egl_desc_t desc={0};desc.iWidth=width;desc.iHeight=height;desc.bSurfaceless=surfaceless;desc.bPBuffer=!surfaceless;
-        status=xgeEGLInit(&context->egl,&desc);
-        context->restoreApi=(unsigned)eglQueryAPI()!=context->previousApi;
-        if(status==XGE_OK)status=__xgeContextEglValidate(context,width,height);
-        if(status==XGE_OK){
-            context->tableLoaded=true;context->attached=true;
-            g_xge.iWidth=g_xge.iWindowWidth=g_xge.iFramebufferWidth=width;
-            g_xge.iHeight=g_xge.iWindowHeight=g_xge.iFramebufferHeight=height;
-            g_xge.fDpiScale=1;g_xge.iCurrentFramebufferId=g_xge.iWindowFramebufferId=0;g_xge.bClipEnabled=g_xge.bViewportEnabled=0;
-            memset(&g_xge.tClipRect,0,sizeof(g_xge.tClipRect));memset(&g_xge.tViewportRect,0,sizeof(g_xge.tViewportRect));
-#if XGE_ENABLE_2D
-            g_xge.tCamera=xgeCameraDefault((float)width,(float)height);
-#endif
-            g_xge.bGraphicsRunning=1;
-#if XGE_ENABLE_3D
-            xrtAtomic64FetchAdd(&g_xge3d_context_serial,1,XMEMORY_RELAXED);
-            xrtAtomic64Store(&g_xge3d_context_thread,xrtThreadCurrentId(),XMEMORY_RELEASE);
-            xrtAtomic32Store(&g_xge3d_context_active,1,XMEMORY_RELEASE);
-#endif
-            __xgeGraphicsContextCommit(&g_xgeGraphicsLifetime,false);__xgePlatformRuntimeUpdate();
-            __xgeBlendApply(g_xge.iBlend);__xgeDepthTestApply();
-        }
-    }
+    if(status==XGE_OK)status=__xgeContextNativeInit(context);
+    if(status==XGE_OK)__xgeContextAttachRenderer(context);
     xge_data_outcome_t outcome={0};__xgeOwnedContextOutcomeBegin(&outcome,status);
     if(outcome.iStatus==XGE_OK)*out=context;
     else{
@@ -298,5 +382,21 @@ int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int hei
         if(!consumed)*out=context;
     }
     return __xgeOwnedContextOutcomeEnd(&outcome,ambient);
+}
+
+int xgeGraphicsContextCreateEglOwned(xge_graphics_context* out,int width,int height,bool surfaceless,
+    const xge_callback_owner_t* codeOwner)
+{
+    return __xgeContextCreateOwned(out,width,height,surfaceless,XGE_GPU_BACKEND_GLES30,codeOwner);
+}
+
+int xgeGraphicsContextCreateOffscreenOwned(xge_graphics_context* out,int width,int height,
+    const xge_callback_owner_t* codeOwner)
+{
+#if defined(_WIN32)
+    const int backend=XGE_GPU_BACKEND_OPENGL33;
+#else
+    const int backend=XGE_GPU_BACKEND_GLES30;
 #endif
+    return __xgeContextCreateOwned(out,width,height,false,backend,codeOwner);
 }

@@ -777,6 +777,10 @@ int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 		pCaps->bGamepad = 0;
 		return XGE_OK;
 	}
+	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_WGL ) {
+		pCaps->bOffscreen = 1;
+		return XGE_OK;
+	}
 	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_EGL ) {
 		memset(&tEGLCaps, 0, sizeof(tEGLCaps));
 		(void)xgeEGLCapsGet(&tEGLCaps);
