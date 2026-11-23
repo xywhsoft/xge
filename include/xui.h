@@ -12916,8 +12916,10 @@ XUI_API int xuiPropertyGridGetPropertyFlags(xui_widget pWidget, int iProperty);
 XUI_API int xuiPropertyGridSetEditorConfig(xui_widget pWidget, int iProperty, const xui_table_grid_editor_config_t* pConfig);
 /* 为属性注册自绘回调。 */
 XUI_API int xuiPropertyGridSetRenderer(xui_widget pWidget, int iProperty, xui_property_grid_render_proc onRender, void* pUser);
+XUI_API int xuiPropertyGridSetRendererOwned(xui_widget pWidget, int iProperty, xui_property_grid_render_proc onRender, void* pUser, const xui_callback_owner_t* pOwner);
 /* 为属性注册动作回调（按钮型属性）。 */
 XUI_API int xuiPropertyGridSetAction(xui_widget pWidget, int iProperty, xui_property_grid_action_proc onAction, void* pUser);
+XUI_API int xuiPropertyGridSetActionOwned(xui_widget pWidget, int iProperty, xui_property_grid_action_proc onAction, void* pUser, const xui_callback_owner_t* pOwner);
 /* 是否在编辑态。 */
 XUI_API int xuiPropertyGridIsEditing(xui_widget pWidget);
 /* 进入属性编辑态。 */
