@@ -471,7 +471,7 @@ int main(void)
 	(void)xuiTerminalSetTitleCallback(pTerminal, __xuiTerminalTestTitle, &tState);
 	(void)xuiTerminalSetLinkCallback(pTerminal, __xuiTerminalTestLink, &tState);
 	iRet = xuiTerminalSetImageCallback(pTerminal, NULL, NULL);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "terminal image protocol is explicitly unsupported");
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal image callback can be cleared");
 
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.background.color") != 0u, "terminal background style registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "terminal.palette.1") != 0u, "terminal palette style registered");

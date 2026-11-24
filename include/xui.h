@@ -10791,9 +10791,14 @@ XUI_API int xuiTerminalSetTitleCallbackOwned(xui_widget pWidget, xui_terminal_ti
 XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser);
 XUI_API int xuiTerminalSetLinkCallbackOwned(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser, const xui_callback_owner_t* pOwner);
 #endif
-/* 注册内嵌图像回调；当前终端后端尚不支持 Sixel/iTerm2，返回 XUI_ERROR_UNSUPPORTED。 */
+/* Receives Sixel and iTerm2 inline image commands while processing output.
+ * The callback receives zero-based cell coordinates and encoded text.
+ * Options and payload are NUL-terminated and valid only during the callback.
+ * The widget leaves decoding, placement and drawing to the callback. */
 #if XUI_ENABLE_TERMINAL
 XUI_API int xuiTerminalSetImageCallback(xui_widget pWidget, xui_terminal_image_proc onImage, void* pUser);
+XUI_API int xuiTerminalSetImageCallbackOwned(xui_widget pWidget, xui_terminal_image_proc onImage,
+	void* pUser, const xui_callback_owner_t* pOwner);
 #endif
 /* 设置 256 色调色板项。 */
 #if XUI_ENABLE_TERMINAL

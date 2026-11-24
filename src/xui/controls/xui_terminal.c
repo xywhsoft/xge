@@ -37,6 +37,14 @@
 #define XUI_TERMINAL_MAX_CSI_PARAMS 256
 #define XUI_TERMINAL_OSC_INLINE_CAPACITY 256
 #define XUI_TERMINAL_MAX_OSC_BYTES (64 * 1024)
+#define XUI_TERMINAL_MAX_IMAGE_BYTES (4 * 1024 * 1024)
+#define XUI_TERMINAL_MAX_IMAGE_OPTIONS 4096
+
+enum {
+	XUI_TERMINAL_DCS_HEADER = 8,
+	XUI_TERMINAL_DCS_PAYLOAD,
+	XUI_TERMINAL_DCS_ESCAPE
+};
 #define XUI_TERMINAL_MAX_LINK_ID 65535u
 #define XUI_TERMINAL_MAX_WHEEL_STEPS 32
 #define XUI_TERMINAL_SESSION_FAKE 1
@@ -168,6 +176,8 @@ typedef struct xui_terminal_parser_t {
 	char* pOsc;
 	int iOscCapacity;
 	int iOscSize;
+	int iStringLimit;
+	int iSixelPayloadOffset;
 	int bOscDiscard;
 } xui_terminal_parser_t;
 
@@ -274,6 +284,15 @@ typedef struct xui_terminal_data_t {
 	void* pTitleUser;
 	xui_terminal_link_proc onLink;
 	void* pLinkUser;
+	xui_terminal_image_proc onImage;
+	void* pImageUser;
+	char* pImageParts;
+	int iImagePartsSize;
+	int iImagePartsCapacity;
+	int iImagePayloadOffset;
+	int iImageColumn;
+	int iImageRow;
+	int iImageStatus;
 	char* sHoverLink;
 	char** ppLinks;
 	int iLinkCount;
@@ -990,54 +1009,37 @@ static char* __xuiTerminalOscBuffer(xui_terminal_parser_t* pParser)
 	return pParser->pOsc != NULL ? pParser->pOsc : pParser->sOsc;
 }
 
-static void __xuiTerminalOscStart(xui_terminal_parser_t* pParser)
+static void __xuiTerminalStringStart(xui_terminal_parser_t* pParser, int iLimit)
 {
-	if ( pParser == NULL ) return;
 	pParser->iOscSize = 0;
+	pParser->iStringLimit = iLimit;
 	pParser->bOscDiscard = 0;
 }
 
-static void __xuiTerminalOscAppend(xui_terminal_parser_t* pParser, uint8_t b)
+static bool __xuiTerminalStringAppend(xui_terminal_parser_t* pParser, uint8_t b)
 {
-	char* pNew;
-	int iCapacity;
-	int iRequired;
-
-	if ( pParser == NULL || pParser->bOscDiscard ) return;
-	if ( pParser->iOscSize >= XUI_TERMINAL_MAX_OSC_BYTES ) {
-		pParser->iOscSize = 0;
+	if ( pParser->bOscDiscard ) return false;
+	if ( pParser->iOscSize >= pParser->iStringLimit ) {
 		pParser->bOscDiscard = 1;
-		return;
+		return false;
 	}
-	iRequired = pParser->iOscSize + 2;
-	iCapacity = pParser->pOsc != NULL ? pParser->iOscCapacity :
-		(int)sizeof(pParser->sOsc);
+	int iRequired = pParser->iOscSize + 2;
+	int iCapacity = pParser->pOsc != NULL ? pParser->iOscCapacity : (int)sizeof(pParser->sOsc);
 	if ( iRequired > iCapacity ) {
-		while ( iCapacity < iRequired ) {
-			if ( iCapacity >= XUI_TERMINAL_MAX_OSC_BYTES + 1 ) break;
-			iCapacity *= 2;
-			if ( iCapacity > XUI_TERMINAL_MAX_OSC_BYTES + 1 ) {
-				iCapacity = XUI_TERMINAL_MAX_OSC_BYTES + 1;
-			}
-		}
-		if ( iCapacity < iRequired ) {
-			pParser->iOscSize = 0;
-			pParser->bOscDiscard = 1;
-			return;
-		}
-		pNew = (char*)xrtRealloc(pParser->pOsc, (size_t)iCapacity);
+		int iLimit = pParser->iStringLimit + 1;
+		while ( iCapacity < iRequired ) iCapacity = __xuiTerminalMin(iCapacity * 2, iLimit);
+		char* pNew = (char*)xrtRealloc(pParser->pOsc, (size_t)iCapacity);
 		if ( pNew == NULL ) {
-			pParser->iOscSize = 0;
 			pParser->bOscDiscard = 1;
-			return;
+			return false;
 		}
-		if ( pParser->pOsc == NULL && pParser->iOscSize > 0 ) {
+		if ( pParser->pOsc == NULL && pParser->iOscSize > 0 )
 			memcpy(pNew, pParser->sOsc, (size_t)pParser->iOscSize);
-		}
 		pParser->pOsc = pNew;
 		pParser->iOscCapacity = iCapacity;
 	}
 	__xuiTerminalOscBuffer(pParser)[pParser->iOscSize++] = (char)b;
+	return true;
 }
 
 static void __xuiTerminalDefaultPalette(xui_terminal_data_t* pData)
@@ -3068,6 +3070,174 @@ static void __xuiTerminalDispatchOsc8(xui_terminal_data_t* pData, const char* sP
 	}
 }
 
+static void __xuiTerminalImagePartsReset(xui_terminal_data_t* pData)
+{
+	xrtFree(pData->pImageParts);
+	pData->pImageParts = NULL;
+	pData->iImagePartsCapacity = 0;
+	pData->iImagePartsSize = 0;
+	pData->iImagePayloadOffset = 0;
+}
+
+static void __xuiTerminalDeliverImage(xui_widget pWidget, xui_terminal_data_t* pData,
+	int iProtocol, int iColumn, int iRow, const char* sOptions, const char* sPayload, int iSize)
+{
+	if ( pData->onImage == NULL || iSize <= 0 ) return;
+	xui_call_scope_t tScope = {0};
+	pData->iImageStatus = xuiCallScopeBegin(xuiWidgetGetContext(pWidget), &tScope);
+	if ( pData->iImageStatus != XUI_OK ) return;
+
+	const xui_terminal_image_t tImage = {
+		sizeof(tImage), iProtocol, iColumn, iRow, sOptions, sPayload, iSize
+	};
+	XUI_INTERNAL_CALLBACK_VOID(pWidget, pData->onImage, xui_terminal_image_proc,
+		pData->pImageUser, pWidget, &tImage);
+	pData->iImageStatus = xuiInternalCallScopeEndRestored(&tScope, XUI_OK, xrtTakeError());
+}
+
+static bool __xuiTerminalImageInline(const char* sOptions, const char* sEnd)
+{
+	while ( sOptions < sEnd ) {
+		const char* sNext = memchr(sOptions, ';', (size_t)(sEnd - sOptions));
+		if ( sNext == NULL ) sNext = sEnd;
+		if ( sNext - sOptions == 8 && memcmp(sOptions, "inline=1", 8) == 0 ) return true;
+		sOptions = sNext;
+		if ( sOptions < sEnd ) ++sOptions;
+	}
+	return false;
+}
+
+static bool __xuiTerminalImagePartsAppend(xui_terminal_data_t* pData, const char* pBytes, int iSize)
+{
+	int iLimit = XUI_TERMINAL_MAX_IMAGE_BYTES + 1;
+	if ( iSize > iLimit - pData->iImagePartsSize ) {
+		__xuiTerminalImagePartsReset(pData);
+		return false;
+	}
+	int iRequired = pData->iImagePartsSize + iSize + 1;
+	if ( iRequired > pData->iImagePartsCapacity ) {
+		int iCapacity = pData->iImagePartsCapacity;
+		if ( iCapacity == 0 ) iCapacity = XUI_TERMINAL_OSC_INLINE_CAPACITY;
+		while ( iCapacity < iRequired ) iCapacity = __xuiTerminalMin(2 * iCapacity, iLimit + 1);
+		char* pNew = xrtRealloc(pData->pImageParts, (size_t)iCapacity);
+		if ( pNew == NULL ) {
+			__xuiTerminalImagePartsReset(pData);
+			pData->iImageStatus = XUI_ERROR_OUT_OF_MEMORY;
+			return false;
+		}
+		pData->pImageParts = pNew;
+		pData->iImagePartsCapacity = iCapacity;
+	}
+	memcpy(pData->pImageParts + pData->iImagePartsSize, pBytes, (size_t)iSize);
+	pData->iImagePartsSize += iSize;
+	pData->pImageParts[pData->iImagePartsSize] = '\0';
+	return true;
+}
+
+static void __xuiTerminalDispatchImageOsc(xui_widget pWidget, xui_terminal_data_t* pData,
+	char* sCommand, int iSize)
+{
+	if ( pData->onImage == NULL ) return;
+	for ( int i = 0; i < iSize; ++i ) {
+		unsigned char c = (unsigned char)sCommand[i];
+		if ( c < 0x20u || c >= 0x7fu ) {
+			__xuiTerminalImagePartsReset(pData);
+			return;
+		}
+	}
+	char* sEnd = sCommand + iSize;
+	if ( strncmp(sCommand, "File=", 5) == 0 ) {
+		char* sOptions = sCommand + 5;
+		char* sSep = strchr(sOptions, ':');
+		if ( sSep == NULL || sSep - sOptions > XUI_TERMINAL_MAX_IMAGE_OPTIONS ||
+		     !__xuiTerminalImageInline(sOptions, sSep) ) return;
+		*sSep = '\0';
+		__xuiTerminalDeliverImage(pWidget, pData, XUI_TERMINAL_IMAGE_ITERM2,
+			pData->iCursorX, pData->iCursorY, sOptions, sSep + 1, (int)(sEnd - sSep - 1));
+	} else if ( strncmp(sCommand, "MultipartFile=", 14) == 0 ) {
+		__xuiTerminalImagePartsReset(pData);
+		const char* sOptions = sCommand + 14;
+		int iOptionsSize = (int)(sEnd - sOptions);
+		if ( iOptionsSize <= XUI_TERMINAL_MAX_IMAGE_OPTIONS &&
+		     __xuiTerminalImageInline(sOptions, sEnd) &&
+		     __xuiTerminalImagePartsAppend(pData, sOptions, iOptionsSize + 1) ) {
+			pData->iImagePayloadOffset = iOptionsSize + 1;
+			pData->iImageColumn = pData->iCursorX;
+			pData->iImageRow = pData->iCursorY;
+		}
+	} else if ( pData->iImagePayloadOffset != 0 && strncmp(sCommand, "FilePart=", 9) == 0 ) {
+		const char* sPart = sCommand + 9;
+		(void)__xuiTerminalImagePartsAppend(pData, sPart, (int)(sEnd - sPart));
+	} else if ( pData->iImagePayloadOffset != 0 && strcmp(sCommand, "FileEnd") == 0 ) {
+		/* Detach before invoking code that can replace the registration. */
+		char* pParts = pData->pImageParts;
+		int iOffset = pData->iImagePayloadOffset;
+		int iPayloadSize = pData->iImagePartsSize - iOffset;
+		pData->pImageParts = NULL;
+		__xuiTerminalImagePartsReset(pData);
+		__xuiTerminalDeliverImage(pWidget, pData, XUI_TERMINAL_IMAGE_ITERM2,
+			pData->iImageColumn, pData->iImageRow, pParts, pParts + iOffset, iPayloadSize);
+		xrtFree(pParts);
+	}
+}
+
+static bool __xuiTerminalImageOsc(const xui_terminal_parser_t* pParser)
+{
+	const char* pBuffer = pParser->pOsc != NULL ? pParser->pOsc : pParser->sOsc;
+	return pParser->iOscSize >= 5 && memcmp(pBuffer, "1337;", 5) == 0;
+}
+
+static bool __xuiTerminalLongImageOsc(xui_terminal_parser_t* pParser)
+{
+	const char* pBuffer = __xuiTerminalOscBuffer(pParser);
+	return memcmp(pBuffer, "1337;File=", 10) == 0 || memcmp(pBuffer, "1337;FilePart=", 14) == 0;
+}
+
+static void __xuiTerminalOscAppend(xui_terminal_data_t* pData, uint8_t b)
+{
+	xui_terminal_parser_t* pParser = &pData->tParser;
+	if ( pParser->bOscDiscard ) return;
+	if ( pParser->iOscSize == XUI_TERMINAL_MAX_OSC_BYTES &&
+	     pData->onImage != NULL && __xuiTerminalLongImageOsc(pParser) )
+		pParser->iStringLimit = XUI_TERMINAL_MAX_IMAGE_BYTES;
+	if ( !__xuiTerminalStringAppend(pParser, b) &&
+	     pData->onImage != NULL && __xuiTerminalImageOsc(pParser) ) {
+		if ( pParser->iOscSize < pParser->iStringLimit ) pData->iImageStatus = XUI_ERROR_OUT_OF_MEMORY;
+		if ( pData->iImagePayloadOffset != 0 ) __xuiTerminalImagePartsReset(pData);
+	}
+}
+
+static void __xuiTerminalDcsStart(xui_terminal_data_t* pData)
+{
+	if ( pData->onImage == NULL ) {
+		pData->tParser.iState = 5;
+		return;
+	}
+	__xuiTerminalStringStart(&pData->tParser, XUI_TERMINAL_MAX_IMAGE_OPTIONS);
+	pData->tParser.iSixelPayloadOffset = 0;
+	pData->tParser.iState = XUI_TERMINAL_DCS_HEADER;
+}
+
+static bool __xuiTerminalSixelAppend(xui_terminal_data_t* pData, uint8_t b)
+{
+	xui_terminal_parser_t* pParser = &pData->tParser;
+	if ( __xuiTerminalStringAppend(pParser, b) ) return true;
+	if ( pParser->iOscSize < pParser->iStringLimit ) pData->iImageStatus = XUI_ERROR_OUT_OF_MEMORY;
+	pParser->iState = 5;
+	return false;
+}
+
+static void __xuiTerminalDispatchSixel(xui_widget pWidget, xui_terminal_data_t* pData)
+{
+	xui_terminal_parser_t* pParser = &pData->tParser;
+	if ( pParser->bOscDiscard || pParser->iSixelPayloadOffset == 0 ) return;
+	char* sText = __xuiTerminalOscBuffer(pParser);
+	sText[pParser->iOscSize] = '\0';
+	__xuiTerminalDeliverImage(pWidget, pData, XUI_TERMINAL_IMAGE_SIXEL,
+		pData->iCursorX, pData->iCursorY, sText, sText + pParser->iSixelPayloadOffset,
+		pParser->iOscSize - pParser->iSixelPayloadOffset);
+}
+
 static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pData)
 {
 	char* sOsc;
@@ -3080,6 +3250,10 @@ static void __xuiTerminalDispatchOsc(xui_widget pWidget, xui_terminal_data_t* pD
 	}
 	sOsc = __xuiTerminalOscBuffer(&pData->tParser);
 	sOsc[pData->tParser.iOscSize] = '\0';
+	if ( strncmp(sOsc, "1337;", 5) == 0 ) {
+		__xuiTerminalDispatchImageOsc(pWidget, pData, sOsc + 5, pData->tParser.iOscSize - 5);
+		return;
+	}
 	__xuiTerminalDispatchOsc8(pData, sOsc);
 	sSemi = strchr(sOsc, ';');
 	if ( (sSemi != NULL) && (pData->onTitle != NULL) &&
@@ -3155,9 +3329,11 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			__xuiTerminalCsiReset(&pData->tParser);
 			pData->tParser.iState = 2;
 		} else if ( b == 0x9du ) {
-			__xuiTerminalOscStart(&pData->tParser);
+			__xuiTerminalStringStart(&pData->tParser, XUI_TERMINAL_MAX_OSC_BYTES);
 			pData->tParser.iState = 3;
-		} else if ( b == 0x90u || b == 0x98u || b == 0x9eu || b == 0x9fu ) {
+		} else if ( b == 0x90u ) {
+			__xuiTerminalDcsStart(pData);
+		} else if ( b == 0x98u || b == 0x9eu || b == 0x9fu ) {
 			pData->tParser.iState = 5;
 		} else if ( b == 0x1bu ) {
 			pData->tParser.iState = 1;
@@ -3204,9 +3380,11 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 			__xuiTerminalCsiReset(&pData->tParser);
 			pData->tParser.iState = 2;
 		} else if ( b == ']' ) {
-			__xuiTerminalOscStart(&pData->tParser);
+			__xuiTerminalStringStart(&pData->tParser, XUI_TERMINAL_MAX_OSC_BYTES);
 			pData->tParser.iState = 3;
-		} else if ( b == 'P' || b == 'X' || b == '^' || b == '_' ) {
+		} else if ( b == 'P' ) {
+			__xuiTerminalDcsStart(pData);
+		} else if ( b == 'X' || b == '^' || b == '_' ) {
 			pData->tParser.iState = 5;
 		} else if ( b == '(' || b == ')' || b == '*' || b == '+' ||
 		            b == '-' || b == '.' || b == '/' || b == '%' || b == '#' ) {
@@ -3294,16 +3472,23 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 		if ( b == '\a' || b == 0x9cu ) {
 			pData->tParser.iState = 0;
 			__xuiTerminalDispatchOsc(pWidget, pData);
+		} else if ( (b == 0x18u || b == 0x1au) && __xuiTerminalImageOsc(&pData->tParser) ) {
+			pData->tParser.iState = 0;
+			__xuiTerminalImagePartsReset(pData);
 		} else if ( b == 0x1bu ) {
 			pData->tParser.iState = 4;
 		} else {
-			__xuiTerminalOscAppend(&pData->tParser, b);
+			__xuiTerminalOscAppend(pData, b);
 		}
 		break;
 	case 4:
-		if ( b == '\\' ) {
+		if ( b == '\\' || b == 0x9cu ) {
 			pData->tParser.iState = 0;
 			__xuiTerminalDispatchOsc(pWidget, pData);
+		} else if ( __xuiTerminalImageOsc(&pData->tParser) ) {
+			pData->tParser.bOscDiscard = 1;
+			__xuiTerminalImagePartsReset(pData);
+			pData->tParser.iState = b == 0x18u || b == 0x1au ? 0 : 3;
 		} else {
 			pData->tParser.iState = 3;
 		}
@@ -3318,6 +3503,41 @@ static void __xuiTerminalProcessByte(xui_widget pWidget, xui_terminal_data_t* pD
 	case 6:
 		if ( b == '\\' ) pData->tParser.iState = 0;
 		else if ( b != 0x1bu ) pData->tParser.iState = 5;
+		break;
+	case XUI_TERMINAL_DCS_HEADER:
+	case XUI_TERMINAL_DCS_PAYLOAD: {
+		xui_terminal_parser_t* pParser = &pData->tParser;
+		if ( b == 0x9cu ) {
+			pParser->iState = 0;
+			__xuiTerminalDispatchSixel(pWidget, pData);
+		} else if ( b == 0x18u || b == 0x1au ) {
+			pParser->iState = 0;
+		} else if ( b == 0x1bu ) {
+			pParser->iState = XUI_TERMINAL_DCS_ESCAPE;
+		} else if ( b >= 0x20u && b < 0x7fu ) {
+			if ( pParser->iState == XUI_TERMINAL_DCS_PAYLOAD ) {
+				(void)__xuiTerminalSixelAppend(pData, b);
+			} else if ( b == 'q' ) {
+				if ( __xuiTerminalSixelAppend(pData, 0) ) {
+					pParser->iSixelPayloadOffset = pParser->iOscSize;
+					pParser->iStringLimit = XUI_TERMINAL_MAX_IMAGE_BYTES;
+					pParser->iState = XUI_TERMINAL_DCS_PAYLOAD;
+				}
+			} else if ( b == ';' || (b >= '0' && b <= '9') ) {
+				(void)__xuiTerminalSixelAppend(pData, b);
+			} else {
+				pParser->iState = 5;
+			}
+		}
+		break;
+	}
+	case XUI_TERMINAL_DCS_ESCAPE:
+		if ( b == '\\' || b == 0x9cu ) {
+			pData->tParser.iState = 0;
+			__xuiTerminalDispatchSixel(pWidget, pData);
+		} else if ( b != 0x1bu ) {
+			pData->tParser.iState = b == 0x18u || b == 0x1au ? 0 : 5;
+		}
 		break;
 	case 7:
 		if ( pData->tParser.cCharsetTarget == '(' ) {
@@ -3353,6 +3573,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 		return XUI_OK;
 	}
 	pData->bProcessingQueue = 1;
+	pData->iImageStatus = XUI_OK;
 	iCount = pData->iQueueSize;
 	if ( (iBudget > 0) && (iCount > iBudget) ) {
 		iCount = iBudget;
@@ -3364,7 +3585,7 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 		if ( iIndex >= pData->iQueueCapacity ) iIndex -= pData->iQueueCapacity;
 		__xuiTerminalProcessByte(pWidget, pData, pData->pQueue[iIndex]);
 		iProcessed++;
-		if ( !__xuiTerminalWidgetAlive(pWidget) ) break;
+		if ( pData->iImageStatus != XUI_OK || !__xuiTerminalWidgetAlive(pWidget) ) break;
 	}
 	pData->iOutputBytesParsed += (uint64_t)iProcessed;
 	if ( __xuiTerminalWidgetAlive(pWidget) && pData->iSearchLine >= 0 ) {
@@ -3379,9 +3600,10 @@ static int __xuiTerminalProcessQueue(xui_widget pWidget, xui_terminal_data_t* pD
 		__xuiTerminalSyncScrollModel(pWidget, pData);
 		__xuiTerminalInvalidateDirty(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
+	int iResult = pData->iImageStatus;
 	pData->bProcessingQueue = 0;
 	xuiInternalOperationLeave(pContext);
-	return XUI_OK;
+	return iResult;
 }
 
 static int __xuiTerminalAppendQueue(xui_terminal_data_t* pData, const void* pBytes, int iSize)
@@ -6586,6 +6808,7 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->sImeText != NULL ) xrtFree(pData->sImeText);
 	if ( pData->tParser.pParams != NULL ) xrtFree(pData->tParser.pParams);
 	if ( pData->tParser.pOsc != NULL ) xrtFree(pData->tParser.pOsc);
+	__xuiTerminalImagePartsReset(pData);
 	for ( i = 0; i < XUI_TERMINAL_MENU_TITLE_COUNT; ++i ) {
 		xrtFree(pData->arrMenuTitle[i]);
 		pData->arrMenuTitle[i] = NULL;
@@ -7172,12 +7395,24 @@ XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_pro
 	return XUI_OK;
 }
 
+XUI_API int xuiTerminalSetImageCallbackOwned(xui_widget pWidget, xui_terminal_image_proc onImage,
+	void* pUser, const xui_callback_owner_t* pOwner)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xui_callback_update_t tUpdate = {0};
+	int iResult = xuiInternalCallbackUpdateBegin(pWidget, &pData->onImage, onImage != NULL, pUser, pOwner, &tUpdate);
+	if ( iResult != XUI_OK ) return iResult;
+	__xuiTerminalImagePartsReset(pData);
+	pData->onImage = onImage;
+	pData->pImageUser = pUser;
+	xuiInternalCallbackUpdatePublish(&tUpdate);
+	return xuiInternalCallbackUpdateEnd(&tUpdate, XUI_OK);
+}
+
 XUI_API int xuiTerminalSetImageCallback(xui_widget pWidget, xui_terminal_image_proc onImage, void* pUser)
 {
-	if ( __xuiTerminalGetData(pWidget) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)onImage;
-	(void)pUser;
-	return XUI_ERROR_UNSUPPORTED;
+	return xuiTerminalSetImageCallbackOwned(pWidget, onImage, pUser, NULL);
 }
 
 XUI_API int xuiTerminalSetPalette(xui_widget pWidget, int iIndex, uint32_t iColor)
