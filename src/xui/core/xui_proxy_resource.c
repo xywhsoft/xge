@@ -12,6 +12,7 @@ struct xui_proxy_capability_t {
     xui_callback_owner_t tOwner;
     xui_proxy_t tProxy;
     int (*onStorageRelease)(void);
+    xui_owned_resource_t* pRollbackOutputs;
 };
 static const xrtownershipops resourceOps;
 static int resourceFinish(xui_owned_resource_t*);
@@ -20,8 +21,13 @@ static int drawComplete(xui_owned_resource_t*);
 enum {
     RESOURCE_CLAIMED=1u, RESOURCE_FINALIZING=2u, RESOURCE_FINALIZED=4u,
     RESOURCE_CLEARED=8u, RESOURCE_FINISHED=16u, RESOURCE_PINNED=32u,
-    RESOURCE_FINISHING=64u, RESOURCE_DISPOSING=128u, RESOURCE_END_REQUESTED=256u
+    RESOURCE_FINISHING=64u, RESOURCE_DISPOSING=128u, RESOURCE_END_REQUESTED=256u,
+    RESOURCE_CALLBACK_OUTPUT=512u, RESOURCE_ROLLBACK_PENDING=1024u, RESOURCE_ROLLBACK_DRAINING=2048u
 };
+typedef struct xui_callback_output_payload_t {
+    xvalue* pValue;
+    xui_owned_resource_t* pNext;
+} xui_callback_output_payload_t;
 /* The XRT mutation gate admits concurrent mutators. It protects graph freeze,
  * not this object's counters. Writers acquire Mutation (or exclusive Freeze)
  * before this short lock. No allocator/semantic backend/owner hook runs under
@@ -61,6 +67,9 @@ static xvalue* resourceValue(const xui_owned_resource_t* resource)
     const void* payload = xuiInternalProxyResourcePayload((void*)resource);
     return *(xvalue* const*)payload;
 }
+
+static xui_callback_output_payload_t* callbackOutputPayload(xui_owned_resource_t* resource)
+{return xuiInternalProxyResourcePayload(resource);}
 
 /* Pure native admission only: no allocation, diagnostic mutation, wait or
  * user semantic callback. A consumed payload no longer depends on a pass. */
@@ -482,11 +491,15 @@ int xuiDrawCreateOwnedEx(xui_proxy proxy,xui_surface target,size_t payload,xui_p
     ((xui_owned_draw_t*)raw)->pTarget=target;((xui_owned_draw_t*)raw)->onCanEnd=ready;*output=raw;return XUI_OK;
 }
 static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface target,
-    unsigned kind, void** output)
+    unsigned kind, bool staged, void** output)
 {
     *output = NULL;
     if (!xuiProxyIsOwned(proxy)) return XUI_ERROR_INVALID_ARGUMENT;
     if (!xuiInternalProxyReady(proxy)) return XUI_ERROR_BUSY;
+    if (staged) {
+        const int cleanup = xuiProxyDrainCallbackRollbacks(proxy);
+        if (cleanup != XUI_OK && (cleanup != XUI_ERROR_BUSY || xrtGetError())) return cleanup;
+    }
     xvalue* held = NULL;
     if (value && !xrtValueIs(value, XVALUE_NULL)) {
         held = xrtValueRetain(value);
@@ -495,13 +508,14 @@ static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface 
 
     void* raw = NULL;
     void* payload = NULL;
+    const size_t size = staged ? sizeof(xui_callback_output_payload_t) : sizeof(held);
     int status;
     if (kind == XUI_OWNED_DRAW) {
         xui_draw_context draw = NULL;
-        status = xuiDrawCreateOwned(proxy, target, sizeof(held), valueFinalize, &draw, &payload);
+        status = xuiDrawCreateOwned(proxy, target, size, valueFinalize, &draw, &payload);
         raw = draw;
     } else {
-        status = resourceCreate(proxy, sizeof(held), valueFinalize, kind, &raw, &payload);
+        status = resourceCreate(proxy, size, valueFinalize, kind, &raw, &payload);
     }
     if (status != XUI_OK) {
         xerror* primary = xrtTakeError();
@@ -511,6 +525,7 @@ static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface 
         return status;
     }
     *(xvalue**)payload = held;
+    if (staged) resourceStateSet(raw, RESOURCE_CALLBACK_OUTPUT);
     *output = raw;
     return XUI_OK;
 }
@@ -519,7 +534,7 @@ int xuiSurfaceCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_sur
 {
     if (!output) return XUI_ERROR_INVALID_ARGUMENT;
     void* raw = NULL;
-    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_SURFACE, &raw);
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_SURFACE, false, &raw);
     *output = raw;
     return status;
 }
@@ -528,7 +543,7 @@ int xuiFontCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_font* 
 {
     if (!output) return XUI_ERROR_INVALID_ARGUMENT;
     void* raw = NULL;
-    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_FONT, &raw);
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_FONT, false, &raw);
     *output = raw;
     return status;
 }
@@ -537,9 +552,174 @@ int xuiDrawCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_surfac
 {
     if (!output) return XUI_ERROR_INVALID_ARGUMENT;
     void* raw = NULL;
-    const int status = buildValueResource(proxy, value, target, XUI_OWNED_DRAW, &raw);
+    const int status = buildValueResource(proxy, value, target, XUI_OWNED_DRAW, false, &raw);
     *output = raw;
     return status;
+}
+
+int xuiSurfaceStageCallbackOutput(xui_surface* output, xui_proxy proxy, const xvalue* value)
+{
+    if (!output || *output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_SURFACE, true, &raw);
+    *output = raw;
+    return status;
+}
+
+int xuiFontStageCallbackOutput(xui_font* output, xui_proxy proxy, const xvalue* value)
+{
+    if (!output || *output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_FONT, true, &raw);
+    *output = raw;
+    return status;
+}
+
+int xuiDrawStageCallbackOutput(xui_draw_context* output, xui_proxy proxy, const xvalue* value, xui_surface target)
+{
+    if (!output || *output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, target, XUI_OWNED_DRAW, true, &raw);
+    *output = raw;
+    return status;
+}
+
+/* A retired Draw can be the final owner of its target. Take that edge out
+ * before attempting its release, and restore it on refusal. The Draw keeps
+ * the backend alive every time this work has to return to the queue. */
+static bool retireCallbackOutput(xui_owned_resource_t* value, int* status, xerror** first)
+{
+    int next = resourceFinalize(value);
+    if (next == XUI_ERROR_BUSY && !xrtGetError()) return false;
+    outcome(next, status, first);
+    if (!(resourceState(value) & RESOURCE_FINALIZED)) return false;
+
+    if (value->iKind == XUI_OWNED_DRAW) {
+        xui_owned_draw_t* draw = (void*)value;
+        xrtownershipscope mutation = {0};
+        if (mutationBegin(&mutation) != XUI_OK) abort();
+        resourceLock(value);
+        const xui_surface target = draw->pTarget;
+        draw->pTarget = NULL;
+        resourceUnlock(value);
+        mutationEnd(&mutation);
+        if (target) {
+            bool consumed = false;
+            next = xuiSurfaceReleaseOwnerChecked(target, &consumed);
+            if (next != XUI_ERROR_BUSY || consumed || xrtGetError()) outcome(next, status, first);
+            if (!consumed) {
+                mutation = (xrtownershipscope){0};
+                if (mutationBegin(&mutation) != XUI_OK) abort();
+                resourceLock(value);
+                draw->pTarget = target;
+                resourceUnlock(value);
+                mutationEnd(&mutation);
+                return false;
+            }
+        }
+    }
+
+    bool consumed = false;
+    next = resourceRelease(value, true, false, &consumed);
+    if (next != XUI_ERROR_BUSY || consumed || xrtGetError()) outcome(next, status, first);
+    return consumed;
+}
+
+static void rollbackCallbackOutput(xui_owned_resource_t* value, unsigned kind)
+{
+    if (!xuiInternalProxyResourceManaged(value, kind) ||
+        (resourceState(value) & (RESOURCE_CALLBACK_OUTPUT | RESOURCE_ROLLBACK_PENDING)) != RESOURCE_CALLBACK_OUTPUT ||
+        value->iCreatorThread != xrtThreadCurrentId() || !value->pProxy) {
+        xrtSetErrorKind(XERR_ARGUMENT);
+        return;
+    }
+    struct xui_proxy_capability_t* cap = value->pProxy->_pCapability;
+    xrtownershipscope mutation = {0};
+    if (mutationBegin(&mutation) != XUI_OK) abort();
+    resourceLock(value);
+    resourceStateSet(value, resourceState(value) | RESOURCE_ROLLBACK_PENDING);
+    resourceUnlock(value);
+    mutationEnd(&mutation);
+
+    xerror* previous = xrtTakeError();
+    xerror* first = NULL;
+    int status = XUI_OK;
+    if (!retireCallbackOutput(value, &status, &first)) {
+        mutation = (xrtownershipscope){0};
+        if (mutationBegin(&mutation) != XUI_OK) abort();
+        resourceLock(&cap->tResource);
+        callbackOutputPayload(value)->pNext = cap->pRollbackOutputs;
+        cap->pRollbackOutputs = value;
+        resourceStateSet(&cap->tResource, resourceState(&cap->tResource) | RESOURCE_ROLLBACK_PENDING);
+        resourceUnlock(&cap->tResource);
+        mutationEnd(&mutation);
+    }
+    if (previous) xrtErrorFree(first);
+    xrtSetErrorTake(previous ? previous : first);
+    if (!previous && status != XUI_OK) (void)checkedStatus(status, "callback.output.rollback");
+}
+
+void xuiSurfaceRollbackCallbackOutput(xui_surface surface)
+{rollbackCallbackOutput((void*)surface, XUI_OWNED_SURFACE);}
+
+void xuiFontRollbackCallbackOutput(xui_font font)
+{rollbackCallbackOutput((void*)font, XUI_OWNED_FONT);}
+
+void xuiDrawRollbackCallbackOutput(xui_draw_context draw)
+{rollbackCallbackOutput((void*)draw, XUI_OWNED_DRAW);}
+
+int xuiProxyDrainCallbackRollbacks(xui_proxy proxy)
+{
+    xui_owned_resource_t* parent = proxyResource(proxy);
+    if (!parent) return XUI_ERROR_INVALID_ARGUMENT;
+    uint32_t state = resourceState(parent);
+    if (!(state & (RESOURCE_ROLLBACK_PENDING | RESOURCE_ROLLBACK_DRAINING))) return XUI_OK;
+    if (!xuiInternalProxyReady(proxy) || (state & RESOURCE_ROLLBACK_DRAINING)) return XUI_ERROR_BUSY;
+    const int pinned = resourceRef(parent, false, true);
+    if (pinned != XUI_OK) return pinned;
+
+    struct xui_proxy_capability_t* cap = proxy->_pCapability;
+    xrtownershipscope mutation = {0};
+    if (mutationBegin(&mutation) != XUI_OK) abort();
+    resourceLock(parent);
+    xui_owned_resource_t* pending = cap->pRollbackOutputs;
+    cap->pRollbackOutputs = NULL;
+    resourceStateSet(parent, resourceState(parent) | RESOURCE_ROLLBACK_DRAINING);
+    resourceUnlock(parent);
+    mutationEnd(&mutation);
+
+    xerror* previous = xrtTakeError();
+    xerror* first = NULL;
+    int status = XUI_OK;
+    xui_owned_resource_t* retry = NULL;
+    xui_owned_resource_t** tail = &retry;
+    while (pending) {
+        xui_owned_resource_t* value = pending;
+        pending = callbackOutputPayload(value)->pNext;
+        if (!retireCallbackOutput(value, &status, &first)) {
+            *tail = value;
+            tail = &callbackOutputPayload(value)->pNext;
+        }
+    }
+
+    mutation = (xrtownershipscope){0};
+    if (mutationBegin(&mutation) != XUI_OK) abort();
+    resourceLock(parent);
+    *tail = cap->pRollbackOutputs;
+    cap->pRollbackOutputs = retry;
+    state = resourceState(parent) & ~(RESOURCE_ROLLBACK_PENDING | RESOURCE_ROLLBACK_DRAINING);
+    if (cap->pRollbackOutputs) state |= RESOURCE_ROLLBACK_PENDING;
+    resourceStateSet(parent, state);
+    resourceUnlock(parent);
+    mutationEnd(&mutation);
+    outcome(resourceRelease(parent, false, true, NULL), &status, &first);
+    if (status != XUI_OK) {
+        xrtErrorFree(previous);
+        xrtSetErrorTake(first);
+        return status;
+    }
+    xrtSetErrorTake(previous);
+    return retry ? XUI_ERROR_BUSY : XUI_OK;
 }
 
 static int getValueResource(const xui_owned_resource_t* resource, unsigned kind, xvalue** output)
@@ -663,7 +843,12 @@ static bool resourceTrace(const void* raw,xrtownershipvisitor visit,void* contex
     if((state&RESOURCE_FINALIZING) && (value->iKind==XUI_OWNED_TEXT_SHAPE || value->onFinalize==valueFinalize))return false;
     if(value->iKind==XUI_OWNED_PROXY){
         const struct xui_proxy_capability_t* capability=raw;
-        return !capability->tOwner.tReference.Data || visit(capability->tOwner.tReference,context);
+        if (capability->tOwner.tReference.Data && !visit(capability->tOwner.tReference, context)) return false;
+        for (xui_owned_resource_t* pending = capability->pRollbackOutputs; pending;
+            pending = callbackOutputPayload(pending)->pNext) {
+            if (!visit((xrtownershipref){pending, &resourceOps}, context)) return false;
+        }
+        return true;
     }
     if(value->pProxy && !visit(xuiProxyOwnership(value->pProxy),context))return false;
     if(value->iKind==XUI_OWNED_TEXT_SHAPE)return xuiInternalOwnedTextShapeTrace(value+1,visit,context);
@@ -689,13 +874,13 @@ static bool adapterHold(const void* raw){return resourceRef((void*)raw,false,fal
 static bool adapterDropChecked(const void* raw){return checkedStatus(resourceRelease((void*)raw,false,false,NULL),"ownership.drop");}
 static void adapterDrop(const void* raw){(void)adapterDropChecked(raw);}
 static bool busy(const void* raw)
-{const xui_owned_resource_t* value=raw;return !valid(value) || (resourceState(value)&(RESOURCE_PINNED|RESOURCE_FINALIZING|RESOURCE_FINISHING))!=0 || !affinityReady(value) || !payloadReady(value,resourceState(value));}
+{const xui_owned_resource_t* value=raw;return !valid(value) || (resourceState(value)&(RESOURCE_PINNED|RESOURCE_FINALIZING|RESOURCE_FINISHING|RESOURCE_ROLLBACK_PENDING|RESOURCE_ROLLBACK_DRAINING))!=0 || !affinityReady(value) || !payloadReady(value,resourceState(value));}
 static bool adapterClaim(const void* raw,const void* token)
 {
     xui_owned_resource_t* value=(void*)raw;
     if(!token || !valid(value))return false;
     resourceLock(value);uint32_t state=resourceState(value);
-    if((state&(RESOURCE_PINNED|RESOURCE_FINALIZING|RESOURCE_FINISHING)) ||
+    if((state&(RESOURCE_PINNED|RESOURCE_FINALIZING|RESOURCE_FINISHING|RESOURCE_ROLLBACK_PENDING|RESOURCE_ROLLBACK_DRAINING)) ||
        ((state&RESOURCE_CLEARED) && !terminalDraw(value,state)) || !affinityReady(value) || (value->pClaim && value->pClaim!=token)){
         resourceUnlock(value);return false;
     }

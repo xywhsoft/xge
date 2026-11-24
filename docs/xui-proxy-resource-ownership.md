@@ -114,3 +114,18 @@ the planner must validate every node under the same freeze; one BUSY result
 retains the entire plan for a later creator-thread retry. Earlier 40-byte
 experimental descriptors and reports remain historical evidence, not
 qualification of this 48-byte contract.
+
+### Callback-owned resource output
+
+The staging setters initialize one empty Surface, Font or Draw slot. A native
+caller takes the usual resource owner after publication. A discard transfers
+that owner to the Proxy when the resource or its last Draw target is busy.
+The extra link shares the resource allocation. The Proxy traces each queued
+owner, and a Draw retains its target until the target's release consumes it.
+
+Retry on the creator thread with `xuiProxyDrainCallbackRollbacks()` while
+holding an independent Proxy owner. Each retry detaches one batch and leaves
+work added during a finalizer for the next batch. A resource callback retries
+earlier work when it stages a new result. The caller drains before releasing
+its last independent Proxy owner. Ordinary resource owners still use the
+checked release functions.

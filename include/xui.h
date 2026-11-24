@@ -6807,6 +6807,18 @@ XUI_API int xuiDrawCreateOwnedEx(xui_proxy pProxy, xui_surface pTarget, size_t i
 XUI_API int xuiSurfaceCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_surface* ppSurface);
 XUI_API int xuiFontCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_font* ppFont);
 XUI_API int xuiDrawCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_surface pTarget, xui_draw_context* ppDraw);
+/* These setters initialize an empty callback output slot. On successful
+ * publication the caller takes the usual owner. Before publication, Rollback
+ * consumes that owner on the creator thread, even if retirement must wait.
+ * Drain retries one pending batch on a live, independently owned Proxy.
+ * A C owner must drain before releasing its last external Proxy reference. */
+XUI_API int xuiSurfaceStageCallbackOutput(xui_surface* ppSurface, xui_proxy pProxy, const xvalue* pValue);
+XUI_API int xuiFontStageCallbackOutput(xui_font* ppFont, xui_proxy pProxy, const xvalue* pValue);
+XUI_API int xuiDrawStageCallbackOutput(xui_draw_context* ppDraw, xui_proxy pProxy, const xvalue* pValue, xui_surface pTarget);
+XUI_API void xuiSurfaceRollbackCallbackOutput(xui_surface pSurface);
+XUI_API void xuiFontRollbackCallbackOutput(xui_font pFont);
+XUI_API void xuiDrawRollbackCallbackOutput(xui_draw_context pDraw);
+XUI_API int xuiProxyDrainCallbackRollbacks(xui_proxy pProxy);
 XUI_API int xuiSurfaceGetValueOwned(xui_surface pSurface, xvalue** ppValue);
 XUI_API int xuiFontGetValueOwned(xui_font pFont, xvalue** ppValue);
 XUI_API int xuiDrawGetValueOwned(xui_draw_context pDraw, xvalue** ppValue);
