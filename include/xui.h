@@ -7042,6 +7042,17 @@ XUI_API int xuiResourceAddRef(xui_resource pResource);
 XUI_API int xuiResourceRelease(xui_resource pResource);
 /* 读取资源引用计数。 */
 XUI_API int xuiResourceGetRefCount(xui_resource pResource);
+/* A reference prevents registry replacement/removal until release. Closing
+ * the Context invalidates the reference. Use and release it on its creator thread. */
+typedef struct xui_resource_reference_t xui_resource_reference_t;
+XUI_API int xuiResourceRetainReference(xui_resource pResource, xui_resource_reference_t** ppReference);
+XUI_API bool xuiResourceReferenceIsLive(const xui_resource_reference_t* pReference);
+XUI_API int xuiResourceReferenceReleaseOwnerChecked(xui_resource_reference_t* pReference, bool* pConsumed);
+XUI_API int xuiResourceReferenceRelease(xui_resource_reference_t* pReference);
+/* Reserve the registry entry only for this synchronous callback. It may
+ * request Context close. The reservation ends before deferred destruction. */
+typedef int (*xui_resource_reservation_proc)(void* pUser);
+XUI_API int xuiResourceWithReservation(xui_resource pResource, xui_resource_reservation_proc onVisit, void* pUser);
 /* 声明资源依赖（依赖失效会传递到本资源及其依赖方）。 */
 XUI_API int xuiResourceAddDependency(xui_resource pResource, xui_resource pDependency);
 /* 清空依赖声明。 */
@@ -14191,6 +14202,8 @@ XUI_API xui_widget xuiGetRootWidget(xui_context pContext);
 
 /* 取全局唯一控件基类型（所有类型的最终祖先）。 */
 XUI_API xui_widget_type xuiWidgetGetBaseType(void);
+/* Acquire the base type through a live Context for an observed type view. */
+XUI_API xui_widget_type xuiContextGetBaseWidgetType(xui_context pContext);
 /* 注册控件类型（pDesc 声明父类型与虚函数表）；*ppType 输出类型句柄。 */
 XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType, const xui_widget_type_desc_t* pDesc);
 /* Retains one traced callback group for an owned Context. Init/Destroy receive

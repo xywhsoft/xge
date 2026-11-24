@@ -3025,6 +3025,88 @@ XUI_API int xuiResourceGetRefCount(xui_resource pResource)
 	return __xuiResourceValid(pResource) ? pResource->iRefCount : 0;
 }
 
+struct xui_resource_reference_t {
+    xui_lifetime_link_t link;
+    xui_resource resource;
+    uint64_t creator;
+};
+
+static void __xuiResourceReferenceInvalidate(void* user)
+{
+    xui_resource_reference_t* reference = user;
+    reference->resource = NULL;
+}
+
+XUI_API int xuiResourceRetainReference(xui_resource resource, xui_resource_reference_t** output)
+{
+    if ( !output ) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    if ( !__xuiResourceValid(resource) ) return XUI_ERROR_INVALID_ARGUMENT;
+
+    xui_resource_reference_t* reference = xrtCalloc(1, sizeof(*reference));
+    if ( !reference ) return XUI_ERROR_OUT_OF_MEMORY;
+    reference->resource = resource;
+    reference->creator = xrtThreadCurrentId();
+    int status = xuiResourceLifetimeWatch(resource, &reference->link, __xuiResourceReferenceInvalidate, reference);
+    if ( status == XUI_OK ) status = xuiResourceAddRef(resource);
+    if ( status != XUI_OK ) {
+        xuiLifetimeUnwatch(&reference->link);
+        xrtFree(reference);
+        return status;
+    }
+    *output = reference;
+    return XUI_OK;
+}
+
+XUI_API bool xuiResourceReferenceIsLive(const xui_resource_reference_t* reference)
+{
+    return reference && reference->creator == xrtThreadCurrentId() && reference->resource != NULL;
+}
+
+XUI_API int xuiResourceReferenceReleaseOwnerChecked(xui_resource_reference_t* reference, bool* consumed)
+{
+    if ( !consumed ) return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed = false;
+    if ( !reference ) return XUI_ERROR_INVALID_ARGUMENT;
+    if ( reference->creator != xrtThreadCurrentId() ) return XUI_ERROR_BUSY;
+
+    xui_resource resource = reference->resource;
+    if ( !resource ) {
+        *consumed = true;
+        xrtFree(reference);
+        return XUI_OK;
+    }
+    if ( resource->iRefCount <= 1 ) return XUI_ERROR_INVALID_STATE;
+    int status = xuiResourceRelease(resource);
+    if ( status != XUI_OK ) return status;
+    xuiLifetimeUnwatch(&reference->link);
+    *consumed = true;
+    xrtFree(reference);
+    return XUI_OK;
+}
+
+XUI_API int xuiResourceReferenceRelease(xui_resource_reference_t* reference)
+{
+    bool consumed;
+    return xuiResourceReferenceReleaseOwnerChecked(reference, &consumed);
+}
+
+XUI_API int xuiResourceWithReservation(xui_resource resource, xui_resource_reservation_proc visit, void* user)
+{
+    if ( !__xuiResourceValid(resource) || !visit ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_call_scope_t scope = {0};
+    int status = xuiCallScopeBegin(resource->pContext, &scope);
+    if ( status != XUI_OK ) return status;
+    status = xuiResourceAddRef(resource);
+    if ( status != XUI_OK ) return xuiInternalCallScopeEndRestored(&scope, status, xrtTakeError());
+
+    status = visit(user);
+    xui_cleanup_receipt_t receipt;
+    xuiInternalCleanupStart(&receipt, status);
+    xuiInternalCleanupAdd(&receipt, xuiResourceRelease(resource));
+    return xuiInternalCallScopeEndRestored(&scope, receipt.status, receipt.error);
+}
+
 XUI_API int xuiResourceAddDependency(xui_resource pResource, xui_resource pDependency)
 {
 	xui_resource_dependency_t* pScan;

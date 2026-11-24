@@ -3504,6 +3504,11 @@ XUI_API xui_widget_type xuiWidgetGetBaseType(void)
 	return &g_xuiWidgetBaseType;
 }
 
+XUI_API xui_widget_type xuiContextGetBaseWidgetType(xui_context context)
+{
+	return xuiInternalContextIsValid(context) ? xuiWidgetGetBaseType() : NULL;
+}
+
 static int __xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 	const xui_widget_type_desc_t* pDesc, const xui_callback_owner_t* pRetainedOwner)
 {
