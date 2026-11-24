@@ -2104,6 +2104,7 @@ typedef struct xui_context_t xui_context_t;
 typedef struct xui_language_t xui_language_t;
 typedef struct xui_widget_t xui_widget_t;
 typedef struct xui_widget_type_t xui_widget_type_t;
+typedef struct xui_widget_callback_snapshot_t xui_widget_callback_snapshot_t;
 typedef struct xui_draw_context_t xui_draw_context_t;
 typedef struct xui_input_decoration_t xui_input_decoration_t;
 typedef struct xui_animation_object_t xui_animation_object_t;
@@ -9042,6 +9043,7 @@ XUI_API int xuiCodeEditSetTokenStyleResolver(xui_widget pWidget, xui_code_token_
 XUI_API int xuiCodeEditSetTokenStyleResolverOwned(xui_widget pWidget, xui_code_token_style_proc onStyle, void* pUser, const xui_callback_owner_t* pOwner);
 XUI_API bool xuiCodeEditHasTokenStyleResolver(xui_widget pWidget);
 XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget, xui_code_token_style_proc* pStyle, void** pUser);
+XUI_API int xuiCodeEditCaptureTokenStyleResolver(xui_widget widget, xui_widget_callback_snapshot_t** output);
 /* 取折叠状态（展开/折叠记录，编辑器持有）。修改会刷新编辑器布局。 */
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 /* 取注释存储（标记/指示器/诊断，编辑器持有）。 */
@@ -14349,6 +14351,24 @@ XUI_API int xuiWidgetSetLayoutCompleteCallback(xui_widget pWidget, xui_widget_la
 XUI_API int xuiWidgetSetLayoutCompleteCallbackOwned(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser, const xui_callback_owner_t* pOwner);
 /* 输出布局完成回调与用户指针。 */
 XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc* pComplete, void** ppUser);
+
+/* Snapshot an instance's registered callback and its owner independently of
+ * the source Widget. An empty slot returns XUI_OK and NULL. A borrowed C
+ * registration without an owner returns XUI_ERROR_UNSUPPORTED. Snapshots
+ * can be installed on this thread and reused until released. */
+XUI_API int xuiWidgetCaptureContentMeasureCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureLayoutPrepareCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureLayoutChildrenCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureLayoutCompleteCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureImeCandidateRect(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureCursorQueryCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCaptureCacheRenderCallback(xui_widget widget, xui_widget_callback_snapshot_t** output);
+XUI_API int xuiWidgetCallbackSnapshotInstall(xui_widget_callback_snapshot_t* snapshot, xui_widget widget);
+XUI_API int xuiWidgetCallbackSnapshotReleaseOwnerChecked(xui_widget_callback_snapshot_t* snapshot, bool* consumed);
+XUI_API int xuiWidgetCallbackSnapshotRelease(xui_widget_callback_snapshot_t* snapshot);
+XUI_API bool xuiWidgetCallbackSnapshotTraceOwnership(const xui_widget_callback_snapshot_t* snapshot,
+    xrtownershipvisitor visit, void* user);
+XUI_API bool xuiWidgetCallbackSnapshotOwnershipBusy(const xui_widget_callback_snapshot_t* snapshot);
 /* 以约束尺寸测量内容（触发内容测量回调）。 */
 XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize);
 /* 设置容器布局类型（XUI_LAYOUT_ 枚举）。 */

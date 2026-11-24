@@ -2,6 +2,7 @@
 #if XUI_ENABLE_CODE_EDIT
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
+#include "xui_widget_callback_snapshot_internal.h"
 #include "xui_code_document_internal.h"
 #include "xui_code_diagnostics_internal.h"
 #include "xui_code_margin_internal.h"
@@ -7560,6 +7561,10 @@ XUI_API int xuiCodeEditGetTokenStyleResolver(xui_widget pWidget,
     if ( pUser != NULL ) *pUser = pData->pTokenStyleUser;
     return XUI_OK;
 }
+
+XUI_DEFINE_CALLBACK_CAPTURE(xuiCodeEditCaptureTokenStyleResolver, xui_code_token_style_proc,
+    xuiCodeEditGetTokenStyleResolver, xuiCodeEditSetTokenStyleResolverOwned,
+    &__xuiCodeEditGetData(widget)->onTokenStyle)
 
 static void __xuiCodeEditFoldChanged(xui_widget pWidget)
 {

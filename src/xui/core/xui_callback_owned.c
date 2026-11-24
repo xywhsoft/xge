@@ -2,6 +2,7 @@
 #if XGE_ENABLE_XUI
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
+#include "xui_widget_callback_snapshot_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,6 +18,118 @@ bool xuiInternalCallbackSlotOwned(xui_widget widget,const void* slot)
     xui_callback_binding_t** current=__xuiCallbackFind(widget,slot);
     return current && *current;
 }
+
+struct xui_widget_callback_snapshot_t {
+    xui_callback_owner_t owner;
+    xui_internal_snapshot_callback callback;
+    xui_internal_snapshot_install install;
+    void* user;
+    uint64_t creator;
+    bool busy;
+};
+
+int xuiInternalWidgetCallbackCaptureBegin(xui_widget widget,
+    xui_widget_callback_snapshot_t** output, xui_call_scope_t* scope)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    if (!xuiInternalWidgetIsValid(widget)) return XUI_ERROR_INVALID_ARGUMENT;
+    return xuiCallScopeBegin(widget->pContext, scope);
+}
+
+int xuiInternalWidgetCallbackCaptureEnd(xui_call_scope_t* scope, xui_widget widget,
+    const void* slot, xui_internal_snapshot_callback callback, void* user,
+    xui_internal_snapshot_install install, xui_widget_callback_snapshot_t** output, int status)
+{
+    xui_widget_callback_snapshot_t* snapshot = NULL;
+    bool held = false;
+    if (status == XUI_OK && callback) {
+        xui_callback_binding_t** binding = __xuiCallbackFind(widget, slot);
+        if (!binding || !*binding || (*binding)->pUser != user) {
+            status = XUI_ERROR_UNSUPPORTED;
+        } else {
+            snapshot = xrtCalloc(1, sizeof(*snapshot));
+            if (!snapshot) status = XUI_ERROR_OUT_OF_MEMORY;
+            else {
+                snapshot->owner = (*binding)->tOwner;
+                snapshot->callback = callback;
+                snapshot->install = install;
+                snapshot->user = user;
+                snapshot->creator = xrtThreadCurrentId();
+                status = xuiInternalCallbackHoldFresh(&snapshot->owner, &held);
+            }
+        }
+    }
+    xerror* first = xrtTakeError();
+    status = xuiInternalCallScopeEndOutcome(scope, status, &first);
+    if (status == XUI_OK) {
+        *output = snapshot;
+    } else {
+        if (held) {
+            (void)xuiInternalCallbackOwnerDropOutcome(NULL, &snapshot->owner, status, first);
+            xrtClearError();
+        }
+        xrtFree(snapshot);
+    }
+    xrtSetErrorTake(first);
+    return status;
+}
+
+XUI_API bool xuiWidgetCallbackSnapshotOwnershipBusy(const xui_widget_callback_snapshot_t* snapshot)
+{
+    return !snapshot || snapshot->creator != xrtThreadCurrentId() || snapshot->busy;
+}
+
+XUI_API bool xuiWidgetCallbackSnapshotTraceOwnership(const xui_widget_callback_snapshot_t* snapshot,
+    xrtownershipvisitor visit, void* user)
+{
+    return visit && !xuiWidgetCallbackSnapshotOwnershipBusy(snapshot) &&
+        visit(snapshot->owner.tReference, user);
+}
+
+XUI_API int xuiWidgetCallbackSnapshotInstall(xui_widget_callback_snapshot_t* snapshot, xui_widget widget)
+{
+    if (!snapshot) return XUI_ERROR_INVALID_ARGUMENT;
+    if (xuiWidgetCallbackSnapshotOwnershipBusy(snapshot)) return XUI_ERROR_BUSY;
+    snapshot->busy = true;
+    int status = snapshot->install(widget, snapshot->callback, snapshot->user, &snapshot->owner);
+    snapshot->busy = false;
+    return status;
+}
+
+XUI_API int xuiWidgetCallbackSnapshotReleaseOwnerChecked(xui_widget_callback_snapshot_t* snapshot, bool* consumed)
+{
+    if (!consumed) return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed = false;
+    if (!snapshot) return XUI_ERROR_INVALID_ARGUMENT;
+    if (xuiWidgetCallbackSnapshotOwnershipBusy(snapshot)) return XUI_ERROR_BUSY;
+    snapshot->busy = true;
+    *consumed = true;
+    int status = xuiInternalCallbackOwnerDrop(NULL, &snapshot->owner);
+    xrtFree(snapshot);
+    return status;
+}
+
+XUI_API int xuiWidgetCallbackSnapshotRelease(xui_widget_callback_snapshot_t* snapshot)
+{
+    bool consumed = false;
+    return xuiWidgetCallbackSnapshotReleaseOwnerChecked(snapshot, &consumed);
+}
+
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureContentMeasureCallback, xui_widget_content_measure_proc,
+    xuiWidgetGetContentMeasureCallback, xuiWidgetSetContentMeasureCallbackOwned, &widget->onContentMeasure)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureLayoutPrepareCallback, xui_widget_layout_prepare_proc,
+    xuiWidgetGetLayoutPrepareCallback, xuiWidgetSetLayoutPrepareCallbackOwned, &widget->onLayoutPrepare)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureLayoutChildrenCallback, xui_widget_layout_children_proc,
+    xuiWidgetGetLayoutChildrenCallback, xuiWidgetSetLayoutChildrenCallbackOwned, &widget->onLayoutChildren)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureLayoutCompleteCallback, xui_widget_layout_complete_proc,
+    xuiWidgetGetLayoutCompleteCallback, xuiWidgetSetLayoutCompleteCallbackOwned, &widget->onLayoutComplete)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureImeCandidateRect, xui_widget_ime_rect_proc,
+    xuiWidgetGetImeCandidateRect, xuiWidgetSetImeCandidateRectOwned, &widget->onImeCandidateRect)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureCursorQueryCallback, xui_widget_cursor_proc,
+    xuiWidgetGetCursorQueryCallback, xuiWidgetSetCursorQueryCallbackOwned, &widget->onQueryCursor)
+XUI_DEFINE_CALLBACK_CAPTURE(xuiWidgetCaptureCacheRenderCallback, xui_widget_cache_render_proc,
+    xuiWidgetGetCacheRenderCallback, xuiWidgetSetCacheRenderCallbackOwned, &widget->onCacheRender)
 static void __xuiCallbackRecordFailure(xui_context context,int result)
 {xuiInternalContextRecordFailure(context,result);}
 /* A false cleanup can have no diagnostic. Preserve the first status and its
