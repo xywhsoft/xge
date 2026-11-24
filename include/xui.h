@@ -6800,6 +6800,16 @@ XUI_API int xuiSurfaceCreateOwned(xui_proxy pProxy, size_t iPayloadSize, xui_pro
 typedef struct xui_draw_scope_t {const void* _pSelf; xui_draw_context _pDraw;} xui_draw_scope_t;
 XUI_API int xuiDrawCreateOwned(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_draw_context* ppDraw, void** ppPayload);
 XUI_API int xuiDrawCreateOwnedEx(xui_proxy pProxy, xui_surface pTarget, size_t iPayloadSize, xui_proxy_payload_finalize_proc onEnd, xui_proxy_payload_ready_proc onCanEnd, xui_draw_context* ppDraw, void** ppPayload);
+/* Custom providers can store one retained XRT value in the same resource
+ * allocation. The value is a real ownership edge and is released on semantic
+ * retirement. These resources confine value access and retirement to the
+ * creating thread. Get transfers an independent reference, possibly NULL. */
+XUI_API int xuiSurfaceCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_surface* ppSurface);
+XUI_API int xuiFontCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_font* ppFont);
+XUI_API int xuiDrawCreateWithValueOwned(xui_proxy pProxy, const xvalue* pValue, xui_surface pTarget, xui_draw_context* ppDraw);
+XUI_API int xuiSurfaceGetValueOwned(xui_surface pSurface, xvalue** ppValue);
+XUI_API int xuiFontGetValueOwned(xui_font pFont, xvalue** ppValue);
+XUI_API int xuiDrawGetValueOwned(xui_draw_context pDraw, xvalue** ppValue);
 XUI_API int xuiDrawEndChecked(xui_draw_context pDraw);
 XUI_API int xuiDrawAddRef(xui_draw_context pDraw);
 /* A shared view is the same session; End affects every view. */

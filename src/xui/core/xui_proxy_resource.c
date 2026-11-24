@@ -44,12 +44,31 @@ static bool terminalDraw(const xui_owned_resource_t* value,uint32_t state)
         (state&(RESOURCE_FINALIZED|RESOURCE_CLEARED|RESOURCE_FINISHED))==(RESOURCE_FINALIZED|RESOURCE_CLEARED|RESOURCE_FINISHED) &&
         !(state&(RESOURCE_FINALIZING|RESOURCE_FINISHING));
 }
+/* An opt-in payload tag. Existing resources keep their native layout and
+ * their backend finalizers. The custom carrier adds only one retained slot. */
+static int valueFinalize(xui_proxy proxy, void* payload)
+{
+    (void)proxy;
+    xvalue** slot = payload;
+    xvalue* value = *slot;
+    *slot = NULL;
+    xrtValueRelease(value);
+    return XUI_OK;
+}
+
+static xvalue* resourceValue(const xui_owned_resource_t* resource)
+{
+    const void* payload = xuiInternalProxyResourcePayload((void*)resource);
+    return *(xvalue* const*)payload;
+}
+
 /* Pure native admission only: no allocation, diagnostic mutation, wait or
  * user semantic callback. A consumed payload no longer depends on a pass. */
 static bool payloadReady(const xui_owned_resource_t* value,uint32_t state)
 {
     if(state&RESOURCE_FINALIZED)return true;
     if(value->iKind==XUI_OWNED_TEXT_SHAPE)return xuiInternalOwnedTextShapeReady(value+1);
+    if(value->onFinalize==valueFinalize)return xuiInternalUserValueReady(resourceValue(value));
     if(value->iKind!=XUI_OWNED_DRAW)return true;
     const xui_owned_draw_t* draw=(const void*)value;
     return !draw->onCanEnd || draw->onCanEnd((const void*)(draw+1));
@@ -402,7 +421,8 @@ static int resourceCreate(xui_proxy proxy,size_t payload,xui_owned_payload_final
     xui_owned_resource_t* value=xrtCalloc(1,prefix+payload);if(!value)return XUI_ERROR_OUT_OF_MEMORY;
     int status=xuiProxyAddRef(proxy);if(status!=XUI_OK){xrtFree(value);return status;}
     const xui_owned_resource_t* parent=proxyResource(proxy);
-    resourceInit(value,kind,parent->iCreatorThread,kind==XUI_OWNED_TEXT_SHAPE ? 0:parent->iFlags);
+    const uint32_t flags=(kind==XUI_OWNED_TEXT_SHAPE || finalize==valueFinalize) ? 0:parent->iFlags;
+    resourceInit(value,kind,parent->iCreatorThread,flags);
     value->pProxy=&proxy->_pCapability->tProxy;value->onFinalize=finalize;
     *output=value;*data=xuiInternalProxyResourcePayload(value);return XUI_OK;
 }
@@ -461,6 +481,94 @@ int xuiDrawCreateOwnedEx(xui_proxy proxy,xui_surface target,size_t payload,xui_p
     }
     ((xui_owned_draw_t*)raw)->pTarget=target;((xui_owned_draw_t*)raw)->onCanEnd=ready;*output=raw;return XUI_OK;
 }
+static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface target,
+    unsigned kind, void** output)
+{
+    *output = NULL;
+    if (!xuiProxyIsOwned(proxy)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (!xuiInternalProxyReady(proxy)) return XUI_ERROR_BUSY;
+    xvalue* held = NULL;
+    if (value && !xrtValueIs(value, XVALUE_NULL)) {
+        held = xrtValueRetain(value);
+        if (!held) return XUI_ERROR_INVALID_STATE;
+    }
+
+    void* raw = NULL;
+    void* payload = NULL;
+    int status;
+    if (kind == XUI_OWNED_DRAW) {
+        xui_draw_context draw = NULL;
+        status = xuiDrawCreateOwned(proxy, target, sizeof(held), valueFinalize, &draw, &payload);
+        raw = draw;
+    } else {
+        status = resourceCreate(proxy, sizeof(held), valueFinalize, kind, &raw, &payload);
+    }
+    if (status != XUI_OK) {
+        xerror* primary = xrtTakeError();
+        xrtValueRelease(held);
+        xrtClearError();
+        xrtSetErrorTake(primary);
+        return status;
+    }
+    *(xvalue**)payload = held;
+    *output = raw;
+    return XUI_OK;
+}
+
+int xuiSurfaceCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_surface* output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_SURFACE, &raw);
+    *output = raw;
+    return status;
+}
+
+int xuiFontCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_font* output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, NULL, XUI_OWNED_FONT, &raw);
+    *output = raw;
+    return status;
+}
+
+int xuiDrawCreateWithValueOwned(xui_proxy proxy, const xvalue* value, xui_surface target, xui_draw_context* output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    void* raw = NULL;
+    const int status = buildValueResource(proxy, value, target, XUI_OWNED_DRAW, &raw);
+    *output = raw;
+    return status;
+}
+
+static int getValueResource(const xui_owned_resource_t* resource, unsigned kind, xvalue** output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    if (!xuiInternalProxyResourceManaged(resource, kind)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (resource->iCreatorThread != xrtThreadCurrentId()) return XUI_ERROR_BUSY;
+    if (resource->onFinalize != valueFinalize) return XUI_ERROR_UNSUPPORTED;
+
+    xrtownershipscope mutation = {0};
+    int status = mutationBegin(&mutation);
+    if (status != XUI_OK) return status;
+    if (!xuiInternalProxyResourceReady(resource, kind)) status = XUI_ERROR_INVALID_STATE;
+    else {
+        xvalue* value = resourceValue(resource);
+        if (value && !(*output = xrtValueRetain(value))) status = XUI_ERROR_INVALID_STATE;
+    }
+    mutationEnd(&mutation);
+    return status;
+}
+
+int xuiSurfaceGetValueOwned(xui_surface surface, xvalue** output)
+{return getValueResource((const void*)surface, XUI_OWNED_SURFACE, output);}
+int xuiFontGetValueOwned(xui_font font, xvalue** output)
+{return getValueResource((const void*)font, XUI_OWNED_FONT, output);}
+int xuiDrawGetValueOwned(xui_draw_context draw, xvalue** output)
+{return getValueResource((const void*)draw, XUI_OWNED_DRAW, output);}
+
 int xuiDrawAddRef(xui_draw_context draw)
 {return xuiInternalProxyResourceManaged(draw,XUI_OWNED_DRAW) ? resourceRef((void*)draw,true,false):XUI_ERROR_INVALID_ARGUMENT;}
 int xuiDrawShareOwned(xui_draw_context draw,xui_draw_context* shared)
@@ -550,15 +658,19 @@ static bool resourceTrace(const void* raw,xrtownershipvisitor visit,void* contex
     const xui_owned_resource_t* value=raw;if(!valid(value) || !visit)return false;
     uint32_t state=resourceState(value);
     if(state&RESOURCE_CLEARED)return true;
-    /* Semantic paint disposal runs outside Freeze/Mutation. Refuse a partial
-     * payload rather than reading arrays/paint while Finalize clears them. */
-    if(value->iKind==XUI_OWNED_TEXT_SHAPE && (state&RESOURCE_FINALIZING))return false;
+    /* Finalize consumes set-aside data outside Freeze/Mutation. Refuse
+     * partial payloads while a destructor clears a traced owning slot. */
+    if((state&RESOURCE_FINALIZING) && (value->iKind==XUI_OWNED_TEXT_SHAPE || value->onFinalize==valueFinalize))return false;
     if(value->iKind==XUI_OWNED_PROXY){
         const struct xui_proxy_capability_t* capability=raw;
         return !capability->tOwner.tReference.Data || visit(capability->tOwner.tReference,context);
     }
     if(value->pProxy && !visit(xuiProxyOwnership(value->pProxy),context))return false;
     if(value->iKind==XUI_OWNED_TEXT_SHAPE)return xuiInternalOwnedTextShapeTrace(value+1,visit,context);
+    if(value->onFinalize==valueFinalize){
+        xvalue* held=resourceValue(value);
+        if(held && !visit(xrtValueOwnership(held),context))return false;
+    }
     return value->iKind!=XUI_OWNED_DRAW || !((const xui_owned_draw_t*)value)->pTarget ||
         visit(xuiSurfaceOwnership(((const xui_owned_draw_t*)value)->pTarget),context);
 }
