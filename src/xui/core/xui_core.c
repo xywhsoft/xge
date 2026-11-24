@@ -1178,6 +1178,12 @@ void xuiInternalOperationLeave(xui_context pContext)
 			continue;
 		}
         if(pContext->pDeferredDestroyHead && xuiInternalWidgetDestroyFlush(pContext))continue;
+        if(pContext->iPendingIcons){
+            pContext->iOperationDepth=1;
+            bool progressed=xuiInternalContextDrainIcons(pContext);
+            pContext->iOperationDepth=0;
+            if(progressed)continue;
+        }
         if(pContext->pPendingManagers) {
             pContext->iOperationDepth=1;
             bool progressed=xuiInternalContextDrainManagers(pContext);

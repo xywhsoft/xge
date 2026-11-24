@@ -12,6 +12,7 @@
 #define XUI_ICON_MAGIC 0x5849434Fu
 #define XUI_ICON_CATEGORY_DESTROYING_MAGIC (XUI_ICON_CATEGORY_MAGIC ^ 1u)
 #define XUI_ICON_DESTROYING_MAGIC (XUI_ICON_MAGIC ^ 1u)
+#define XUI_ICON_PENDING_MAGIC (XUI_ICON_MAGIC ^ 2u)
 #define XUI_ICON_DEFAULT_SIZE 16.0f
 #define XUI_ICON_DEFAULT_CACHE_CAPACITY 4
 #define XUI_ICON_MAX_CACHE_CAPACITY 64
@@ -64,6 +65,7 @@ struct xui_icon_t {
 	char* sTags;
 	uint32_t iFlags;
 	void* pUser;
+	xvalue* pUserValue;
 	int iSourceType;
 	uint32_t iGeneration;
 	int iRefCount;
@@ -377,14 +379,19 @@ static void __xuiIconCategoryUnlinkAll(xui_icon_category pCategory)
 	}
 }
 
+static void __xuiIconReleaseOwner(xui_icon pIcon);
+
 static void __xuiIconDestroyOne(xui_icon pIcon)
 {
 	if ( pIcon == NULL ) {
 		return;
 	}
-	if ( pIcon->iMagic != XUI_ICON_MAGIC ) return;
+	xui_context pContext = pIcon->pContext;
+	if ( pIcon->iMagic == XUI_ICON_PENDING_MAGIC ) --pContext->iPendingIcons;
+	else if ( pIcon->iMagic != XUI_ICON_MAGIC ) return;
 	pIcon->iMagic = XUI_ICON_DESTROYING_MAGIC;
 	__xuiIconUnlinkAll(pIcon);
+	xuiInternalRetireUserValue(pContext, &pIcon->pUserValue);
 	xuiInternalLifetimeInvalidateAll(&pIcon->pLifetimeLinks);
 	__xuiIconClearCache(pIcon);
 	if ( (pIcon->iSourceType == XUI_ICON_SOURCE_SURFACE) &&
@@ -395,18 +402,9 @@ static void __xuiIconDestroyOne(xui_icon pIcon)
 	     (pIcon->iSourceType == XUI_ICON_SOURCE_RASTER_MEMORY) ) {
 		__xuiIconClearLoadedSurface(pIcon);
 	}
-	if ( pIcon->pAlias != NULL ) {
-		xui_icon pAlias;
-
-		pAlias = pIcon->pAlias;
-		pIcon->pAlias = NULL;
-		if ( __xuiIconValid(pAlias) ) {
-			pAlias->iRefCount--;
-			if ( pAlias->iRefCount <= 0 ) {
-				__xuiIconDestroyOne(pAlias);
-			}
-		}
-	}
+	xui_icon pAlias = pIcon->pAlias;
+	pIcon->pAlias = NULL;
+	__xuiIconReleaseOwner(pAlias);
 	if ( pIcon->iSourceType == XUI_ICON_SOURCE_CUSTOM ) {
 		if(__xuiIconCustomOwned(pIcon))__xuiIconCustomFinalize(pIcon);
 		else if(pIcon->tCustom.onDestroy)pIcon->tCustom.onDestroy(pIcon,pIcon->tCustom.pUser);
@@ -426,10 +424,34 @@ static void __xuiIconReleaseOwner(xui_icon pIcon)
 	if ( !__xuiIconValid(pIcon) ) {
 		return;
 	}
-	pIcon->iRefCount--;
-	if ( pIcon->iRefCount <= 0 ) {
+	if ( --pIcon->iRefCount != 0 ) return;
+	if ( xuiInternalUserValueReady(pIcon->pUserValue) ) {
 		__xuiIconDestroyOne(pIcon);
+		return;
 	}
+	/* An in-flight operation or a category can consume a reference even
+	 * when a C reader is still active. Keep the carrier in the Context's
+	 * ownership list until the reader ends, without allocating a queue node. */
+	pIcon->iMagic = XUI_ICON_PENDING_MAGIC;
+	++pIcon->pContext->iPendingIcons;
+}
+
+static bool __xuiIconReleaseReady(xui_icon pIcon)
+{
+	for ( ; pIcon != NULL && pIcon->iRefCount == 1; pIcon = pIcon->pAlias )
+		if ( !xuiInternalUserValueReady(pIcon->pUserValue) ) return false;
+	return true;
+}
+
+bool xuiInternalContextDrainIcons(xui_context context)
+{
+	for ( xui_icon icon = context->pIcons; icon != NULL; icon = icon->pNextAll ) {
+		if ( icon->iMagic == XUI_ICON_PENDING_MAGIC && xuiInternalUserValueReady(icon->pUserValue) ) {
+			__xuiIconDestroyOne(icon);
+			return true;
+		}
+	}
+	return false;
 }
 
 static void __xuiIconCategoryDestroyOne(xui_icon_category pCategory)
@@ -1266,6 +1288,41 @@ XUI_API void xuiIconDrawDescDefault(xui_icon_draw_desc_t* pDesc)
 	pDesc->iFitMode = -1;
 }
 
+bool xuiInternalContextIconValuesReady(xui_context context)
+{
+    for ( xui_icon icon = context->pIcons; icon != NULL; icon = icon->pNextAll )
+        if ( !xuiInternalUserValueReady(icon->pUserValue) ) return false;
+    return true;
+}
+
+int xuiInternalContextPrepareIconValues(xui_context context,bool* complete)
+{
+    *complete = true;
+    int result = XUI_OK;
+    xerror* first = NULL;
+    for ( xui_icon icon = context->pIcons; icon != NULL; ) {
+        xui_icon next = icon->pNextAll;
+        if ( !xuiInternalUserValueReady(icon->pUserValue) ) {
+            *complete = false;
+        } else if ( icon->pUserValue != NULL ) {
+            /* A value destructor can release a retained peer. Watch the
+             * continuation across that callback and resume from the list if
+             * the peer was removed. The Context is already logically closed. */
+            bool bNextGone = false;
+            xui_lifetime_link_t watch = {0};
+            if ( next != NULL && xuiInternalLifetimeWatch(&next->pLifetimeLinks, &watch,
+                    __xuiIconCreationGone, &bNextGone) != XUI_OK ) abort();
+            xuiInternalRetireUserValue(context, &icon->pUserValue);
+            xuiLifetimeUnwatch(&watch);
+            xuiInternalContextCleanupOutcome(context, XUI_OK, &result, &first);
+            if ( bNextGone ) next = context->pIcons;
+        }
+        icon = next;
+    }
+    xrtSetErrorTake(first);
+    return result != XUI_OK ? result : *complete ? XUI_OK : XUI_STATUS_DEFERRED;
+}
+
 bool xuiInternalContextTraceIcons(xui_context context,xrtownershipvisitor visit,void* user)
 {
     if(!context || !visit)return false;
@@ -1273,6 +1330,7 @@ bool xuiInternalContextTraceIcons(xui_context context,xrtownershipvisitor visit,
      * alias-retained instances. Visit each actual Surface owner exactly once;
      * category/alias handles do not duplicate the Surface ownership slot. */
     for(xui_icon icon=context->pIcons;icon;icon=icon->pNextAll){
+        if(icon->pUserValue && !visit(xrtValueOwnership(icon->pUserValue),user))return false;
         if(context->pOwnedProxy){
             if(icon->bOwnSurface && icon->pSurface && !visit(xuiSurfaceOwnership(icon->pSurface),user))return false;
             for(int i=0;i<icon->iCacheCount;++i)
@@ -1922,13 +1980,15 @@ XUI_API xui_icon xuiIconFindById(xui_icon_category pCategory, xui_icon_id iId)
 	return (ppIcon != NULL) ? *ppIcon : NULL;
 }
 
-static int __xuiIconRemoveById(xui_icon_category pCategory, xui_icon_id iId)
+static int __xuiIconRemoveById(xui_icon_category pCategory, xui_icon_id iId, bool* accepted)
 {
 	xui_icon pIcon;
 	xui_icon* ppIcon;
 
 	pIcon = xuiIconFindById(pCategory, iId);
 	if ( pIcon == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiIconReleaseReady(pIcon) ) return XUI_ERROR_BUSY;
+	if ( accepted != NULL ) *accepted = true;
 	(void)xuiXrtMapRemove(&pCategory->mapIcons, pIcon->sName, (uint32_t)strlen(pIcon->sName));
 	ppIcon = (xui_icon*)xuiXrtArrayGet(&pCategory->arrIcons, iId);
 	if ( ppIcon != NULL ) *ppIcon = NULL;
@@ -1987,6 +2047,7 @@ static int __xuiIconRelease(xui_icon pIcon)
 	if ( pIcon->bRegistered && (pIcon->iRefCount <= 1) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( !__xuiIconReleaseReady(pIcon) ) return XUI_ERROR_BUSY;
 	__xuiIconReleaseOwner(pIcon);
 	return XUI_OK;
 }
@@ -2030,6 +2091,27 @@ XUI_API uint32_t xuiIconGetGeneration(xui_icon pIcon)
 XUI_API void* xuiIconGetUser(xui_icon pIcon)
 {
 	return __xuiIconMemoryValid(pIcon) ? pIcon->pUser : NULL;
+}
+
+XUI_API int xuiIconSetUserValue(xui_icon pIcon, xvalue* pValue)
+{
+    xui_call_scope_t scope = {0};
+    int status = xuiInternalIconOperationBegin(pIcon, &scope);
+    if ( status != XUI_OK ) return status;
+    status = xuiInternalSetUserValue(pIcon->pContext, &pIcon->pUserValue, pValue);
+    return xuiInternalIconOperationEnd(pIcon, &scope, status);
+}
+
+XUI_API int xuiIconGetUserValue(xui_icon pIcon, xvalue** ppValue)
+{
+    if ( ppValue == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    *ppValue = NULL;
+    if ( !__xuiIconValid(pIcon) ) return XUI_ERROR_INVALID_ARGUMENT;
+    xui_context context = pIcon->pContext;
+    if ( context->pOwnedProxy != NULL && !xuiInternalProxyCreator(context->pOwnedProxy) )
+        return XUI_ERROR_BUSY;
+    if ( context->bCloseRequested ) return XUI_ERROR_INVALID_STATE;
+    return xuiInternalGetUserValue(context, &pIcon->pUserValue, ppValue);
 }
 
 XUI_API uint32_t xuiIconGetFlags(xui_icon pIcon)
@@ -2163,7 +2245,7 @@ XUI_API int xuiIconRemoveById(xui_icon_category category,xui_icon_id id)
     if(!__xuiIconCategoryValid(category))return XUI_ERROR_INVALID_ARGUMENT;
     xui_call_scope_t scope={0};int status=xuiCallScopeBegin(category->pContext,&scope);
     if(status!=XUI_OK)return status;
-    status=__xuiIconRemoveById(category,id);
+    status=__xuiIconRemoveById(category,id,NULL);
     return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }
 XUI_API void xuiIconClear(xui_icon_category category)
@@ -2283,6 +2365,8 @@ XUI_API int xuiIconReferenceReleaseOwnerChecked(xui_icon_reference_t* reference,
 	xui_call_scope_t scope = {0};
 	int status = xuiInternalCleanupCallScopeBegin(context, &scope);
 	if ( status != XUI_OK ) return status;
+	if ( !reference->bCategory && !__xuiIconReleaseReady(target) )
+		return xuiInternalCallScopeEndRestored(&scope,XUI_ERROR_BUSY,NULL);
 	reference->bClosing = true;
 	*consumed = true;
 	xuiLifetimeUnwatch(&reference->tLink);
@@ -2320,7 +2404,7 @@ XUI_API int xuiIconRemoveOwnerChecked(xui_icon icon,bool* accepted)
     if(icon->bRegistered){
         xui_icon_category category=icon->pCategory;
         if(!__xuiIconCategoryValid(category) || xuiIconFindById(category,icon->iId)!=icon)status=XUI_ERROR_INVALID_STATE;
-        else{*accepted=true;status=__xuiIconRemoveById(category,icon->iId);}
+        else status=__xuiIconRemoveById(category,icon->iId,accepted);
     }else *accepted=true;
     return xuiInternalCallScopeEndRestored(&scope,status,xrtTakeError());
 }

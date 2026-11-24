@@ -7189,6 +7189,12 @@ XUI_API int xuiIconGetSourceType(xui_icon pIcon);
 XUI_API uint32_t xuiIconGetGeneration(xui_icon pIcon);
 /* 读取图标用户指针。 */
 XUI_API void* xuiIconGetUser(xui_icon pIcon);
+/* XRT data belongs to the individual live Icon, including an alias. This
+ * slot is separate from the borrowed C descriptor user pointer. NULL clears
+ * it. The getter transfers one reference and leaves the output NULL on error.
+ * During Context shutdown the slot is retired before native icon callbacks. */
+XUI_API int xuiIconSetUserValue(xui_icon pIcon, xvalue* pValue);
+XUI_API int xuiIconGetUserValue(xui_icon pIcon, xvalue** ppValue);
 XUI_API uint32_t xuiIconGetFlags(xui_icon pIcon);
 /* References retain the native carrier after unregistration. Context teardown
  * still invalidates the reference, which remains safe to release. These

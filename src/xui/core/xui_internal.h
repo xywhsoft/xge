@@ -113,6 +113,13 @@ bool xuiInternalProxyReady(const xui_proxy_t* proxy);
 bool xuiInternalProxyCreator(const xui_proxy_t* proxy);
 bool xuiInternalContextTraceRegistry(xui_context,xrtownershipvisitor,void*);
 bool xuiInternalContextTraceIcons(xui_context,xrtownershipvisitor,void*);
+bool xuiInternalContextIconValuesReady(xui_context context);
+int xuiInternalContextPrepareIconValues(xui_context context,bool* complete);
+bool xuiInternalContextDrainIcons(xui_context context);
+bool xuiInternalUserValueReady(xvalue* value);
+int xuiInternalSetUserValue(xui_context context,xvalue** slot,xvalue* value);
+int xuiInternalGetUserValue(xui_context context,xvalue* const* slot,xvalue** out);
+void xuiInternalRetireUserValue(xui_context context,xvalue** slot);
 /* An explicitly declared primary outcome across implicit void cleanup.
  * Caller owns error for the entire LIFO scope and already protects Context
  * activity on its UI thread. This is neither TLS nor an inferred parent error. */
@@ -638,6 +645,7 @@ struct xui_context_t {
 	xarray arrIconCategories;
 	xui_icon_category pIconCategories;
 	xui_icon pIcons;
+	size_t iPendingIcons;
 	uint32_t iIconGeneration;
 	void (*onDestroyIcons)(xui_context pContext);
 	xarray arrLanguages;
