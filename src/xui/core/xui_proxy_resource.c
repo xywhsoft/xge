@@ -690,13 +690,18 @@ void xuiFontRollbackCallbackOutput(xui_font font)
 void xuiDrawRollbackCallbackOutput(xui_draw_context draw)
 {rollbackCallbackOutput((void*)draw, XUI_OWNED_DRAW);}
 
-int xuiProxyDrainCallbackRollbacks(xui_proxy proxy)
+int xuiInternalProxyDrainCallbackRollbacks(xui_proxy proxy, bool* complete)
 {
+    *complete = false;
     xui_owned_resource_t* parent = proxyResource(proxy);
     if (!parent) return XUI_ERROR_INVALID_ARGUMENT;
     uint32_t state = resourceState(parent);
-    if (!(state & (RESOURCE_ROLLBACK_PENDING | RESOURCE_ROLLBACK_DRAINING))) return XUI_OK;
-    if (!xuiInternalProxyReady(proxy) || (state & RESOURCE_ROLLBACK_DRAINING)) return XUI_ERROR_BUSY;
+    if (!(state & (RESOURCE_ROLLBACK_PENDING | RESOURCE_ROLLBACK_DRAINING))) {
+        *complete = true;
+        return XUI_OK;
+    }
+    if (!xuiInternalProxyReady(proxy)) return XUI_ERROR_BUSY;
+    if (state & RESOURCE_ROLLBACK_DRAINING) return XUI_OK;
     const int pinned = resourceRef(parent, false, true);
     if (pinned != XUI_OK) return pinned;
 
@@ -729,6 +734,7 @@ int xuiProxyDrainCallbackRollbacks(xui_proxy proxy)
     resourceLock(parent);
     *tail = cap->pRollbackOutputs;
     cap->pRollbackOutputs = retry;
+    *complete = !retry;
     state = resourceState(parent) & ~(RESOURCE_ROLLBACK_PENDING | RESOURCE_ROLLBACK_DRAINING);
     if (cap->pRollbackOutputs) state |= RESOURCE_ROLLBACK_PENDING;
     resourceStateSet(parent, state);
@@ -741,7 +747,14 @@ int xuiProxyDrainCallbackRollbacks(xui_proxy proxy)
         return status;
     }
     xrtSetErrorTake(previous);
-    return retry ? XUI_ERROR_BUSY : XUI_OK;
+    return XUI_OK;
+}
+
+int xuiProxyDrainCallbackRollbacks(xui_proxy proxy)
+{
+    bool complete;
+    const int status = xuiInternalProxyDrainCallbackRollbacks(proxy, &complete);
+    return status == XUI_OK && !complete ? XUI_ERROR_BUSY : status;
 }
 
 static int getValueResource(const xui_owned_resource_t* resource, unsigned kind, xvalue** output)

@@ -131,3 +131,10 @@ its last independent Proxy owner. Ordinary resource owners still use the
 checked release functions. Checked Draw release preserves the caller's owner
 when a dependency refuses. If the owner already closed during a draw scope,
 the scope transfers its physical reference to the same queue on refusal.
+
+Checked Context close drains previously queued rollbacks during destruction
+preparation, while the Context still owns its Proxy. Incomplete cleanup alone
+returns `XUI_STATUS_DEFERRED` and preserves the caller's Context owner and
+its lifetime observations. Once the active reader or scope ends, retry the
+same close. A finalizer failure keeps its own status and diagnostic even if
+other rollbacks still need another pass.

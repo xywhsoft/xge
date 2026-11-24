@@ -42,6 +42,9 @@ int xuiInternalProxyCreateOwnedStorage(const xui_proxy_t*,const xui_callback_own
 xui_proxy xuiInternalProxyCanonical(const xui_proxy_t*);
 bool xuiInternalProxyReady(const xui_proxy_t*);
 bool xuiInternalProxyCreator(const xui_proxy_t*);
+/* Cleanup holds a Proxy owner. A failed finalizer and remaining work are
+ * independent outcomes, so return both to the owning Context. */
+int xuiInternalProxyDrainCallbackRollbacks(xui_proxy proxy, bool* complete);
 bool xuiInternalProxyResourceManaged(const void*,unsigned);
 bool xuiInternalProxyResourceReady(const void*,unsigned);
 int xuiInternalProxyResourcePin(void*,unsigned);

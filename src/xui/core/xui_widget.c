@@ -3,6 +3,7 @@
 #include "xui_internal.h"
 #include "xui_callback_hold_internal.h"
 #include "xui_native_accessibility_internal.h"
+#include "xui_proxy_resource.h"
 
 #include <limits.h>
 #include <math.h>
@@ -6897,6 +6898,14 @@ int xuiInternalContextPrepareDestroy(xui_context context,bool* complete)
         }
         if(!done)++remaining;
         if(!__xuiWidgetTypeValuesReady(context))++remaining;
+        /* Cleanup callbacks above can enqueue refused resource rollbacks.
+         * Keep the Context's Proxy owner until the actual queue retires. */
+        if(context->pOwnedProxy){
+            status=xuiInternalProxyDrainCallbackRollbacks(context->pOwnedProxy,&done);
+            if(status!=XUI_OK || xrtGetError())
+                xuiInternalContextCleanupOutcome(context,status<0 ? status:XUI_ERROR_CALLBACK_FAILED,&result,&first);
+            if(!done)++remaining;
+        }
         if(!remaining){*complete=true;break;}
         if(remaining>=previous)break;
         previous=remaining;
