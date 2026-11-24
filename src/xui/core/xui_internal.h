@@ -464,6 +464,7 @@ struct xui_font_entry_t {
 struct xui_context_t {
 	uint32_t iMagic;
 	xui_lifetime_link_t* pLifetimeLinks;
+	xui_lifetime_link_t* pRetirementLinks;
 	xlayout_context_t* pLayoutContext;
 	xlayout_track_t* pLayoutTrackScratch;
 	uint32_t iLayoutTrackScratchCapacity;

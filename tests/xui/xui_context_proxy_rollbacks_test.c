@@ -117,6 +117,110 @@ static void closeWithPendingOutputs(bool failingFinalizer)
     xrtValueRelease(state);
 }
 
+typedef struct LateOutput {
+    xui_proxy proxy;
+    xui_context context;
+    xvalue* state;
+    xvalueviewv1 reader;
+    size_t references;
+    unsigned drops;
+    unsigned* early;
+    unsigned* retired;
+} LateOutput;
+
+static bool lateCount(const void* raw, size_t* output)
+{
+    *output = ((const LateOutput*)raw)->references;
+    return true;
+}
+
+static bool lateHold(const void* raw)
+{
+    ++((LateOutput*)raw)->references;
+    return true;
+}
+
+static void observeError(xui_context context, const xui_error_info_t* error, void* raw)
+{
+    (void)context;
+    (void)error;
+    (void)raw;
+}
+
+static bool lateDrop(const void* raw)
+{
+    LateOutput* late = (LateOutput*)raw;
+    --late->references;
+    ++late->drops;
+    assert(*late->early == 1 && *late->retired == 0);
+    bool reentered = true;
+    assert(xuiDestroyOwnerChecked(late->context, &reentered) == XUI_ERROR_INVALID_STATE && !reentered);
+    xui_surface staged = NULL;
+    assert(xuiSurfaceStageCallbackOutput(&staged, late->proxy, late->state) == XUI_OK);
+    assert(xrtValueViewBeginV1(late->state, &late->reader));
+    xuiSurfaceRollbackCallbackOutput(staged);
+    return true;
+}
+
+static int32_t closeOnWorker(ptr raw)
+{
+    bool consumed = true;
+    const int status = xuiDestroyOwnerChecked(raw, &consumed);
+    assert(!consumed);
+    return status;
+}
+
+static void closeWithLateOutput(bool voidRetry)
+{
+    static const xrtownershipops backendOps = {ownerCount, ownerTrace};
+    static const xrtownershipops lateOps = {lateCount, ownerTrace};
+    Backend backend = {1, 0};
+    unsigned early = 0, retired = 0;
+    LateOutput late = {.state = xrtValueObject(), .references = 1, .early = &early, .retired = &retired};
+    const xui_proxy_t table = xuiProxyXge();
+    const xui_callback_owner_t backendOwner = {{&backend, &backendOps}, holdOwner, dropOwner};
+    const xui_callback_owner_t errorOwner = {{&late, &lateOps}, lateHold, lateDrop};
+    assert(late.state && xuiProxyCreateOwned(&table, &backendOwner, &late.proxy) == XUI_OK);
+    assert(xuiCreateOwned(late.proxy, &late.context) == XUI_OK);
+    assert(xuiProxyReleaseChecked(late.proxy) == XUI_OK);
+    assert(xuiSetErrorCallbackOwned(late.context, observeError, &late, &errorOwner) == XUI_OK);
+
+    xui_lifetime_link_t earlyWatch = {0}, retirementWatch = {0};
+    assert(xuiContextLifetimeWatch(late.context, &earlyWatch, invalidate, &early) == XUI_OK);
+    assert(xuiContextRetirementWatch(late.context, &retirementWatch, invalidate, &retired) == XUI_OK);
+    if (voidRetry) {
+        xuiDestroy(late.context);
+    } else {
+        bool consumed = true;
+        assert(xuiDestroyOwnerChecked(late.context, &consumed) == XUI_STATUS_DEFERRED && !consumed);
+    }
+    assert(!xrtGetError() && late.drops == 1 && late.references == 1);
+    assert(early == 1 && retired == 0 && !earlyWatch.ppPrevious && retirementWatch.ppPrevious);
+    assert(backend.references == 2 && backend.dropped == 0);
+    assert(xuiContextOwnershipBusy(late.context));
+    xui_call_scope_t scope = {0};
+    assert(xuiCallScopeBegin(late.context, &scope) == XUI_ERROR_INVALID_ARGUMENT);
+
+    xthread* worker = xrtThreadCreate(closeOnWorker, late.context, 0);
+    assert(worker && xrtThreadWait(worker) == XWAIT_OK && xrtThreadExitCode(worker) == XUI_ERROR_BUSY);
+    xrtThreadDestroy(worker);
+    assert(xrtMemDebugFailAfter(0));
+    bool consumed = true;
+    assert(xuiDestroyOwnerChecked(late.context, &consumed) == XUI_STATUS_DEFERRED && !consumed);
+    assert(!xrtMemDebugFailTriggered() && late.drops == 1 && retired == 0);
+    xrtMemDebugFailClear();
+
+    assert(xrtValueViewEndV1(&late.reader));
+    if (voidRetry) {
+        xuiDestroy(late.context);
+    } else {
+        assert(xuiDestroyOwnerChecked(late.context, &consumed) == XUI_OK && consumed);
+    }
+    assert(!xrtGetError() && retired == 1 && !retirementWatch.ppPrevious);
+    assert(late.drops == 1 && backend.references == 1 && backend.dropped == 1);
+    xrtValueRelease(late.state);
+}
+
 int main(void)
 {
     assert(xrtMemDebugEnable(true));
@@ -124,6 +228,8 @@ int main(void)
     xrtMemDebugSnapshot(&before);
     closeWithPendingOutputs(false);
     closeWithPendingOutputs(true);
+    closeWithLateOutput(false);
+    closeWithLateOutput(true);
     xrtMemDebugSnapshot(&after);
     assert(after.LiveCount == before.LiveCount && after.LiveBytes == before.LiveBytes);
     assert(after.DoubleFreeCount == before.DoubleFreeCount && after.InvalidFreeCount == before.InvalidFreeCount);

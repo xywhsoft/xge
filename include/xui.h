@@ -6663,9 +6663,9 @@ XUI_API int xuiClipboardCopyDataWithTransfer(xui_context context,xui_data_object
     const xn_transfer_services_v1* services);
 /* 销毁上下文及全部控件树。 */
 XUI_API void xuiDestroy(xui_context pContext);
-/* Accepted logical close consumes the context owner even when physical cleanup
- * fails. A surrounding operation can defer that cleanup; its enclosing Scope
- * reports the failure at its physical tail. Rejected calls consume nothing. */
+/* Logical close stops new work. When cleanup has to wait, the Context owner
+ * remains with the caller and pConsumed stays false. Retry on the owning
+ * thread. A checked failure and owner consumption are independent outcomes. */
 XUI_API int xuiDestroyOwnerChecked(xui_context pContext, bool* pConsumed);
 XUI_API int xuiDestroyChecked(xui_context pContext);
 /* Watch logical destruction, before user destructors and physical free.
@@ -6674,6 +6674,10 @@ XUI_API int xuiDestroyChecked(xui_context pContext);
  * A watch is weak: it neither owns the native object nor retains pUser/code.
  * The caller must keep callback code/data resident until detach/notification. */
 XUI_API int xuiContextLifetimeWatch(xui_context pContext, xui_lifetime_link_t* pLink,
+	xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+/* Weak owner-directory watch. Fires when checked retirement consumes the
+ * Context owner, after all retryable cleanup and before storage is freed. */
+XUI_API int xuiContextRetirementWatch(xui_context pContext, xui_lifetime_link_t* pLink,
 	xui_lifetime_invalidate_proc onInvalidate, void* pUser);
 XUI_API int xuiWidgetLifetimeWatch(xui_widget pWidget, xui_lifetime_link_t* pLink,
 	xui_lifetime_invalidate_proc onInvalidate, void* pUser);

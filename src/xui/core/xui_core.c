@@ -224,7 +224,17 @@ static int __xuiContextValid(xui_context pContext)
 	return (pContext != NULL) && (pContext->iMagic == XUI_CONTEXT_MAGIC);
 }
 
-static void __xuiContextDestroyNow(xui_context pContext);
+/* A retired payload keeps only the native owner, retry and observer machinery
+ * live. Ordinary C operations continue checking the original Context magic. */
+#define XUI_CONTEXT_RETIRING_MAGIC 0x58554952u
+enum { XUI_CONTEXT_DESTROY_ACTIVE=1, XUI_CONTEXT_DESTROY_WAITING=2 };
+
+static bool __xuiContextStorageValid(xui_context context)
+{
+    return context && (context->iMagic==XUI_CONTEXT_MAGIC || context->iMagic==XUI_CONTEXT_RETIRING_MAGIC);
+}
+
+static int __xuiContextDestroyNow(xui_context context,bool unpublished);
 static int __xuiContextDestroyOwnerInMode(xui_context,bool*,xui_internal_destroy_mode_t);
 
 static int __xuiResourceValid(xui_resource pResource)
@@ -1159,7 +1169,7 @@ void xuiInternalOperationLeave(xui_context pContext)
 	}
 	while ( __xuiContextValid(pContext) ) {
 		if ( pContext->bDestroyPending ) {
-			__xuiContextDestroyNow(pContext);
+			(void)__xuiContextDestroyNow(pContext,false);
 			return;
 		}
         if(pContext->iDestroyOwnership==1){
@@ -1205,7 +1215,7 @@ void xuiInternalDestroyScopeBegin(xui_context context,xui_internal_destroy_mode_
     xui_internal_destroy_scope_t* scope)
 {
     memset(scope,0,sizeof(*scope));
-    if(!__xuiContextValid(context) ||
+    if(!__xuiContextStorageValid(context) ||
        (context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy)))return;
     scope->pContext=context;scope->pPrevious=context->pDestroyScopes;scope->iMode=mode;
     context->pDestroyScopes=scope;
@@ -2048,7 +2058,7 @@ XUI_API int xuiCreateOwnedEx(xui_proxy pProxy,const xui_context_desc_t* pDesc,xu
          * Roll back directly through the normal physical destructor, rather
          * than enqueueing an unobservable owner for a later retry. Preserve
          * the first operation outcome even when its diagnostic is NULL. */
-        xerror* first=xrtTakeError();__xuiContextDestroyNow(context);
+        xerror* first=xrtTakeError();(void)__xuiContextDestroyNow(context,true);
         xrtErrorFree(xrtTakeError());xrtSetErrorTake(first);
     }
     return status;
@@ -2059,9 +2069,10 @@ XUI_API xui_proxy xuiGetProxyOwned(xui_context pContext)
 
 XUI_API int xuiRequestClose(xui_context context)
 {
-    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
-    if(context->bDestroying || context->bDestroyPending)return XUI_ERROR_INVALID_STATE;
+    if(!__xuiContextStorageValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bDestroying==XUI_CONTEXT_DESTROY_ACTIVE || context->bDestroyPending)return XUI_ERROR_INVALID_STATE;
     if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
+    if(context->iMagic==XUI_CONTEXT_RETIRING_MAGIC)return XUI_OK;
     xrtownershipscope mutation={0};if(!xrtOwnershipMutationBegin(&mutation))return XUI_ERROR_INVALID_STATE;
     context->bCloseRequested=1;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
@@ -2113,19 +2124,16 @@ static void __xuiContextDestroyFonts(xui_context pContext)
     xuiInternalContextRecordOutcome(pContext,result,first);xrtSetErrorTake(first);
 }
 
-static void __xuiContextDestroyNow(xui_context pContext)
+XUI_API int xuiContextRetirementWatch(xui_context context,xui_lifetime_link_t* link,
+    xui_lifetime_invalidate_proc invalidate,void* user)
 {
-	if ( !__xuiContextValid(pContext) || pContext->bDestroying ) {
-		return;
-	}
-    /* Physical destruction can follow an ordinary native operation with no
-     * external Scope. Keep a stack receipt through every cleanup phase. */
-    xui_call_scope_t receipt={0};
-    receipt.pContext=pContext;receipt.pSelf=&receipt;receipt.pNext=pContext->pCallScopes;
-    if(receipt.pNext)receipt.pNext->pPrevious=&receipt;
-    pContext->pCallScopes=&receipt;
-    xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
-	pContext->bDestroying = 1;
+    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bCloseRequested || context->bDestroyPending || context->bDestroying)return XUI_ERROR_INVALID_STATE;
+    return xuiInternalLifetimeWatch(&context->pRetirementLinks,link,invalidate,user);
+}
+
+static void __xuiContextDestroyContents(xui_context pContext,xui_call_scope_t* receipt)
+{
 	xuiInternalOperationEnter(pContext);
 	xuiInternalContextInvalidateLifetimes(pContext);
 	xuiInternalOperationLeave(pContext);
@@ -2137,9 +2145,9 @@ static void __xuiContextDestroyNow(xui_context pContext)
     xui_callback_record_t* accessibilityOwner=pContext->pAccessibilityOwner;
     pContext->pAccessibilityOwner=NULL;pContext->onAccessibilityEvent=NULL;pContext->pAccessibilityEventUser=NULL;
     if(!xrtOwnershipScopeEnd(&callbackMutation))abort();
-    int callbackStatus=xuiInternalCallbackRecordRelease(pContext,errorOwner,receipt.iResult,receipt._pFirstError);
+    int callbackStatus=xuiInternalCallbackRecordRelease(pContext,errorOwner,receipt->iResult,receipt->_pFirstError);
     if(callbackStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,callbackStatus,xrtGetError());
-    callbackStatus=xuiInternalCallbackRecordRelease(pContext,accessibilityOwner,receipt.iResult,receipt._pFirstError);
+    callbackStatus=xuiInternalCallbackRecordRelease(pContext,accessibilityOwner,receipt->iResult,receipt->_pFirstError);
     if(callbackStatus!=XUI_OK)xuiInternalContextRecordOutcome(pContext,callbackStatus,xrtGetError());
 	xuiInternalNativeAccessibilityDetach(pContext);
 	pContext->bDestroyPending = 0;
@@ -2185,8 +2193,53 @@ static void __xuiContextDestroyNow(xui_context pContext)
 	}
 	xLayoutContextDestroy(pContext->pLayoutContext);
 	pContext->pLayoutContext = NULL;
-    xui_proxy ownedProxy=pContext->pOwnedProxy;pContext->pOwnedProxy=NULL;
-    if(ownedProxy)xuiInternalContextRecordFailure(pContext,xuiProxyReleaseChecked(ownedProxy));
+}
+
+static void __xuiContextRecordRetirementStep(xui_context context,int status)
+{
+    xerror* error=xrtTakeError();
+    xuiInternalContextRecordOutcome(context,status,error);
+    xrtErrorFree(error);
+}
+
+static int __xuiContextDestroyNow(xui_context pContext,bool unpublished)
+{
+    /* Keep a live receipt through arbitrary cleanup, including a late batch
+     * whose last reader can keep the Context owner alive for another call. */
+    xui_call_scope_t receipt={0};
+    receipt.pContext=pContext;receipt.pSelf=&receipt;receipt.pNext=pContext->pCallScopes;
+    if(receipt.pNext)receipt.pNext->pPrevious=&receipt;
+    pContext->pCallScopes=&receipt;
+    xuiInternalContextRecordOutcome(pContext,XUI_OK,xrtGetError());
+    pContext->bDestroying=XUI_CONTEXT_DESTROY_ACTIVE;
+    if(__xuiContextValid(pContext)){
+        __xuiContextDestroyContents(pContext,&receipt);
+        pContext->iMagic=XUI_CONTEXT_RETIRING_MAGIC;
+    }
+    __xuiContextRecordRetirementStep(pContext,XUI_OK);
+    bool complete=true;
+    if(pContext->pOwnedProxy && !unpublished){
+        int status=xuiInternalProxyDrainCallbackRollbacks(pContext->pOwnedProxy,&complete);
+        __xuiContextRecordRetirementStep(pContext,status);
+    }
+    if(complete && pContext->pOwnedProxy){
+        int status=xuiProxyReleaseOwnerChecked(pContext->pOwnedProxy,&complete);
+        if(complete)pContext->pOwnedProxy=NULL;
+        if(status!=XUI_ERROR_BUSY || complete || xrtGetError())
+            __xuiContextRecordRetirementStep(pContext,status);
+    }
+    if(!complete){
+        /* A failed constructor never publishes this Context. Its caller
+         * independently owns the supplied Proxy, so its edge cannot refuse. */
+        if(unpublished)abort();
+        pContext->pCallScopes=receipt.pNext;
+        if(receipt.pNext)receipt.pNext->pPrevious=NULL;
+        pContext->bDestroying=XUI_CONTEXT_DESTROY_WAITING;
+        xrtSetErrorTake(receipt._pFirstError);
+        return receipt.iResult!=XUI_OK ? receipt.iResult:XUI_STATUS_DEFERRED;
+    }
+    xuiInternalLifetimeInvalidateAll(&pContext->pRetirementLinks);
+    __xuiContextRecordRetirementStep(pContext,XUI_OK);
 	pContext->iMagic = 0;
 	for ( xui_call_scope_t* pScope = pContext->pCallScopes; pScope != NULL; pScope = pScope->pNext )
 		pScope->pContext = NULL;
@@ -2196,15 +2249,16 @@ static void __xuiContextDestroyNow(xui_context pContext)
         scope->pContext=NULL;scope->pPrevious=NULL;
     }
 	xrtFree(pContext);
-    if(receipt.iResult!=XUI_OK)xrtSetErrorTake(receipt._pFirstError);
+    xrtSetErrorTake(receipt._pFirstError);
+    return receipt.iResult;
 }
 
 static int __xuiContextDestroyOwner(xui_context context,bool* consumed)
 {
     if(!consumed)return XUI_ERROR_INVALID_ARGUMENT;
     *consumed=false;
-    if(!__xuiContextValid(context))return XUI_ERROR_INVALID_ARGUMENT;
-    if(context->bDestroying || context->bDestroyPending || context->iDestroyOwnership==2)return XUI_ERROR_INVALID_STATE;
+    if(!__xuiContextStorageValid(context))return XUI_ERROR_INVALID_ARGUMENT;
+    if(context->bDestroying==XUI_CONTEXT_DESTROY_ACTIVE || context->bDestroyPending || context->iDestroyOwnership==2)return XUI_ERROR_INVALID_STATE;
     if(context->pOwnedProxy && !xuiInternalProxyCreator(context->pOwnedProxy))return XUI_ERROR_BUSY;
     int result=xuiRequestClose(context);if(result!=XUI_OK)return result;
     /* Deep graph readiness and idle destruction are different questions.
@@ -2215,6 +2269,17 @@ static int __xuiContextDestroyOwner(xui_context context,bool* consumed)
         return XUI_STATUS_DEFERRED;
     bool selfPending=context->iDestroyOwnership==1;
     if(selfPending)context->iDestroyOwnership=2;
+    /* This real destroy-call link is invalidated only with the Context owner. */
+    xui_internal_destroy_scope_t* retirement=context->pDestroyScopes;
+    if(context->bDestroying==XUI_CONTEXT_DESTROY_WAITING){
+        xerror* ambient=xrtTakeError();
+        result=__xuiContextDestroyNow(context,false);
+        if(result<0)xrtErrorFree(ambient);
+        else xrtSetErrorTake(ambient);
+        *consumed=retirement->pContext==NULL;
+        if(selfPending && !*consumed)context->iDestroyOwnership=1;
+        return result;
+    }
     xui_call_scope_t scope={0};result=xuiInternalCleanupCallScopeBegin(context,&scope);
     if(result!=XUI_OK){if(selfPending)context->iDestroyOwnership=1;return result;}
     bool complete=false;result=xuiInternalContextPrepareDestroy(context,&complete);
@@ -2225,11 +2290,12 @@ static int __xuiContextDestroyOwner(xui_context context,bool* consumed)
     int failure=result<0 ? result:XUI_OK;
     xuiInternalCallScopeRecordOutcome(&scope,failure,first);
     if((selfPending || complete) && failure!=XUI_OK)xuiInternalContextRecordOutcome(context,failure,first);
-    if(complete){context->bDestroyPending=1;*consumed=true;}
+    if(complete)context->bDestroyPending=1;
     int ended=xuiInternalCallScopeEndOutcome(&scope,failure,&first);
-    if(selfPending && !complete)context->iDestroyOwnership=1;
+    *consumed=retirement->pContext==NULL;
+    if(selfPending && !*consumed)context->iDestroyOwnership=1;
     xrtSetErrorTake(first);
-    return ended==XUI_OK && !complete ? XUI_STATUS_DEFERRED:ended;
+    return ended==XUI_OK && !*consumed ? XUI_STATUS_DEFERRED:ended;
 }
 static int __xuiContextDestroyOwnerInMode(xui_context context,bool* consumed,xui_internal_destroy_mode_t mode)
 {
@@ -2243,7 +2309,8 @@ XUI_API int xuiDestroyChecked(xui_context pContext)
 {bool consumed=false;return __xuiContextDestroyOwnerInMode(pContext,&consumed,XUI_DESTROY_NONBLOCKING);}
 static void __xuiContextDestroyVoid(xui_context context)
 {
-    if(!__xuiContextValid(context) || context->bDestroying || context->bDestroyPending || context->iDestroyOwnership==2)return;
+    if(!__xuiContextStorageValid(context) || context->bDestroying==XUI_CONTEXT_DESTROY_ACTIVE ||
+        context->bDestroyPending || context->iDestroyOwnership==2)return;
     int status=xuiRequestClose(context);
     if(status!=XUI_OK){
         if(!xrtGetError())xrtSetErrorInfo(XERR_STATE,"xui",status,"Native Context close was refused.");

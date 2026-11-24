@@ -138,3 +138,10 @@ returns `XUI_STATUS_DEFERRED` and preserves the caller's Context owner and
 its lifetime observations. Once the active reader or scope ends, retry the
 same close. A finalizer failure keeps its own status and diagnostic even if
 other rollbacks still need another pass.
+
+The physical destruction callbacks can enqueue another batch. Context closes
+its contents once, then checks the Proxy queue again before transferring its
+last owner. A deferred Context admits only retirement operations. Its
+logical lifetime watchers still run before user destructors. Language
+resource directories use `xuiContextRetirementWatch`, which stays attached
+until the last batch and the Context's Proxy release have completed.
