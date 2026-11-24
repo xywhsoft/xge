@@ -572,6 +572,34 @@ void* xgeImageGetPixels(xge_image pImage)
 	return pImage->pPixels;
 }
 
+typedef struct xge_image_pixel_scope_t {
+	const xge_image_t* image;
+	const struct xge_image_pixel_scope_t* previous;
+} xge_image_pixel_scope_t;
+
+static _Thread_local const xge_image_pixel_scope_t* xgeImagePixelScope;
+
+int xgeImageVisitPixels(const xge_image_t* image, xge_image_pixel_visit_proc visit, void* user)
+{
+	if ( !visit ) return XGE_ERROR_INVALID_ARGUMENT;
+	xbytesview view;
+	int status = xgeImageGetPixelView(image, &view);
+	if ( status != XGE_OK ) return status;
+	const xge_image_pixel_scope_t scope = { image, xgeImagePixelScope };
+	xgeImagePixelScope = &scope;
+	status = visit(&view, user);
+	xgeImagePixelScope = scope.previous;
+	return status;
+}
+
+int xgeImagePremultiplyManaged(xge_image image)
+{
+	for (const xge_image_pixel_scope_t* scope = xgeImagePixelScope; scope; scope = scope->previous) {
+		if ( scope->image == image ) return XGE_ERROR_BUSY;
+	}
+	return xgeImagePremultiplyChecked(image);
+}
+
 typedef struct __xgeImageWriteContext {
 	FILE* pFile;
 	int bFailed;

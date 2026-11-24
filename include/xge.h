@@ -2962,6 +2962,15 @@ XGE_API void* xgeImageGetPixels(xge_image pImage);
  * No pixel allocation/copy; the borrow ends at image release or mutation.
  * Failure clears a non-NULL output; another format returns UNSUPPORTED. */
 XGE_API int xgeImageGetPixelView(const xge_image_t* pImage, xbytesview* pView);
+/* The visitor receives the original bytes for the duration of this call.
+ * Native callers must keep the Image alive and must not free or modify its
+ * storage through raw C APIs until the visitor returns. Nested reads are
+ * allowed. The visitor's status is returned unchanged. */
+typedef int (*xge_image_pixel_visit_proc)(const xbytesview* pView, void* pUser);
+XGE_API int xgeImageVisitPixels(const xge_image_t* pImage,
+	xge_image_pixel_visit_proc pVisit, void* pUser);
+/* Read one byte from a live span. On failure the output is unchanged. */
+XGE_API int xgeImagePixelViewReadByte(const xbytesview* pView, size_t iOffset, unsigned char* pByte);
 /* Copy that exact span into caller storage; capacity is bytes, not pixels.
  * A short destination returns BUFFER_TOO_SMALL before any write. Excess
  * destination bytes and image metadata are unchanged. Valid writable output
@@ -2981,6 +2990,10 @@ XGE_API void xgeImagePremultiply(xge_image pImage);
  * Failure leaves pixels/flags unchanged. The storage/access contract above
  * applies, and unrelated flag bits are preserved. No allocation or XRT call. */
 XGE_API int xgeImagePremultiplyChecked(xge_image pImage);
+/* Checked conversion for managed images. A pixel visitor on this image
+ * prevents mutation and returns BUSY. The usual caller-exclusive access
+ * contract applies across threads. */
+XGE_API int xgeImagePremultiplyManaged(xge_image pImage);
 /* 把像素缓冲写出为 PNG 文件。 */
 XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride);
 /* pPixels are straight RGBA by default. Pass XGE_IMAGE_PREMULTIPLIED when

@@ -30,3 +30,11 @@ int xgeImageCopyPixels(const xge_image_t* image,void* output,size_t capacity)
     memmove(output,view.Data,view.Size);
     return XGE_OK;
 }
+
+int xgeImagePixelViewReadByte(const xbytesview* view, size_t offset, unsigned char* output)
+{
+    if (!view || !view->Data || !output || offset >= view->Size)
+        return XGE_ERROR_INVALID_ARGUMENT;
+    *output = ((const unsigned char*)view->Data)[offset];
+    return XGE_OK;
+}
