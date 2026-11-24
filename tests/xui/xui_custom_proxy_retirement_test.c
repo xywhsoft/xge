@@ -136,6 +136,13 @@ static void testHooks(void)
     assert(xrtValueViewEndV1(&state.read));
     assert(xuiProxyDrainCallbackRollbacks(proxy)==XUI_OK && state.draws==3);
 
+    draw=NULL;state.drawStatus=XUI_ERROR_INVALID_STATE;
+    assert(xuiDrawStageCallbackOutput(&draw,proxy,state.value,NULL)==XUI_OK);
+    assert(proxy->drawEnd(proxy,draw)==XUI_ERROR_INVALID_STATE && state.draws==4);
+    assert(xuiProxyDrainCallbackRollbacks(proxy)==XUI_ERROR_BUSY);
+    assert(xrtValueViewEndV1(&state.read));
+    assert(xuiProxyDrainCallbackRollbacks(proxy)==XUI_OK && state.draws==4);
+
     /* Explicitly constructing an ordinary C owned table retains its own
      * slots and previous payload behavior. */
     xui_proxy old=NULL;

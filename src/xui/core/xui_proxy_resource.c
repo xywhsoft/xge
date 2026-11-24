@@ -725,8 +725,11 @@ static int releaseCustomSlot(xui_proxy proxy,xui_owned_resource_t* value,unsigne
         return XUI_ERROR_INVALID_ARGUMENT;
     bool consumed=false;
     int status=resourceRelease(value,true,false,&consumed);
-    if(!consumed && value->pProxy && (status==XUI_ERROR_BUSY ||
-        (status!=XUI_ERROR_INVALID_STATE && (resourceState(value)&RESOURCE_FINALIZED)))){
+    if(!consumed && value->pProxy && (status==XUI_ERROR_BUSY || (resourceState(value)&RESOURCE_FINALIZED))){
+        resourceLock(value);
+        const bool hasOwner=value->iOwners!=0;
+        resourceUnlock(value);
+        if(!hasOwner)return status;
         enqueueResourceRollback(value,false);
         if(status==XUI_ERROR_BUSY && !xrtGetError())return XUI_OK;
         consumed=true;
