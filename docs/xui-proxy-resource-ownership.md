@@ -145,3 +145,12 @@ last owner. A deferred Context admits only retirement operations. Its
 logical lifetime watchers still run before user destructors. Language
 resource directories use `xuiContextRetirementWatch`, which stays attached
 until the last batch and the Context's Proxy release have completed.
+
+`xuiProxyCreateCustomOwned` installs the descriptor's Surface, Font and
+Draw destruction callbacks as one-shot semantic hooks for value-owned
+resources. A hook can query its still-live backend value during the call.
+Sharers keep the resource open until the relevant final owner retires. The
+published table slots consume the native owner and queue it when a value or
+target still has an active read. Checked resource releases already holding
+that owner can retry directly after a refusal. A failed semantic hook still
+consumes the hook phase. Cleanup may continue without invoking it again.

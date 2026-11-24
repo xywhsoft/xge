@@ -6785,6 +6785,11 @@ typedef bool (*xui_proxy_payload_ready_proc)(const void* pPayload);
 #define XUI_PROXY_OWNED_ANYTHREAD_FINALIZE UINT32_C(1)
 XUI_API int xuiProxyCreateOwnedEx(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, uint32_t iFlags, xui_proxy* ppProxy);
 XUI_API int xuiProxyCreateOwned(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, xui_proxy* ppProxy);
+/* The three destruction slots in pSource are semantic hooks for this
+ * Proxy's value-owned resources. The published table's corresponding slots
+ * consume the native owner, deferring a busy dependency to the Proxy queue.
+ * Hooks run once on the creator thread, with the backend value still live. */
+XUI_API int xuiProxyCreateCustomOwned(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, xui_proxy* ppProxy);
 XUI_API int xuiProxyXgeCreate(xui_proxy* ppProxy);
 XUI_API int xuiProxyAddRef(xui_proxy pProxy);
 /* Share APIs transfer one independent owner on the resource's creator
