@@ -19,7 +19,12 @@ typedef struct xui_custom_proxy_capability_t {
     xui_surface_destroy_proc onSurfaceDestroy;
     xui_font_destroy_proc onFontDestroy;
     xui_draw_end_proc onDrawEnd;
+    xui_surface_get_desc_proc onSurfaceGetDesc;
 } xui_custom_proxy_capability_t;
+typedef struct xui_sized_surface_value_t {
+    xvalue* value;
+    xui_surface_read_extent_t extent;
+} xui_sized_surface_value_t;
 static const xrtownershipops resourceOps;
 static int resourceFinish(xui_owned_resource_t*);
 static int resourceRelease(xui_owned_resource_t*,bool,bool,bool*);
@@ -28,13 +33,15 @@ static void enqueueResourceRollback(xui_owned_resource_t*,bool);
 static void customSurfaceDestroy(xui_proxy,xui_surface);
 static void customFontDestroy(xui_proxy,xui_font);
 static int customDrawEnd(xui_proxy,xui_draw_context);
+static int customSurfaceGetDesc(xui_proxy,xui_surface,xui_surface_desc_t*);
 enum {
     RESOURCE_CLAIMED=1u, RESOURCE_FINALIZING=2u, RESOURCE_FINALIZED=4u,
     RESOURCE_CLEARED=8u, RESOURCE_FINISHED=16u, RESOURCE_PINNED=32u,
     RESOURCE_FINISHING=64u, RESOURCE_DISPOSING=128u, RESOURCE_END_REQUESTED=256u,
     RESOURCE_CALLBACK_OUTPUT=512u, RESOURCE_ROLLBACK_PENDING=1024u, RESOURCE_ROLLBACK_DRAINING=2048u,
     RESOURCE_PENDING_PHYSICAL=4096u, RESOURCE_CUSTOM_BACKEND=8192u,
-    RESOURCE_CUSTOM_VALUE=16384u
+    RESOURCE_CUSTOM_VALUE=16384u, RESOURCE_SURFACE_GEOMETRY=32768u,
+    RESOURCE_SURFACE_EXTENT_READY=65536u, RESOURCE_SURFACE_QUERYING=131072u
 };
 _Static_assert(XUI_PROXY_OWNED_ANYTHREAD_FINALIZE <= UINT16_MAX, "resource flag storage");
 /* The XRT mutation gate admits concurrent mutators. It protects graph freeze,
@@ -478,6 +485,80 @@ int xuiInternalProxyResourceUnpin(void* raw,unsigned kind)
     if(!xuiInternalProxyResourceManaged(raw,kind))return XUI_ERROR_INVALID_ARGUMENT;
     return resourceRelease(raw,false,true,NULL);
 }
+
+static int customSurfaceGetDesc(xui_proxy proxy,xui_surface surface,xui_surface_desc_t* output)
+{
+    const xui_custom_proxy_capability_t* backend=customBackend(proxy);
+    if(!backend || !backend->onSurfaceGetDesc || !output)return XUI_ERROR_INVALID_ARGUMENT;
+    xui_owned_resource_t* value=(void*)surface;
+    if(!xuiInternalProxyResourceManaged(value,XUI_OWNED_SURFACE) || !(resourceState(value)&RESOURCE_SURFACE_GEOMETRY))
+        return backend->onSurfaceGetDesc(proxy,surface,output);
+    if(value->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(proxyResource(value->pProxy)!=proxyResource(proxy))return XUI_ERROR_INVALID_ARGUMENT;
+    if(resourceState(value)&RESOURCE_SURFACE_QUERYING)return XUI_ERROR_BUSY;
+    int status=resourceRef(value,false,true);
+    if(status!=XUI_OK)return status;
+
+    xrtownershipscope mutation={0};
+    if(mutationBegin(&mutation)!=XUI_OK)abort();
+    resourceLock(value);
+    resourceStateSet(value,resourceState(value)|RESOURCE_SURFACE_QUERYING);
+    resourceUnlock(value);mutationEnd(&mutation);
+    xui_surface_desc_t candidate={0};
+    xerror* previous=xrtTakeError();
+    xerror* first=NULL;
+    outcome(backend->onSurfaceGetDesc(proxy,surface,&candidate),&status,&first);
+
+    mutation=(xrtownershipscope){0};
+    if(mutationBegin(&mutation)!=XUI_OK)abort();
+    resourceLock(value);
+    uint32_t state=resourceState(value)&~RESOURCE_SURFACE_QUERYING;
+    if(status==XUI_OK){
+        xui_sized_surface_value_t* payload=xuiInternalProxyResourcePayload(value);
+        if(candidate.iWidth<=0 || candidate.iWidth>INT_MAX/4 || candidate.iHeight<=0)
+            status=XUI_ERROR_INVALID_ARGUMENT;
+        else if(state&RESOURCE_SURFACE_EXTENT_READY){
+            if(candidate.iWidth!=payload->extent.iWidth || candidate.iHeight!=payload->extent.iHeight)
+                status=XUI_ERROR_INVALID_STATE;
+        }else {
+            payload->extent=(xui_surface_read_extent_t){candidate.iWidth,candidate.iHeight};
+            state|=RESOURCE_SURFACE_EXTENT_READY;
+        }
+    }
+    resourceStateSet(value,state);
+    resourceUnlock(value);mutationEnd(&mutation);
+    outcome(resourceRelease(value,false,true,NULL),&status,&first);
+    if(status==XUI_OK){
+        *output=candidate;
+        xrtSetErrorTake(previous);
+    }else{
+        xrtErrorFree(previous);
+        xrtSetErrorTake(first);
+    }
+    return status;
+}
+
+int xuiProxyGetSurfaceReadExtent(xui_proxy proxy,xui_surface surface,xui_surface_read_extent_t* output)
+{
+    const xui_owned_resource_t* value=(const void*)surface;
+    if(!output || !xuiInternalProxyResourceManaged(value,XUI_OWNED_SURFACE))
+        return XUI_ERROR_INVALID_ARGUMENT;
+    if(value->iCreatorThread!=xrtThreadCurrentId())return XUI_ERROR_BUSY;
+    if(!xuiInternalProxyResourceReady(value,XUI_OWNED_SURFACE))return XUI_ERROR_INVALID_STATE;
+    if(proxyResource(value->pProxy)!=proxyResource(proxy))return XUI_ERROR_INVALID_ARGUMENT;
+    const uint32_t state=resourceState(value);
+    if(!(state&RESOURCE_SURFACE_GEOMETRY))return XUI_ERROR_UNSUPPORTED;
+    if(state&RESOURCE_SURFACE_EXTENT_READY){
+        const xui_sized_surface_value_t* payload=xuiInternalProxyResourcePayload((void*)value);
+        *output=payload->extent;
+        return XUI_OK;
+    }
+    xui_surface_desc_t desc={0};
+    const int status=customSurfaceGetDesc(proxy,surface,&desc);
+    if(status==XUI_OK)*output=(xui_surface_read_extent_t){desc.iWidth,desc.iHeight};
+    return status;
+}
+
 static bool ownerValid(const xui_callback_owner_t* owner)
 {return owner && owner->tReference.Data && owner->tReference.Ops && owner->tReference.Ops->Count && owner->tReference.Ops->Trace && owner->onHold && owner->onDrop;}
 static int createProxy(const xui_proxy_t* source,const xui_callback_owner_t* owner,bool trusted,uint32_t flags,
@@ -495,6 +576,10 @@ static int createProxy(const xui_proxy_t* source,const xui_callback_owner_t* own
         backend->onSurfaceDestroy=capability->tProxy.surfaceDestroy;
         backend->onFontDestroy=capability->tProxy.fontDestroy;
         backend->onDrawEnd=capability->tProxy.drawEnd;
+        if(capability->tProxy.surfaceReadRGBA && capability->tProxy.surfaceGetDesc){
+            backend->onSurfaceGetDesc=capability->tProxy.surfaceGetDesc;
+            capability->tProxy.surfaceGetDesc=customSurfaceGetDesc;
+        }
         if(backend->onSurfaceDestroy)capability->tProxy.surfaceDestroy=customSurfaceDestroy;
         if(backend->onFontDestroy)capability->tProxy.fontDestroy=customFontDestroy;
         if(backend->onDrawEnd)capability->tProxy.drawEnd=customDrawEnd;
@@ -525,7 +610,8 @@ int xuiProxyCreateOwned(const xui_proxy_t* source,const xui_callback_owner_t* ow
 int xuiProxyCreateCustomOwned(const xui_proxy_t* source,const xui_callback_owner_t* owner,xui_proxy* output)
 {
     const bool custom=source && source->iSize==sizeof(*source) &&
-        (source->surfaceDestroy || source->fontDestroy || source->drawEnd);
+        (source->surfaceDestroy || source->fontDestroy || source->drawEnd ||
+         (source->surfaceReadRGBA && source->surfaceGetDesc));
     return createProxy(source,owner,false,0,NULL,custom,output);
 }
 int xuiProxyCreateOwnedEx(const xui_proxy_t* source,const xui_callback_owner_t* owner,uint32_t flags,xui_proxy* output)
@@ -613,6 +699,9 @@ static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface 
         if (!held) return XUI_ERROR_INVALID_STATE;
     }
 
+    const xui_custom_proxy_capability_t* backend=customBackend(proxy);
+    const bool geometry=kind==XUI_OWNED_SURFACE && backend && backend->onSurfaceGetDesc;
+    const size_t payloadBytes=geometry ? sizeof(xui_sized_surface_value_t):sizeof(held);
     void* raw = NULL;
     void* payload = NULL;
     int status;
@@ -621,7 +710,7 @@ static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface 
         status = xuiDrawCreateOwned(proxy, target, sizeof(held), valueFinalize, &draw, &payload);
         raw = draw;
     } else {
-        status = resourceCreate(proxy, sizeof(held), valueFinalize, kind, &raw, &payload);
+        status = resourceCreate(proxy, payloadBytes, valueFinalize, kind, &raw, &payload);
     }
     if (status != XUI_OK) {
         xerror* primary = xrtTakeError();
@@ -632,6 +721,7 @@ static int buildValueResource(xui_proxy proxy, const xvalue* value, xui_surface 
     }
     *(xvalue**)payload = held;
     uint32_t state=staged ? RESOURCE_CALLBACK_OUTPUT:0u;
+    if(geometry)state|=RESOURCE_SURFACE_GEOMETRY;
     if(hasBackendRetirement(proxy,kind))state|=RESOURCE_CUSTOM_VALUE;
     if(state)resourceStateSet(raw,state);
     *output = raw;

@@ -6790,6 +6790,14 @@ XUI_API int xuiProxyCreateOwned(const xui_proxy_t* pSource, const xui_callback_o
  * consume the native owner, deferring a busy dependency to the Proxy queue.
  * Hooks run once on the creator thread, with the backend value still live. */
 XUI_API int xuiProxyCreateCustomOwned(const xui_proxy_t* pSource, const xui_callback_owner_t* pBackendOwner, xui_proxy* ppProxy);
+/* Stable dimensions for the pointer-only RGBA read ABI of a custom
+ * value-owned Surface. The first successful descriptor fixes the extent;
+ * subsequent conflicting descriptors fail before any pixels are accessed. */
+typedef struct xui_surface_read_extent_t {
+	int iWidth;
+	int iHeight;
+} xui_surface_read_extent_t;
+XUI_API int xuiProxyGetSurfaceReadExtent(xui_proxy pProxy, xui_surface pSurface, xui_surface_read_extent_t* pExtent);
 XUI_API int xuiProxyXgeCreate(xui_proxy* ppProxy);
 XUI_API int xuiProxyAddRef(xui_proxy pProxy);
 /* Share APIs transfer one independent owner on the resource's creator

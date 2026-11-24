@@ -157,3 +157,13 @@ consumes the hook phase. Cleanup may continue without invoking it again.
 Context font slots, the resource registry and managed widget resource slots
 also use the queue when retiring a detached custom resource. Context retains
 its Proxy until those releases have finished.
+
+A custom Proxy with an RGBA reader and a descriptor callback fixes the
+width and height of each value-owned Surface at its first valid description.
+Later descriptor calls can report updated metadata, but a change in the
+extent fails and leaves the caller's descriptor unchanged.
+`xuiProxyGetSurfaceReadExtent` returns the established extent directly.
+A native caller that reaches it before any description invokes the provider
+once to establish the extent. Recursive first queries return Busy.
+This gives a checked outbound buffer preparation and the inbound read
+callback the same geometry.
