@@ -7477,6 +7477,13 @@ XUI_API int xuiTextShapeGetClusters(const xui_text_shape_t* pShape, const xui_te
 XUI_API int xuiTextShapeGetCarets(const xui_text_shape_t* pShape, const xui_text_caret_t** ppCarets, size_t* pCount);
 XUI_API int xuiTextShapeGetCluster(const xui_text_shape_t* pShape, size_t iIndex, xui_text_cluster_t* pCluster);
 XUI_API int xuiTextShapeGetCaret(const xui_text_shape_t* pShape, size_t iIndex, xui_text_caret_t* pCaret);
+/* Installs application paint during shaping, once, and retains one value by
+ * identity. Treat the retained data as immutable while in use. iRetainedBytes
+ * accounts for additional private payload storage, excluding shared resources. */
+XUI_API int xuiTextShapeAttachPaintValue(xui_text_shape_t* pShape, const xvalue* pValue, size_t iRetainedBytes);
+/* Returns an independent reference on the creating thread. An empty shape
+ * returns NULL; opaque paint from another provider returns UNSUPPORTED. */
+XUI_API int xuiTextShapeGetPaintValueOwned(const xui_text_shape_t* pShape, xvalue** ppValue);
 /* 释放整形输出的字形序列。 */
 /* Checked cleanup always frees clusters/carets. A consumed paint is cleared
  * even on failure; an unconsumed paint and its hooks remain for explicit retry.

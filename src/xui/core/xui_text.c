@@ -8,6 +8,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_TEXT_LAYOUT_MAGIC 0x58554954u
@@ -1462,6 +1463,80 @@ static float __xuiTextVerticalOffset(xui_text_layout pLayout, xui_rect_t tRect, 
 		return (tRect.fH - pLayout->tSize.fY) * 0.5f;
 	}
 	return 0.0f;
+}
+
+typedef struct xui_text_paint_value_t {
+    xvalue* pValue;
+    uint64_t iCreatorThread;
+} xui_text_paint_value_t;
+
+static bool __xuiTextPaintValueDropReady(const void* raw)
+{
+    const xui_text_paint_value_t* paint = raw;
+    return paint->iCreatorThread == xrtThreadCurrentId() && xuiInternalUserValueReady(paint->pValue);
+}
+
+static bool __xuiTextPaintValueTrace(const void* raw, xrtownershipvisitor visit, void* user)
+{
+    const xui_text_paint_value_t* paint = raw;
+    return visit(xrtValueOwnership(paint->pValue), user);
+}
+
+static int __xuiTextPaintValueDrop(void* raw)
+{
+    xui_text_paint_value_t* paint = raw;
+    xrtValueRelease(paint->pValue);
+    xrtFree(paint);
+    return xrtGetError() ? XUI_ERROR_CALLBACK_FAILED : XUI_OK;
+}
+
+static const xui_text_paint_ownership_v1_t __xuiTextPaintValueOwnership = {
+    sizeof(xui_text_paint_ownership_v1_t), XUI_TEXT_PAINT_OWNERSHIP_V1_TAG,
+    __xuiTextPaintValueDropReady, __xuiTextPaintValueTrace, __xuiTextPaintValueDrop
+};
+
+XUI_API int xuiTextShapeAttachPaintValue(xui_text_shape_t* shape, const xvalue* value, size_t retainedBytes)
+{
+    if (!shape || shape->iSize < sizeof(*shape) || !value || xrtValueIs(value, XVALUE_NULL) ||
+        retainedBytes > SIZE_MAX - sizeof(xui_text_paint_value_t)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (shape->pPaint || shape->pPaintOwnership || shape->paintFree || shape->paintFreeChecked || shape->iPaintBytes)
+        return XUI_ERROR_INVALID_STATE;
+
+    xui_text_paint_value_t* paint = xrtMalloc(sizeof(*paint));
+    if (!paint) return XUI_ERROR_OUT_OF_MEMORY;
+    paint->iCreatorThread = xrtThreadCurrentId();
+
+    xrtownershipscope mutation = {0};
+    if (!xrtOwnershipMutationBegin(&mutation)) {
+        xrtFree(paint);
+        return XUI_ERROR_BUSY;
+    }
+    paint->pValue = xrtValueRetain(value);
+    if (paint->pValue) {
+        shape->pPaint = paint;
+        shape->iPaintBytes = sizeof(*paint) + retainedBytes;
+        shape->pPaintOwnership = &__xuiTextPaintValueOwnership;
+    }
+    if (!xrtOwnershipScopeEnd(&mutation)) abort();
+    if (!paint->pValue) {
+        xrtFree(paint);
+        return XUI_ERROR_INVALID_STATE;
+    }
+    return XUI_OK;
+}
+
+XUI_API int xuiTextShapeGetPaintValueOwned(const xui_text_shape_t* shape, xvalue** output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    if (!shape || shape->iSize < sizeof(*shape)) return XUI_ERROR_INVALID_ARGUMENT;
+    if (!shape->pPaint) return XUI_OK;
+    if (shape->pPaintOwnership != &__xuiTextPaintValueOwnership) return XUI_ERROR_UNSUPPORTED;
+
+    const xui_text_paint_value_t* paint = shape->pPaint;
+    if (paint->iCreatorThread != xrtThreadCurrentId()) return XUI_ERROR_BUSY;
+    *output = xrtValueRetain(paint->pValue);
+    return *output ? XUI_OK : XUI_ERROR_INVALID_STATE;
 }
 
 static bool __xuiTextPaintProtocol(const xui_text_paint_ownership_v1_t* protocol)
