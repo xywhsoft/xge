@@ -23,6 +23,9 @@ typedef struct xui_code_provider_callbacks_t {
 } xui_code_provider_callbacks_t;
 enum { XUI_PROVIDER_COMPLETE, XUI_PROVIDER_HOVER, XUI_PROVIDER_SIGNATURE,
     XUI_PROVIDER_COMMAND, XUI_PROVIDER_ENABLED, XUI_PROVIDER_ROLES };
+typedef enum {
+    XUI_PROVIDER_NATIVE, XUI_PROVIDER_TYPED, XUI_PROVIDER_VALUE_COMMAND
+} xui_code_provider_flavor;
 typedef union xui_code_provider_fn_t {
     xui_code_completion_proc complete;
     xui_code_hover_proc hover;
@@ -31,6 +34,7 @@ typedef union xui_code_provider_fn_t {
     xui_code_hover_reply_proc hoverReply;
     xui_code_signature_reply_proc signatureReply;
     xui_code_editor_command_proc editorCommand;
+    xui_code_value_command_proc valueCommand;
     xui_code_command_proc command;
     xui_code_command_enabled_proc enabled;
 } xui_code_provider_fn_t;
@@ -39,7 +43,7 @@ typedef struct xui_code_provider_slot_t {
     xui_callback_owner_t owner;
     void* user;
     xui_code_provider_fn_t fn;
-    bool typed;
+    xui_code_provider_flavor flavor;
 } xui_code_provider_slot_t;
 struct xui_code_provider_set_t {
     xui_code_provider_callbacks_t callbacks;
@@ -147,7 +151,7 @@ XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set providers,xui
     *count=0;__xuiCodeProviderCompletionItemsReset(items,capacity);
     xui_code_completion_proc callback=providers->callbacks.onComplete;void* user=providers->callbacks.pCompleteUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_COMPLETE];
-    bool reply = selected && selected->typed;
+    bool reply = selected && selected->flavor == XUI_PROVIDER_TYPED;
     if(selected){callback=reply ? NULL : selected->fn.complete;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_COMPLETE,selected,&borrow);
@@ -186,7 +190,7 @@ XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set providers,xui_widg
     xui_code_hover_t value={0};value.iSize=sizeof(value);
     xui_code_hover_proc callback=providers->callbacks.onHover;void* user=providers->callbacks.pHoverUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_HOVER];
-    bool reply = selected && selected->typed;
+    bool reply = selected && selected->flavor == XUI_PROVIDER_TYPED;
     if(selected){callback=reply ? NULL : selected->fn.hover;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_HOVER,selected,&borrow);
@@ -225,7 +229,7 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_
     xui_code_signature_help_t value={0};value.iSize=sizeof(value);value.iActiveParameter=-1;
     xui_code_signature_proc callback=providers->callbacks.onSignature;void* user=providers->callbacks.pSignatureUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_SIGNATURE];
-    bool reply = selected && selected->typed;
+    bool reply = selected && selected->flavor == XUI_PROVIDER_TYPED;
     if(selected){callback=reply ? NULL : selected->fn.signature;user=selected->user;}
     xui_code_provider_borrow_t borrow={0};
     if(selected)status=__xuiCodeProviderBorrow(&scope,XUI_PROVIDER_SIGNATURE,selected,&borrow);
@@ -255,7 +259,17 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_
     if(status==XUI_OK){value.iSize=sizeof(value);*output=value;}
     return status;
 }
-XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,const void* data,int* handled)
+struct xui_code_command_input_t {
+    xvalue* value;
+};
+
+XUI_API xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input)
+{
+    return input ? input->value : NULL;
+}
+
+static int __xuiCodeProviderExecuteCommand(xui_code_provider_set providers, xui_widget widget,
+    int command, const void* data, bool valuePayload, int* handled)
 {
     if(!providers || !handled || command<=0)return XUI_ERROR_INVALID_ARGUMENT;
     xui_code_provider_scope_t scope={0};int status=xuiCodeProviderSetCallBegin(providers,&scope);
@@ -263,18 +277,38 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_wi
     *handled=0;int value=0;
     xui_code_command_proc callback=providers->callbacks.onCommand;void* user=providers->callbacks.pCommandUser;
     xui_code_provider_slot_t* selected=providers->slots[XUI_PROVIDER_COMMAND];
-    bool typed=selected && selected->typed;
-    if(selected){callback=typed ? NULL : selected->fn.command;user=selected->user;}
-    if(status==XUI_OK && !callback && !typed)status=XUI_ERROR_UNSUPPORTED;
+    xui_code_provider_flavor flavor=selected ? selected->flavor : XUI_PROVIDER_NATIVE;
+    if(selected){callback=flavor==XUI_PROVIDER_NATIVE ? selected->fn.command : NULL;user=selected->user;}
+    if((flavor==XUI_PROVIDER_NATIVE && !callback) ||
+       (data && ((flavor==XUI_PROVIDER_VALUE_COMMAND) != valuePayload)))status=XUI_ERROR_UNSUPPORTED;
     if(status==XUI_OK){
         __xuiCodeProviderCallbackBegin(&scope);
-        status=typed ? selected->fn.editorCommand(widget,command,&value,user)
-                     : callback(widget,command,data,&value,user);
+        switch(flavor){
+        case XUI_PROVIDER_TYPED:
+            status=selected->fn.editorCommand(widget,command,&value,user);
+            break;
+        case XUI_PROVIDER_VALUE_COMMAND: {
+            const xui_code_command_input_t input={.value=(xvalue*)data};
+            status=selected->fn.valueCommand(widget,command,&input,&value,user);
+            break;
+        }
+        default:
+            status=callback(widget,command,data,&value,user);
+            break;
+        }
         __xuiCodeProviderCallbackEnd(&scope);
         if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     }
     status=__xuiCodeProviderFinish(&scope,status);if(status==XUI_OK)*handled=value?1:0;return status;
 }
+
+XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,const void* data,int* handled)
+{return __xuiCodeProviderExecuteCommand(providers,widget,command,data,false,handled);}
+
+XUI_API int xuiCodeProviderExecuteCommandValue(xui_code_provider_set providers, xui_widget widget,
+    int command, xvalue* payload, int* handled)
+{return __xuiCodeProviderExecuteCommand(providers,widget,command,payload,true,handled);}
+
 XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,int* enabled)
 {
     if(!providers || !enabled || command<=0)return XUI_ERROR_INVALID_ARGUMENT;

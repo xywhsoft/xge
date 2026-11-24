@@ -26,7 +26,7 @@ static int __xuiCodeProviderSetRaw(xui_code_provider_set providers,int role,xui_
     xrtSetErrorTake(receipt.error);return __xuiCodeProviderFinish(&scope,receipt.status);
 }
 static int __xuiCodeProviderSetOwned(xui_code_provider_set providers,int role,xui_code_provider_fn_t fn,
-    bool has,bool typed,void* user,const xui_callback_owner_t* incoming)
+    bool has,xui_code_provider_flavor flavor,void* user,const xui_callback_owner_t* incoming)
 {
     if(!xuiInternalCallbackOwnerRawValid(incoming)||(!has&&incoming&&incoming->onHold))return XUI_ERROR_INVALID_ARGUMENT;
     xui_callback_owner_t owner={0};if(incoming)owner=*incoming;
@@ -36,7 +36,7 @@ static int __xuiCodeProviderSetOwned(xui_code_provider_set providers,int role,xu
     if(has){
         node=xrtCalloc(1,sizeof(*node));
         if(!node)status=XUI_ERROR_OUT_OF_MEMORY;
-        else {node->owner=owner;node->user=user;node->fn=fn;node->typed=typed;status=xuiInternalCallbackHoldFresh(&owner,&held);}
+        else {node->owner=owner;node->user=user;node->fn=fn;node->flavor=flavor;status=xuiInternalCallbackHoldFresh(&owner,&held);}
     }
     if(status==XUI_OK)status=__xuiCodeProviderResultStatus(providers);
     xui_code_provider_slot_t* old=NULL;
@@ -59,54 +59,61 @@ static int __xuiCodeProviderSetOwned(xui_code_provider_set providers,int role,xu
     xrtSetErrorTake(receipt.error);return __xuiCodeProviderFinish(&scope,receipt.status);
 }
 XUI_API int xuiCodeProviderSetCompletionOwned(xui_code_provider_set p,xui_code_completion_proc fn,void* user,const xui_callback_owner_t* owner)
-{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_COMPLETE,(xui_code_provider_fn_t){.complete=fn},fn!=NULL,false,user,owner);}
+{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_COMPLETE,(xui_code_provider_fn_t){.complete=fn},fn!=NULL,XUI_PROVIDER_NATIVE,user,owner);}
 XUI_API int xuiCodeProviderSetHoverOwned(xui_code_provider_set p,xui_code_hover_proc fn,void* user,const xui_callback_owner_t* owner)
-{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_HOVER,(xui_code_provider_fn_t){.hover=fn},fn!=NULL,false,user,owner);}
+{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_HOVER,(xui_code_provider_fn_t){.hover=fn},fn!=NULL,XUI_PROVIDER_NATIVE,user,owner);}
 XUI_API int xuiCodeProviderSetSignatureOwned(xui_code_provider_set p,xui_code_signature_proc fn,void* user,const xui_callback_owner_t* owner)
-{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_SIGNATURE,(xui_code_provider_fn_t){.signature=fn},fn!=NULL,false,user,owner);}
+{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_SIGNATURE,(xui_code_provider_fn_t){.signature=fn},fn!=NULL,XUI_PROVIDER_NATIVE,user,owner);}
 XUI_API int xuiCodeProviderSetCommandOwned(xui_code_provider_set p,xui_code_command_proc fn,void* user,const xui_callback_owner_t* owner)
-{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_COMMAND,(xui_code_provider_fn_t){.command=fn},fn!=NULL,false,user,owner);}
+{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_COMMAND,(xui_code_provider_fn_t){.command=fn},fn!=NULL,XUI_PROVIDER_NATIVE,user,owner);}
 XUI_API int xuiCodeProviderSetCommandEnabledOwned(xui_code_provider_set p,xui_code_command_enabled_proc fn,void* user,const xui_callback_owner_t* owner)
-{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_ENABLED,(xui_code_provider_fn_t){.enabled=fn},fn!=NULL,false,user,owner);}
+{return __xuiCodeProviderSetOwned(p,XUI_PROVIDER_ENABLED,(xui_code_provider_fn_t){.enabled=fn},fn!=NULL,XUI_PROVIDER_NATIVE,user,owner);}
 
 XUI_API int xuiCodeProviderSetCompletionReplyOwned(xui_code_provider_set providers,
     xui_code_completion_reply_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_COMPLETE,
-        (xui_code_provider_fn_t){.completeReply = callback}, callback != NULL, true, user, owner);
+        (xui_code_provider_fn_t){.completeReply = callback}, callback != NULL, XUI_PROVIDER_TYPED, user, owner);
 }
 XUI_API int xuiCodeProviderSetHoverReplyOwned(xui_code_provider_set providers,
     xui_code_hover_reply_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_HOVER,
-        (xui_code_provider_fn_t){.hoverReply = callback}, callback != NULL, true, user, owner);
+        (xui_code_provider_fn_t){.hoverReply = callback}, callback != NULL, XUI_PROVIDER_TYPED, user, owner);
 }
 XUI_API int xuiCodeProviderSetSignatureReplyOwned(xui_code_provider_set providers,
     xui_code_signature_reply_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_SIGNATURE,
-        (xui_code_provider_fn_t){.signatureReply = callback}, callback != NULL, true, user, owner);
+        (xui_code_provider_fn_t){.signatureReply = callback}, callback != NULL, XUI_PROVIDER_TYPED, user, owner);
 }
 
 XUI_API int xuiCodeProviderSetCommandHandlerOwned(xui_code_provider_set providers,
     xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_COMMAND,
-        (xui_code_provider_fn_t){.editorCommand=callback}, callback != NULL, true, user, owner);
+        (xui_code_provider_fn_t){.editorCommand=callback}, callback != NULL, XUI_PROVIDER_TYPED, user, owner);
+}
+
+XUI_API int xuiCodeProviderSetValueCommandOwned(xui_code_provider_set providers,
+    xui_code_value_command_proc callback, void* user, const xui_callback_owner_t* owner)
+{
+    return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_COMMAND,
+        (xui_code_provider_fn_t){.valueCommand=callback}, callback != NULL, XUI_PROVIDER_VALUE_COMMAND, user, owner);
 }
 
 int xuiInternalCodeProviderSetCommandGuard(xui_code_provider_set providers,
     xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner)
 {
     return __xuiCodeProviderSetOwned(providers, XUI_PROVIDER_ENABLED,
-        (xui_code_provider_fn_t){.enabled=callback}, callback != NULL, true, user, owner);
+        (xui_code_provider_fn_t){.enabled=callback}, callback != NULL, XUI_PROVIDER_TYPED, user, owner);
 }
 
 bool xuiInternalCodeProviderHasCommandGuard(xui_code_provider_set providers)
 {
     if (!providers) return false;
     xui_code_provider_slot_t* slot=providers->slots[XUI_PROVIDER_ENABLED];
-    return slot && slot->typed;
+    return slot && slot->flavor == XUI_PROVIDER_TYPED;
 }
 
 bool xuiInternalCodeProviderHasHover(xui_code_provider_set providers)

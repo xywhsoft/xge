@@ -19,7 +19,7 @@ struct xui_code_signature_snapshot_t {
 static bool __xuiCodeProviderHasTypedReply(xui_code_provider_set providers, int role)
 {
     const xui_code_provider_slot_t* slot = providers->slots[role];
-    return slot && slot->typed;
+    return slot && slot->flavor == XUI_PROVIDER_TYPED;
 }
 
 XUI_API int xuiCodeProviderCaptureCompletion(xui_code_provider_set providers, xui_widget widget,

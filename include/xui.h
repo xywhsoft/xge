@@ -3003,6 +3003,9 @@ typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const 
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
 /* Scalar command results. Return XUI_ERROR_UNSUPPORTED to defer. */
 typedef int (*xui_code_editor_command_proc)(xui_widget_t* pWidget, int iCommand, int* pResult, void* pUser);
+typedef struct xui_code_command_input_t xui_code_command_input_t;
+typedef int (*xui_code_value_command_proc)(xui_widget_t* pWidget, int iCommand,
+    const xui_code_command_input_t* pInput, int* pHandled, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
 typedef void (*xui_code_find_activate_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
 typedef int (*xui_code_find_activate_owned_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
@@ -8786,6 +8789,12 @@ XUI_API int xuiCodeProviderSetCommandEnabledOwned(xui_code_provider_set pProvide
 /* Typed command handler for callers that do not pass an opaque command payload. */
 XUI_API int xuiCodeProviderSetCommandHandlerOwned(xui_code_provider_set providers,
     xui_code_editor_command_proc callback, void* user, const xui_callback_owner_t* owner);
+/* Uses the same command slot and owner contract as the other command setters.
+ * The input is valid only during execution. The value getter returns a
+ * borrowed reference. Retain it before storing it beyond the callback. */
+XUI_API int xuiCodeProviderSetValueCommandOwned(xui_code_provider_set providers,
+    xui_code_value_command_proc callback, void* user, const xui_callback_owner_t* owner);
+XUI_API xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input);
 /* Transactional native replies. The reply pointer and its input views are
  * valid only during the callback. Copying helpers preserve the preceding reply
  * on failure. Owned results live in the requesting scope until that scope
@@ -8812,6 +8821,11 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set pProviders, xu
 XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, int* pEnabled);
 /* 执行命令；*pHandled 输出是否被提供者消费。 */
 XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, const void* pCommandData, int* pHandled);
+/* A non-NULL XRT value is delivered only to a value command provider.
+ * Passing NULL also supports legacy command providers. The caller keeps
+ * the payload valid through this synchronous call. */
+XUI_API int xuiCodeProviderExecuteCommandValue(xui_code_provider_set providers, xui_widget widget,
+    int command, xvalue* payload, int* handled);
 /* Independent replies from the typed providers. Legacy borrowed callbacks
  * return UNSUPPORTED. Result records borrow from the returned snapshot until
  * Destroy. A successful result remains valid after a provider clear or close. */
