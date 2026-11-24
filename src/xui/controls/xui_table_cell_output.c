@@ -384,6 +384,80 @@ XUI_API int xuiTableViewCellOutputLifetimeWatch(xui_table_view_cell_output_t* ce
     cell->_pLifetimeLinks=link;return XUI_OK;
 }
 
+struct xui_table_cell_reference_t {
+    xui_lifetime_link_t link;
+    xui_table_view_cell_output_t* cell;
+    uint64_t creator;
+};
+
+static void __xuiCellReferenceInvalidate(void* user)
+{
+    xui_table_cell_reference_t* reference = user;
+    reference->cell = NULL;
+}
+
+XUI_API int xuiTableViewCellOutputWatchReference(xui_table_view_cell_output_t* cell,
+    xui_table_cell_reference_t** output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    uint64_t creator = xrtThreadCurrentId();
+    if (cell && cell->_iCreatorThread != creator) return XUI_ERROR_BUSY;
+    if (!__xuiCellValid(cell) || !cell->_bHeap) return XUI_ERROR_INVALID_ARGUMENT;
+    if (cell->_pOwnershipClaim) return XUI_ERROR_BUSY;
+
+    xui_table_cell_reference_t* reference = xrtCalloc(1, sizeof(*reference));
+    if (!reference) return XUI_ERROR_OUT_OF_MEMORY;
+    reference->cell = cell;
+    reference->creator = creator;
+    int status = xuiTableViewCellOutputLifetimeWatch(cell, &reference->link,
+        __xuiCellReferenceInvalidate, reference);
+    if (status != XUI_OK) {
+        xrtFree(reference);
+        return status;
+    }
+    *output = reference;
+    return XUI_OK;
+}
+
+XUI_API bool xuiTableCellReferenceIsLive(const xui_table_cell_reference_t* reference)
+{
+    return reference && reference->creator == xrtThreadCurrentId() &&
+        __xuiCellValid(reference->cell);
+}
+
+XUI_API int xuiTableCellReferenceLockOwned(const xui_table_cell_reference_t* reference,
+    xui_table_view_cell_output_t** output)
+{
+    if (!output) return XUI_ERROR_INVALID_ARGUMENT;
+    *output = NULL;
+    if (!reference) return XUI_ERROR_INVALID_ARGUMENT;
+    if (reference->creator != xrtThreadCurrentId()) return XUI_ERROR_BUSY;
+    xui_table_view_cell_output_t* cell = reference->cell;
+    if (!__xuiCellValid(cell)) return XUI_OK;
+    if (cell->_pOwnershipClaim) return XUI_ERROR_BUSY;
+    return xuiTableViewCellOutputShareOwned(cell, output);
+}
+
+XUI_API int xuiTableCellReferenceReleaseOwnerChecked(xui_table_cell_reference_t* reference,
+    bool* consumed)
+{
+    if (!consumed) return XUI_ERROR_INVALID_ARGUMENT;
+    *consumed = false;
+    if (!reference) return XUI_ERROR_INVALID_ARGUMENT;
+    if (reference->creator != xrtThreadCurrentId()) return XUI_ERROR_BUSY;
+    xuiLifetimeUnwatch(&reference->link);
+    *consumed = true;
+    xrtFree(reference);
+    return XUI_OK;
+}
+
+XUI_API int xuiTableCellReferenceRelease(xui_table_cell_reference_t* reference)
+{
+    bool consumed;
+    return xuiTableCellReferenceReleaseOwnerChecked(reference, &consumed);
+}
+
 /* Move owning fields between two explicit native records. This is the
  * transaction commit for GetCellOwned; no second text clone is introduced. */
 int xuiInternalTableCellMove(xui_table_view_cell_output_t* target,xui_table_view_cell_output_t* source)

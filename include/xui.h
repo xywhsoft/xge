@@ -12538,6 +12538,19 @@ XUI_API const xrtownershipquiescencev1* xuiTableViewCellOutputOwnershipQuiescenc
 XUI_API bool xuiTableViewCellOutputBusy(const xui_table_view_cell_output_t* pCell);
 XUI_API bool xuiTableViewCellOutputCanRetire(const xui_table_view_cell_output_t* pCell);
 XUI_API int xuiTableViewCellOutputLifetimeWatch(xui_table_view_cell_output_t* pCell, xui_lifetime_link_t* pLink, xui_lifetime_invalidate_proc onInvalidate, void* pUser);
+typedef struct xui_table_cell_reference_t xui_table_cell_reference_t;
+/* Observe a heap cell without retaining it. The observer is creator-thread
+ * confined and may be released before or after the cell retires. */
+XUI_API int xuiTableViewCellOutputWatchReference(xui_table_view_cell_output_t* pCell,
+    xui_table_cell_reference_t** ppReference);
+XUI_API bool xuiTableCellReferenceIsLive(const xui_table_cell_reference_t* pReference);
+/* Acquire one cell owner, or return success and NULL after retirement. A
+ * living cell claimed by the ownership collector reports Busy. */
+XUI_API int xuiTableCellReferenceLockOwned(const xui_table_cell_reference_t* pReference,
+    xui_table_view_cell_output_t** ppCell);
+XUI_API int xuiTableCellReferenceReleaseOwnerChecked(xui_table_cell_reference_t* pReference,
+    bool* pConsumed);
+XUI_API int xuiTableCellReferenceRelease(xui_table_cell_reference_t* pReference);
 /* Zero-initialized, address-stable, caller-owned token. Never copy a live token. */
 typedef struct xui_table_cell_scope_t {
     xui_table_view_cell_output_t* pCell;
