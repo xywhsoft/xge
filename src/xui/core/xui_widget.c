@@ -3045,7 +3045,45 @@ static bool __xuiWidgetValueReady(xvalue* value)
     return ref.Ops->Count(ref.Data,&count);
 }
 
-static void __xuiWidgetValueRetire(xui_widget widget,xvalue** slot)
+static int __xuiSetUserValue(xui_context context, xvalue** slot, xvalue* pValue)
+{
+	xui_call_scope_t scope = {0};
+	int status = xuiCallScopeBegin(context, &scope);
+	if ( status != XUI_OK ) return status;
+	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
+	xvalue* pRetired = NULL;
+	if ( *slot != pValue ) {
+		xrtownershipscope mutation = {0};
+		if ( !xrtOwnershipMutationBegin(&mutation) ) status = XUI_ERROR_BUSY;
+		else {
+			if ( !__xuiWidgetValueReady(*slot) ) status = XUI_ERROR_BUSY;
+			else if ( pValue != NULL && xrtValueRetain(pValue) == NULL ) status = XUI_ERROR_INVALID_STATE;
+			else {
+				pRetired = *slot;
+				*slot = pValue;
+			}
+			if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
+		}
+	}
+	xerror* first = xrtTakeError();
+	if ( pRetired != NULL ) {
+		xrtValueRelease(pRetired);
+		xuiInternalContextCleanupOutcome(context, XUI_OK, &status, &first);
+	}
+	return xuiInternalCallScopeEndRestored(&scope, status, first);
+}
+
+static int __xuiGetUserValue(xui_context context, xvalue* const* slot, xvalue** out)
+{
+    if ( context->pOwnedProxy != NULL && !xuiInternalProxyCreator(context->pOwnedProxy) )
+        return XUI_ERROR_BUSY;
+    xvalue* value = *slot;
+    if ( value != NULL && (*out = xrtValueRetain(value)) == NULL )
+        return XUI_ERROR_INVALID_STATE;
+    return XUI_OK;
+}
+
+static void __xuiWidgetValueRetire(xui_context context,xvalue** slot)
 {
     if(!slot || !*slot)return;
     xerror* first=xrtTakeError();
@@ -3056,7 +3094,7 @@ static void __xuiWidgetValueRetire(xui_widget widget,xvalue** slot)
     *slot=NULL;
     if(!xrtOwnershipScopeEnd(&mutation))abort();
     xrtValueRelease(old);
-    xuiInternalContextCleanupOutcome(widget->pContext,XUI_OK,&result,&first);
+    xuiInternalContextCleanupOutcome(context,XUI_OK,&result,&first);
     xrtSetErrorTake(first);
 }
 
@@ -3142,6 +3180,7 @@ static int __xuiWidgetTypeDestroy(xui_widget_type pType)
 	xui_callback_owner_t owner=pType->tCallbackOwner;
 	pType->iMagic = 0;
 	xuiInternalLifetimeInvalidateAll(&pType->pLifetimeLinks);
+	__xuiWidgetValueRetire(context, &pType->pUserValue);
 	xrtFree(pType->sName);
 	xrtFree(pType);
 	return xuiInternalCallbackOwnerDrop(context,&owner);
@@ -3654,6 +3693,7 @@ XUI_API int xuiWidgetUnregisterType(xui_widget_type pType)
 	for ( xui_widget_type type=context->pWidgetTypes; status==XUI_OK && type!=NULL; type=type->pNext ) {
 		if ( type->pParent==pType ) status=XUI_ERROR_ALREADY_INITIALIZED;
 	}
+	if ( status==XUI_OK && !__xuiWidgetValueReady(pType->pUserValue) ) status=XUI_ERROR_BUSY;
 	if ( status==XUI_OK ) {
 		xui_widget_type* slot=&context->pWidgetTypes;
 		while ( *slot!=NULL && *slot!=pType ) slot=&(*slot)->pNext;
@@ -3688,6 +3728,23 @@ XUI_API xui_widget_type xuiWidgetTypeGetParent(xui_widget_type pType)
 XUI_API void* xuiWidgetTypeGetUserData(xui_widget_type pType)
 {
 	return __xuiWidgetTypeValid(pType) ? pType->pUser : NULL;
+}
+
+XUI_API int xuiWidgetTypeSetUserValue(xui_widget_type type, xvalue* value)
+{
+    if ( !__xuiWidgetTypeValid(type) || type->pContext == NULL )
+        return XUI_ERROR_INVALID_ARGUMENT;
+    return __xuiSetUserValue(type->pContext, &type->pUserValue, value);
+}
+
+XUI_API int xuiWidgetTypeGetUserValue(xui_widget_type type, xvalue** out)
+{
+    if ( out == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
+    if ( !__xuiWidgetTypeValid(type) ) return XUI_ERROR_INVALID_ARGUMENT;
+    /* The process-wide base type has no Context or mutable data slot. */
+    if ( type->pContext == NULL ) return XUI_OK;
+    return __xuiGetUserValue(type->pContext, &type->pUserValue, out);
 }
 
 XUI_API int xuiStyleBeginUpdate(xui_context pContext)
@@ -4684,8 +4741,8 @@ static void __xuiWidgetDestroyNow(xui_widget pWidget, bool bVisualDetached)
         __xuiWidgetTypeDestroyChain(pWidget,pWidget->pInitializedType);
         pWidget->iDestroyVisitEpoch&=~XUI_DESTROY_STATE_READ;
     }
-    __xuiWidgetValueRetire(pWidget,state);
-    __xuiWidgetValueRetire(pWidget,&pWidget->pUserValue);
+    __xuiWidgetValueRetire(pWidget->pContext,state);
+    __xuiWidgetValueRetire(pWidget->pContext,&pWidget->pUserValue);
 	/* Empty the physical slots before arbitrary consuming cleanup reenters. */
 	xui_event_owners_t* pOwners = pWidget->pEventOwners;
 	pWidget->pEventOwners = NULL;
@@ -4955,31 +5012,7 @@ XUI_API void* xuiWidgetGetUserData(xui_widget pWidget)
 XUI_API int xuiWidgetSetUserValue(xui_widget pWidget, xvalue* pValue)
 {
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
-	xui_context context = pWidget->pContext;
-	xui_call_scope_t scope = {0};
-	int status = xuiCallScopeBegin(context, &scope);
-	if ( status != XUI_OK ) return status;
-	if ( pValue != NULL && xrtValueIs(pValue, XVALUE_NULL) ) pValue = NULL;
-	xvalue* pRetired = NULL;
-	if ( pWidget->pUserValue != pValue ) {
-		xrtownershipscope mutation = {0};
-		if ( !xrtOwnershipMutationBegin(&mutation) ) status = XUI_ERROR_BUSY;
-		else {
-			if ( !__xuiWidgetValueReady(pWidget->pUserValue) ) status = XUI_ERROR_BUSY;
-			else if ( pValue != NULL && xrtValueRetain(pValue) == NULL ) status = XUI_ERROR_INVALID_STATE;
-			else {
-				pRetired = pWidget->pUserValue;
-				pWidget->pUserValue = pValue;
-			}
-			if ( !xrtOwnershipScopeEnd(&mutation) ) abort();
-		}
-	}
-	xerror* first = xrtTakeError();
-	if ( pRetired != NULL ) {
-		xrtValueRelease(pRetired);
-		xuiInternalContextCleanupOutcome(context, XUI_OK, &status, &first);
-	}
-	return xuiInternalCallScopeEndRestored(&scope, status, first);
+	return __xuiSetUserValue(pWidget->pContext, &pWidget->pUserValue, pValue);
 }
 
 XUI_API int xuiWidgetGetUserValue(xui_widget pWidget, xvalue** ppValue)
@@ -4987,11 +5020,7 @@ XUI_API int xuiWidgetGetUserValue(xui_widget pWidget, xvalue** ppValue)
 	if ( ppValue == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppValue = NULL;
 	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
-	xui_proxy proxy = pWidget->pContext->pOwnedProxy;
-	if ( proxy != NULL && !xuiInternalProxyCreator(proxy) ) return XUI_ERROR_BUSY;
-	xvalue* pValue = pWidget->pUserValue;
-	if ( pValue != NULL && (*ppValue = xrtValueRetain(pValue)) == NULL ) return XUI_ERROR_INVALID_STATE;
-	return XUI_OK;
+	return __xuiGetUserValue(pWidget->pContext, &pWidget->pUserValue, ppValue);
 }
 
 XUI_API int xuiWidgetAddChild(xui_widget pParent, xui_widget pChild)
@@ -6822,6 +6851,13 @@ static int __xuiWidgetDestroyPrepareClosure(xui_widget widget,bool* complete)
     *complete=false;
     return __xuiWidgetDestroyPrepareVisit(widget,__xuiWidgetVisitBegin(widget->pContext),complete);
 }
+static bool __xuiWidgetTypeValuesReady(xui_context context)
+{
+    for ( xui_widget_type type = context->pWidgetTypes; type != NULL; type = type->pNext )
+        if ( !__xuiWidgetValueReady(type->pUserValue) ) return false;
+    return true;
+}
+
 int xuiInternalContextPrepareDestroy(xui_context context,bool* complete)
 {
     if(!complete)return XUI_ERROR_INVALID_ARGUMENT;
@@ -6854,6 +6890,7 @@ int xuiInternalContextPrepareDestroy(xui_context context,bool* complete)
             }
             if(!done)++remaining;
         }
+        if(!__xuiWidgetTypeValuesReady(context))++remaining;
         if(!remaining){*complete=true;break;}
         if(remaining>=previous)break;
         previous=remaining;
@@ -6867,7 +6904,7 @@ XUI_API bool xuiContextOwnershipBusy(xui_context pContext)
         pContext->bDestroyPending || pContext->bDestroying)return true;
     if(pContext->pOwnedProxy && !xuiInternalProxyCreator(pContext->pOwnedProxy))return true;
     if(xuiInternalTextMeasureCacheReady(pContext)!=XUI_OK)return true;
-    if(!xuiInternalContextManagersReady(pContext))return true;
+    if(!xuiInternalContextManagersReady(pContext) || !__xuiWidgetTypeValuesReady(pContext))return true;
     /* Each actual widget is inspected once, including unattached/pending
      * instances still physically owned by this Context. No subtree repeats. */
     for(xui_widget widget=pContext->pAllWidgets;widget;widget=widget->pContextNext)
@@ -6896,8 +6933,10 @@ XUI_API bool xuiContextTraceOwnership(xui_context pContext, xrtownershipvisitor 
     if(!xuiInternalContextTraceManagers(pContext,onVisit,pUser))return false;
     if(pContext->pErrorOwner && !onVisit(pContext->pErrorOwner->tOwner.tReference,pUser))return false;
     if(pContext->pAccessibilityOwner && !onVisit(pContext->pAccessibilityOwner->tOwner.tReference,pUser))return false;
-    for(xui_widget_type type=pContext->pWidgetTypes;type;type=type->pNext)
+    for(xui_widget_type type=pContext->pWidgetTypes;type;type=type->pNext){
         if(type->tCallbackOwner.onHold && !onVisit(type->tCallbackOwner.tReference,pUser))return false;
+        if(type->pUserValue && !onVisit(xrtValueOwnership(type->pUserValue),pUser))return false;
+    }
     for(int i=0;i<pContext->iHotkeyCount;++i)
         if(pContext->pHotkeys[i].pOwned && !onVisit(pContext->pHotkeys[i].pOwned->tOwner.tReference,pUser))return false;
 	for ( xui_widget pWidget = pContext->pAllWidgets; pWidget != NULL; pWidget = pWidget->pContextNext ) {

@@ -714,6 +714,7 @@ struct xui_widget_type_t {
     int (*onDestroyReady)(xui_widget,const void*);
     int (*onDestroyPrepare)(xui_widget,void*,bool* complete);
 	void* pUser;
+	xvalue* pUserValue;
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;
 	xui_widget_type_ownership_trace_proc onTraceOwnership;

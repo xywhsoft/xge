@@ -14258,6 +14258,12 @@ XUI_API const char* xuiWidgetTypeGetName(xui_widget_type pType);
 XUI_API xui_widget_type xuiWidgetTypeGetParent(xui_widget_type pType);
 /* 读取类型级用户数据（虚函数表附属）。 */
 XUI_API void* xuiWidgetTypeGetUserData(xui_widget_type pType);
+/* Each Context-local type can retain an XRT value independently of the
+ * descriptor's borrowed callback user pointer and every instance's state.
+ * NULL clears the slot. The getter transfers one reference or returns NULL
+ * for an empty slot. The process-wide base type is read-only. */
+XUI_API int xuiWidgetTypeSetUserValue(xui_widget_type pType, xvalue* pValue);
+XUI_API int xuiWidgetTypeGetUserValue(xui_widget_type pType, xvalue** ppValue);
 
 /* 创建基类型控件实例（未挂父级）；无 widget 级引用计数，
  * 生命周期由 context 持有，包括尚未挂树、已移出父级的实例。
