@@ -136,7 +136,9 @@ static void checkedSnapshotDrop(void)
     const xrtownershipadapterv1* adapter=xuiProxyResourceOwnershipAdapterV1(ref);
     const xrtownershipfinishv2* completion=xuiProxyResourceOwnershipCompletionV2(ref);
     assert(completion && completion->V1.size==sizeof(*completion) && completion->AbiTag==XRT_OWNERSHIP_FINISH_V2_TAG && completion->V1.Adapter==adapter && completion->DropChecked && completion->DropReady && completion->DropReady(ref.Data));
-    assert(xuiProxyResourceOwnershipCompletionV1(ref)->size==sizeof(xrtownershipfinishv1));
+    const xrtownershipfinishv1* legacy=xuiProxyResourceOwnershipCompletionV1(ref);
+    assert(legacy && legacy->size==sizeof(*legacy));
+    assert(legacy->Adapter==completion->V1.Adapter && legacy->Step==completion->V1.Step);
     assert(adapter->Hold(ref.Data));
     assert(xuiProxyReleaseOwnerChecked(proxy,&consumed)==XUI_OK && consumed);
     assert(xuiFontReleaseOwnerChecked(value,&consumed)==XUI_OK && consumed && calls==0);
