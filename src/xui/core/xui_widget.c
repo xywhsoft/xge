@@ -2990,7 +2990,7 @@ static void* __xuiTypeResource(xui_widget widget,const xui_type_resource_view_t*
     return *(xui_surface*)((char*)array->data+(index/array->fields)*array->stride+array->offsets[index%array->fields]);
 }
 static int __xuiTypeResourceRelease(bool surface,void* value)
-{return surface ? xuiSurfaceReleaseChecked(value):xuiFontReleaseChecked(value);}
+{return xuiInternalProxyResourceRetireSlot(value,surface ? XUI_OWNED_SURFACE:XUI_OWNED_FONT);}
 static void __xuiTypeResourceRollback(xui_widget widget,xui_widget_type type,int* status,xerror** first)
 {
     if(!__xuiWidgetTypeValid(type))return;

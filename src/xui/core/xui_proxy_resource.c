@@ -750,6 +750,16 @@ static void customFontDestroy(xui_proxy proxy,xui_font font)
 static int customDrawEnd(xui_proxy proxy,xui_draw_context draw)
 {return releaseCustomSlot(proxy,(void*)draw,XUI_OWNED_DRAW);}
 
+int xuiInternalProxyResourceRetireSlot(void* raw,unsigned kind)
+{
+    if(!xuiInternalProxyResourceManaged(raw,kind))return XUI_ERROR_INVALID_ARGUMENT;
+    xui_owned_resource_t* value=raw;
+    if((resourceState(value)&RESOURCE_CUSTOM_VALUE) && value->pProxy)
+        return releaseCustomSlot(value->pProxy,value,kind);
+    bool consumed=false;
+    return resourceRelease(value,true,false,&consumed);
+}
+
 static bool retirePendingResource(xui_owned_resource_t* value, int* status, xerror** first)
 {
     if (resourceState(value) & RESOURCE_PENDING_PHYSICAL) {

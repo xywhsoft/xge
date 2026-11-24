@@ -49,6 +49,9 @@ bool xuiInternalProxyResourceManaged(const void*,unsigned);
 bool xuiInternalProxyResourceReady(const void*,unsigned);
 int xuiInternalProxyResourcePin(void*,unsigned);
 int xuiInternalProxyResourceUnpin(void*,unsigned);
+/* The caller has detached this owning slot and cannot return the reference
+ * to it. Custom resources can hand an unfinished release to their Proxy. */
+int xuiInternalProxyResourceRetireSlot(void*,unsigned);
 static inline void* xuiInternalProxyResourcePayload(void* resource)
 {
     xui_owned_resource_t* value=resource;

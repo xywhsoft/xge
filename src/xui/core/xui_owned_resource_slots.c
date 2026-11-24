@@ -70,7 +70,7 @@ int xuiInternalFontRelease(xui_context context,xui_font font)
     int result=xrtGetError() ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     xuiInternalContextRecordOutcome(context,result,first);
-    if(font)xuiInternalContextCleanupOutcome(context,xuiFontReleaseChecked(font),&result,&first);
+    if(font)xuiInternalContextCleanupOutcome(context,xuiInternalProxyResourceRetireSlot(font,XUI_OWNED_FONT),&result,&first);
     xuiInternalContextRecordOutcome(context,result,first);xrtSetErrorTake(first);return result;
 }
 /* Pointer slots retain their actual C types: do not alias a Font** or
@@ -95,8 +95,6 @@ static int resourceAdmit(xui_context context,unsigned kind,void* value)
     if(status!=XUI_OK || !context->pOwnedProxy || !value)return status;
     return resourceAddRef(kind,value);
 }
-static int resourceReleaseChecked(unsigned kind,void* value)
-{return kind==XUI_OWNED_FONT ? xuiFontReleaseChecked(value):xuiSurfaceReleaseChecked(value);}
 int xuiInternalFontAdmit(xui_context context,xui_font font)
 {return resourceAdmit(context,XUI_OWNED_FONT,font);}
 int xuiInternalSurfaceAdmit(xui_context context,xui_surface surface)
@@ -106,7 +104,7 @@ int xuiInternalSurfaceRelease(xui_context context,xui_surface surface)
     int result=xrtGetError() ? XUI_ERROR_CALLBACK_FAILED:XUI_OK;
     xerror* first=result!=XUI_OK ? xrtTakeError():NULL;
     xuiInternalContextRecordOutcome(context,result,first);
-    if(surface)xuiInternalContextCleanupOutcome(context,xuiSurfaceReleaseChecked(surface),&result,&first);
+    if(surface)xuiInternalContextCleanupOutcome(context,xuiInternalProxyResourceRetireSlot(surface,XUI_OWNED_SURFACE),&result,&first);
     xuiInternalContextRecordOutcome(context,result,first);xrtSetErrorTake(first);return result;
 }
 static int resourceSlotPrepare(xui_context context,void* slot,void* resource,unsigned kind,bool admitted,bool preserveOld,xui_resource_slot_update_t* update)
@@ -185,8 +183,10 @@ int xuiInternalResourceSlotEnd(xui_resource_slot_update_t* update,bool commit,in
     xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
     if(update->published && !commit && !update->restored)outcome(xuiInternalResourceSlotRestore(update),&status,&first);
     void* retired=!update->published || update->restored ? update->current:update->previous;
-    if(update->ownsSlots && retired && (update->published || update->newHeld))xuiInternalContextCleanupOutcome(context,resourceReleaseChecked(update->kind,retired),&status,&first);
-    if(update->guardHeld)xuiInternalContextCleanupOutcome(context,resourceReleaseChecked(update->kind,update->guarded),&status,&first);
+    if(update->ownsSlots && retired && (update->published || update->newHeld))
+        xuiInternalContextCleanupOutcome(context,xuiInternalProxyResourceRetireSlot(retired,update->kind),&status,&first);
+    if(update->guardHeld)
+        xuiInternalContextCleanupOutcome(context,xuiInternalProxyResourceRetireSlot(update->guarded,update->kind),&status,&first);
     xuiInternalCallScopeRecordOutcome(&update->scope,status,first);
     if(context->pActiveResourceUpdates!=update)abort();
     context->pActiveResourceUpdates=update->next;

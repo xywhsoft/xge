@@ -10,7 +10,7 @@ typedef struct Backend {
     xerror* fontError;
     int drawStatus;
     unsigned surfaces, fonts, draws;
-    bool deferSurface, deferDraw;
+    bool deferSurface, deferFont, deferDraw;
 } Backend;
 
 static bool ownerCount(const void* raw,size_t* output)
@@ -54,6 +54,7 @@ static void fontDestroy(xui_proxy proxy,xui_font font)
     assert(xuiFontGetValueOwned(font,&value)==XUI_OK && value==state->value);
     xrtValueRelease(value);
     ++state->fonts;
+    if(state->deferFont)assert(xrtValueViewBeginV1(state->value,&state->read));
     if(state->fontError)xrtSetErrorTake(xrtErrorRef(state->fontError));
 }
 
@@ -147,12 +148,45 @@ static void testHooks(void)
     xrtValueRelease(state.value);
 }
 
+static void testDetachedContextFont(void)
+{
+    static const xrtownershipops ops={ownerCount,ownerTrace};
+    Backend state={.references=1,.value=xrtValueObject(),.deferFont=true};
+    xui_proxy_t table=xuiProxyXge();
+    table.pUser=&state;
+    table.fontDestroy=fontDestroy;
+    const xui_callback_owner_t owner={{&state,&ops},ownerHold,ownerDrop};
+    xui_proxy proxy=NULL;
+    xui_context context=NULL;
+    xui_context_desc_t desc;
+    xuiContextDescDefault(&desc);
+    desc.iSystemFontPolicy=XUI_SYSTEM_FONT_DISABLED;
+    assert(state.value && xuiProxyCreateCustomOwned(&table,&owner,&proxy)==XUI_OK);
+    assert(xuiCreateOwnedEx(proxy,&desc,&context)==XUI_OK);
+    assert(xuiProxyReleaseChecked(proxy)==XUI_OK);
+
+    xui_font font=NULL;
+    assert(xuiFontCreateWithValueOwned(proxy,state.value,&font)==XUI_OK);
+    assert(xuiSetDefaultFont(context,font)==XUI_OK);
+    assert(xuiFontReleaseChecked(font)==XUI_OK);
+    bool consumed=true;
+    assert(!xrtGetError());
+    assert(xuiDestroyOwnerChecked(context,&consumed)==XUI_STATUS_DEFERRED && !consumed);
+    assert(state.fonts==1 && !xrtGetError());
+    assert(xuiProxyDrainCallbackRollbacks(proxy)==XUI_ERROR_BUSY);
+    assert(xrtValueViewEndV1(&state.read));
+    assert(xuiDestroyOwnerChecked(context,&consumed)==XUI_OK && consumed);
+    assert(state.fonts==1 && state.references==1);
+    xrtValueRelease(state.value);
+}
+
 int main(void)
 {
     assert(xrtMemDebugEnable(true));
     xmemdebugsnapshot before,after;
     xrtMemDebugSnapshot(&before);
     testHooks();
+    testDetachedContextFont();
     xrtMemDebugSnapshot(&after);
     assert(before.LiveCount==after.LiveCount && before.LiveBytes==after.LiveBytes);
     assert(before.DoubleFreeCount==after.DoubleFreeCount && before.InvalidFreeCount==after.InvalidFreeCount);

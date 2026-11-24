@@ -154,3 +154,6 @@ published table slots consume the native owner and queue it when a value or
 target still has an active read. Checked resource releases already holding
 that owner can retry directly after a refusal. A failed semantic hook still
 consumes the hook phase. Cleanup may continue without invoking it again.
+Context font slots, the resource registry and managed widget resource slots
+also use the queue when retiring a detached custom resource. Context retains
+its Proxy until those releases have finished.

@@ -2098,20 +2098,20 @@ static void __xuiContextDestroyFonts(xui_context pContext)
     for(int i=0;i<count;++i){
         xrtFree(fonts[i].sName);
         if(owned && fonts[i].pFont){
-            int status=xuiFontReleaseChecked(fonts[i].pFont);xerror* error=xrtTakeError();
+            int status=xuiInternalProxyResourceRetireSlot(fonts[i].pFont,XUI_OWNED_FONT);xerror* error=xrtTakeError();
             if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
             else xrtErrorFree(error);
         }
     }
     if(dynamic)xrtFree(fonts);
     if(owned && defaultFont){
-        int status=xuiFontReleaseChecked(defaultFont);xerror* error=xrtTakeError();
+        int status=xuiInternalProxyResourceRetireSlot(defaultFont,XUI_OWNED_FONT);xerror* error=xrtTakeError();
         if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
         else xrtErrorFree(error);
     }
     if(systemFont){
         if(owned){
-            int status=xuiFontReleaseChecked(systemFont);xerror* error=xrtTakeError();
+            int status=xuiInternalProxyResourceRetireSlot(systemFont,XUI_OWNED_FONT);xerror* error=xrtTakeError();
             if(result==XUI_OK && (status!=XUI_OK || error)){result=status!=XUI_OK ? status:XUI_ERROR_CALLBACK_FAILED;first=error;}
             else xrtErrorFree(error);
         }else if(pContext->bHasProxy && pContext->tProxy.fontDestroy){
@@ -2938,7 +2938,7 @@ finish:
     xuiInternalCallScopeRecordOutcome(&scope,status,first);
     if(!published){
         if(held)xuiInternalContextCleanupOutcome(context,
-            owned==XUI_RESOURCE_OWNS_SURFACE ? xuiSurfaceReleaseChecked(desc->pHandle):xuiFontReleaseChecked(desc->pHandle),&status,&first);
+            xuiInternalProxyResourceRetireSlot(desc->pHandle,owned==XUI_RESOURCE_OWNS_SURFACE ? XUI_OWNED_SURFACE:XUI_OWNED_FONT),&status,&first);
         xrtFree(candidate);xrtFree(name);
     }
     status=xuiInternalCallScopeEndOutcome(&scope,status,&first);
