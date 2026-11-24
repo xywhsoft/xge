@@ -123,6 +123,77 @@ static void lastTarget(xui_proxy proxy)
     xrtValueRelease(pixels);
 }
 
+static void publishedTarget(xui_proxy proxy, bool closeInScope)
+{
+    xvalue* pixels = xrtValueObject();
+    xui_surface surface = NULL;
+    xui_draw_context draw = NULL;
+    xui_draw_scope_t scope = {0};
+    assert(pixels && xuiSurfaceCreateWithValueOwned(proxy, pixels, &surface) == XUI_OK);
+    assert(xuiDrawCreateWithValueOwned(proxy, NULL, surface, &draw) == XUI_OK);
+    assert(xuiSurfaceReleaseChecked(surface) == XUI_OK);
+    bool consumed = false;
+    if (closeInScope) {
+        assert(xuiDrawCallScopeBegin(draw, &scope) == XUI_OK);
+        assert(xuiDrawReleaseOwnerChecked(draw, &consumed) == XUI_OK && consumed);
+    }
+
+    xvalueviewv1 view = {0};
+    assert(xrtValueViewBeginV1(pixels, &view));
+    if (closeInScope) {
+        assert(xuiDrawCallScopeEnd(&scope) == XUI_ERROR_BUSY);
+        assert(!scope._pSelf && !scope._pDraw);
+        expectEdges(xuiProxyOwnership(proxy), 2);
+        assert(xuiProxyDrainCallbackRollbacks(proxy) == XUI_ERROR_BUSY);
+    } else {
+        assert(xuiDrawReleaseOwnerChecked(draw, &consumed) == XUI_ERROR_BUSY && !consumed);
+    }
+    assert(xuiDrawGetProxy(draw) == proxy && xuiDrawGetTarget(draw) == surface);
+    assert(xrtValueViewEndV1(&view));
+
+    if (closeInScope) assert(xuiProxyDrainCallbackRollbacks(proxy) == XUI_OK);
+    else assert(xuiDrawReleaseOwnerChecked(draw, &consumed) == XUI_OK && consumed);
+    expectEdges(xuiProxyOwnership(proxy), 1);
+    xrtValueRelease(pixels);
+}
+
+typedef struct ClosingEnd {
+    xui_draw_context draw;
+    xvalue* pixels;
+    xvalueviewv1 reader;
+    unsigned calls;
+} ClosingEnd;
+
+static int closeDuringEnd(xui_proxy proxy, void* raw)
+{
+    (void)proxy;
+    ClosingEnd* state = *(ClosingEnd**)raw;
+    bool consumed = false;
+    ++state->calls;
+    assert(xuiDrawReleaseOwnerChecked(state->draw, &consumed) == XUI_OK && consumed);
+    assert(xrtValueViewBeginV1(state->pixels, &state->reader));
+    return XUI_OK;
+}
+
+static void reentrantEndWithBusyTarget(xui_proxy proxy)
+{
+    ClosingEnd state = {.pixels = xrtValueObject()};
+    xui_surface surface = NULL;
+    void* payload = NULL;
+    assert(state.pixels && xuiSurfaceCreateWithValueOwned(proxy, state.pixels, &surface) == XUI_OK);
+    assert(xuiDrawCreateOwned(proxy, surface, sizeof(ClosingEnd*), closeDuringEnd, &state.draw, &payload) == XUI_OK);
+    *(ClosingEnd**)payload = &state;
+    assert(xuiSurfaceReleaseChecked(surface) == XUI_OK);
+
+    assert(xuiDrawEndChecked(state.draw) == XUI_ERROR_BUSY && state.calls == 1);
+    assert(xuiDrawGetTarget(state.draw) == surface && xuiDrawGetProxy(state.draw) == proxy);
+    expectEdges(xuiProxyOwnership(proxy), 2);
+    assert(xrtValueViewEndV1(&state.reader));
+    assert(xuiProxyDrainCallbackRollbacks(proxy) == XUI_OK && state.calls == 1);
+    expectEdges(xuiProxyOwnership(proxy), 1);
+    xrtValueRelease(state.pixels);
+}
+
 typedef struct Reentry {
     xui_proxy proxy;
     xvalue* other;
@@ -189,7 +260,7 @@ static void allocationAndPublication(xui_proxy proxy)
     assert(xuiSurfaceStageCallbackOutput(&surface, proxy, value) == XUI_OK);
     xrtMemDebugSnapshot(&staged);
     assert(staged.AllocCount - ordinary.AllocCount == 1 && ordinary.AllocCount - before.AllocCount == 1);
-    assert(staged.LiveBytes - ordinary.LiveBytes == ordinary.LiveBytes - before.LiveBytes + sizeof(void*));
+    assert(staged.LiveBytes - ordinary.LiveBytes == ordinary.LiveBytes - before.LiveBytes);
     xvalue* published = NULL;
     assert(xuiSurfaceGetValueOwned(surface, &published) == XUI_OK && published == value);
     xrtValueRelease(published);
@@ -207,6 +278,9 @@ int main(void)
     xui_proxy proxy = makeProxy(&owner);
     busyOutputs(proxy);
     lastTarget(proxy);
+    publishedTarget(proxy, false);
+    publishedTarget(proxy, true);
+    reentrantEndWithBusyTarget(proxy);
     reentrantBatch(proxy);
     allocationAndPublication(proxy);
     assert(xuiProxyReleaseChecked(proxy) == XUI_OK && owner.references == 1);

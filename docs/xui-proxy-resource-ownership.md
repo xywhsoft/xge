@@ -120,12 +120,14 @@ qualification of this 48-byte contract.
 The staging setters initialize one empty Surface, Font or Draw slot. A native
 caller takes the usual resource owner after publication. A discard transfers
 that owner to the Proxy when the resource or its last Draw target is busy.
-The extra link shares the resource allocation. The Proxy traces each queued
-owner, and a Draw retains its target until the target's release consumes it.
+The queue link fits in the common resource header. The Proxy traces each queued
+reference, and a Draw retains its target until the target's release consumes it.
 
 Retry on the creator thread with `xuiProxyDrainCallbackRollbacks()` while
 holding an independent Proxy owner. Each retry detaches one batch and leaves
 work added during a finalizer for the next batch. A resource callback retries
 earlier work when it stages a new result. The caller drains before releasing
 its last independent Proxy owner. Ordinary resource owners still use the
-checked release functions.
+checked release functions. Checked Draw release preserves the caller's owner
+when a dependency refuses. If the owner already closed during a draw scope,
+the scope transfers its physical reference to the same queue on refusal.
