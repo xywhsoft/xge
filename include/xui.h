@@ -8794,7 +8794,7 @@ XUI_API int xuiCodeProviderSetCommandHandlerOwned(xui_code_provider_set provider
  * borrowed reference. Retain it before storing it beyond the callback. */
 XUI_API int xuiCodeProviderSetValueCommandOwned(xui_code_provider_set providers,
     xui_code_value_command_proc callback, void* user, const xui_callback_owner_t* owner);
-XUI_API xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input);
+XUI_API const xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input);
 /* Transactional native replies. The reply pointer and its input views are
  * valid only during the callback. Copying helpers preserve the preceding reply
  * on failure. Owned results live in the requesting scope until that scope
@@ -8825,7 +8825,7 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_
  * Passing NULL also supports legacy command providers. The caller keeps
  * the payload valid through this synchronous call. */
 XUI_API int xuiCodeProviderExecuteCommandValue(xui_code_provider_set providers, xui_widget widget,
-    int command, xvalue* payload, int* handled);
+    int command, const xvalue* payload, int* handled);
 /* Independent replies from the typed providers. Legacy borrowed callbacks
  * return UNSUPPORTED. Result records borrow from the returned snapshot until
  * Destroy. A successful result remains valid after a provider clear or close. */

@@ -260,10 +260,10 @@ XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set providers,xui_
     return status;
 }
 struct xui_code_command_input_t {
-    xvalue* value;
+    const xvalue* value;
 };
 
-XUI_API xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input)
+XUI_API const xvalue* xuiCodeCommandInputGetValue(const xui_code_command_input_t* input)
 {
     return input ? input->value : NULL;
 }
@@ -288,7 +288,7 @@ static int __xuiCodeProviderExecuteCommand(xui_code_provider_set providers, xui_
             status=selected->fn.editorCommand(widget,command,&value,user);
             break;
         case XUI_PROVIDER_VALUE_COMMAND: {
-            const xui_code_command_input_t input={.value=(xvalue*)data};
+            const xui_code_command_input_t input={.value=data};
             status=selected->fn.valueCommand(widget,command,&input,&value,user);
             break;
         }
@@ -306,7 +306,7 @@ XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set providers,xui_wi
 {return __xuiCodeProviderExecuteCommand(providers,widget,command,data,false,handled);}
 
 XUI_API int xuiCodeProviderExecuteCommandValue(xui_code_provider_set providers, xui_widget widget,
-    int command, xvalue* payload, int* handled)
+    int command, const xvalue* payload, int* handled)
 {return __xuiCodeProviderExecuteCommand(providers,widget,command,payload,true,handled);}
 
 XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set providers,xui_widget widget,int command,int* enabled)
