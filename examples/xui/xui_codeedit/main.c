@@ -9,6 +9,7 @@
 #define DEMO_H 520
 #define DEMO_OFFSET_X 10.0f
 #define DEMO_OFFSET_Y 20.0f
+#define DEMO_PADDING_BUTTON_COUNT 4
 
 #ifndef XGE_KEY_LEFT_SHIFT
 #define XGE_KEY_LEFT_SHIFT 340
@@ -30,6 +31,8 @@ typedef struct xui_codeedit_demo_t {
 	xui_font pFont;
 	xui_widget pRoot;
 	xui_widget pCodeEdit;
+	xui_widget arrPaddingButtons[DEMO_PADDING_BUTTON_COUNT];
+	int iLineNumberPadding;
 	int iFrame;
 	int iMaxFrames;
 	double fMaxSeconds;
@@ -234,18 +237,136 @@ static int __xuiCodeEditRootRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tHeader = (xui_rect_t){24.0f, 18.0f, tRect.fW - 48.0f, 44.0f};
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tHeader, XUI_COLOR_RGBA(247, 250, 255, 255));
 	}
+	if ( pDemo->tProxy.drawText != NULL && pDemo->pFont != NULL ) {
+		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw,
+			&(xui_text_item_t){.iSize=sizeof(xui_text_item_t),
+				.pFont=pDemo->pFont, .sText="Line number padding",
+				.iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT},
+			(xui_rect_t){38.0f, 18.0f, 142.0f, 44.0f},
+			XUI_COLOR_RGBA(51, 65, 85, 255),
+			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	}
 	return XUI_OK;
+}
+
+static void __xuiCodeEditDemoRefreshPaddingButtons(xui_codeedit_demo_t* pDemo)
+{
+	static const int arrPadding[DEMO_PADDING_BUTTON_COUNT] = {2, 4, 6, 8};
+	int i;
+
+	if ( pDemo == NULL ) return;
+	for ( i = 0; i < DEMO_PADDING_BUTTON_COUNT; i++ ) {
+		if ( pDemo->arrPaddingButtons[i] == NULL ) continue;
+		if ( arrPadding[i] == pDemo->iLineNumberPadding ) {
+			(void)xuiButtonSetTextColor(pDemo->arrPaddingButtons[i], XUI_COLOR_WHITE);
+			(void)xuiButtonSetColors(pDemo->arrPaddingButtons[i],
+				XUI_COLOR_RGBA(59, 130, 246, 255),
+				XUI_COLOR_RGBA(37, 99, 235, 255),
+				XUI_COLOR_RGBA(29, 78, 216, 255),
+				XUI_COLOR_RGBA(59, 130, 246, 255),
+				XUI_COLOR_RGBA(148, 163, 184, 255));
+			(void)xuiButtonSetBorder(pDemo->arrPaddingButtons[i], 1.0f,
+				XUI_COLOR_RGBA(37, 99, 235, 255));
+		} else {
+			(void)xuiButtonSetTextColor(pDemo->arrPaddingButtons[i],
+				XUI_COLOR_RGBA(51, 65, 85, 255));
+			(void)xuiButtonSetColors(pDemo->arrPaddingButtons[i],
+				XUI_COLOR_RGBA(248, 250, 252, 255),
+				XUI_COLOR_RGBA(226, 232, 240, 255),
+				XUI_COLOR_RGBA(203, 213, 225, 255),
+				XUI_COLOR_RGBA(241, 245, 249, 255),
+				XUI_COLOR_RGBA(241, 245, 249, 255));
+			(void)xuiButtonSetBorder(pDemo->arrPaddingButtons[i], 1.0f,
+				XUI_COLOR_RGBA(203, 213, 225, 255));
+		}
+	}
+}
+
+static void __xuiCodeEditDemoPaddingClick(xui_widget pWidget, void* pUser)
+{
+	static const int arrPadding[DEMO_PADDING_BUTTON_COUNT] = {2, 4, 6, 8};
+	xui_codeedit_demo_t* pDemo = (xui_codeedit_demo_t*)pUser;
+	int i;
+
+	if ( pDemo == NULL || pDemo->pCodeEdit == NULL ) return;
+	for ( i = 0; i < DEMO_PADDING_BUTTON_COUNT; i++ ) {
+		if ( pDemo->arrPaddingButtons[i] != pWidget ) continue;
+		pDemo->iLineNumberPadding = arrPadding[i];
+		(void)xuiCodeEditSetLineNumberLayout(pDemo->pCodeEdit, 1,
+			(float)arrPadding[i], XUI_TEXT_ALIGN_RIGHT);
+		__xuiCodeEditDemoRefreshPaddingButtons(pDemo);
+		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
+		break;
+	}
+}
+
+static int __xuiCodeEditDemoCreatePaddingButtons(xui_codeedit_demo_t* pDemo)
+{
+	static const char* arrLabels[DEMO_PADDING_BUTTON_COUNT] = {"2 px", "4 px", "6 px", "8 px"};
+	xui_button_desc_t tDesc;
+	int i;
+	int iRet;
+
+	for ( i = 0; i < DEMO_PADDING_BUTTON_COUNT; i++ ) {
+		memset(&tDesc, 0, sizeof(tDesc));
+		tDesc.iSize = sizeof(tDesc);
+		tDesc.sText = arrLabels[i];
+		tDesc.pFont = pDemo->pFont;
+		tDesc.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
+		tDesc.fBorderWidth = 1.0f;
+		iRet = xuiButtonCreate(pDemo->pContext,
+			&pDemo->arrPaddingButtons[i], &tDesc);
+		if ( iRet != XUI_OK ) return iRet;
+		(void)xuiWidgetSetRect(pDemo->arrPaddingButtons[i],
+			(xui_rect_t){184.0f + (float)i * 58.0f, 27.0f, 50.0f, 26.0f});
+		(void)xuiWidgetSetFocusable(pDemo->arrPaddingButtons[i], 0);
+		iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->arrPaddingButtons[i]);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiButtonSetClick(pDemo->arrPaddingButtons[i],
+			__xuiCodeEditDemoPaddingClick, pDemo);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pDemo->iLineNumberPadding = 2;
+	__xuiCodeEditDemoRefreshPaddingButtons(pDemo);
+	return XUI_OK;
+}
+
+static int __xuiCodeEditDemoAddDiagnostic(xui_code_diagnostic_t* pDiagnostics,
+	int iCount, int iCapacity, const char* sText, const char* sNeedle,
+	int iSeverity, const char* sCode, const char* sMessage)
+{
+	const char* sMatch;
+	xui_code_diagnostic_t* pDiagnostic;
+
+	if ( pDiagnostics == NULL || iCount < 0 || iCount >= iCapacity ||
+	     sText == NULL || sNeedle == NULL ) return iCount;
+	sMatch = strstr(sText, sNeedle);
+	if ( sMatch == NULL ) return iCount;
+	pDiagnostic = &pDiagnostics[iCount];
+	memset(pDiagnostic, 0, sizeof(*pDiagnostic));
+	pDiagnostic->iSize = sizeof(*pDiagnostic);
+	pDiagnostic->tRange.iStart = (int)(sMatch - sText);
+	pDiagnostic->tRange.iEnd = pDiagnostic->tRange.iStart + (int)strlen(sNeedle);
+	pDiagnostic->iSeverity = iSeverity;
+	pDiagnostic->sCode = sCode;
+	pDiagnostic->sMessage = sMessage;
+	pDiagnostic->sSource = "xui_codeedit";
+	return iCount + 1;
 }
 
 static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 {
 	xui_code_edit_desc_t tDesc;
 	xui_code_fold_range_t arrFolds[16];
-	xui_code_diagnostic_t arrDiagnostics[1];
+	xui_code_diagnostic_t arrDiagnostics[4];
 	xui_find_options_t tFind;
+	xui_code_document pDocument;
+	const char* sText;
 	const char* sMatch;
+	int iDiagnosticCount;
 	int iFoldCount;
 	int iFindCount;
+	int iMainLine;
 	int iRet;
 
 	iRet = xuiWidgetCreate(pDemo->pContext, &pDemo->pRoot);
@@ -270,6 +391,10 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	xuiWidgetSetRect(pDemo->pCodeEdit, (xui_rect_t){28.0f, 72.0f, DEMO_W - 56.0f, DEMO_H - 106.0f});
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCodeEdit);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditDemoCreatePaddingButtons(pDemo);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiCodeEditSetLineNumberLayout(pDemo->pCodeEdit, 1, 2.0f,
+		XUI_TEXT_ALIGN_RIGHT);
 	(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
 	(void)xuiCodeProviderSetCompletion(xuiCodeEditGetProviders(pDemo->pCodeEdit),
 		__xuiCodeEditDemoCompletion, pDemo);
@@ -280,21 +405,54 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	(void)xuiCodeEditSetCompletionOptions(pDemo->pCodeEdit, 1, 1, 64, 0.075f);
 	(void)xuiCodeEditSetMinimap(pDemo->pCodeEdit, 1, 92.0f);
 
-	(void)xuiCodeAnnotationSetMarker(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), 6, XUI_CODE_MARKER_BOOKMARK, 0u, "main", 1u);
-	memset(arrDiagnostics, 0, sizeof(arrDiagnostics));
-	sMatch = strstr(g_sCodeEditDemoText, "printf");
+	pDocument = xuiCodeEditGetDocument(pDemo->pCodeEdit);
+	sText = xuiCodeEditGetText(pDemo->pCodeEdit);
+	sMatch = strstr(sText, "hello");
 	if ( sMatch != NULL ) {
-		arrDiagnostics[0].iSize = sizeof(arrDiagnostics[0]);
-		arrDiagnostics[0].tRange.iStart = (int)(sMatch - g_sCodeEditDemoText);
-		arrDiagnostics[0].tRange.iEnd = arrDiagnostics[0].tRange.iStart + 6;
-		arrDiagnostics[0].iSeverity = XUI_CODE_DIAGNOSTIC_WARNING;
-		arrDiagnostics[0].sCode = "demo.printf";
-		arrDiagnostics[0].sMessage = "Demo diagnostic: prefer the project logger.";
-		arrDiagnostics[0].sSource = "xui_codeedit";
-		(void)xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), arrDiagnostics, 1);
+		(void)xuiCodeDocumentReplace(pDocument,
+			(int)(sMatch - sText), (int)(sMatch - sText) + 5, "Hello");
 	}
-	(void)xuiCodeEditSetInlineCompletion(pDemo->pCodeEdit, 0, "/* Press Tab to accept inline completion. */\n");
-	if ( xuiCodeFoldCBuildRanges(g_sCodeEditDemoText, -1, arrFolds, 16, &iFoldCount) == XUI_OK && iFoldCount > 0 ) {
+	sText = xuiCodeEditGetText(pDemo->pCodeEdit);
+	sMatch = strchr(sText, '\n');
+	if ( sMatch != NULL ) {
+		(void)xuiCodeDocumentInsert(pDocument, (int)(sMatch - sText) + 1,
+			"// Added line: Change margin is enabled by default.\n");
+	}
+	sText = xuiCodeEditGetText(pDemo->pCodeEdit);
+	iMainLine = 0;
+	sMatch = strstr(sText, "int main");
+	if ( sMatch != NULL ) {
+		(void)xuiCodeDocumentOffsetToLineColumn(pDocument,
+			(int)(sMatch - sText), &iMainLine, NULL);
+	}
+	(void)xuiCodeAnnotationSetMarker(xuiCodeEditGetAnnotations(pDemo->pCodeEdit),
+		iMainLine, XUI_CODE_MARKER_BOOKMARK, 0u, "main", 1u);
+	memset(arrDiagnostics, 0, sizeof(arrDiagnostics));
+	iDiagnosticCount = 0;
+	iDiagnosticCount = __xuiCodeEditDemoAddDiagnostic(arrDiagnostics,
+		iDiagnosticCount, 4, sText, "#include", XUI_CODE_DIAGNOSTIC_INFO,
+		"demo.include", "Information diagnostic with the default icon.");
+	iDiagnosticCount = __xuiCodeEditDemoAddDiagnostic(arrDiagnostics,
+		iDiagnosticCount, 4, sText, "static int add", XUI_CODE_DIAGNOSTIC_HINT,
+		"demo.hint", "Hint diagnostic with the default icon.");
+	iDiagnosticCount = __xuiCodeEditDemoAddDiagnostic(arrDiagnostics,
+		iDiagnosticCount, 4, sText, "printf", XUI_CODE_DIAGNOSTIC_WARNING,
+		"demo.printf", "Warning diagnostic: prefer the project logger.");
+	iDiagnosticCount = __xuiCodeEditDemoAddDiagnostic(arrDiagnostics,
+		iDiagnosticCount, 4, sText, "return 0", XUI_CODE_DIAGNOSTIC_ERROR,
+		"demo.return", "Error diagnostic icon demonstration.");
+	(void)xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(pDemo->pCodeEdit),
+		arrDiagnostics, iDiagnosticCount);
+	sMatch = strchr(sText, '\n');
+	if ( sMatch != NULL ) {
+		int iInlineOffset = (int)(sMatch - sText);
+		if ( xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pDemo->pCodeEdit),
+			pDocument, iInlineOffset, iInlineOffset) == XUI_OK ) {
+			(void)xuiCodeEditSetInlineCompletion(pDemo->pCodeEdit, iInlineOffset,
+				" /* Press Tab to accept. */");
+		}
+	}
+	if ( xuiCodeFoldCBuildRanges(sText, -1, arrFolds, 16, &iFoldCount) == XUI_OK && iFoldCount > 0 ) {
 		(void)xuiCodeFoldStateSetRanges(xuiCodeEditGetFoldState(pDemo->pCodeEdit), arrFolds, iFoldCount);
 	}
 	memset(&tFind, 0, sizeof(tFind));
