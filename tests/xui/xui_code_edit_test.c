@@ -493,6 +493,8 @@ int main(void)
 	int iDockPane;
 	int iLongTextOffset;
 	int iLongLine;
+	int bLineNumberAutoWidth;
+	int iLineChange;
 	uint32_t iCurrentLineColor;
 	uint32_t iReadonlyBackgroundColor;
 	uint32_t iImeColor;
@@ -501,6 +503,7 @@ int main(void)
 	uint32_t iBracketBorderColor;
 	uint32_t iBracketUnmatchedColor;
 	uint32_t iCompletionVersion;
+	uint32_t iLineNumberAlign;
 	float fTextOriginX;
 	float fLineNumberX;
 	float fPointerCharWidth;
@@ -513,6 +516,7 @@ int main(void)
 	float fInlineContentHeightBefore;
 	float fInlineContentHeightAfter;
 	float fToyTextOriginX;
+	float fLineNumberPadding;
 	int iFailed;
 	int iRet;
 
@@ -581,6 +585,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiCodeEditGetType(pContext) == pType, "type reuse");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.whitespace.color") != 0u, "codeedit style property registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.diagnostic.error.color") != 0u, "codeedit diagnostic style property registered");
+	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.change.modified.color") != 0u &&
+		xuiStyleFindProperty(pContext, "codeedit.change.added.color") != 0u &&
+		xuiStyleFindProperty(pContext, "codeedit.change.deleted.color") != 0u,
+		"codeedit change style properties registered");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.bracket_match.background_color") != 0u &&
 		xuiStyleFindProperty(pContext, "codeedit.bracket_match.border_color") != 0u &&
 		xuiStyleFindProperty(pContext, "codeedit.bracket_unmatched.border_color") != 0u,
@@ -664,6 +672,10 @@ int main(void)
 	XUI_TEST_CHECK(pCodeCache != NULL, "codeedit cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCodeCache) > 0, "render rect fills");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCodeCache) >= 6, "render text and margins");
+	tRangeRect = xuiTestSurfaceGetLastTextRect(pCodeCache);
+	XUI_TEST_CHECK(strcmp(xuiTestSurfaceGetLastText(pCodeCache), "4") == 0 &&
+		tRangeRect.fY == 60.0f,
+		"line numbers share the glyph-centered vertical offset");
 	XUI_TEST_CHECK(iCustomMarginCallbackCount > 0, "custom margin render callback");
 	iRet = xuiCodeMarginModelGetTotalWidth(xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
 	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic text origin");
@@ -679,6 +691,19 @@ int main(void)
 		fLineNumberX += tMargin.fWidth;
 	}
 	XUI_TEST_CHECK(iLine < iMarginCount, "line number margin found");
+	XUI_TEST_CHECK(tMargin.fWidth < 44.0f,
+		"line number margin automatically fits the current line count");
+	iRet = xuiCodeEditGetLineNumberLayout(pCodeEdit,
+		&bLineNumberAutoWidth, &fLineNumberPadding, &iLineNumberAlign);
+	XUI_TEST_CHECK(iRet == XUI_OK && bLineNumberAutoWidth == 1 &&
+		fLineNumberPadding == 2.0f && iLineNumberAlign == XUI_TEXT_ALIGN_RIGHT,
+		"line number layout defaults to automatic right aligned 2px padding");
+	iRet = xuiCodeEditSetLineNumberLayout(pCodeEdit, 1, 2.0f,
+		XUI_TEXT_ALIGN_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "line number layout accepts compact padding");
+	iRet = xuiCodeEditSetLineNumberLayout(pCodeEdit, 1, 2.0f,
+		XUI_TEXT_ALIGN_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "line number layout restores default padding");
 	XUI_TEST_CHECK(xuiQueryCursor(pContext, (int)fLineNumberX, 39) == XUI_CURSOR_ARROW,
 		"codeedit margin uses arrow cursor");
 	XUI_TEST_CHECK(xuiQueryCursor(pContext, (int)(20.0f + fTextOriginX + 8.0f), 39) == XUI_CURSOR_IBEAM,
@@ -831,6 +856,13 @@ int main(void)
 		xuiTestSurfaceGetRectFillColorCount(pBracketCache,
 			iBracketBorderColor) == 2,
 		"plain language matches raw bracket bytes");
+	tBracketRect = xuiTestSurfaceGetLastRectFillColorRect(pBracketCache,
+		iBracketBorderColor);
+	iRet = xuiCodeEditGetOffsetRect(pBracketEdit, 6, &tBracketOffsetRect);
+	tBracketWorldRect = xuiWidgetGetWorldRect(pBracketEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tBracketRect.fX ==
+		(tBracketOffsetRect.fX - tBracketWorldRect.fX),
+		"bracket decoration uses the cluster origin without a local offset");
 	iRet = xuiCodeEditSetBracketMatching(pBracketEdit, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		xuiCodeEditGetBracketMatching(pBracketEdit) == 0,
@@ -856,13 +888,6 @@ int main(void)
 	pBracketCache = NULL;
 	tBracketDesc.iFlags = (int)XUI_CODE_EDIT_DISABLE_BRACKET_MATCH;
 	iRet = xuiCodeEditCreate(pContext, &pBracketEdit, &tBracketDesc);
-	tBracketRect = xuiTestSurfaceGetLastRectFillColorRect(pBracketCache,
-		iBracketBorderColor);
-	iRet = xuiCodeEditGetOffsetRect(pBracketEdit, 6, &tBracketOffsetRect);
-	tBracketWorldRect = xuiWidgetGetWorldRect(pBracketEdit);
-	XUI_TEST_CHECK(iRet == XUI_OK && tBracketRect.fX ==
-		(tBracketOffsetRect.fX - tBracketWorldRect.fX),
-		"bracket decoration uses the cluster origin without a local offset");
 	XUI_TEST_CHECK(iRet == XUI_OK && pBracketEdit != NULL &&
 		xuiCodeEditGetBracketMatching(pBracketEdit) == 0,
 		"bracket matching descriptor disable flag");
@@ -985,6 +1010,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && strstr(xuiCodeEditGetLastError(pCodeEdit), "UTF-8") != NULL, "codeedit invalid utf8 error");
 	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetLastError(pCodeEdit)[0] == '\0', "codeedit error clears after set text");
+	iRet = xuiCodeEditGetLineChange(pCodeEdit, 0, &iLineChange);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineChange == XUI_CODE_LINE_CHANGE_NONE,
+		"clean document starts without line changes");
+	iRet = xuiCodeDocumentReplace(xuiCodeEditGetDocument(pCodeEdit), 0, 1, "A");
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetLineChange(pCodeEdit, 0, &iLineChange);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineChange == XUI_CODE_LINE_CHANGE_MODIFIED,
+		"same-line edit records a modified line");
+	iRet = xuiCodeDocumentSetDirty(xuiCodeEditGetDocument(pCodeEdit), 0);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetLineChange(pCodeEdit, 0, &iLineChange);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineChange == XUI_CODE_LINE_CHANGE_NONE,
+		"new save baseline clears line changes");
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
+	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentInsert(
+		xuiCodeEditGetDocument(pCodeEdit), 0, "new\n");
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetLineChange(pCodeEdit, 0, &iLineChange);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineChange == XUI_CODE_LINE_CHANGE_ADDED,
+		"whole-line insertion records an added line");
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
+	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentDelete(
+		xuiCodeEditGetDocument(pCodeEdit), 5, 6);
+	if ( iRet == XUI_OK ) iRet = xuiCodeEditGetLineChange(pCodeEdit, 0, &iLineChange);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLineChange == XUI_CODE_LINE_CHANGE_DELETED,
+		"line deletion records a deletion marker on the surviving line");
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "line change test restores document");
 	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pCodeEdit, "focus codeedit");
 	XUI_TEST_CHECK(xuiWidgetGetImeMode(pCodeEdit) == XUI_IME_ENABLED && xuiHasImeCandidateRect(pContext), "ime enabled on focus");
@@ -1601,6 +1651,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll text");
 	iRet = xuiCodeEditSetScroll(pCodeEdit, 0.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll setup");
+	iRet = xuiCodeMarginModelGetTotalWidth(
+		xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll refreshes automatic margin width");
 	iRet = __xuiCodeEditPointerDown(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 9.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll pointer down");
 	iRet = __xuiCodeEditPointerMove(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 260.0f);
@@ -1720,6 +1773,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "tab visual text");
 	iRet = xuiCodeEditSetScroll(pCodeEdit, 0.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tab visual scroll reset");
+	iRet = xuiCodeMarginModelGetTotalWidth(
+		xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tab visual refreshes automatic margin width");
 	iRet = xuiCodeEditSetTabColumns(pCodeEdit, 4);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetTabColumns(pCodeEdit) == 4, "tab columns set four");
 	iRet = __xuiCodeEditPointerDown(pContext, 20.0f + fTextOriginX + 4.0f + 8.0f * 1.0f, 30.0f + 9.0f);

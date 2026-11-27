@@ -1600,6 +1600,11 @@ typedef struct xui_language_text_view_t {
 #define XUI_CODE_DIAGNOSTIC_INFO	3
 #define XUI_CODE_DIAGNOSTIC_HINT	4
 
+#define XUI_CODE_LINE_CHANGE_NONE	0
+#define XUI_CODE_LINE_CHANGE_MODIFIED	1
+#define XUI_CODE_LINE_CHANGE_ADDED	2
+#define XUI_CODE_LINE_CHANGE_DELETED	3
+
 #define XUI_CODE_MARGIN_LINE_NUMBER	1
 #define XUI_CODE_MARGIN_MARKER		2
 #define XUI_CODE_MARGIN_FOLD		3
@@ -9304,6 +9309,15 @@ XUI_API int xuiCodeEditIsReadonly(xui_widget pWidget);
 XUI_API int xuiCodeEditSetDefaultMargins(xui_widget pWidget, int bShowLineNumbers, int bShowMarkerMargin, int bShowFoldMargin, int bShowDiagnosticMargin);
 /* 输出默认边栏开关状态。 */
 XUI_API int xuiCodeEditGetDefaultMargins(xui_widget pWidget, int* pShowLineNumbers, int* pShowMarkerMargin, int* pShowFoldMargin, int* pShowDiagnosticMargin);
+/* 设置行号栏布局；自动宽度按最大行号测量，水平内边距作用于左右两侧。
+ * iTextAlign 接受 XUI_TEXT_ALIGN_LEFT/CENTER/RIGHT，默认自动宽度、2px、右对齐。 */
+XUI_API int xuiCodeEditSetLineNumberLayout(xui_widget pWidget, int bAutoWidth, float fHorizontalPadding, uint32_t iTextAlign);
+/* 输出行号栏布局；全部输出均可为 NULL，但至少提供一个。 */
+XUI_API int xuiCodeEditGetLineNumberLayout(xui_widget pWidget, int* pAutoWidth, float* pHorizontalPadding, uint32_t* pTextAlign);
+/* 输出指定行相对当前保存点的变化类型（XUI_CODE_LINE_CHANGE_*）。 */
+XUI_API int xuiCodeEditGetLineChange(xui_widget pWidget, int iLine, int* pChange);
+/* 清除 Change 边栏的逐行变化记录，不修改文档内容或脏状态。 */
+XUI_API int xuiCodeEditClearLineChanges(xui_widget pWidget);
 /* 取滚动模型（编辑器持有）。 */
 XUI_API xui_scroll_model_t* xuiCodeEditGetScrollModel(xui_widget pWidget);
 /* 输出当前布局的滚动模型值；失败时保留输出参数。 */
