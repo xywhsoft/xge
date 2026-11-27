@@ -25,6 +25,7 @@ struct xui_surface_t {
 	uint32_t arrRectFillCountColors[32];
 	int arrRectFillColorCounts[32];
 	int arrRectFillLastOrders[32];
+	xui_rect_t arrRectFillLastRects[32];
 	uint32_t iLastTextColor;
 	uint32_t iLastFlags;
 	uint32_t iLastTextFlags;
@@ -643,12 +644,14 @@ static int __xuiTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == iColor ) {
 			pDraw->pTarget->arrRectFillColorCounts[iSlot]++;
 			pDraw->pTarget->arrRectFillLastOrders[iSlot] = pDraw->pTarget->iRectFillCount;
+			pDraw->pTarget->arrRectFillLastRects[iSlot] = tRect;
 			break;
 		}
 		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == 0u ) {
 			pDraw->pTarget->arrRectFillCountColors[iSlot] = iColor;
 			pDraw->pTarget->arrRectFillColorCounts[iSlot] = 1;
 			pDraw->pTarget->arrRectFillLastOrders[iSlot] = pDraw->pTarget->iRectFillCount;
+			pDraw->pTarget->arrRectFillLastRects[iSlot] = tRect;
 			break;
 		}
 	}
@@ -753,11 +756,15 @@ static int __xuiTestShapeRectFill(xui_proxy pProxy, xui_surface pTarget, xui_rec
 	for ( iSlot = 0; iSlot < (int)(sizeof(pTarget->arrRectFillCountColors) / sizeof(pTarget->arrRectFillCountColors[0])); iSlot++ ) {
 		if ( pTarget->arrRectFillCountColors[iSlot] == iColor ) {
 			pTarget->arrRectFillColorCounts[iSlot]++;
+			pTarget->arrRectFillLastOrders[iSlot] = pTarget->iRectFillCount;
+			pTarget->arrRectFillLastRects[iSlot] = tRect;
 			break;
 		}
 		if ( pTarget->arrRectFillCountColors[iSlot] == 0u ) {
 			pTarget->arrRectFillCountColors[iSlot] = iColor;
 			pTarget->arrRectFillColorCounts[iSlot] = 1;
+			pTarget->arrRectFillLastOrders[iSlot] = pTarget->iRectFillCount;
+			pTarget->arrRectFillLastRects[iSlot] = tRect;
 			break;
 		}
 	}
@@ -1202,6 +1209,7 @@ void xuiTestSurfaceReset(xui_surface pSurface)
 		memset(pSurface->arrRectFillCountColors, 0, sizeof(pSurface->arrRectFillCountColors));
 		memset(pSurface->arrRectFillColorCounts, 0, sizeof(pSurface->arrRectFillColorCounts));
 		memset(pSurface->arrRectFillLastOrders, 0, sizeof(pSurface->arrRectFillLastOrders));
+		memset(pSurface->arrRectFillLastRects, 0, sizeof(pSurface->arrRectFillLastRects));
 		pSurface->iTextDrawCount = 0;
 		pSurface->iClearCount = 0;
 		memset(&pSurface->tLastRect, 0, sizeof(pSurface->tLastRect));
@@ -1253,6 +1261,19 @@ int xuiTestSurfaceGetLastRectFillOrder(xui_surface pSurface, uint32_t iColor)
 			return pSurface->arrRectFillLastOrders[iSlot];
 	}
 	return 0;
+}
+
+xui_rect_t xuiTestSurfaceGetLastRectFillColorRect(xui_surface pSurface, uint32_t iColor)
+{
+	int iSlot;
+	if ( __xuiTestSurfaceValid(pSurface) ) {
+		for ( iSlot = 0; iSlot < (int)(sizeof(pSurface->arrRectFillCountColors) / sizeof(pSurface->arrRectFillCountColors[0])); iSlot++ ) {
+			if ( pSurface->arrRectFillCountColors[iSlot] == iColor ) {
+				return pSurface->arrRectFillLastRects[iSlot];
+			}
+		}
+	}
+	return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 }
 
 int xuiTestSurfaceGetTextDrawCount(xui_surface pSurface)

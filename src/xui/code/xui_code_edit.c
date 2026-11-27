@@ -2913,8 +2913,8 @@ static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context p
 		fActive = __xuiCodeEditMeasureTextRange(pProxy, pFont,
 			pData->sAssistLabel, iStart, iEnd, (float)(iEnd - iStart) * 8.0f);
 		(void)pProxy->drawRectFill(pProxy, pDraw,
-			xuiInternalSnapRect((xui_rect_t){tLabel.fX + fPrefix - 2.0f,
-				tLabel.fY + 3.0f, fActive + 4.0f, tLabel.fH - 6.0f}),
+			xuiInternalRectFromFloatNearest(tLabel.fX + fPrefix - 2.0f,
+				tLabel.fY + 3.0f, fActive + 4.0f, tLabel.fH - 6.0f),
 			pData->arrAssistColors[0]);
 	}
 	iRet = pProxy->drawText(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pData->sAssistLabel, .iTextSize=-1, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tLabel, pData->arrAssistColors[1], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -4193,12 +4193,11 @@ static int __xuiCodeEditHitTestDiagnosticInternal(xui_widget pWidget, xui_code_e
 		fStartX -= fSegmentStartX;
 		fEndX -= fSegmentStartX;
 		if ( fEndX <= fStartX ) fEndX = fStartX + fColumnWidth;
-		tRect = (xui_rect_t){
+		tRect = xuiInternalRectFromFloatNearest(
 			fViewportX + fMarginWidth + 4.0f + fStartX - pData->fScrollX,
 			fViewportY + 4.0f + (float)iVisibleRow * fLineHeight - pData->fScrollY,
 			fEndX - fStartX,
-			fLineHeight
-		};
+			fLineHeight);
 		if ( tRect.fX < fViewportX + fMarginWidth ) {
 			tRect.fW -= (fViewportX + fMarginWidth - tRect.fX);
 			tRect.fX = fViewportX + fMarginWidth;
@@ -5883,12 +5882,11 @@ static int __xuiCodeEditRenderLineTextVisual(xui_proxy pProxy, xui_draw_context 
 			fSpanX = (float)iVisualStart * fColumnWidth;
 			fSpanW = (float)(iVisualEnd - iVisualStart) * fColumnWidth;
 		}
-		tRect = (xui_rect_t){
+		tRect = xuiInternalRectFromFloatNearest(
 			fTextX + 4.0f + fSpanX - pData->fScrollX,
 			fY,
 			fSpanW,
-			fLineHeight
-		};
+			fLineHeight);
 		iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, sText, iSpanStart, i, tRect, iColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -6266,8 +6264,9 @@ static int __xuiCodeEditRenderStyledLine(xui_widget pWidget, xui_proxy pProxy,
 						fPaintX = __xuiCodeEditLineLayoutOffsetX(pLayout, iPaintStart);
 						fPaintWidth = __xuiCodeEditLineLayoutOffsetX(pLayout, iPaintEnd) - fPaintX;
 					}
-					tRect = (xui_rect_t){fTextX + 4.0f + fPaintX - pData->fScrollX,
-						fY, fPaintWidth, fLineHeight};
+					tRect = xuiInternalRectFromFloatNearest(
+						fTextX + 4.0f + fPaintX - pData->fScrollX,
+						fY, fPaintWidth, fLineHeight);
 					iRet = pProxy->drawTextSpans(pProxy, pDraw, &(xui_text_item_t){.iSize=sizeof(xui_text_item_t), .pFont=pFont, .sText=pLayout->sText + iPaintStart, .iTextSize=iPaintEnd - iPaintStart, .iFlags=XUI_TEXT_SHAPE_DEFAULT | ((XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP) & XUI_TEXT_RTL ? XUI_TEXT_SHAPE_RTL : 0)}, tRect, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP, arrSpans, iSpanCount);
 				}
 				if ( iRet != XUI_OK ) return iRet;
@@ -6327,12 +6326,11 @@ static int __xuiCodeEditRenderWhitespace(xui_widget pWidget, xui_proxy pProxy, x
 			else if ( sText[i] == '\t' ) iIndentColumns += __xuiCodeEditTabAdvance(pData, iIndentColumns);
 			else break;
 			if ( iIndentColumns > 0 && (iIndentColumns % __xuiCodeEditIndentColumns(pData)) == 0 ) {
-				tRect = (xui_rect_t){
+				tRect = xuiInternalRectFromFloatNearest(
 					fTextX + 4.0f + (float)iIndentColumns * fColumnWidth - pData->fScrollX,
 					fY + 2.0f,
 					1.0f,
-					fLineHeight - 4.0f
-				};
+					fLineHeight - 4.0f);
 				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tRect, iMarkerColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
@@ -6345,23 +6343,21 @@ static int __xuiCodeEditRenderWhitespace(xui_widget pWidget, xui_proxy pProxy, x
 			else if ( sText[i] == '\t' ) sMark = ">";
 		}
 		if ( sMark != NULL ) {
-			tRect = (xui_rect_t){
+			tRect = xuiInternalRectFromFloatNearest(
 				fTextX + 4.0f + __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, iLineStart, i, fColumnWidth) - pData->fScrollX,
 				fY,
 				(sText[i] == '\t') ? (float)__xuiCodeEditTabAdvance(pData, __xuiCodeEditLineVisualColumn(pData, sText, iLineStart, i)) * fColumnWidth : fColumnWidth,
-				fLineHeight
-			};
+				fLineHeight);
 			iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, sMark, 0, (int)strlen(sMark), tRect, iMarkerColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	if ( (pData->iDisplayOptions & XUI_CODE_EDIT_SHOW_EOL) != 0u ) {
-		tRect = (xui_rect_t){
+		tRect = xuiInternalRectFromFloatNearest(
 			fTextX + 4.0f + __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, iLineStart, iLineEnd, fColumnWidth) - pData->fScrollX,
 			fY,
 			fColumnWidth,
-			fLineHeight
-		};
+			fLineHeight);
 		iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, "$", 0, 1, tRect, iMarkerColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -6397,12 +6393,11 @@ static int __xuiCodeEditRenderSelectionRange(xui_proxy pProxy, xui_draw_context 
 		iStart - iLineStart, fColumnWidth);
 	fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 		iEnd - iLineStart, fColumnWidth);
-	tSel = (xui_rect_t){
+	tSel = xuiInternalRectFromFloatNearest(
 		tContent.fX + fTextX + 4.0f + fStartX - pData->fScrollX,
 		fY,
 		fEndX - fStartX,
-		fLineHeight
-	};
+		fLineHeight);
 	if ( tSel.fX < tContent.fX ) {
 		tSel.fW -= (tContent.fX - tSel.fX);
 		tSel.fX = tContent.fX;
@@ -6450,12 +6445,11 @@ static int __xuiCodeEditRenderFindRange(xui_proxy pProxy, xui_draw_context pDraw
 		iStart - iLineStart, fColumnWidth);
 	fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 		iEnd - iLineStart, fColumnWidth);
-	tRect = (xui_rect_t){
+	tRect = xuiInternalRectFromFloatNearest(
 		tContent.fX + fTextX + 4.0f + fStartX - pData->fScrollX,
 		fY,
 		fEndX - fStartX,
-		fLineHeight
-	};
+		fLineHeight);
 	if ( tRect.fX < tContent.fX ) {
 		tRect.fW -= (tContent.fX - tRect.fX);
 		tRect.fX = tContent.fX;
@@ -6483,12 +6477,11 @@ static int __xuiCodeEditRenderBracketOffset(xui_proxy pProxy,
 		iOffset - iLineStart, fColumnWidth);
 	fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 		iOffset + 1 - iLineStart, fColumnWidth);
-	tRect = (xui_rect_t){
+	tRect = xuiInternalRectFromFloatNearest(
 		fTextX + 4.0f + fStartX - pData->fScrollX,
 		fY,
 		fEndX - fStartX,
-		fLineHeight
-	};
+		fLineHeight);
 	if ( tRect.fW <= 0.0f || tRect.fX + tRect.fW <= tContent.fX ||
 	     tRect.fX >= tContent.fX + tContent.fW ) return XUI_OK;
 	if ( bFill ) {
@@ -6681,12 +6674,11 @@ static int __xuiCodeEditRenderDiagnostics(xui_widget pWidget, xui_proxy pProxy, 
 			fEndX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 				iEnd - iLineStart, fColumnWidth);
 			if ( fEndX <= fStartX ) fEndX = fStartX + fColumnWidth;
-			tRect = (xui_rect_t){
+			tRect = xuiInternalRectFromFloatNearest(
 				tContent.fX + 4.0f + fStartX - pData->fScrollX,
 				fY + fLineHeight - 3.0f,
 				fEndX - fStartX,
-				3.0f
-			};
+				3.0f);
 			if ( tRect.fX < tContent.fX ) {
 				tRect.fW -= (tContent.fX - tRect.fX);
 				tRect.fX = tContent.fX;
@@ -6729,7 +6721,8 @@ static int __xuiCodeEditRenderMargins(xui_widget pWidget, xui_proxy pProxy, xui_
 
 	if ( frame == NULL || iMarginCount <= 0 ) return XUI_OK;
 	for ( i = 0; i < iMarginCount; i++ ) {
-		tLineRect = (xui_rect_t){frame->entries[i].info.tRect.fX, fY, frame->entries[i].info.tRect.fW, fLineHeight};
+		tLineRect = xuiInternalRectFromFloatNearest(frame->entries[i].info.tRect.fX,
+			fY, frame->entries[i].info.tRect.fW, fLineHeight);
 		if ( tLineRect.fX + tLineRect.fW > tContent.fW ) continue;
         /* Built-in margins keep their direct fast path. Only custom callbacks
          * enter invocation protection; the frame already pins its layout. */
@@ -7104,7 +7097,9 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 			iRet = __xuiCodeEditBodyClipBegin(pProxy, pDraw, tTextContent, &tOldClip, &bHadOldClip, &bClipActive);
 			if ( iRet != XUI_OK ) return iRet;
 			if ( iLine == iActiveLine ) {
-				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tTextContent.fX, fY, tTextContent.fW, fLineHeight}, iCurrentLineColor);
+				iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
+					xuiInternalRectFromFloatNearest(tTextContent.fX, fY,
+						tTextContent.fW, fLineHeight), iCurrentLineColor);
 			}
 			if ( iRet == XUI_OK ) {
 				iRet = __xuiCodeEditRenderBracketMatch(pProxy, pDraw, pFont,
@@ -7186,14 +7181,13 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			fCaretLineY = 4.0f + (float)iCaretVisualRow * fLineHeight - pData->fScrollY;
-			tCaret = (xui_rect_t){
+				tCaret = xuiInternalRectFromFloatNearest(
 				tTextContent.fX + 4.0f + ((fCaretWrapX >= 0.0f) ? fCaretWrapX :
 				__xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 					iCaretOffset - iCaretStart, fColumnWidth)) - pData->fScrollX,
 				fCaretLineY + fTextOffsetY,
 				1.0f,
-				fCaretHeight
-			};
+					fCaretHeight);
 			bCaretVisible = tCaret.fX >= 0.0f && tCaret.fX <= tContent.fW &&
 				tCaret.fY + tCaret.fH >= 0.0f && tCaret.fY <= tContent.fH;
 			iInlineExtraRows = 0;
@@ -7231,17 +7225,20 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 					(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument,
 						pData->iImeAnchorEnd, &iImeEndLine, NULL);
 					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-						(xui_rect_t){fImeAnchorX, fCaretLineY, tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight},
+						xuiInternalRectFromFloatNearest(fImeAnchorX, fCaretLineY,
+							tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight),
 						iBackgroundColor);
 					if ( iRet == XUI_OK && iCaretLine == iActiveLine ) {
 						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-							(xui_rect_t){fImeAnchorX, fCaretLineY, tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight},
+							xuiInternalRectFromFloatNearest(fImeAnchorX, fCaretLineY,
+								tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight),
 							iCurrentLineColor);
 					}
 					if ( iRet == XUI_OK && fImeSelectX1 > fImeSelectX0 ) {
 						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-							(xui_rect_t){fImeAnchorX + fImeSelectX0, fCaretLineY,
-								fImeSelectX1 - fImeSelectX0, fLineHeight}, iSelectionColor);
+							xuiInternalRectFromFloatNearest(fImeAnchorX + fImeSelectX0,
+								fCaretLineY, fImeSelectX1 - fImeSelectX0, fLineHeight),
+							iSelectionColor);
 					}
 					tIme = (xui_rect_t){fImeAnchorX, fCaretLineY,
 						tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight};
@@ -7263,10 +7260,12 @@ static int __xuiCodeEditCacheRenderImpl(xui_widget pWidget, xui_draw_context pDr
 					}
 					if ( iRet == XUI_OK && fImeWidth > 0.0f ) {
 						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-							(xui_rect_t){fImeAnchorX, fCaretLineY + fLineHeight - 2.0f, fImeWidth, 1.0f},
+							xuiInternalRectFromFloatNearest(fImeAnchorX,
+								fCaretLineY + fLineHeight - 2.0f, fImeWidth, 1.0f),
 							pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ? iImeErrorColor : iImeColor);
 					}
-					tCaret.fX = fImeAnchorX + fImeCursorX;
+					tCaret = xuiInternalRectFromFloatNearest(fImeAnchorX + fImeCursorX,
+						tCaret.fY, 1.0f, tCaret.fH);
 				}
 				if ( iRet == XUI_OK && bCaretVisible && xuiInternalCaretBlinkVisible(pWidget) ) {
 					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tCaret, iCaretColor);
@@ -8734,11 +8733,10 @@ static int __xuiCodeEditGetOffsetRectImpl(xui_widget pWidget, int iOffset, xui_r
 		__xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 			iOffset - iStart, fColumnWidth);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
-	*pRect = (xui_rect_t){
+	*pRect = xuiInternalRectFromFloatNearest(
 		tWorld.fX + fMarginWidth + 4.0f + fOffsetX - pData->fScrollX,
 		tWorld.fY + 4.0f + (float)iVisualRow * fLineHeight - pData->fScrollY,
-		2.0f, fLineHeight
-	};
+		2.0f, fLineHeight);
 	return XUI_OK;
 }
 XUI_API int xuiCodeEditGetOffsetRect(xui_widget widget,int offset,xui_rect_t* rect)
@@ -8831,10 +8829,11 @@ static int __xuiCodeEditHitTestText(xui_widget pWidget, float fContextX,
 		iSegmentEnd - iLineStart);
 	fMarginWidth = 0.0f;
 	(void)xuiCodeMarginModelGetTotalWidth(pData->pMargins, &fMarginWidth);
-	pHit->tLineRect = (xui_rect_t){tViewport.fX + fMarginWidth + 4.0f,
+	pHit->tLineRect = xuiInternalRectFromFloatNearest(
+		tViewport.fX + fMarginWidth + 4.0f,
 		tViewport.fY + 4.0f + (float)iVisualRow * fLineHeight -
 			pData->fScrollY,
-		fSegmentEndX - fSegmentStartX, fLineHeight};
+		fSegmentEndX - fSegmentStartX, fLineHeight);
 	if ( pHit->tLineRect.fW < 0.0f ) pHit->tLineRect.fW = 0.0f;
 	pHit->bInsideText = fContextX >= pHit->tLineRect.fX &&
 		fContextX <= pHit->tLineRect.fX + pHit->tLineRect.fW &&

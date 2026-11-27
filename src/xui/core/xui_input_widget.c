@@ -1308,7 +1308,8 @@ static xui_rect_t __xuiInputCalculateCursorRect(xui_widget pWidget, xui_input_da
 		__xuiInputMeasurePrefix(pWidget, pData, tResolved.pFont, pData->iCursor)) - pData->fScrollX;
 	if ( fCursorX < tContent.fX ) fCursorX = tContent.fX;
 	if ( fCursorX > tContent.fX + tContent.fW ) fCursorX = tContent.fX + tContent.fW;
-	return (xui_rect_t){fCursorX, tContent.fY + 4.0f, 1.0f, (tContent.fH > 8.0f) ? tContent.fH - 8.0f : tContent.fH};
+	return xuiInternalRectFromFloatNearest(fCursorX, tContent.fY + 4.0f, 1.0f,
+		(tContent.fH > 8.0f) ? tContent.fH - 8.0f : tContent.fH);
 }
 
 static int __xuiInputInvalidateText(xui_widget pWidget)
@@ -2332,10 +2333,8 @@ static int __xuiInputDrawSelection(xui_widget pWidget, xui_draw_context pDraw, x
 	if ( fX1 <= fX0 ) {
 		return XUI_OK;
 	}
-	tSel.fX = fX0;
-	tSel.fY = tContent.fY + 3.0f;
-	tSel.fW = fX1 - fX0;
-	tSel.fH = tContent.fH - 6.0f;
+	tSel = xuiInternalRectFromFloatNearest(fX0, tContent.fY + 3.0f,
+		fX1 - fX0, tContent.fH - 6.0f);
 	return __xuiInputDrawRectFill(pProxy, pDraw, tSel, pResolved->iSelectionColor);
 }
 
@@ -2459,7 +2458,8 @@ static int __xuiInputImplCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		if ( fImeX1 > tContent.fX + tContent.fW ) fImeX1 = tContent.fX + tContent.fW;
 		if ( fImeX1 > fImeX0 ) {
 			iRet = __xuiInputDrawRectFill(pProxy, pDraw,
-				(xui_rect_t){fImeX0, tContent.fY + 3.0f, fImeX1 - fImeX0, tContent.fH - 6.0f},
+				xuiInternalRectFromFloatNearest(fImeX0, tContent.fY + 3.0f,
+					fImeX1 - fImeX0, tContent.fH - 6.0f),
 				tResolved.iSelectionColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
@@ -2475,9 +2475,8 @@ static int __xuiInputImplCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 				iDrawStart = 0;
 				sDrawText = sDisplay;
 			}
-			tText = tContent;
-			tText.fX += fOffset;
-			tText.fW -= fOffset;
+			tText = xuiInternalRectFromFloatNearest(tContent.fX + fOffset,
+				tContent.fY, tContent.fW - fOffset, tContent.fH);
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 			if ( (__xuiInputAlpha(iText) != 0) && (tText.fW > 0.0f) && (tText.fH > 0.0f) ) {
 				iRet = XUI_ERROR_UNSUPPORTED;
@@ -2524,7 +2523,8 @@ static int __xuiInputImplCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		if ( fImeX1 > tContent.fX + tContent.fW ) fImeX1 = tContent.fX + tContent.fW;
 		if ( fImeX1 > fImeX0 ) {
 			iRet = __xuiInputDrawRectFill(pProxy, pDraw,
-				(xui_rect_t){fImeX0, tContent.fY + tContent.fH - 2.0f, fImeX1 - fImeX0, 1.0f},
+				xuiInternalRectFromFloatNearest(fImeX0,
+					tContent.fY + tContent.fH - 2.0f, fImeX1 - fImeX0, 1.0f),
 				pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ?
 				XUI_COLOR_RGBA(220, 38, 38, 255) : tResolved.iCursorColor);
 			if ( iRet != XUI_OK ) return iRet;

@@ -1874,12 +1874,11 @@ static int __xuiTextEditUpdateCursorRect(xui_widget pWidget, xui_text_edit_data_
 	if ( iCursor < pLine->iStart ) iCursor = pLine->iStart;
 	if ( iCursor > pLine->iEnd ) iCursor = pLine->iEnd;
 	tPrefix = __xuiTextEditMeasureRange(pWidget, pData, tResolved.pFont, pLine->iStart, iCursor);
-	pData->tCursorRect = (xui_rect_t){
+	pData->tCursorRect = xuiInternalRectFromFloatNearest(
 		tContent.fX + tPrefix.fX - pData->fScrollX,
 		tContent.fY + pLine->fY - pData->fScrollY + 2.0f,
 		1.0f,
-		pData->fLineHeight - 4.0f
-	};
+		pData->fLineHeight - 4.0f);
 	pData->tTextRect = tContent;
 	return XUI_OK;
 }
@@ -2903,11 +2902,8 @@ static int __xuiTextEditDrawLineNumbers(xui_widget pWidget, xui_draw_context pDr
 			continue;
 		}
 		snprintf(sNumber, sizeof(sNumber), "%d", __xuiTextEditLineNumberForLine(pData, i));
-		tLine = tGutter;
-		tLine.fY = fY;
-		tLine.fH = pData->fLineHeight;
-		tLine.fX += 2.0f;
-		tLine.fW -= 8.0f;
+		tLine = xuiInternalRectFromFloatNearest(tGutter.fX + 2.0f,
+			fY, tGutter.fW - 8.0f, pData->fLineHeight);
 		if ( tLine.fW < 0.0f ) {
 			tLine.fW = 0.0f;
 		}
@@ -2955,10 +2951,9 @@ static int __xuiTextEditDrawSelectionLine(xui_widget pWidget, xui_draw_context p
 	if ( fX1 <= fX0 ) {
 		return XUI_OK;
 	}
-	tSel.fX = fX0;
-	tSel.fY = tContent.fY + pLine->fY - pData->fScrollY + 1.0f;
-	tSel.fW = fX1 - fX0;
-	tSel.fH = pData->fLineHeight - 2.0f;
+	tSel = xuiInternalRectFromFloatNearest(fX0,
+		tContent.fY + pLine->fY - pData->fScrollY + 1.0f,
+		fX1 - fX0, pData->fLineHeight - 2.0f);
 	if ( tSel.fY < tContent.fY ) {
 		tSel.fH -= (tContent.fY - tSel.fY);
 		tSel.fY = tContent.fY;
@@ -3012,10 +3007,9 @@ static int __xuiTextEditDrawFindRangeLine(xui_widget pWidget, xui_draw_context p
 	if ( fX0 < tContent.fX ) fX0 = tContent.fX;
 	if ( fX1 > tContent.fX + tContent.fW ) fX1 = tContent.fX + tContent.fW;
 	if ( fX1 <= fX0 ) return XUI_OK;
-	tHit.fX = fX0;
-	tHit.fY = tContent.fY + pLine->fY - pData->fScrollY + 1.0f;
-	tHit.fW = fX1 - fX0;
-	tHit.fH = pData->fLineHeight - 2.0f;
+	tHit = xuiInternalRectFromFloatNearest(fX0,
+		tContent.fY + pLine->fY - pData->fScrollY + 1.0f,
+		fX1 - fX0, pData->fLineHeight - 2.0f);
 	if ( tHit.fY < tContent.fY ) {
 		tHit.fH -= (tContent.fY - tHit.fY);
 		tHit.fY = tContent.fY;
@@ -3089,10 +3083,9 @@ static int __xuiTextEditDrawImeUnderlineLine(xui_widget pWidget, xui_draw_contex
 	if ( fX0 < tContent.fX ) fX0 = tContent.fX;
 	if ( fX1 > tContent.fX + tContent.fW ) fX1 = tContent.fX + tContent.fW;
 	if ( fX1 <= fX0 ) return XUI_OK;
-	tUnderline.fX = fX0;
-	tUnderline.fY = tContent.fY + pLine->fY - pData->fScrollY + pData->fLineHeight - 2.0f;
-	tUnderline.fW = fX1 - fX0;
-	tUnderline.fH = 1.0f;
+	tUnderline = xuiInternalRectFromFloatNearest(fX0,
+		tContent.fY + pLine->fY - pData->fScrollY + pData->fLineHeight - 2.0f,
+		fX1 - fX0, 1.0f);
 	if ( tUnderline.fY < tContent.fY || tUnderline.fY >= tContent.fY + tContent.fH ) return XUI_OK;
 	return __xuiTextEditDrawRectFill(pProxy, pDraw, tUnderline,
 		pData->iImeAttribute == XUI_IME_ATTRIBUTE_INPUT_ERROR ?
@@ -3117,6 +3110,8 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 	uint32_t iBorder;
 	uint32_t iText;
 	float fY;
+	float fLineX;
+	float fLineW;
 	int i;
 	int iLen;
 	int iRet;
@@ -3200,17 +3195,18 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 				sLineText = pData->sText + pLine->iStart;
 				iDisplaySize = pLine->iEnd - pLine->iStart;
 			}
-			tLine = tContent;
-			tLine.fY = fY;
-			tLine.fH = pData->fLineHeight;
+			fLineX = (float)tContent.fX;
+			fLineW = (float)tContent.fW;
 			if ( !pData->bWordWrap ) {
-				tLine.fX = tContent.fX - pData->fScrollX;
-				tLine.fW = tContent.fW + pData->fScrollX;
-				if ( tLine.fX < tContent.fX ) {
-					tLine.fW -= (tContent.fX - tLine.fX);
-					tLine.fX = tContent.fX;
+				fLineX = tContent.fX - pData->fScrollX;
+				fLineW = tContent.fW + pData->fScrollX;
+				if ( fLineX < tContent.fX ) {
+					fLineW -= (tContent.fX - fLineX);
+					fLineX = (float)tContent.fX;
 				}
 			}
+			tLine = xuiInternalRectFromFloatNearest(fLineX, fY,
+				fLineW, pData->fLineHeight);
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
 			if ( (__xuiTextEditAlpha(iText) != 0) && (tLine.fW > 0.0f) && (tLine.fH > 0.0f) ) {
 				pPaintEntry = NULL;

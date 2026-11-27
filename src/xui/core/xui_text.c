@@ -947,8 +947,8 @@ static int __xuiInternalTextChunkCacheDraw(xui_proxy pProxy,
 			iRet = XUI_ERROR_UNSUPPORTED;
 			break;
 		}
-		tRect = (xui_rect_t){fChunkX, fY,
-			pChunk->fWidth > 0.0f ? pChunk->fWidth : 1.0f, fHeight};
+		tRect = xuiInternalRectFromFloatNearest(fChunkX, fY,
+			pChunk->fWidth > 0.0f ? pChunk->fWidth : 1.0f, fHeight);
 		if ( iSpanCount > 0 ) {
 			while ( iSpanFirst < iSpanCount &&
 			        pSpans[iSpanFirst].iEnd <= pChunk->iStart ) {

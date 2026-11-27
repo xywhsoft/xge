@@ -443,6 +443,9 @@ int main(void)
 	xui_rect_t tHorizontalRect;
 	xui_rect_t tEditorContentRect;
 	xui_rect_t tRangeRect;
+	xui_rect_t tBracketRect;
+	xui_rect_t tBracketOffsetRect;
+	xui_rect_t tBracketWorldRect;
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
@@ -853,6 +856,13 @@ int main(void)
 	pBracketCache = NULL;
 	tBracketDesc.iFlags = (int)XUI_CODE_EDIT_DISABLE_BRACKET_MATCH;
 	iRet = xuiCodeEditCreate(pContext, &pBracketEdit, &tBracketDesc);
+	tBracketRect = xuiTestSurfaceGetLastRectFillColorRect(pBracketCache,
+		iBracketBorderColor);
+	iRet = xuiCodeEditGetOffsetRect(pBracketEdit, 6, &tBracketOffsetRect);
+	tBracketWorldRect = xuiWidgetGetWorldRect(pBracketEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tBracketRect.fX ==
+		(tBracketOffsetRect.fX - tBracketWorldRect.fX),
+		"bracket decoration uses the cluster origin without a local offset");
 	XUI_TEST_CHECK(iRet == XUI_OK && pBracketEdit != NULL &&
 		xuiCodeEditGetBracketMatching(pBracketEdit) == 0,
 		"bracket matching descriptor disable flag");

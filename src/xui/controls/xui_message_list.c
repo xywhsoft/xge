@@ -3901,7 +3901,10 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 		if ( xuiTextLayoutGetLine(pLayout, iLine, &tLine) != XUI_OK ) return XUI_ERROR_INVALID_STATE;
 		if ( tRect.fY + tLine.fY > tContent.fY + tContent.fH ) break;
 		if ( tLine.iTextSize <= 0 ) continue;
-		tLineRect = (xui_rect_t){tRect.fX + (bCenter ? __xuiMessageMax(0.0f, (tRect.fW - tLine.fW) * 0.5f) : 0.0f), tRect.fY + tLine.fY, bCenter ? tLine.fW : tRect.fW, tLine.fH};
+		tLineRect = xuiInternalRectFromFloatNearest(
+			tRect.fX + (bCenter ? __xuiMessageMax(0.0f,
+				(tRect.fW - tLine.fW) * 0.5f) : 0.0f),
+			tRect.fY + tLine.fY, bCenter ? tLine.fW : tRect.fW, tLine.fH);
 		if ( iNodeIndex >= 0 && __xuiMessageGetTextSelectionForNode(pData, iNodeIndex, &iStart, &iEnd) ) {
 			iStart = (iStart > tLine.iTextOffset) ? iStart : tLine.iTextOffset;
 			iEnd = (iEnd < tLine.iTextOffset + tLine.iTextSize) ? iEnd : tLine.iTextOffset + tLine.iTextSize;
@@ -3911,7 +3914,9 @@ static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data
 				if ( iRet != XUI_OK ) return iRet;
 				fStart = __xuiMessageLineCaretX(pNode, &tLine, iStart);
 				fEnd = __xuiMessageLineCaretX(pNode, &tLine, iEnd);
-				tSelectionRect = (xui_rect_t){tLineRect.fX + fStart, tLineRect.fY, fEnd - fStart, tLineRect.fH};
+				tSelectionRect = xuiInternalRectFromFloatNearest(
+					tLineRect.fX + fStart, tLineRect.fY,
+					fEnd - fStart, tLineRect.fH);
 				if ( fEnd > fStart ) (void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, iSelectionColor);
 			}
 		}

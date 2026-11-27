@@ -276,8 +276,10 @@ static xui_rect_t doc_view_edit_caret(xui_widget w)
 {
     doc_view_data* v = doc_view_get(w); xui_doc_rect_t caret; xui_rect_t rect = {0}, content = xuiWidgetGetContentRect(w);
     if (v && doc_view_layout(v) == XUI_OK && xuiDocumentRendererGetCaretRect(v->renderer, &v->selection.tCaret, &caret) == XUI_OK) {
-        rect.fX = (int)floor(content.fX + caret.x - v->scroll_x); rect.fY = (int)floor(content.fY + caret.y - v->scroll_y);
-        rect.fW = 1; rect.fH = (int)ceil(caret.height);
+        rect = xuiInternalRectFromFloatNearest(
+            (float)(content.fX + caret.x - v->scroll_x),
+            (float)(content.fY + caret.y - v->scroll_y),
+            1.0f, (float)caret.height);
     }
     return rect;
 }
@@ -1217,8 +1219,10 @@ static int doc_view_accessible_get(xui_widget w, int index, xui_accessible_node_
     if (result != XUI_OK && result != XUI_ERROR_NOT_FOUND) return result;
     has_bounds = result == XUI_OK;
     world = xuiWidgetGetWorldRect(w); content = xuiWidgetGetContentRect(w);
-    if (result == XUI_OK) out->tBounds = (xui_rect_t){(float)(world.fX + content.fX + rect.x - v->scroll_x),
-        (float)(world.fY + content.fY + rect.y - v->scroll_y), (float)rect.width, (float)rect.height};
+    if (result == XUI_OK) out->tBounds = xuiInternalRectFromFloatNearest(
+        (float)(world.fX + content.fX + rect.x - v->scroll_x),
+        (float)(world.fY + content.fY + rect.y - v->scroll_y),
+        (float)rect.width, (float)rect.height);
     else out->iState |= XUI_ACCESSIBLE_STATE_OFFSCREEN;
     if (node->kind == XUI_DOC_CELL) {
         xui_doc_cell_hit_t cell = {0}; cell.iSize = sizeof(cell);
@@ -1226,9 +1230,10 @@ static int doc_view_accessible_get(xui_widget w, int index, xui_accessible_node_
         if (cell_result == XUI_OK) {
             doc_view_accessible_cell_state(v, out, cell.iTableId,
                 cell.iRow, cell.iColumn, cell.iRowSpan, cell.iColumnSpan);
-            out->tBounds = (xui_rect_t){(float)(world.fX + content.fX + cell.tBounds.x - v->scroll_x),
+            out->tBounds = xuiInternalRectFromFloatNearest(
+                (float)(world.fX + content.fX + cell.tBounds.x - v->scroll_x),
                 (float)(world.fY + content.fY + cell.tBounds.y - v->scroll_y),
-                (float)cell.tBounds.width, (float)cell.tBounds.height};
+                (float)cell.tBounds.width, (float)cell.tBounds.height);
             out->iState &= ~XUI_ACCESSIBLE_STATE_OFFSCREEN;
             has_bounds = 1;
         } else if (cell_result == XUI_ERROR_NOT_FOUND) {

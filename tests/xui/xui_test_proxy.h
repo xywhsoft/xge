@@ -67,6 +67,7 @@ int xuiTestSurfaceGetDrawCount(xui_surface pSurface);
 int xuiTestSurfaceGetRectFillCount(xui_surface pSurface);
 int xuiTestSurfaceGetRectFillColorCount(xui_surface pSurface, uint32_t iColor);
 int xuiTestSurfaceGetLastRectFillOrder(xui_surface pSurface, uint32_t iColor);
+xui_rect_t xuiTestSurfaceGetLastRectFillColorRect(xui_surface pSurface, uint32_t iColor);
 int xuiTestSurfaceGetTextDrawCount(xui_surface pSurface);
 const char* xuiTestSurfaceGetLastText(xui_surface pSurface);
 xui_rect_t xuiTestSurfaceGetLastRect(xui_surface pSurface);
